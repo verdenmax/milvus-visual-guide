@@ -625,6 +625,426 @@ QUIZZES = {
             },
         ],
     },
+    "09-control-vs-data-plane.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "Proxy 既不存段也不存索引，为什么本课仍把它划进“数据面”而不是“控制面”？",
+                    "en": "The Proxy stores neither segments nor indexes, so why does this lesson still place it in the 'data plane' rather than the 'control plane'?",
+                },
+                "opts": [
+                    {
+                        "zh": "因为控制面/数据面是按“是否承载用户吞吐”划分的，Proxy 站在每条请求的吞吐链路上；它能轻松扩缩是因为无状态，而非因为它属于控制面",
+                        "en": "Because the split is by 'whether it carries user throughput'; the Proxy sits on every request's throughput path; it scales easily because it is stateless, not because it belongs to the control plane",
+                    },
+                    {"zh": "因为 Proxy 比协调者启动得更晚", "en": "Because the Proxy starts up later than the coordinators"},
+                    {"zh": "因为只有控制面才允许存数据", "en": "Because only the control plane is allowed to store data"},
+                    {"zh": "因为 Proxy 不实现任何 types.go 接口", "en": "Because the Proxy implements no interface in types.go"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "划分依据是“是否承载用户吞吐”，不是“是否存数据”。Proxy 站在吞吐链路上故属数据面；它无状态故可随意扩缩。把“承载吞吐”和“持有状态”分开看，才能准确理解每个组件的扩缩容策略",
+                    "en": "The criterion is 'does it carry user throughput', not 'does it store data'. The Proxy is on the throughput path so it is data plane; it is stateless so it scales freely. Separating 'carries throughput' from 'holds state' is the key to each component's scaling story",
+                },
+            },
+            {
+                "q": {
+                    "zh": "types.go 里所有组件共有的基座接口 Component 规定了哪四个方法？这反映了什么设计意图？",
+                    "en": "What four methods does the shared base interface Component in types.go require, and what design intent does that reflect?",
+                },
+                "opts": [
+                    {
+                        "zh": "Init/Start/Stop/Register —— 一个分布式组件的“生命周期最小集”，其中 Register 是向 etcd 注册自己以支持服务发现",
+                        "en": "Init/Start/Stop/Register - the minimal lifecycle of a distributed component, where Register registers itself in etcd for service discovery",
+                    },
+                    {"zh": "Read/Write/Flush/Compact，强调存储能力", "en": "Read/Write/Flush/Compact, emphasizing storage ability"},
+                    {"zh": "Login/Logout/Auth/Rate，强调安全", "en": "Login/Logout/Auth/Rate, emphasizing security"},
+                    {"zh": "Search/Insert/Delete/Query，强调数据操作", "en": "Search/Insert/Delete/Query, emphasizing data ops"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "Component 抽出每个组件都需要的“生命周期最小集”：初始化、启动、停止、注册。用接口而非具体类型当契约，换来可替换（本地直连或 gRPC 代理）与可测试（mock）两大好处",
+                    "en": "Component abstracts the minimal lifecycle every component needs: init, start, stop, register. Using an interface (not a concrete type) as the contract buys replaceability (direct or gRPC proxy) and testability (mocking)",
+                },
+            },
+            {
+                "q": {
+                    "zh": "“MixCoord 把三个协调者打包进一个进程”——下面哪种描述最准确？",
+                    "en": "'MixCoord packs the three coordinators into one process' - which description is most accurate?",
+                },
+                "opts": [
+                    {
+                        "zh": "RootCoord/DataCoord/QueryCoord 在逻辑上仍是三个角色，物理上是同一个可执行体；MixCoord 接口同时嵌入了三套 gRPC 服务",
+                        "en": "RootCoord/DataCoord/QueryCoord remain three roles logically but are one executable physically; the MixCoord interface embeds all three gRPC services at once",
+                    },
+                    {"zh": "三个协调者被合并成一个新角色，原有职责消失", "en": "The three coordinators merge into a brand-new role and their old duties vanish"},
+                    {"zh": "MixCoord 取代了所有数据面节点", "en": "MixCoord replaces all data-plane nodes"},
+                    {"zh": "MixCoord 只是三个协调者的负载均衡器", "en": "MixCoord is merely a load balancer in front of the three coordinators"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "逻辑三角色、物理一进程：mixCoordImpl 同时持有三套协调者实现，MixCoord 接口嵌入三套 gRPC 服务。打包减少了部署与跨进程通信开销，但职责边界仍清晰",
+                    "en": "Three roles logically, one process physically: mixCoordImpl holds all three coordinator impls and the MixCoord interface embeds all three gRPC services. Packaging cuts deployment and cross-process overhead while keeping duties distinct",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "假如把一条 search 的距离计算“顺手”放到协调者上执行，短期看似乎省了一次 RPC。请论证为什么这会破坏整个集群的稳定性，并用本课“三条边界纪律”解释正确做法。",
+                "en": "Suppose you 'conveniently' ran a search's distance computation on a coordinator to save one RPC. Argue why this would wreck cluster stability, and use this lesson's 'three boundary disciplines' to explain the right approach.",
+            },
+        ],
+    },
+    "10-proxy.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "Proxy 的任务调度器把请求分进 ddQueue / dmQueue / dqQueue 三个队列。这种物理隔离的主要目的是什么？",
+                    "en": "The Proxy's task scheduler routes requests into three queues - ddQueue / dmQueue / dqQueue. What is the main purpose of this physical separation?",
+                },
+                "opts": [
+                    {
+                        "zh": "三类操作的排序约束与并发画像不同：DDL 需严格串行，DML/DQL 可高并发；分队列才能各按自己的约束调度，互不拖累",
+                        "en": "The three kinds have different ordering constraints and concurrency profiles: DDL must be strictly serial, DML/DQL can be highly concurrent; separate queues let each schedule under its own rules without dragging the others",
+                    },
+                    {"zh": "为了让三类请求共享同一把全局锁", "en": "To make the three kinds share one global lock"},
+                    {"zh": "为了把向量数据缓存在 Proxy 内存里", "en": "To cache vector data in the Proxy's memory"},
+                    {"zh": "因为 gRPC 要求每种方法独占一个队列", "en": "Because gRPC requires each method to own a queue"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "DDL（建删表）必须串行以保证结构唯一；DML/DQL 追求高并发与低延迟。把不同排序与并发画像的任务物理隔离，各队列按自身约束调度，是稳定与性能的前提（另有 dcQueue 管 flush）",
+                    "en": "DDL must be serial to keep structure single-versioned; DML/DQL want high concurrency and low latency. Isolating tasks of different ordering/concurrency profiles lets each queue schedule under its own constraint - essential for stability and speed (a dcQueue also handles flush)",
+                },
+            },
+            {
+                "q": {
+                    "zh": "为什么说 Proxy 是 Milvus 里“最易扩展的一环”？",
+                    "en": "Why is the Proxy called 'the most easily scaled' part of Milvus?",
+                },
+                "opts": [
+                    {
+                        "zh": "因为它无状态——不持有段或索引，只做校验/分派/归并；可像 Web 服务器一样随意加减实例，前面挂个负载均衡即可",
+                        "en": "Because it is stateless - it holds no segments or indexes, only validates/dispatches/reduces; instances can be added or removed like web servers behind a load balancer",
+                    },
+                    {"zh": "因为它把所有数据都存在本地磁盘上", "en": "Because it stores all data on its local disk"},
+                    {"zh": "因为它运行在协调者进程内部", "en": "Because it runs inside the coordinator process"},
+                    {"zh": "因为它不需要鉴权与限流", "en": "Because it needs no auth or rate limiting"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "无状态是横向扩展的钥匙：Proxy 不持有用户数据，任何实例都能处理任何请求，于是可任意增减、负载均衡。这正呼应第 9 课“承载吞吐≠持有状态”的区分",
+                    "en": "Statelessness is the key to horizontal scaling: holding no user data, any Proxy instance can serve any request, so instances scale freely behind a balancer. This echoes Lesson 9's 'carries throughput is not holds state'",
+                },
+            },
+            {
+                "q": {
+                    "zh": "一条 search 请求在 Proxy 这里如何被处理成最终结果？",
+                    "en": "How is a search request turned into a final result at the Proxy?",
+                },
+                "opts": [
+                    {
+                        "zh": "扇出（fan-out）到负责各分片的 QueryNode 各算局部 topK，再汇总回 Proxy 归并（reduce）成全局 topK",
+                        "en": "Fan-out to the QueryNodes owning each shard, each computes a local topK, then results are gathered back at the Proxy and reduced into a global topK",
+                    },
+                    {"zh": "Proxy 自己在内存里扫描全部向量算出 topK", "en": "The Proxy scans all vectors in its own memory to compute topK"},
+                    {"zh": "请求被转给 RootCoord 执行检索", "en": "The request is handed to RootCoord to run the search"},
+                    {"zh": "只查询第一个分片，忽略其余", "en": "Only the first shard is queried and the rest ignored"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "分布式检索是“扇出—归并”：每个分片只看局部数据，算出局部 topK，Proxy 作为汇合点把它们正确合并成全局 topK，慢的那个分片决定整体延迟（reduce 细节见第 29 课）",
+                    "en": "Distributed search is fan-out then reduce: each shard sees only local data and computes a local topK; the Proxy is the meeting point that merges them into a global topK, and the slowest shard sets the latency (reduce details in Lesson 29)",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "客户端要求“强一致”读（读到此刻为止的所有写入）。请说明 Proxy 如何用“保证时间戳（guarantee timestamp）”把这个要求传达给 QueryNode，以及它和一致性级别、延迟之间的取舍。",
+                "en": "A client demands a 'strong' read (sees all writes up to now). Explain how the Proxy conveys this to QueryNodes via a 'guarantee timestamp', and the trade-off among consistency level, freshness, and latency.",
+            },
+        ],
+    },
+    "11-rootcoord.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "为什么 TSO 时间戳必须由 RootCoord 这“唯一一处”发放，而不能让各节点本地生成？",
+                    "en": "Why must TSO timestamps be issued by RootCoord as 'the single point', rather than generated locally by each node?",
+                },
+                "opts": [
+                    {
+                        "zh": "唯一发放才能保证全局单调递增、互不冲突，给分布式事件一条统一时间线；本地各生成会乱序、撞号，破坏因果",
+                        "en": "A single issuer guarantees globally monotonic, non-conflicting timestamps - one unified timeline for distributed events; local generation would reorder and collide, breaking causality",
+                    },
+                    {"zh": "因为本地时钟比 RootCoord 更快", "en": "Because local clocks are faster than RootCoord"},
+                    {"zh": "因为时间戳必须等于墙上时钟的精确值", "en": "Because timestamps must equal the exact wall-clock value"},
+                    {"zh": "因为节点没有访问 etcd 的权限", "en": "Because nodes have no permission to access etcd"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "全局唯一、单调递增的时间线是分布式排序与一致性的基础。集中发放才能保证这一点；TSO 概念上是“物理时间+逻辑计数”的 64 位混合值，单点发放并不成为瓶颈（靠批量）",
+                    "en": "A globally unique, monotonic timeline underpins distributed ordering and consistency. Only a central issuer guarantees it; TSO is conceptually a 64-bit 'physical time + logical counter' hybrid, and a single issuer is no bottleneck thanks to batching",
+                },
+            },
+            {
+                "q": {
+                    "zh": "RootCoord 发放 TSO/ID 时用“批量取一段 + 高水位持久化”，这种设计同时换来了什么？",
+                    "en": "RootCoord issues TSO/ID with 'allocate a batch + persist a high watermark'. What does this design buy at once?",
+                },
+                "opts": [
+                    {
+                        "zh": "既快又防回退：内存内快速发放整段，只把高水位写 etcd；崩溃重启从高水位继续，绝不发出已用过的值",
+                        "en": "Both fast and rollback-proof: hand out a whole batch from memory, persisting only the high watermark to etcd; after a crash it resumes from the watermark and never reissues a used value",
+                    },
+                    {"zh": "每发一个 ID 都同步写一次 etcd，保证绝对精确", "en": "Persist to etcd on every single ID for absolute precision"},
+                    {"zh": "让 ID 可以回退以复用旧值", "en": "Lets IDs roll back to reuse old values"},
+                    {"zh": "把发放工作下放给每个 DataNode", "en": "Delegates issuance to each DataNode"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "逐个持久化太慢，纯内存又会在重启后回退。批量分配让发放走内存极快，高水位持久化保证崩溃后不回退、不重复。这是“性能 vs 安全”的经典折中",
+                    "en": "Per-value persistence is too slow; pure in-memory rolls back on restart. Batch allocation keeps issuance in-memory fast, while the persisted high watermark prevents rollback and duplication after a crash - a classic performance-vs-safety trade-off",
+                },
+            },
+            {
+                "q": {
+                    "zh": "为什么所有 DDL（建/删集合、分区、别名、库）都要收口到 RootCoord 串行登记？",
+                    "en": "Why must all DDL (create/drop collection, partition, alias, database) funnel through RootCoord for serial registration?",
+                },
+                "opts": [
+                    {
+                        "zh": "串行登记保证集合结构只有一个权威版本，避免并发改结构产生冲突；元数据落 IMetaTable，背靠 etcd 持久化、启动回放",
+                        "en": "Serial registration guarantees one authoritative version of the structure, avoiding conflicts from concurrent schema changes; metadata lands in IMetaTable, persisted to etcd and replayed on startup",
+                    },
+                    {"zh": "因为 DDL 比 DML 更耗 CPU", "en": "Because DDL is more CPU-heavy than DML"},
+                    {"zh": "因为只有 RootCoord 能访问对象存储", "en": "Because only RootCoord can access object storage"},
+                    {"zh": "因为 DDL 必须绕过 etcd", "en": "Because DDL must bypass etcd"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "结构（schema）必须唯一权威，否则两个并发建表/改表会互相覆盖。单点串行登记是最简单可靠的保证；元数据持久化在 etcd，重启回放重建内存视图",
+                    "en": "The schema must be singly authoritative, or two concurrent DDLs would clobber each other. A single serial registrar is the simplest reliable guarantee; metadata persisted in etcd is replayed to rebuild the in-memory view on restart",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "RootCoord 是“唯一、权威、串行”的点，听起来像单点瓶颈与单点故障。请结合“批量发放”“MixCoord 多副本/选主”“etcd 持久化”三点，论证为什么它在实践中既不慢也不脆。",
+                "en": "RootCoord is a 'single, authoritative, serial' point, which sounds like a bottleneck and a single point of failure. Using 'batch issuance', 'MixCoord replicas/leader election', and 'etcd persistence', argue why it is in practice neither slow nor fragile.",
+            },
+        ],
+    },
+    "12-datacoord.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "DataCoord 维护的段状态机大致是怎样的？谁来执行真正的落盘与合并？",
+                    "en": "What is DataCoord's segment state machine roughly, and who actually performs the flush and compaction?",
+                },
+                "opts": [
+                    {
+                        "zh": "Growing → Sealed → Flushing → Flushed →（Dropped）；DataCoord 只分配段、记账状态流转，落盘/合并/建索引交给 datanode worker 执行",
+                        "en": "Growing → Sealed → Flushing → Flushed → (Dropped); DataCoord only allocates segments and bookkeeps transitions, while flush/compaction/index-build run on datanode workers",
+                    },
+                    {"zh": "段只有“存在”和“删除”两态，由 Proxy 执行落盘", "en": "Segments have only 'exists' and 'deleted', and the Proxy flushes them"},
+                    {"zh": "DataCoord 自己执行所有落盘与合并", "en": "DataCoord itself performs all flush and compaction"},
+                    {"zh": "段状态由每个 QueryNode 各自决定", "en": "Each QueryNode decides segment state on its own"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "决策与执行分离：DataCoord 是写入侧的总调度，维护 SegmentState_* 状态机并分配段，但真正的 IO（落盘、compaction、建索引）由 datanode worker 干。这正是控制面/数据面分工的体现",
+                    "en": "Decide vs execute: DataCoord is the write-side scheduler maintaining the SegmentState_* machine and allocating segments, but the real IO (flush, compaction, index build) runs on datanode workers - the control/data plane split in action",
+                },
+            },
+            {
+                "q": {
+                    "zh": "关于“索引构建”，下面哪条符合当前 Milvus 的真实架构？",
+                    "en": "Regarding 'index building', which statement matches Milvus's actual current architecture?",
+                },
+                "opts": [
+                    {
+                        "zh": "没有独立的 indexnode；索引构建 worker 已并入 datanode（DataNodeClient 内嵌 IndexNodeClient），由 DataCoord 调度",
+                        "en": "There is no standalone indexnode; the index-build worker is folded into the datanode (DataNodeClient embeds IndexNodeClient), scheduled by DataCoord",
+                    },
+                    {"zh": "有一个独立的 indexnode 进程专门建索引", "en": "A dedicated standalone indexnode process builds indexes"},
+                    {"zh": "索引由 Proxy 在返回结果前临时构建", "en": "Indexes are built ad hoc by the Proxy before returning results"},
+                    {"zh": "索引由 etcd 负责构建与存储", "en": "Indexes are built and stored by etcd"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "这是常见误解的纠正点：Milvus 已没有独立 indexnode，构建 worker 并入 datanode，DataCoord 负责调度。索引文件最终存对象存储，元数据记录其引用",
+                    "en": "A common-misconception fix: Milvus has no standalone indexnode; the build worker is merged into the datanode and DataCoord schedules it. Index files end up in object storage, with metadata recording their reference",
+                },
+            },
+            {
+                "q": {
+                    "zh": "“Flushed 即不可变”意味着删除和更新如何实现？",
+                    "en": "'Flushed means immutable' - so how are deletes and updates implemented?",
+                },
+                "opts": [
+                    {
+                        "zh": "落盘后的段只读；删除/更新以新写入 + delta 形式追加，查询时再合并——只追加、不就地改",
+                        "en": "A flushed segment is read-only; deletes/updates are appended as new writes + deltas and merged at query time - append-only, never in-place edits",
+                    },
+                    {"zh": "直接打开旧 binlog 就地覆盖对应行", "en": "Open the old binlog and overwrite the row in place"},
+                    {"zh": "删除会立刻物理擦除整个段", "en": "A delete instantly physically erases the whole segment"},
+                    {"zh": "更新要求先把段状态退回 Growing", "en": "An update requires reverting the segment back to Growing"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "不可变 + 只追加是第 7 课“日志即数据”的延续：删除记 delta、更新写新值，查询时合并生效；compaction 在后台把小段与 delete 整理掉，用后台整理换前台查询轻快",
+                    "en": "Immutable + append-only continues Lesson 7's 'log-as-data': deletes record deltas, updates write new values, merged at query time; compaction tidies small segments and deletes in the background, trading background work for a lighter foreground query",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "段太小太多会拖慢查询，compaction 能合并它们却要消耗 IO 与 CPU。请设计你心中的 compaction 触发策略（按段数、按大小、按 delete 比例……），并说明它如何平衡“前台查询轻快”与“后台开销可控”。",
+                "en": "Too many tiny segments slow queries; compaction merges them but burns IO and CPU. Design your own compaction trigger policy (by segment count, by size, by delete ratio...) and explain how it balances 'a light foreground query' against 'bounded background cost'.",
+            },
+        ],
+    },
+    "13-querycoord.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "QueryCoordV2 的世界从“load”开始。为什么“存了”不等于“能查”？",
+                    "en": "QueryCoordV2's world starts at 'load'. Why does 'stored' not equal 'searchable'?",
+                },
+                "opts": [
+                    {
+                        "zh": "段与索引必须被加载进 QueryNode 内存才可检索；load 把数据搬进内存，release 再把内存还回去",
+                        "en": "Segments and indexes must be loaded into QueryNode memory to be retrievable; load brings data into memory, release returns it",
+                    },
+                    {"zh": "因为对象存储默认禁止读取", "en": "Because object storage forbids reads by default"},
+                    {"zh": "因为查询必须先经过 DataCoord 审批", "en": "Because queries must first be approved by DataCoord"},
+                    {"zh": "因为存储后的段会自动加密，需解密才可查", "en": "Because stored segments are auto-encrypted and need decryption to query"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "检索发生在 QueryNode 内存里。落盘只是“持久化”，要可查必须把段与索引加载进内存。load/release 就是这层“可检索性”的开关，也是 QueryCoord 调度的起点",
+                    "en": "Search happens in QueryNode memory. Flushing only persists; to be searchable, segments and indexes must be loaded into memory. load/release toggles this 'searchability' and is the starting point of QueryCoord's scheduling",
+                },
+            },
+            {
+                "q": {
+                    "zh": "QueryCoordV2 健壮性的核心是“distribution 向 target 收敛”。这句话最准确的含义是？",
+                    "en": "The core of QueryCoordV2's robustness is 'distribution converges to target'. What does this most precisely mean?",
+                },
+                "opts": [
+                    {
+                        "zh": "target=期望布局，distribution=实际已加载状态；observer 持续比对并纠偏，让实际不断逼近期望——声明终态、持续校正",
+                        "en": "target = desired layout, distribution = actual loaded state; observers continually compare and correct so the actual keeps approaching the desired - declare the end state, keep correcting",
+                    },
+                    {"zh": "把所有段一次性加载到一个节点上", "en": "Load all segments onto one node at once"},
+                    {"zh": "distribution 是配置文件，target 是运行日志", "en": "distribution is a config file, target is a runtime log"},
+                    {"zh": "两者必须时刻完全相等，否则集群停机", "en": "The two must always be exactly equal or the cluster halts"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "这是声明式调度：你描述“想要的终态（target）”，系统观测“实际状态（distribution）”并持续纠偏。节点崩溃、负载倾斜都靠这套收敛自动修复，而非一次性命令式操作",
+                    "en": "This is declarative scheduling: you describe the desired end state (target), and the system observes the actual state (distribution) and continually corrects. Node crashes and skew are auto-healed by convergence, not one-shot imperative commands",
+                },
+            },
+            {
+                "q": {
+                    "zh": "QueryCoordV2 用“副本（replica）”买到了什么，代价是什么？",
+                    "en": "What do 'replicas' buy QueryCoordV2, and at what cost?",
+                },
+                "opts": [
+                    {
+                        "zh": "同一集合在不同节点各加载一份，换来高可用（一份挂了还有别份）与吞吐（并行分担查询），代价是 N 倍内存",
+                        "en": "The same collection loaded once each on different nodes, buying HA (one dies, others survive) and throughput (parallel query sharing), at the cost of N times the memory",
+                    },
+                    {"zh": "把数据压缩以省内存，但会降低召回", "en": "Compresses data to save memory but lowers recall"},
+                    {"zh": "副本只用于备份，不参与查询", "en": "Replicas are backup-only and never serve queries"},
+                    {"zh": "副本能减少总内存占用", "en": "Replicas reduce total memory usage"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "副本是“以内存换可用性与吞吐”：每份副本独立加载在不同节点，节点死了还有别的副本顶上，多副本还能并行分担查询；代价是内存随副本数线性增长",
+                    "en": "Replicas trade memory for availability and throughput: each replica loads independently on different nodes, so a node death is survived and queries can be shared in parallel; the cost is memory growing linearly with replica count",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "你的集群里某个 QueryNode 反复成为查询热点（CPU 长期顶满），而其它节点很闲。请用“balancer + distribution/target”解释 QueryCoordV2 会如何自动缓解，并说说在什么情况下它仍可能无能为力（需要人为干预）。",
+                "en": "In your cluster one QueryNode keeps becoming a query hotspot (CPU pinned) while others sit idle. Using 'balancer + distribution/target', explain how QueryCoordV2 auto-mitigates this, and when it might still be powerless (needing human intervention).",
+            },
+        ],
+    },
+    "14-metadata-and-coordination.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "一次 CreateCollection 从协调者落到 etcd，要穿过哪几层？每层的角色是什么？",
+                    "en": "From coordinator down to etcd, which layers does a CreateCollection traverse, and what is each layer's role?",
+                },
+                "opts": [
+                    {
+                        "zh": "协调者（业务动词）→ metastore 的 Catalog 接口（翻译成键值语言）→ kv 原语（Save/MultiSave）→ etcd / 对象存储；每下一层更通用、更不懂业务",
+                        "en": "coordinator (business verb) → metastore's Catalog interface (translate to key-value language) → kv primitives (Save/MultiSave) → etcd / object storage; each layer down is more generic, less business-aware",
+                    },
+                    {"zh": "Proxy 直接把 SQL 写进 etcd", "en": "The Proxy writes SQL straight into etcd"},
+                    {"zh": "协调者直接拼 etcd 的 key 并写入，无中间层", "en": "The coordinator hand-assembles etcd keys and writes with no middle layer"},
+                    {"zh": "先写对象存储，再由 etcd 异步同步", "en": "Write object storage first, then etcd syncs asynchronously"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "三层落地：协调者说业务语言，Catalog 翻译成键值语言并拆解对象，kv 提供 Save/MultiSave 等原语，最终写 etcd。每层抽象更通用，故换后端时上层不必改——分层解耦",
+                    "en": "Three layers: coordinators speak business language, Catalog translates and decomposes objects, kv offers Save/MultiSave primitives, finally writing etcd. Each layer is more generic, so swapping the backend leaves upper layers untouched - layered decoupling",
+                },
+            },
+            {
+                "q": {
+                    "zh": "为什么向量 binlog 与索引文件要放对象存储，而不能塞进 etcd？",
+                    "en": "Why must vector binlogs and index files go to object storage rather than being stuffed into etcd?",
+                },
+                "opts": [
+                    {
+                        "zh": "etcd 是 Raft 强一致存储，对单值大小与总量有保守上限；塞大块数据会拖垮 watch 与选主。大块数据应下沉对象存储，etcd 只留路径引用",
+                        "en": "etcd is a Raft strongly-consistent store with conservative caps on value size and total volume; stuffing bulk data drags down watch and leader election. Bulk data should sink to object storage, with etcd keeping only a path reference",
+                    },
+                    {"zh": "对象存储比 etcd 更强一致，所以放大数据", "en": "Object storage is more strongly consistent than etcd, so bulk goes there"},
+                    {"zh": "etcd 不支持二进制，只能存文本", "en": "etcd cannot store binary, only text"},
+                    {"zh": "因为索引文件必须可被 SQL 查询", "en": "Because index files must be SQL-queryable"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "分界依据体量与角色：小而关键、需强一致与 watch 的元数据进 etcd；大而笨重只需可靠存放的数据/索引进对象存储。把强一致用在最该用的地方，别让它为海量数据买单",
+                    "en": "The divide is by size and role: small, critical metadata needing strong consistency and watch goes to etcd; bulky data/index needing only reliable storage goes to object storage. Spend strong consistency where it matters, don't make it pay for massive data",
+                },
+            },
+            {
+                "q": {
+                    "zh": "组件用带租约的 session 注册到 etcd，而不是写一个 alive=true 标记。这种“租约+续约”设计的关键好处是？",
+                    "en": "Components register a leased session in etcd instead of writing an alive=true flag. What is the key benefit of this 'lease + renewal' design?",
+                },
+                "opts": [
+                    {
+                        "zh": "它把“活着”变成需要持续续约才能维持的状态；进程被 kill-9 或断电时心跳一停，租约到期 etcd 自动清记录，无需任何人善后",
+                        "en": "It makes 'alive' a state that must be continually renewed; on kill-9 or power loss the heartbeat stops, the lease expires, and etcd auto-purges the record with no cleanup by anyone",
+                    },
+                    {"zh": "它让 session 里直接存下查询数据以加速", "en": "It stores query data inside the session to speed things up"},
+                    {"zh": "它要求每个节点退出前必须手动注销", "en": "It requires every node to manually deregister before exit"},
+                    {"zh": "它使 search 流量改为经过 etcd 中转", "en": "It routes search traffic through etcd"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "“故障即默认”：系统假设节点随时可能突然失联，没人有机会改标记。租约让活着成为需要不断证明的例外，心跳停则记录自动消失。session 存的是地址不是数据，流量仍走直连",
+                    "en": "'Failure is the default': the system assumes a node may vanish suddenly with no chance to flip a flag. A lease makes being alive an exception that must be continually proven; stop the heartbeat and the record auto-vanishes. A session stores an address, not data; traffic still goes direct",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "“watch 是通知，不是真相。”请解释这句话：当协调者的 watch 因网络抖动断开重连、中间漏掉若干事件时，Milvus 用什么手段（revision、先全量后增量）保证节点最终仍拿到正确的分配，而不会“漏接活”。",
+                "en": "'Watch is a notification, not the truth.' Explain this: when a coordinator's watch drops and reconnects on a network jitter and misses some events, what mechanisms (revision; full-pull-then-incremental) keep nodes eventually getting the correct assignment without 'missing work'.",
+            },
+        ],
+    },
 }
 
 

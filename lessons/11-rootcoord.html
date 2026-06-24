@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>11 · RootCoord / RootCoord - Milvus 图解教程</title>
+<meta name="description" content="第三部分 · 分布式架构｜RootCoord - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="11 · RootCoord / RootCoord - Milvus 图解教程">
+<meta property="og:description" content="第三部分 · 分布式架构｜RootCoord - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="11 · RootCoord / RootCoord - Milvus 图解教程">
+<meta name="twitter:description" content="第三部分 · 分布式架构｜RootCoord - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第三部分 · 分布式架构</span><span class="lang-en">Part 3 · Distributed architecture</span></span>
+    <span class="pill">11 / 14</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:78%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第三部分 · 分布式架构</span><span class="lang-en">Part 3 · Distributed architecture</span></div>
+    <h1><span class="lang-zh">RootCoord</span><span class="lang-en">RootCoord</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+上一课 Proxy 在排队时反复向"协调者"要一个东西——<strong>全局时间戳</strong>。发这个时间戳的，正是这一课的主角 <strong>RootCoord（根协调者）</strong>。
+它管两件大事：一是所有 <strong>DDL</strong>（建/删集合、分区、别名、数据库）与其背后的<strong>元数据表</strong>；二是给全集群发<strong>时间</strong>与<strong>身份</strong>——
+单调递增的 TSO 时间戳，和全局唯一的 ID。它是整个 Milvus 的"<strong>定序大脑</strong>"。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 生活类比</div>
+  把 RootCoord 想成一个国家的<strong>户籍 + 国家授时中心</strong>。一方面它是<strong>户籍处</strong>：谁出生（建集合）、谁注销（删集合）、改名换户（改 schema / 别名），
+  都要在它那本<strong>总账（元数据表）</strong>上登记，登记完才算数。另一方面它是<strong>授时台</strong>：全国所有钟表都对它报时——它发出的时间<strong>只增不减、绝不重复</strong>，
+  于是天南海北发生的事都能排出一个公认的先后。它还兼着<strong>发证件号</strong>：每个新生事物都领一个全国唯一的编号。<strong>登记、授时、发号</strong>——一个机构，三件大事。
+</div>
+
+<h2>第一件大事：DDL 与元数据表</h2>
+<p>当你 <span class="mono">create_collection</span>、加一个分区、建一个别名，或者新建一个 database，这些都属于 <strong>DDL（数据定义语言）</strong>。
+它们改变的不是数据本身，而是<strong>数据的结构与身份</strong>——集合有哪些字段、主键是谁、向量多少维、分了几个分区。这类信息必须有一份<strong>权威、持久、唯一</strong>的记录，
+否则整个集群就会对"集合长什么样"各执一词。RootCoord 持有的这份记录，就叫<strong>元数据表（meta table）</strong>，接口名是 <span class="inline">IMetaTable</span>。</p>
+
+<p>为什么 DDL 一定要集中到 RootCoord 一处串行处理？因为结构变更<strong>天然怕并发</strong>。设想两个客户端同时给同一个集合改 schema、或一个在建分区另一个在删集合——
+若各改各的，元数据就会自相矛盾，后端节点读到的"集合定义"也会随之分裂。把所有 DDL 收口到一个大脑、按序落账，是保证<strong>结构一致性</strong>最朴素也最可靠的办法。
+这也呼应了上一课 Proxy 把 DDL 单独排进 <span class="mono">ddQueue</span> 并严格串行的设计——两端配合，才守住了"结构永远只有一个版本"的底线。</p>
+
+<p>你可能会担心：所有 DDL 都串行，会不会太慢？在实践中并不会成为问题，因为 DDL 是<strong>低频但高价值</strong>的操作——一个集合的 schema 一旦定下，往往几个月都不会改一次，
+真正高频的是 insert 与 search 这类数据面操作，而它们走的是完全不同的并发路径（上一课的 dmQueue / dqQueue）。把"罕见但必须正确"的事情做成严格串行，把"频繁且可并行"的事情放开并发，
+这种<strong>按频率与一致性要求分而治之</strong>的设计哲学，贯穿了整个 Milvus。RootCoord 甘当 DDL 的"独木桥"，正是因为这座桥本来就没多少人走，却必须保证每个过桥的人都不会摔下去。</p>
+
+<p>元数据表本身并不把数据存在内存里就算完，它<strong>背靠持久化</strong>：每一次登记最终都要写进 etcd（下节会展开"存在哪"）。RootCoord 启动时会从持久层把全量元数据<strong>回放</strong>到内存，
+之后内存里的这份既是<strong>读缓存</strong>（Proxy 频繁来问"集合 A 的 ID 和 schema 是什么"），又随每次 DDL <strong>同步落盘</strong>。于是即便 RootCoord 进程重启，集合定义也不会丢——
+这正是"元数据"与"数据"在可靠性上享受同等待遇的体现。</p>
+
+<p>我们用一次最常见的 <span class="mono">create_collection</span> 把这条登记链路走一遍，你会看到 RootCoord 的三件大事其实在一个动作里就<strong>同时上场</strong>了：要发号、要定序、要落账。
+这也解释了为什么"建一张表"看起来只是一行 SDK 调用，背后却牵动着整个定序大脑。</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Proxy 收到 DDL</h4><p>客户端 <span class="mono">create_collection</span> 经 Proxy 校验后，进 <span class="mono">ddQueue</span> 严格串行。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>发号</h4><p class="mono">idAllocator.Alloc</p><p>RootCoord 给新集合分配一个全局唯一的 collectionID。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>定序</h4><p class="mono">tsoAllocator</p><p>取一个 TSO 时间戳，标定这次结构变更在全局时间线上的位置。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>登记落账</h4><p>把集合定义写进 <span class="mono">IMetaTable</span>，并经 catalog/kv 持久化到 etcd。</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>广播</h4><p>把这条 DDL 经流式通道有序播给相关节点，让它们更新各自视图。</p></div></div>
+</div>
+
+<p>这条链路里最值得记住的，是"<strong>发号 → 定序 → 落账 → 广播</strong>"这四步的顺序与配合：先有唯一身份，再有时间位置，然后才把它写成权威记录，最后才让全集群知道。
+任何一步出问题，集群对"这个集合是谁、什么时候建的、长什么样"的认知就会出现裂缝。RootCoord 把这四步牢牢串在一处、按序完成，正是它"权威"二字的分量所在。</p>
+
+<table class="t">
+  <tr><th>职责</th><th>对应机制</th><th>接口 / 文件</th></tr>
+  <tr><td>建/删集合、分区、别名、库</td><td>DDL 串行登记</td><td class="mono">IMetaTable</td></tr>
+  <tr><td>权威元数据的内存视图</td><td>启动回放 + 读缓存</td><td class="mono">MetaTable struct</td></tr>
+  <tr><td>元数据持久化</td><td>写入 etcd（经 catalog/kv）</td><td class="mono">meta_table.go</td></tr>
+  <tr><td>发时间戳</td><td>全局 TSO 分配器</td><td class="mono">tsoAllocator</td></tr>
+  <tr><td>发唯一 ID</td><td>全局 ID 分配器</td><td class="mono">idAllocator</td></tr>
+</table>
+
+<h2>第二件大事：TSO，全集群的统一时钟</h2>
+<p><strong>TSO（Timestamp Oracle，时间戳预言机）</strong>是 RootCoord 最具分量的职责。它对外只承诺一件事，却价值千金：发出的每个时间戳都<strong>全局唯一、单调递增</strong>。
+有了它，分布在不同机器上的写入与查询，就能被放到<strong>同一条时间线</strong>上排出先后——这正是第 3 课讲"时间戳的角色"、第 10 课 Proxy"拿时间戳"的源头。
+没有一个统一时钟，分布式系统就无法回答"这两件事谁先谁后"这个最基本的问题。</p>
+
+<p>这个时间戳在概念上是个<strong>混合值</strong>：高位是物理时间（墙上时钟的毫秒），低位是一个逻辑计数器，两段拼进一个 64 位整数。物理位保证它大致跟着真实时间走，
+逻辑位保证同一毫秒内连发多个也各不相同。你不必记住精确的位宽，只要抓住直觉：<strong>它既像时间、又保证唯一且有序</strong>。正因如此，比较两个时间戳的大小，
+就等于在比较两件事在全局时间线上的先后——这是 Milvus 实现一致性读、读写隔离、以及"读到某个时间点为止的数据"的基石。</p>
+
+<p>TSO 还有一个精妙的工程设计：<strong>批量分配 + 高水位持久化</strong>。RootCoord 并不会每发一个时间戳就写一次 etcd（那样太慢），而是周期性地把一个<strong>高水位（high-water mark）</strong>预先推进并持久化到 etcd，
+之后在这段已被持久化的区间内，发时间戳就是纯内存操作，极快。一个后台 ticker 定时调用 <span class="mono">UpdateTSO</span> 推进并落盘水位。这样既快又<strong>崩溃安全</strong>：
+万一 RootCoord 挂掉重启，它从 etcd 读回的水位一定<strong>大于等于</strong>之前发出去的任何时间戳，于是绝不会发生"重启后发出的时间戳比之前更小"这种致命倒退。</p>
+
+<p>为什么"绝不倒退"这件事如此重要？因为整个 Milvus 的一致性都建立在"时间戳能比大小"这一假设上。查询会带一个<strong>读保证时间戳</strong>，约定"我要读到这个时间点为止的所有写入"；
+写入则各自带着自己的时间戳落进日志。只要时间戳全局单调，节点就能干净利落地判断"哪些写入该被这次查询看见、哪些还太新应被忽略"。一旦时间戳出现倒退或重复，这套判断就会崩塌：
+本该可见的数据被漏掉，或本不该出现的数据提前冒头——一致性就此破功。所以 RootCoord 宁可在持久化上多花一点力气，也要把"单调"这条铁律焊死。这也是为什么授时这件事<strong>只能有一个源头</strong>：
+两个时钟各发各的，永远无法保证全局单调。</p>
+
+<p>这里还藏着一个常见的疑问：既然每次发时间戳都要这么讲究，会不会成为整个集群的瓶颈？答案是不会——恰恰因为有了批量分配，<strong>绝大多数取时间戳的请求都在内存里瞬间完成</strong>，
+只有周期性推进水位才触碰 etcd。换句话说，慢的那一步被摊薄到很低的频率，快的那一步承担了几乎全部流量。这是分布式系统里一种典型的"<strong>把昂贵操作批量化、把廉价操作高频化</strong>"的取舍，
+后面讲段分配、ID 分配时你会反复见到同样的套路。理解了 TSO，就等于拿到了读懂 Milvus 一致性模型的钥匙。</p>
+
+<div class="timeline">
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t1</span><span class="tl-c">Proxy 写入 A 入队，向 RootCoord 取时间戳 ts=100</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t2</span><span class="tl-c">另一台 Proxy 写入 B，取得 ts=101（绝不会再发 100）</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t3</span><span class="tl-c">查询 C 取读保证时间戳 ts=102，可读到 ts&lt;=102 的所有写入</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t4</span><span class="tl-c">后台 ticker 推进高水位并持久化到 etcd（崩溃也不回退）</span></div>
+</div>
+
+<h2>第三件大事：全局唯一 ID</h2>
+<p>除了发时间，RootCoord 还<strong>发号</strong>。集合、分区、段（segment）这些对象都需要一个<strong>全集群唯一</strong>的 64 位 ID 来标识自己。这件事和 TSO 高度同构：
+同样要求唯一、同样为了性能而<strong>批量分配</strong>——一次性从持久层取一段 ID 区间到内存，之后在区间内发号都是内存操作，用完再取下一段。
+于是无论哪台机器、哪个时刻申请，拿到的 ID 都不会撞车。Proxy 要建集合时，就会向 RootCoord 的 <span class="mono">idAllocator.Alloc(count)</span> 一次性领走一批 ID。</p>
+
+<p>你或许会问：为什么不用 UUID 这种本地就能生成的随机 ID？因为 Milvus 需要的不只是"唯一"，还要"<strong>紧凑且可比较</strong>"——64 位整数比 128 位字符串省内存、好索引，递增的序号还天然带一点"谁先创建"的语义。
+集中发号虽然多了一次和 RootCoord 的往返，但凭借批量分配，这次往返被摊薄到几乎可忽略，换来的却是全集群整洁、统一、可排序的身份体系。这又是一处"用一点协调成本换取全局秩序"的典型权衡。</p>
+
+<p>把"发时间"和"发号"放在同一处，并非偶然：它们都需要一个<strong>全局唯一的发号源</strong>，都靠"批量取一段、内存内快速分发、高水位持久化防回退"这套相同的机制。
+RootCoord 正是这两件事天然的归属——它本就是集群里那个"唯一、权威、串行"的点。理解了这一层，你就明白为什么我们叫它"<strong>定序大脑</strong>"：
+集群中关于<strong>时间</strong>与<strong>身份</strong>的最终裁决，都出自这里。</p>
+
+<p>值得点一句的是 TSO 与 ID 在实现上的<strong>同源</strong>：在源码里它们底层共用同一套"全局分配器"的思路，连持久化用的 KV 句柄都是同一个（你会在下面的代码里看到 <span class="mono">tsoKV</span> 同时喂给两个分配器）。
+区别只在于：一个分配的是"会跟着墙上时钟走"的时间戳，一个分配的是"只管递增、不关心物理时间"的纯序号。把它们做成同构的两兄弟，既减少了实现负担，也让"唯一性"这件事有了统一的保证来源。
+对使用者而言，你只需记住：<strong>凡是需要全局唯一标识或全局统一时序的地方，背后都站着 RootCoord 这个发号台</strong>。</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/rootcoord/root_coord.go</span><span class="ln">TSO 与 ID 分配器的装配</span></div>
+  <pre><span class="kw">type</span> Core <span class="kw">struct</span> {
+    <span class="cm">// ...</span>
+    idAllocator  allocator.Interface   <span class="cm">// 全局唯一 ID 分配器</span>
+    tsoAllocator tso2.Allocator        <span class="cm">// 全局 TSO 时间戳分配器</span>
+}
+
+<span class="cm">// 启动时装配：ID 分配器</span>
+idAllocator := allocator.NewGlobalIDAllocator(globalIDAllocatorKey, tsoKV)
+c.idAllocator = idAllocator
+
+<span class="cm">// 装配 TSO 分配器（底层走 tso 包的 GlobalTSOAllocator）</span>
+tsoAllocator := tso2.NewGlobalTSOAllocator(globalTSOAllocatorKey, tsoKV)
+c.tsoAllocator = tsoAllocator
+
+<span class="cm">// 调度器同时拿到这两个分配器，DDL 任务靠它们取号与定序</span>
+c.scheduler = newScheduler(c.ctx, c.idAllocator, c.tsoAllocator)</pre>
+</div>
+
+<h2>DDL 如何传播，以及 RootCoord 住在哪</h2>
+<p>登记完一条 DDL，仅仅写进元数据表还不够——后端的节点也得知道"集合变了"。RootCoord 会把 DDL 通过一条<strong>流式（streaming）通道</strong>广播出去，
+让相关节点按序消费这条结构变更。这条"DDL 走流式日志"的链路本身很有讲究，但它属于后面讲<strong>写路径 / 流式系统</strong>的范畴，这里只需记住一个直觉：
+<strong>DDL 不是改完就完事，而是像一条带时间戳的消息一样，被有序地播给需要它的人</strong>。这样 schema 变更才能在分布式环境下做到"人人最终看到同一个版本、且顺序一致"。</p>
+
+<p>为什么 DDL 也要带时间戳、也要走有序日志？因为结构变更和数据写入在分布式里其实是<strong>同一类问题</strong>：都需要让"先后"成为全局共识。设想一次"给集合加字段"的 DDL 和一批 insert 几乎同时发生，
+节点必须能判断这批数据到底该按旧 schema 还是新 schema 来解释——靠的正是两者各自携带的 TSO 时间戳。于是 DDL 与 DML 在同一条时间线上被统一定序，节点只需老老实实"按时间戳顺序回放"，
+就能得到一个前后一致、人人相同的世界视图。这再次印证了 RootCoord 作为"定序大脑"的核心价值：<strong>它把结构与数据都纳入同一套时序，整个集群才有了统一的因果。</strong></p>
+
+<p>最后别忘了上一课的结论：今天的 RootCoord 并不是一个独立进程，而是和 DataCoord、QueryCoord 一起<strong>跑在 MixCoord 这一个进程里</strong>，扮演其中的"根协调"这一逻辑角色（见第 9 课）。
+所以当我们说"向 RootCoord 要时间戳"，物理上是在和 MixCoord 进程里的那段逻辑通信。把它单独成课，是因为它的<strong>职责边界</strong>清晰且关键：
+谁来定序、谁来发号、谁来守元数据——这三件事，认准 RootCoord 就对了。下一课我们转向写入侧的另一个大脑 <strong>DataCoord</strong>（第 12 课），看段是怎么被分配、封存、落盘的。</p>
+所以当我们说"向 RootCoord 要时间戳"，物理上是在和 MixCoord 进程里的那段逻辑通信。把它单独成课，是因为它的<strong>职责边界</strong>清晰且关键：
+谁来定序、谁来发号、谁来守元数据——这三件事，认准 RootCoord 就对了。下一课我们转向写入侧的另一个大脑 <strong>DataCoord</strong>（第 12 课），看段是怎么被分配、封存、落盘的。</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">Proxy</div><div class="nd">DDL / 取时间戳·ID</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">RootCoord</div><div class="nd">登记·授时·发号</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">元数据表</div><div class="nd">IMetaTable → etcd</div></div>
+  <div class="arrow">＋</div>
+  <div class="node"><div class="nt">流式通道</div><div class="nd">把 DDL 播给节点</div></div>
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  RootCoord 是集群里那个"唯一、权威、串行"的点。它干三件事，且都必须由<strong>一处</strong>来干：登记 DDL（保证集合结构只有一个版本）、发 TSO 时间戳（给全集群一条统一时间线）、发全局唯一 ID（给万物一个不撞车的身份）。
+  时间戳与 ID 都用"批量取一段 + 高水位持久化"换来既快又防回退；元数据则背靠 etcd 持久化、启动回放。它和另两个协调者合住在 MixCoord 进程里——逻辑上独立，物理上同居。
+</div>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>DDL + 元数据</strong>：建/删集合、分区、别名、库都收口到 RootCoord 串行登记，落在 <span class="mono">IMetaTable</span>，背靠 etcd 持久化。</li>
+    <li><strong>TSO 时间戳</strong>：全局唯一、单调递增；概念上是"物理时间 + 逻辑计数"的 64 位混合值，给分布式事件一条统一时间线。</li>
+    <li><strong>批量 + 高水位</strong>：TSO/ID 都批量分配、内存内快速发放，高水位持久化到 etcd，崩溃重启绝不回退。</li>
+    <li><strong>全局 ID</strong>：集合/分区/段的唯一 64 位身份，由 <span class="mono">idAllocator.Alloc</span> 批量发放。</li>
+    <li><strong>住在 MixCoord</strong>：今天 RootCoord 是 MixCoord 进程里的一个逻辑角色（第 9 课），DDL 经流式通道有序广播给节点。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. 为什么 TSO 时间戳必须由 RootCoord 这“唯一一处”发放，而不能让各节点本地生成？</div>
+  <ol class="opts">
+    <li>因为节点没有访问 etcd 的权限</li>
+    <li>因为时间戳必须等于墙上时钟的精确值</li>
+    <li>因为本地时钟比 RootCoord 更快</li>
+    <li>唯一发放才能保证全局单调递增、互不冲突，给分布式事件一条统一时间线；本地各生成会乱序、撞号，破坏因果</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。全局唯一、单调递增的时间线是分布式排序与一致性的基础。集中发放才能保证这一点；TSO 概念上是“物理时间+逻辑计数”的 64 位混合值，单点发放并不成为瓶颈（靠批量）</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. RootCoord 发放 TSO/ID 时用“批量取一段 + 高水位持久化”，这种设计同时换来了什么？</div>
+  <ol class="opts">
+    <li>把发放工作下放给每个 DataNode</li>
+    <li>每发一个 ID 都同步写一次 etcd，保证绝对精确</li>
+    <li>让 ID 可以回退以复用旧值</li>
+    <li>既快又防回退：内存内快速发放整段，只把高水位写 etcd；崩溃重启从高水位继续，绝不发出已用过的值</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。逐个持久化太慢，纯内存又会在重启后回退。批量分配让发放走内存极快，高水位持久化保证崩溃后不回退、不重复。这是“性能 vs 安全”的经典折中</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 为什么所有 DDL（建/删集合、分区、别名、库）都要收口到 RootCoord 串行登记？</div>
+  <ol class="opts">
+    <li>因为只有 RootCoord 能访问对象存储</li>
+    <li>因为 DDL 必须绕过 etcd</li>
+    <li>因为 DDL 比 DML 更耗 CPU</li>
+    <li>串行登记保证集合结构只有一个权威版本，避免并发改结构产生冲突；元数据落 IMetaTable，背靠 etcd 持久化、启动回放</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。结构（schema）必须唯一权威，否则两个并发建表/改表会互相覆盖。单点串行登记是最简单可靠的保证；元数据持久化在 etcd，重启回放重建内存视图</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>RootCoord 是“唯一、权威、串行”的点，听起来像单点瓶颈与单点故障。请结合“批量发放”“MixCoord 多副本/选主”“etcd 持久化”三点，论证为什么它在实践中既不慢也不脆。</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Last lesson the Proxy kept asking a "coordinator" for one thing while queuing — a <strong>global timestamp</strong>. The issuer is this lesson's star, <strong>RootCoord (the root coordinator)</strong>.
+It owns two big jobs: first, all <strong>DDL</strong> (create/drop collection, partition, alias, database) and the <strong>meta table</strong> behind it; second, handing out <strong>time</strong> and <strong>identity</strong> cluster-wide —
+monotonically increasing TSO timestamps and globally unique IDs. It is Milvus's "<strong>ordering brain</strong>."
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of RootCoord as a nation's <strong>civil registry + national time service</strong>. On one hand it is the <strong>registry office</strong>: who is born (create collection), who is deregistered (drop collection), who renames or re-files (alter schema / alias) —
+  all must be entered in its <strong>master ledger (the meta table)</strong>, and only then does it count. On the other hand it is the <strong>time-broadcast tower</strong>: every clock in the country syncs to it — the time it emits <strong>only increases, never repeats</strong>,
+  so events happening anywhere can be ordered into one agreed sequence. It also <strong>issues ID numbers</strong>: every newborn thing gets a nationally unique number. <strong>Register, broadcast time, issue numbers</strong> — one office, three big jobs.
+</div>
+
+<h2>Big job one: DDL and the meta table</h2>
+<p>When you <span class="mono">create_collection</span>, add a partition, make an alias, or create a new database, these are all <strong>DDL (data definition language)</strong>.
+They change not the data itself but the <strong>structure and identity of data</strong> — which fields a collection has, who is the primary key, how many dimensions the vector is, how many partitions. Such information needs one <strong>authoritative, durable, unique</strong> record,
+or the whole cluster will disagree on "what the collection looks like." The record RootCoord holds is the <strong>meta table</strong>, whose interface is <span class="inline">IMetaTable</span>.</p>
+
+<p>Why must DDL be funneled to one place and serialized? Because structural changes are <strong>inherently allergic to concurrency</strong>. Imagine two clients altering the same collection's schema at once, or one adding a partition while another drops the collection —
+if each does its own thing, metadata contradicts itself and the "collection definition" backend nodes read splits too. Funneling all DDL into one brain and booking it in order is the simplest, most reliable way to guarantee <strong>structural consistency</strong>.
+This echoes last lesson's design where the Proxy queues DDL into <span class="mono">ddQueue</span> and runs it strictly serially — both ends cooperate to keep "there is only ever one version of the structure."</p>
+
+<p>You might worry: if all DDL is serial, isn't it too slow? In practice it's not a problem, because DDL is a <strong>low-frequency but high-value</strong> operation — once a collection's schema is set, it often won't change for months;
+the truly high-frequency operations are data-plane ones like insert and search, which travel a completely different concurrent path (last lesson's dmQueue / dqQueue). Making "rare but must-be-correct" things strictly serial, and letting "frequent and parallelizable" things run concurrently,
+this design philosophy of <strong>divide-and-conquer by frequency and consistency requirement</strong> runs through all of Milvus. RootCoord willingly serves as DDL's "single-file bridge" precisely because few cross that bridge, yet every crosser must be guaranteed not to fall off.</p>
+
+<p>The meta table isn't done by just keeping things in memory; it is <strong>backed by persistence</strong>: every registration eventually writes to etcd (the next lesson covers "where things live"). On startup RootCoord <strong>replays</strong> the full metadata from the persistent layer into memory,
+and that in-memory copy then serves both as a <strong>read cache</strong> (the Proxy frequently asks "what is collection A's ID and schema") and as something kept <strong>in sync to disk</strong> on each DDL. So even if RootCoord restarts, collection definitions aren't lost —
+this is exactly how "metadata" enjoys the same reliability treatment as "data."</p>
+
+<p>Let's walk one most-common <span class="mono">create_collection</span> through this registration path; you'll see RootCoord's three big jobs all <strong>take the stage at once</strong> within a single action: issue a number, fix an order, book the record.
+This also explains why "creating a table" looks like one SDK call yet stirs the entire ordering brain behind the scenes.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Proxy receives DDL</h4><p>client <span class="mono">create_collection</span>, after Proxy checks, enters <span class="mono">ddQueue</span> strictly serially.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Issue number</h4><p class="mono">idAllocator.Alloc</p><p>RootCoord allocates a globally unique collectionID for the new collection.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Fix order</h4><p class="mono">tsoAllocator</p><p>get a TSO timestamp to mark this structural change's place on the global timeline.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Book the record</h4><p>write the collection definition into <span class="mono">IMetaTable</span>, persisted to etcd via catalog/kv.</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>Broadcast</h4><p>deliver this DDL in order over the streaming channel so nodes update their views.</p></div></div>
+</div>
+
+<p>What's most worth remembering here is the order and cooperation of "<strong>issue number → fix order → book record → broadcast</strong>": first a unique identity, then a position in time, then writing it as an authoritative record, and only then letting the whole cluster know.
+If any step goes wrong, the cluster's understanding of "who this collection is, when it was created, what it looks like" cracks. RootCoord chaining these four steps in one place, in order, is precisely the weight behind the word "authoritative."</p>
+
+<table class="t">
+  <tr><th>Responsibility</th><th>Mechanism</th><th>Interface / file</th></tr>
+  <tr><td>Create/drop collection, partition, alias, db</td><td>Serialized DDL registration</td><td class="mono">IMetaTable</td></tr>
+  <tr><td>Authoritative in-memory metadata view</td><td>Startup replay + read cache</td><td class="mono">MetaTable struct</td></tr>
+  <tr><td>Metadata persistence</td><td>Write to etcd (via catalog/kv)</td><td class="mono">meta_table.go</td></tr>
+  <tr><td>Issue timestamps</td><td>Global TSO allocator</td><td class="mono">tsoAllocator</td></tr>
+  <tr><td>Issue unique IDs</td><td>Global ID allocator</td><td class="mono">idAllocator</td></tr>
+</table>
+
+<h2>Big job two: TSO, the cluster's unified clock</h2>
+<p><strong>TSO (Timestamp Oracle)</strong> is RootCoord's weightiest job. It promises one thing, but a priceless one: every timestamp it emits is <strong>globally unique and monotonically increasing</strong>.
+With it, writes and queries scattered across machines can be placed on <strong>one timeline</strong> and ordered — exactly the source of Lesson 3's "role of timestamps" and Lesson 10's Proxy "getting a timestamp."
+Without a unified clock, a distributed system cannot answer the most basic question: "which of these two events came first?"</p>
+
+<p>This timestamp is conceptually a <strong>hybrid value</strong>: the high bits are physical time (wall-clock milliseconds), the low bits a logical counter, packed into one 64-bit integer. The physical part keeps it roughly tracking real time,
+the logical part keeps many emitted in the same millisecond distinct. You needn't memorize exact bit widths; just grasp the intuition: <strong>it acts like time yet guarantees uniqueness and order</strong>. Hence comparing two timestamps
+equals comparing the order of two events on the global timeline — the cornerstone for Milvus's consistent reads, read/write isolation, and "data up to a given point in time."</p>
+
+<p>TSO also has an elegant engineering design: <strong>batch allocation + high-water-mark persistence</strong>. RootCoord does not write etcd for each timestamp (too slow); instead it periodically advances and persists a <strong>high-water mark</strong> to etcd,
+after which, within that already-persisted range, issuing timestamps is pure in-memory work — very fast. A background ticker periodically calls <span class="mono">UpdateTSO</span> to advance and flush the mark. This is both fast and <strong>crash-safe</strong>:
+if RootCoord dies and restarts, the mark it reads back from etcd is always <strong>greater than or equal to</strong> any timestamp previously issued, so the fatal regression "timestamps after restart are smaller than before" can never happen.</p>
+
+<p>Why is "never regress" so important? Because all of Milvus's consistency rests on the assumption that "timestamps can be compared." A query carries a <strong>read-guarantee timestamp</strong>, agreeing "I want to read all writes up to this point";
+writes each fall into the log carrying their own timestamps. As long as timestamps are globally monotonic, a node can cleanly decide "which writes this query should see, and which are too new and should be ignored." Once timestamps regress or repeat, that decision collapses:
+data that should be visible gets missed, or data that shouldn't appear surfaces early — and consistency breaks. So RootCoord would rather spend a bit more on persistence than let the iron law of "monotonic" slip. This is also why time-issuing <strong>can have only one source</strong>:
+two clocks each issuing their own can never guarantee global monotonicity.</p>
+
+<p>A common question lurks here: if issuing each timestamp is so careful, won't it become the cluster's bottleneck? The answer is no — precisely because of batch allocation, <strong>the vast majority of timestamp requests complete instantly in memory</strong>,
+and only the periodic mark advance touches etcd. In other words, the slow step is amortized down to a very low frequency, while the fast step carries nearly all the traffic. This is a classic distributed-systems trade-off — "<strong>batch the expensive operation, make the cheap operation high-frequency</strong>" —
+and you'll see the same pattern again when we cover segment allocation and ID allocation. Grasp TSO and you hold the key to reading Milvus's consistency model.</p>
+
+<div class="timeline">
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t1</span><span class="tl-c">Proxy enqueues write A, gets timestamp ts=100 from RootCoord</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t2</span><span class="tl-c">Another Proxy writes B, gets ts=101 (100 is never reissued)</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t3</span><span class="tl-c">Query C gets read-guarantee ts=102, reads all writes with ts&lt;=102</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t4</span><span class="tl-c">Background ticker advances the high-water mark and persists to etcd (no regression on crash)</span></div>
+</div>
+
+<h2>Big job three: globally unique IDs</h2>
+<p>Besides handing out time, RootCoord <strong>hands out numbers</strong>. Collections, partitions, segments — each needs a <strong>cluster-wide unique</strong> 64-bit ID to identify itself. This is highly isomorphic to TSO:
+also required to be unique, also <strong>batch-allocated</strong> for performance — fetch a range of IDs from the persistent layer into memory at once, then issue within that range as pure in-memory work, fetching the next range when exhausted.
+So whatever machine, whatever moment requests, the IDs never collide. When the Proxy wants to create a collection it grabs a batch from RootCoord's <span class="mono">idAllocator.Alloc(count)</span> in one shot.</p>
+
+<p>You might ask: why not use locally generated random IDs like UUIDs? Because Milvus needs more than "unique" — it needs "<strong>compact and comparable</strong>": a 64-bit integer saves memory and indexes better than a 128-bit string, and an increasing sequence number even carries a hint of "who was created first."
+Central issuing adds one round-trip to RootCoord, but thanks to batch allocation that round-trip is amortized to nearly nothing, buying in return a clean, unified, sortable identity system for the whole cluster. Once more, a classic trade-off of "spend a little coordination cost to gain global order."</p>
+
+<p>Putting "issue time" and "issue numbers" in one place is no accident: both need a <strong>globally unique issuing source</strong>, both rely on the same "fetch a range, dispense fast in memory, persist a high-water mark against regression" mechanism.
+RootCoord is their natural home — it is already the cluster's "single, authoritative, serialized" point. Grasp this and you see why we call it the "<strong>ordering brain</strong>":
+the final verdict on <strong>time</strong> and <strong>identity</strong> in the cluster comes from here.</p>
+
+<p>Worth noting is the <strong>shared origin</strong> of TSO and ID in the implementation: in the source they share the same "global allocator" idea underneath, even reusing the same KV handle for persistence (you'll see <span class="mono">tsoKV</span> fed to both allocators in the code below).
+The only difference: one allocates timestamps that "track the wall clock," the other allocates pure sequence numbers that "just increase, indifferent to physical time." Making them isomorphic siblings cuts implementation burden and gives "uniqueness" one unified source of guarantee.
+For users, just remember: <strong>wherever a globally unique identifier or a globally unified ordering is needed, RootCoord the issuing desk stands behind it</strong>.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/rootcoord/root_coord.go</span><span class="ln">Wiring the TSO and ID allocators</span></div>
+  <pre><span class="kw">type</span> Core <span class="kw">struct</span> {
+    <span class="cm">// ...</span>
+    idAllocator  allocator.Interface   <span class="cm">// global unique ID allocator</span>
+    tsoAllocator tso2.Allocator        <span class="cm">// global TSO timestamp allocator</span>
+}
+
+<span class="cm">// At startup: wire the ID allocator</span>
+idAllocator := allocator.NewGlobalIDAllocator(globalIDAllocatorKey, tsoKV)
+c.idAllocator = idAllocator
+
+<span class="cm">// Wire the TSO allocator (backed by the tso package's GlobalTSOAllocator)</span>
+tsoAllocator := tso2.NewGlobalTSOAllocator(globalTSOAllocatorKey, tsoKV)
+c.tsoAllocator = tsoAllocator
+
+<span class="cm">// The scheduler receives both; DDL tasks use them to get numbers and order</span>
+c.scheduler = newScheduler(c.ctx, c.idAllocator, c.tsoAllocator)</pre>
+</div>
+
+<h2>How DDL propagates, and where RootCoord lives</h2>
+<p>Once a DDL is booked, merely writing the meta table isn't enough — backend nodes must also learn "the collection changed." RootCoord broadcasts DDL over a <strong>streaming channel</strong>,
+letting relevant nodes consume the structural change in order. This "DDL over a streaming log" path is itself subtle, but it belongs to a later treatment of the <strong>write path / streaming system</strong>; here just keep one intuition:
+<strong>DDL isn't done once written — like a timestamped message, it is delivered in order to those who need it</strong>. Only then can schema changes achieve, in a distributed setting, "everyone eventually sees the same version, in a consistent order."</p>
+
+<p>Why must DDL also carry a timestamp and travel an ordered log? Because structural change and data write are really <strong>the same kind of problem</strong> in a distributed setting: both need "order" to become global consensus. Imagine an "add a field" DDL and a batch of inserts happening almost simultaneously;
+nodes must decide whether that batch should be interpreted under the old or the new schema — and it's exactly the TSO timestamps each carries that decide. So DDL and DML are uniformly ordered on the same timeline, and a node need only faithfully "replay in timestamp order"
+to reach a self-consistent, identical-for-everyone view of the world. This again confirms RootCoord's core value as the "ordering brain": <strong>by folding both structure and data into one ordering, the whole cluster gains a unified causality.</strong></p>
+
+<p>Finally, recall last lesson's conclusion: today's RootCoord is not a standalone process but <strong>runs inside the single MixCoord process</strong> together with DataCoord and QueryCoord, playing the "root coordination" logical role (see Lesson 9).
+So when we say "ask RootCoord for a timestamp," physically we are talking to that slice of logic inside the MixCoord process. We give it its own lesson because its <strong>responsibility boundary</strong> is clear and critical:
+who orders, who issues numbers, who guards metadata — for these three, look to RootCoord. Next lesson turns to the other write-side brain, <strong>DataCoord</strong> (Lesson 12), to see how segments get allocated, sealed, and flushed.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">Proxy</div><div class="nd">DDL / get time·ID</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">RootCoord</div><div class="nd">register·time·numbers</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">meta table</div><div class="nd">IMetaTable → etcd</div></div>
+  <div class="arrow">＋</div>
+  <div class="node"><div class="nt">streaming</div><div class="nd">broadcast DDL to nodes</div></div>
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 The big picture</div>
+  RootCoord is the cluster's "single, authoritative, serialized" point. It does three things, all of which must be done in <strong>one place</strong>: register DDL (so a collection's structure has only one version), issue TSO timestamps (one unified timeline for the whole cluster), and issue globally unique IDs (a non-colliding identity for everything).
+  Both timestamps and IDs trade "batch a range + persist a high-water mark" for being fast yet regression-proof; metadata is backed by etcd persistence and replayed on startup. It co-lives with the other two coordinators inside the MixCoord process — logically independent, physically cohabiting.
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>DDL + metadata</strong>: create/drop collection, partition, alias, db all funnel to RootCoord for serial registration in <span class="mono">IMetaTable</span>, backed by etcd persistence.</li>
+    <li><strong>TSO timestamps</strong>: globally unique, monotonically increasing; conceptually a 64-bit "physical time + logical counter" hybrid giving distributed events one timeline.</li>
+    <li><strong>Batch + high-water mark</strong>: TSO/ID are batch-allocated and dispensed fast in memory; a high-water mark persisted to etcd prevents any regression on restart.</li>
+    <li><strong>Global IDs</strong>: unique 64-bit identities for collections/partitions/segments, dispensed in batches by <span class="mono">idAllocator.Alloc</span>.</li>
+    <li><strong>Lives in MixCoord</strong>: today RootCoord is a logical role inside the MixCoord process (Lesson 9); DDL is broadcast in order to nodes over a streaming channel.</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Why must TSO timestamps be issued by RootCoord as 'the single point', rather than generated locally by each node?</div>
+  <ol class="opts">
+    <li>Because nodes have no permission to access etcd</li>
+    <li>Because timestamps must equal the exact wall-clock value</li>
+    <li>Because local clocks are faster than RootCoord</li>
+    <li>A single issuer guarantees globally monotonic, non-conflicting timestamps - one unified timeline for distributed events; local generation would reorder and collide, breaking causality</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. A globally unique, monotonic timeline underpins distributed ordering and consistency. Only a central issuer guarantees it; TSO is conceptually a 64-bit 'physical time + logical counter' hybrid, and a single issuer is no bottleneck thanks to batching</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. RootCoord issues TSO/ID with 'allocate a batch + persist a high watermark'. What does this design buy at once?</div>
+  <ol class="opts">
+    <li>Delegates issuance to each DataNode</li>
+    <li>Persist to etcd on every single ID for absolute precision</li>
+    <li>Lets IDs roll back to reuse old values</li>
+    <li>Both fast and rollback-proof: hand out a whole batch from memory, persisting only the high watermark to etcd; after a crash it resumes from the watermark and never reissues a used value</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. Per-value persistence is too slow; pure in-memory rolls back on restart. Batch allocation keeps issuance in-memory fast, while the persisted high watermark prevents rollback and duplication after a crash - a classic performance-vs-safety trade-off</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Why must all DDL (create/drop collection, partition, alias, database) funnel through RootCoord for serial registration?</div>
+  <ol class="opts">
+    <li>Because only RootCoord can access object storage</li>
+    <li>Because DDL must bypass etcd</li>
+    <li>Because DDL is more CPU-heavy than DML</li>
+    <li>Serial registration guarantees one authoritative version of the structure, avoiding conflicts from concurrent schema changes; metadata lands in IMetaTable, persisted to etcd and replayed on startup</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. The schema must be singly authoritative, or two concurrent DDLs would clobber each other. A single serial registrar is the simplest reliable guarantee; metadata persisted in etcd is replayed to rebuild the in-memory view on restart</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>RootCoord is a 'single, authoritative, serial' point, which sounds like a bottleneck and a single point of failure. Using 'batch issuance', 'MixCoord replicas/leader election', and 'etcd persistence', argue why it is in practice neither slow nor fragile.</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="10-proxy.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">Proxy 网关</span><span class="lang-en">The Proxy gateway</span></div></a><a class="next" href="12-datacoord.html"><div class="dir"><span class="lang-zh">下一课 →</span><span class="lang-en">Next →</span></div><div class="ttl"><span class="lang-zh">DataCoord</span><span class="lang-en">DataCoord</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>

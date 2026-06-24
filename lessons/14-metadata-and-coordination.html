@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>14 · 元数据与协调 / Metadata &amp; coordination - Milvus 图解教程</title>
+<meta name="description" content="第三部分 · 分布式架构｜元数据与协调 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="14 · 元数据与协调 / Metadata &amp; coordination - Milvus 图解教程">
+<meta property="og:description" content="第三部分 · 分布式架构｜元数据与协调 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="14 · 元数据与协调 / Metadata &amp; coordination - Milvus 图解教程">
+<meta name="twitter:description" content="第三部分 · 分布式架构｜元数据与协调 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第三部分 · 分布式架构</span><span class="lang-en">Part 3 · Distributed architecture</span></span>
+    <span class="pill">14 / 14</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:100%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第三部分 · 分布式架构</span><span class="lang-en">Part 3 · Distributed architecture</span></div>
+    <h1><span class="lang-zh">元数据与协调</span><span class="lang-en">Metadata &amp; coordination</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+前面五课分别认识了控制面/数据面，以及 Proxy、RootCoord、DataCoord、QueryCoordV2 四个角色。但它们各自心里那张"全局地图"——集合的 schema、段分到哪、谁加载了什么、哪台节点还活着——<strong>到底存在哪、又怎么互相同步</strong>？
+这一课讲的就是把整套架构<strong>粘起来的胶水</strong>：<strong>etcd</strong> 作元数据存储、<strong>session</strong> 做服务发现、<strong>metastore/Catalog</strong> 抽象元数据读写、<strong>kv</strong> 层提供存取原语、<strong>watch</strong> 让协调者派活、节点接活。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 生活类比</div>
+  把元数据系统想成一栋大楼的<strong>物业前台 + 档案室</strong>。<strong>etcd 是前台</strong>：每位住户（组件）一搬进来就在登记簿上写下"我是谁、住哪间、还在不在"，并领一张<strong>会定期续期的门禁卡（租约）</strong>——卡一旦忘了续，前台就知道这人搬走了。
+  <strong>档案室（对象存储）</strong>放的是真正笨重的大件——家具、设备（数据与索引文件）；前台只在登记簿里记一句"3 号库房第 7 排放着谁家的钢琴"，绝不会把钢琴搬到前台。
+  而<strong>Catalog 就是档案管理员</strong>：楼里所有人要存取档案，都得走他这道标准窗口，而不是自己翻库房。
+</div>
+
+<h2>一张总图：元数据从协调者落到 etcd</h2>
+<p>先把这一课要讲的东西摆成一摞，你就不会迷路。最上面是<strong>协调者</strong>——RootCoord/DataCoord/QueryCoord，它们是元数据的<strong>生产者与消费者</strong>：建表要写 schema、分段要记 segment、加载要存 replica。
+它们不直接拼 etcd 的 key，而是调用下一层 <strong>metastore 的 Catalog 接口</strong>，用 <span class="mono">CreateCollection</span>、<span class="mono">AddSegment</span>、<span class="mono">SaveReplica</span> 这样的"业务动词"读写元数据。
+Catalog 再往下，落到 <strong>kv 层</strong>——把"一个 Collection 对象"序列化成"一串 key/value"，调用 <span class="mono">Save</span>/<span class="mono">MultiSave</span>/<span class="mono">LoadWithPrefix</span> 这样的原语。最底层，kv 才真正把字节写进 <strong>etcd</strong>（小而关键的元数据）或把大块数据交给<strong>对象存储</strong>。</p>
+
+<div class="layers">
+  <div class="layer l-core"><div class="lh"><span class="badge">生产/消费</span><span class="name">Coordinators</span></div>
+    <div class="ld">RootCoord/DataCoord/QueryCoord 在做决策时读写元数据：schema、段、索引、副本、加载状态。它们只认"业务动词"，不碰存储细节。</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">抽象接口</span><span class="name">metastore · Catalog</span></div>
+    <div class="ld"><span class="mono">RootCoordCatalog / DataCoordCatalog / QueryCoordCatalog</span>：把"持久化集合/段/副本元数据"抽象成接口，屏蔽底层是 etcd 还是别的后端。</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">存取原语</span><span class="name">kv 层</span></div>
+    <div class="ld"><span class="mono">BaseKV / TxnKV / MetaKv / WatchKV</span>（<span class="mono">pkg/kv/kv.go</span>）：Save/Load/Remove、事务、带租约、可 Watch。实现见 <span class="mono">internal/kv/etcd</span>。</div></div>
+  <div class="layer l-app"><div class="lh"><span class="badge">真正落地</span><span class="name">etcd · 对象存储</span></div>
+    <div class="ld">小而关键的元数据进 etcd（强一致、可 watch）；笨重的向量/索引文件进对象存储，元数据里只留一个引用路径。</div></div>
+</div>
+
+<p>这张图的精髓是一句话：<strong>协调者说"业务语言"，Catalog 翻译成"键值语言"，kv 把它写进 etcd</strong>。每往下一层，抽象就更通用、更不关心业务含义。
+正因为有 Catalog 这道翻译，上层 RootCoord 完全不必知道"一个 collection 在 etcd 里被拆成了多少个 key"；而下层换存储后端（比如 etcd 换成 TiKV）时，上层也一行都不用改。这就是<strong>分层解耦</strong>在元数据系统里的体现。</p>
+
+<p>不妨拿"建一个集合"走一遍全程，感受这条流水线。客户端发来 CreateCollection，Proxy 把它转给 RootCoord；RootCoord 先向自己要一个全局时间戳与若干 ID（第 11 课讲过），把 schema 组装成一个 <span class="mono">model.Collection</span> 领域对象，然后调用 <span class="mono">RootCoordCatalog.CreateCollection(ctx, coll, ts)</span>。
+到了 Catalog，这个对象被<strong>拆解</strong>：集合本身一条 key、每个字段一条 key、每个分区一条 key……再调用 <span class="mono">kv.MultiSave</span> 把这一批 key/value <strong>一次性事务写入</strong> etcd。整条链上，RootCoord 只说了一句"建表"，真正"拆成多少个 key、怎么保证原子性"全被下面两层悄悄消化掉了。这正是好抽象的标志：<strong>上层的意图简单，下层的复杂被封装</strong>。</p>
+
+<h2>etcd 与会话：组件如何互相发现</h2>
+<p>元数据要"存得住"，组件还要"找得到"彼此。第 9 课提过：每个组件启动时调用 <span class="mono">Register()</span>，在 etcd 里写下一条<strong>带租约（lease）</strong>的 session——"我是 querynode-3，gRPC 地址在这里，我还活着"。
+这套实现在 <span class="inline">internal/util/sessionutil/session_util.go</span> 里：<span class="mono">Session</span> 结构体持有一个 <span class="mono">LeaseID</span>，后台 goroutine 不停地 <strong>keepalive 续约</strong>；一旦进程崩溃、心跳停止，租约到期，etcd 自动删掉这条 session 记录。</p>
+
+<p>另一端，协调者调用 <span class="mono">WatchServices</span> 去<strong>监听</strong>这些 session 的前缀目录：有节点上线，立刻收到"新增"事件；有节点掉线（租约过期），收到"删除"事件。
+于是控制面始终握着一份<strong>当前活着的节点清单</strong>，据此分配段、做均衡、在故障时把工作转交别人。这套"<strong>注册 → 续约 → 监听</strong>"就是 Milvus 的服务发现——它和元数据共用同一个 etcd，但承载的是"谁在、在哪"的<strong>瞬时状态</strong>，而非"集合长什么样"的<strong>持久元数据</strong>。</p>
+
+<p>这里要再强调第 9 课那条红线：<strong>session 里存的是"地址"，不是"数据"</strong>。etcd 在这条链路上是"通讯录 + 心跳板"，它告诉你"谁在、在哪"，但真正的 search/insert 流量绝不经过 etcd——那会瞬间把它打爆。组件拿到对方地址后，是<strong>点对点直连 gRPC</strong> 发请求的。控制信息走 etcd、数据流量走直连，这条分界贯穿整个 Milvus。</p>
+
+<p>为什么非要用"租约 + 续约"，而不是简单地写一个 <span class="mono">alive=true</span> 的标记？因为分布式系统里最难处理的不是"优雅退出"，而是"<strong>突然失联</strong>"——进程被 kill -9、机器断电、网线被拔。这些情况下没人有机会去把标记改成 false。
+租约的精妙正在于它<strong>把"活着"变成一件需要持续付出才能维持的事</strong>：只要心跳一停，etcd 自己就会在租约到期时清掉记录，无需任何人善后。这是一种"<strong>故障即默认</strong>"的设计——系统假设节点随时可能消失，活着才是需要不断证明的例外。理解了这一点，你就理解了几乎所有分布式心跳机制背后的同一套哲学。</p>
+
+<p>还有个实用细节值得一提：所有这些 key（元数据也好、session 也好）都挂在一个统一的 <strong>metaRoot 前缀</strong>下（由配置决定，如 <span class="mono">by-dev/meta</span>）。这样同一套 etcd 集群就能<strong>隔离多个 Milvus 实例</strong>——各用各的前缀，互不串扰。这也是为什么源码里到处是 <span class="mono">LoadWithPrefix</span>、<span class="mono">WatchWithPrefix</span>：在 etcd 这种扁平 key/value 空间里，<strong>前缀就是命名空间</strong>，是 Milvus 组织整张元数据图的基本手法。</p>
+
+<h2>metastore 与 Catalog：元数据的"档案接口"</h2>
+<p>现在看核心抽象。<span class="inline">internal/metastore/catalog.go</span> 里定义了几个<strong>按协调者切分</strong>的接口：<span class="mono">RootCoordCatalog</span> 管库/表/分区/别名/凭证/角色；
+<span class="mono">DataCoordCatalog</span> 管段（<span class="mono">ListSegments</span>/<span class="mono">AddSegment</span>/<span class="mono">DropSegment</span>）、channel、索引；<span class="mono">QueryCoordCatalog</span> 管加载信息（<span class="mono">SaveCollection</span>/<span class="mono">SaveReplica</span>/<span class="mono">SaveCollectionTargets</span>）。
+每个方法都是一个<strong>业务动词</strong>，参数是 <span class="mono">model.Collection</span>、<span class="mono">datapb.SegmentInfo</span>、<span class="mono">querypb.Replica</span> 这样的领域对象，而不是裸的字节。</p>
+
+<p>留意这份对称：三个 Catalog 接口恰好对应第 11–13 课的三个协调者。RootCoord 管"有什么"（schema/DDL），DataCoord 管"数据在哪"（段/channel），QueryCoord 管"加载了什么"（副本/target）。
+每个协调者只通过自己那个 Catalog 持久化属于自己的那片世界，三片几乎不重叠。正是这种<strong>干净的分区</strong>，让三个角色能被各自独立推理、也能被打包进同一个 MixCoord 进程而元数据互不踩踏。<strong>Catalog 的三分，正是你早已学过的职责三分在存储层的镜像</strong>。</p>
+
+<p>注意 RootCoordCatalog 的很多方法都带一个 <span class="mono">ts typeutil.Timestamp</span> 参数——这是因为 RootCoord 的元数据是<strong>多版本</strong>的：DDL 操作都挂在一个时间戳上，于是"在某个时间点看到的 schema"可以被精确复现。
+历史上这靠一层"快照 KV（snapshot kv）"实现——把同一个 key 的不同版本按时间戳存成多条记录，读时取"不晚于某时刻"的最新版。它让一致性级别、时间旅行式读取成为可能。今天 Catalog 的具体实现（<span class="mono">internal/metastore/kv/rootcoord</span>）持有一个 <span class="mono">kv.TxnKV</span>，把领域对象拆成 key/value 落进去。</p>
+
+<p>把元数据读写收口到 Catalog 接口，还有一个工程上的大好处：<strong>可测试</strong>。测 RootCoord 的建表逻辑时，你不必真的拉起一个 etcd——给它一个 mock 的 Catalog，或一个内存版 kv（<span class="mono">internal/kv/mem</span>）就行，测试又快又稳。
+这和第 9 课"用接口当可插拔接缝"是同一招：<strong>凡是会触达外部世界（存储、网络）的地方，都用接口隔一道</strong>，于是既能在生产里接真实 etcd，又能在测试里接假实现。你在 Milvus 源码里看到大量 <span class="mono">mock_*.go</span>，很多就是为这些 Catalog/kv 接口自动生成的。<strong>抽象不只是为了优雅，更是为了能被独立验证</strong>。</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/metastore/catalog.go</span><span class="ln">Catalog 接口（节选）</span></div>
+  <pre><span class="cm">// RootCoord 的元数据：库/表/分区，方法带 ts（多版本）</span>
+<span class="kw">type</span> RootCoordCatalog <span class="kw">interface</span> {
+    CreateCollection(ctx, coll *model.Collection, ts Timestamp) <span class="kw">error</span>
+    GetCollectionByID(ctx, dbID, ts Timestamp, id UniqueID) (*model.Collection, <span class="kw">error</span>)
+    DropCollection(ctx, coll *model.Collection, ts Timestamp) <span class="kw">error</span>
+    <span class="cm">// ... 分区、别名、凭证、角色 ...</span>
+}
+
+<span class="cm">// DataCoord 的元数据：段与 channel</span>
+<span class="kw">type</span> DataCoordCatalog <span class="kw">interface</span> {
+    ListSegments(ctx, collectionID <span class="kw">int64</span>) ([]*datapb.SegmentInfo, <span class="kw">error</span>)
+    AddSegment(ctx, segment *datapb.SegmentInfo) <span class="kw">error</span>
+    DropSegment(ctx, segment *datapb.SegmentInfo) <span class="kw">error</span>
+}</pre>
+</div>
+
+<h2>kv 层：Catalog 脚下的存取原语</h2>
+<p>Catalog 再往下踩的是 <span class="inline">pkg/kv/kv.go</span> 里一组<strong>逐层叠加</strong>的接口。最底是 <span class="mono">BaseKV</span>：<span class="mono">Save/Load/Remove/MultiSave/LoadWithPrefix</span> 这些最朴素的增删查。
+往上 <span class="mono">TxnKV</span> 加了<strong>事务</strong>（<span class="mono">MultiSaveAndRemove</span>——多个写和删要么全成、要么全败，这对"改 schema 同时删旧 key"至关重要）。
+再上 <span class="mono">MetaKv</span> 加了<strong>带租约</strong>与 <span class="mono">CompareVersionAndSwap</span>（乐观锁）。最上 <span class="mono">WatchKV</span> 加了 <span class="mono">Watch</span>——这正是服务发现与"派活"机制的底座。</p>
+
+<p>这种"接口套接口"的叠加，和第 9 课的 <span class="mono">Component</span> 是同一种工程审美：<strong>需要多少能力，就依赖到哪一层</strong>。一个只读配置的模块依赖 <span class="mono">BaseKV</span> 就够；
+要做事务的 Catalog 依赖 <span class="mono">TxnKV</span>；要监听变化的服务发现依赖 <span class="mono">WatchKV</span>。实现都在 <span class="mono">internal/kv/etcd</span>（etcd 版）与 <span class="mono">internal/kv/mem</span>（内存版，测试用）。
+下面这段就是从 <span class="mono">BaseKV</span> 一路叠到 <span class="mono">WatchKV</span> 的契约：</p>
+
+<p>这里 <span class="mono">MetaKv</span> 上那个 <span class="mono">CompareVersionAndSwap</span>（比较版本再交换，即 CAS）值得单独点一下：它是<strong>乐观锁</strong>的基础。设想两个协调者副本同时想改同一份元数据，如果各写各的，后写的会悄悄覆盖先写的，造成丢更新。
+CAS 的做法是"<strong>带着我看到的版本号去写</strong>"——只有当 etcd 里的版本仍和我读到的一致时，写才成功；若期间已被别人改过（版本变了），写就失败，调用方需重读重试。这把"先读后写"的竞态挡在了存储层，让上层不必自己加分布式锁。<strong>事务保证一组写的原子性，CAS 保证一次写的不被覆盖</strong>——两者一起，撑起了元数据在并发下的正确性。</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">pkg/kv/kv.go</span><span class="ln">BaseKV → TxnKV → MetaKv → WatchKV</span></div>
+  <pre><span class="cm">// 最朴素的增删查</span>
+<span class="kw">type</span> BaseKV <span class="kw">interface</span> {
+    Load(ctx, key) (<span class="kw">string</span>, <span class="kw">error</span>)
+    Save(ctx, key, value) <span class="kw">error</span>
+    Remove(ctx, key) <span class="kw">error</span>
+    LoadWithPrefix(ctx, key) ([]<span class="kw">string</span>, []<span class="kw">string</span>, <span class="kw">error</span>)
+    <span class="cm">// ... MultiSave / MultiRemove / Has ...</span>
+}
+
+<span class="kw">type</span> TxnKV  <span class="kw">interface</span> { BaseKV; MultiSaveAndRemove(...) }   <span class="cm">// +事务</span>
+<span class="kw">type</span> MetaKv <span class="kw">interface</span> { TxnKV; CompareVersionAndSwap(...) }  <span class="cm">// +租约/CAS</span>
+<span class="kw">type</span> WatchKV <span class="kw">interface</span> { MetaKv; Watch(ctx, key) WatchChan } <span class="cm">// +监听</span></pre>
+</div>
+
+<h2>什么存哪：etcd 与对象存储的分工</h2>
+<p>一个常被问到的问题：既然有 etcd 又有对象存储，到底什么进哪个？答案就一条<strong>体量与角色</strong>的分界——<strong>小而关键、要强一致、要被 watch 的"元数据"进 etcd；大而笨重、只需可靠存放的"数据与索引"进对象存储</strong>。
+元数据里只留一个指向对象存储的<strong>路径引用</strong>。这样 etcd 永远很"瘦"，watch 与一致性才扛得住；对象存储则随数据量线性膨胀，但它不参与一致性协调，便宜、可无限堆。</p>
+
+<p>这条分界不是洁癖，而是被 etcd 的硬约束逼出来的。etcd 是一个基于 Raft 的<strong>强一致</strong>存储，每一次写都要在多数派副本间达成共识——这让它<strong>可靠，但也"贵"</strong>：它对单个 value 的大小、对总数据量都有保守上限，吞吐也远不如对象存储。
+如果有人图省事，把一段几百 MB 的向量 binlog 直接塞进 etcd，轻则拖垮 watch 与选主，重则整个集群的元数据层瘫痪。所以"<strong>大块数据一律下沉到对象存储、etcd 里只留路径</strong>"不是可选项，而是红线。记住这条，你看任何分布式系统的"元数据 vs 数据"分层时，都会立刻抓住要害：<strong>把强一致用在最该用的地方，别让它为海量数据买单</strong>。</p>
+
+<table class="t">
+  <tr><th>内容</th><th>存在哪</th><th>为什么</th></tr>
+  <tr><td>集合 schema、分区、别名</td><td class="mono">etcd</td><td>小、关键、需强一致与多版本</td></tr>
+  <tr><td>段元数据（SegmentInfo、binlog 路径）</td><td class="mono">etcd</td><td>记的是"段在哪"，本身很小</td></tr>
+  <tr><td>加载信息、副本、target</td><td class="mono">etcd</td><td>QueryCoord 的调度依据，需 watch</td></tr>
+  <tr><td>服务发现 session（地址+租约）</td><td class="mono">etcd</td><td>瞬时状态，靠租约自动过期</td></tr>
+  <tr><td>向量数据 binlog、索引文件</td><td class="mono">对象存储</td><td>体量大，只需可靠存放，元数据里留引用</td></tr>
+  <tr><td>写入日志（WAL）</td><td class="mono">消息队列</td><td>第 7 课"日志即数据"的承载</td></tr>
+</table>
+
+<p>顺带把三个外部依赖在元数据视角下的分工再钉死一次：<strong>etcd 管"状态与协调"、对象存储管"大块数据"、消息队列管"写入流水"</strong>。第 8 课从部署角度认识过它们，这一课你看到的是它们在<strong>元数据链路</strong>里的角色。三者各守一摊、互不越界，正是 Milvus 能把"存"和"算"、"控制"和"数据"干净拆开的底层支撑。</p>
+
+<h2>watch：协调者派活、节点接活</h2>
+<p>最后一块拼图，是控制面如何把决策<strong>下发</strong>给数据面。机制还是 etcd 的 watch，但方向反过来：不是节点向 etcd 注册、协调者监听，而是<strong>协调者把"分配方案"写进 etcd，节点 watch 自己那一份</strong>。
+比如 DataCoord 决定"vchannel-A 由 datanode-2 负责"，就把这条 channel 分配写进 etcd；datanode-2 watch 到属于自己的 key，就开始消费这条 channel。QueryCoord 派段也类似——这正是上一课"distribution 向 target 收敛"在存储层的落地：target 写进 etcd，节点 watch 后照着干。</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">节点 Register()</div><div class="nd">写带租约 session 到 etcd</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">协调者 WatchServices</div><div class="nd">感知"谁活着、在哪"</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">协调者写分配</div><div class="nd">把 channel/段方案写进 etcd</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">节点 watch 接活</div><div class="nd">看到属于自己的 key，开始执行</div></div>
+</div>
+
+<p>把整条链收束成一句：<strong>etcd 既是"档案柜"（存元数据），又是"公告板"（发分配、做发现）</strong>。组件之间几乎不直接喊话定状态，而是"写 etcd / watch etcd"间接协作——这正是第 9 课"跨面通信只走接口与 etcd"那条纪律的物理实现。
+读懂了元数据存哪、组件怎么发现彼此、协调者怎么派活，你就拿到了贯穿整个分布式部分的最后一把钥匙。</p>
+
+<p>最后补一个"watch 并不那么简单"的现实。网络会抖动、连接会断，watch 一旦断开重连，中间那几个事件可能就漏掉了。Milvus 的应对是：watch 时记住一个 <strong>revision（版本水位）</strong>，断线重连后从这个水位<strong>续看</strong>，而不是从头再来；
+更稳的做法是"<strong>先全量拉一次、再增量 watch</strong>"——先用 <span class="mono">GetSessions</span>/<span class="mono">LoadWithPrefix</span> 取一份当前快照对齐状态，再带着快照的 revision 开 watch，这样既不丢事件、也不会重复处理。你会发现 <span class="mono">WatchServices</span> 正是返回了一个 revision 给调用方，就是为此。
+这提醒我们：<strong>watch 是"通知"，不是"真相"</strong>——真相永远是 etcd 里那份当前状态，通知只是帮你少做轮询。带着这个心态去读任何"监听变更"的代码，你就不会被"事件一定不丢"的幻觉误导。</p>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  一句话串起来：<strong>协调者说业务语言 → Catalog 翻译成键值语言 → kv 把它写进 etcd（小而关键的元数据）或对象存储（笨重的数据/索引）</strong>。
+  与此并行，组件用 <strong>Register() 写带租约的 session</strong>、协调者 <strong>WatchServices</strong> 做服务发现；派活则反向——<strong>协调者把分配写进 etcd、节点 watch 接活</strong>。
+  于是 etcd 同时扮演"档案柜 + 公告板"：存得住状态、又能让两个面间接协作。这就是把前五课所有角色粘起来的胶水。
+</div>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>三层落地</strong>：协调者（业务动词）→ metastore 的 <span class="mono">Catalog</span> 接口 → <span class="mono">kv</span> 原语 → etcd / 对象存储。每下一层更通用、更不懂业务。</li>
+    <li><strong>Catalog 抽象</strong>：<span class="mono">internal/metastore/catalog.go</span> 按协调者切成 <span class="mono">RootCoordCatalog / DataCoordCatalog / QueryCoordCatalog</span>，屏蔽底层存储；RootCoord 的方法带 <span class="mono">ts</span>（多版本/快照）。</li>
+    <li><strong>kv 层</strong>：<span class="mono">pkg/kv/kv.go</span> 逐层叠加 <span class="mono">BaseKV → TxnKV → MetaKv → WatchKV</span>（增删查 → 事务 → 租约/CAS → 监听），实现在 <span class="mono">internal/kv/etcd</span>。</li>
+    <li><strong>什么存哪</strong>：小而关键、需强一致与 watch 的元数据进 etcd；笨重的向量/索引进对象存储，元数据里只留引用路径。</li>
+    <li><strong>服务发现 + 派活</strong>：组件 <span class="mono">Register()</span> 带租约 session、协调者 <span class="mono">WatchServices</span> 监听上下线；派活反向——协调者把分配写进 etcd、节点 watch 接活。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. 一次 CreateCollection 从协调者落到 etcd，要穿过哪几层？每层的角色是什么？</div>
+  <ol class="opts">
+    <li>协调者直接拼 etcd 的 key 并写入，无中间层</li>
+    <li>先写对象存储，再由 etcd 异步同步</li>
+    <li>Proxy 直接把 SQL 写进 etcd</li>
+    <li>协调者（业务动词）→ metastore 的 Catalog 接口（翻译成键值语言）→ kv 原语（Save/MultiSave）→ etcd / 对象存储；每下一层更通用、更不懂业务</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。三层落地：协调者说业务语言，Catalog 翻译成键值语言并拆解对象，kv 提供 Save/MultiSave 等原语，最终写 etcd。每层抽象更通用，故换后端时上层不必改——分层解耦</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. 为什么向量 binlog 与索引文件要放对象存储，而不能塞进 etcd？</div>
+  <ol class="opts">
+    <li>etcd 不支持二进制，只能存文本</li>
+    <li>etcd 是 Raft 强一致存储，对单值大小与总量有保守上限；塞大块数据会拖垮 watch 与选主。大块数据应下沉对象存储，etcd 只留路径引用</li>
+    <li>因为索引文件必须可被 SQL 查询</li>
+    <li>对象存储比 etcd 更强一致，所以放大数据</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。分界依据体量与角色：小而关键、需强一致与 watch 的元数据进 etcd；大而笨重只需可靠存放的数据/索引进对象存储。把强一致用在最该用的地方，别让它为海量数据买单</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 组件用带租约的 session 注册到 etcd，而不是写一个 alive=true 标记。这种“租约+续约”设计的关键好处是？</div>
+  <ol class="opts">
+    <li>它要求每个节点退出前必须手动注销</li>
+    <li>它把“活着”变成需要持续续约才能维持的状态；进程被 kill-9 或断电时心跳一停，租约到期 etcd 自动清记录，无需任何人善后</li>
+    <li>它让 session 里直接存下查询数据以加速</li>
+    <li>它使 search 流量改为经过 etcd 中转</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。“故障即默认”：系统假设节点随时可能突然失联，没人有机会改标记。租约让活着成为需要不断证明的例外，心跳停则记录自动消失。session 存的是地址不是数据，流量仍走直连</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>“watch 是通知，不是真相。”请解释这句话：当协调者的 watch 因网络抖动断开重连、中间漏掉若干事件时，Milvus 用什么手段（revision、先全量后增量）保证节点最终仍拿到正确的分配，而不会“漏接活”。</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+The last five lessons introduced the control/data planes and the four roles: Proxy, RootCoord, DataCoord, QueryCoordV2. But the "global map" each one holds — a collection's schema, where segments live, who loaded what, which node is still alive — <strong>where is it stored, and how do they stay in sync</strong>?
+This lesson is the <strong>glue that binds the whole architecture</strong>: <strong>etcd</strong> as the metadata store, <strong>sessions</strong> for service discovery, the <strong>metastore/Catalog</strong> abstraction over metadata I/O, the <strong>kv</strong> layer for primitives, and <strong>watch</strong> so coordinators assign work and nodes pick it up.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of the metadata system as a building's <strong>front desk + archive room</strong>. <strong>etcd is the front desk</strong>: every resident (component) signs the register on move-in — "who I am, which unit, am I still here" — and gets a <strong>keycard that must be periodically renewed (a lease)</strong>; forget to renew and the desk knows you've moved out.
+  The <strong>archive room (object storage)</strong> holds the genuinely bulky things — furniture, equipment (data and index files); the desk only notes "the piano belongs to unit 7, shelf 3 in storeroom" — it never drags the piano to the front desk.
+  And <strong>the Catalog is the archivist</strong>: everyone who reads or writes archives goes through that one standard window, never rummaging the storeroom themselves.
+</div>
+
+<h2>The whole picture: metadata from coordinators down to etcd</h2>
+<p>Stack what this lesson covers and you won't get lost. At the top are the <strong>coordinators</strong> — RootCoord/DataCoord/QueryCoord — the <strong>producers and consumers</strong> of metadata: creating a collection writes a schema, segmenting records a segment, loading saves a replica.
+They never hand-assemble etcd keys; they call the next layer's <strong>metastore Catalog interface</strong>, reading/writing metadata with "business verbs" like <span class="mono">CreateCollection</span>, <span class="mono">AddSegment</span>, <span class="mono">SaveReplica</span>.
+Below Catalog sits the <strong>kv layer</strong> — serializing "a Collection object" into "a series of key/values" and calling primitives like <span class="mono">Save</span>/<span class="mono">MultiSave</span>/<span class="mono">LoadWithPrefix</span>. At the very bottom, kv actually writes bytes into <strong>etcd</strong> (small, critical metadata) or hands bulk data to <strong>object storage</strong>.</p>
+
+<div class="layers">
+  <div class="layer l-core"><div class="lh"><span class="badge">produce/consume</span><span class="name">Coordinators</span></div>
+    <div class="ld">RootCoord/DataCoord/QueryCoord read/write metadata while deciding: schema, segments, indexes, replicas, load state. They speak only "business verbs," never touch storage details.</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">abstract interface</span><span class="name">metastore · Catalog</span></div>
+    <div class="ld"><span class="mono">RootCoordCatalog / DataCoordCatalog / QueryCoordCatalog</span>: abstract "persist collection/segment/replica metadata" into interfaces, hiding whether the backend is etcd or something else.</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">primitives</span><span class="name">kv layer</span></div>
+    <div class="ld"><span class="mono">BaseKV / TxnKV / MetaKv / WatchKV</span> (<span class="mono">pkg/kv/kv.go</span>): Save/Load/Remove, transactions, leases, watchable. Implementations in <span class="mono">internal/kv/etcd</span>.</div></div>
+  <div class="layer l-app"><div class="lh"><span class="badge">where it lands</span><span class="name">etcd · object storage</span></div>
+    <div class="ld">Small, critical metadata goes to etcd (strongly consistent, watchable); bulky vector/index files go to object storage, with metadata keeping only a reference path.</div></div>
+</div>
+
+<p>The essence of this picture is one line: <strong>coordinators speak "business language," Catalog translates to "key-value language," and kv writes it into etcd</strong>. Each layer down is more generic and cares less about business meaning.
+Because Catalog is that translator, RootCoord never needs to know "how many keys a collection is split into in etcd"; and when the storage backend is swapped (say etcd for TiKV), the upper layers change not a single line. That is <strong>layered decoupling</strong> applied to the metadata system.</p>
+
+<p>Walk "create a collection" end to end to feel the pipeline. The client sends CreateCollection, Proxy forwards it to RootCoord; RootCoord first allocates a global timestamp and some IDs from itself (Lesson 11), assembles the schema into a <span class="mono">model.Collection</span> domain object, then calls <span class="mono">RootCoordCatalog.CreateCollection(ctx, coll, ts)</span>.
+At Catalog the object is <strong>decomposed</strong>: one key for the collection, one per field, one per partition... then <span class="mono">kv.MultiSave</span> writes that batch of key/values into etcd <strong>atomically in one transaction</strong>. Across the whole chain RootCoord only said "create a collection"; "into how many keys, and how to keep it atomic" was quietly absorbed by the two layers below. That is the hallmark of good abstraction: <strong>the upper intent is simple, the lower complexity is encapsulated</strong>.</p>
+
+<h2>etcd and sessions: how components discover each other</h2>
+<p>Metadata must "persist," but components must also "find" each other. Lesson 9 mentioned: at startup each component calls <span class="mono">Register()</span>, writing a <strong>leased</strong> session into etcd — "I am querynode-3, my gRPC address is here, I'm alive."
+This lives in <span class="inline">internal/util/sessionutil/session_util.go</span>: a <span class="mono">Session</span> struct holds a <span class="mono">LeaseID</span>, and a background goroutine keeps <strong>renewing the lease (keepalive)</strong>; once the process crashes and the heartbeat stops, the lease expires and etcd auto-deletes the session record.</p>
+
+<p>On the other end, coordinators call <span class="mono">WatchServices</span> to <strong>watch</strong> the prefix directory of these sessions: a node comes up and an "added" event fires instantly; a node drops (lease expires) and a "deleted" event fires.
+So the control plane always holds a <strong>live roster of nodes</strong>, using it to assign segments, balance load, and reassign work on failure. This "<strong>register → renew → watch</strong>" is Milvus's service discovery — it shares the same etcd as metadata, but carries the <strong>transient state</strong> of "who's here, where," not the <strong>persistent metadata</strong> of "what a collection looks like."</p>
+
+<p>Reiterate that red line from Lesson 9: <strong>a session stores an "address," not "data."</strong> On this path etcd is an "address book + heartbeat board"; it tells you "who's here, where," but real search/insert traffic never passes through etcd — that would instantly overwhelm it. Once a component has the peer's address, it sends requests over <strong>direct point-to-point gRPC</strong>. Control info via etcd, data traffic direct — a divide that runs through all of Milvus.</p>
+
+<p>Why insist on "lease + renewal" instead of simply writing an <span class="mono">alive=true</span> flag? Because the hardest thing in a distributed system is not "graceful exit" but "<strong>sudden disappearance</strong>" — a process gets kill -9'd, a machine loses power, a cable is yanked. In those cases nobody gets a chance to flip the flag to false.
+The beauty of a lease is that it <strong>makes "being alive" something you must keep paying to maintain</strong>: the moment the heartbeat stops, etcd itself purges the record when the lease expires, with no cleanup by anyone. This is a "<strong>failure is the default</strong>" design — the system assumes a node may vanish at any time, and being alive is the exception that must be continually proven. Grasp this and you grasp the same philosophy behind nearly every distributed heartbeat mechanism.</p>
+
+<p>One practical detail worth noting: all these keys (metadata and sessions alike) hang under a unified <strong>metaRoot prefix</strong> (config-driven, e.g. <span class="mono">by-dev/meta</span>). This lets one etcd cluster <strong>isolate multiple Milvus instances</strong> — each uses its own prefix, never crossing wires. It's also why <span class="mono">LoadWithPrefix</span> and <span class="mono">WatchWithPrefix</span> appear everywhere in the source: in etcd's flat key/value space, <strong>a prefix is a namespace</strong>, the basic device by which Milvus organizes its whole metadata graph.</p>
+
+<h2>metastore and Catalog: the "archive interface" for metadata</h2>
+<p>Now the core abstraction. <span class="inline">internal/metastore/catalog.go</span> defines several interfaces <strong>split by coordinator</strong>: <span class="mono">RootCoordCatalog</span> owns databases/collections/partitions/aliases/credentials/roles;
+<span class="mono">DataCoordCatalog</span> owns segments (<span class="mono">ListSegments</span>/<span class="mono">AddSegment</span>/<span class="mono">DropSegment</span>), channels, indexes; <span class="mono">QueryCoordCatalog</span> owns load info (<span class="mono">SaveCollection</span>/<span class="mono">SaveReplica</span>/<span class="mono">SaveCollectionTargets</span>).
+Every method is a <strong>business verb</strong>, and its arguments are domain objects like <span class="mono">model.Collection</span>, <span class="mono">datapb.SegmentInfo</span>, <span class="mono">querypb.Replica</span> — not raw bytes.</p>
+
+<p>Notice the symmetry: the three catalog interfaces map exactly onto the three coordinators from Lessons 11–13. RootCoord owns "what exists" (schema/DDL), DataCoord owns "where data sits" (segments/channels), QueryCoord owns "what's loaded" (replicas/targets). Each coordinator persists only its own slice of the world through its own catalog, and the slices barely overlap. That clean partition is why the three roles can be reasoned about — and packaged into one MixCoord process — without their metadata stepping on each other. The Catalog split is the storage-layer mirror of the responsibility split you already learned.</p>
+
+<p>Note that many RootCoordCatalog methods carry a <span class="mono">ts typeutil.Timestamp</span> argument — because RootCoord's metadata is <strong>multi-versioned</strong>: DDL operations hang on a timestamp, so "the schema as seen at a given instant" can be reproduced exactly.
+Historically this was done by a "snapshot kv" layer — storing different versions of the same key as multiple records keyed by timestamp, reading the latest "no later than instant T." It makes consistency levels and time-travel reads possible. Today Catalog's concrete impl (<span class="mono">internal/metastore/kv/rootcoord</span>) holds a <span class="mono">kv.TxnKV</span> and splits domain objects into key/value pairs.</p>
+
+<p>Funneling metadata I/O through the Catalog interface has another big engineering payoff: <strong>testability</strong>. To test RootCoord's create-collection logic you needn't spin up a real etcd — hand it a mock Catalog, or an in-memory kv (<span class="mono">internal/kv/mem</span>), and tests run fast and stable.
+This is the same move as Lesson 9's "interfaces as pluggable seams": <strong>wherever code touches the outside world (storage, network), insulate it behind an interface</strong>, so production wires in real etcd while tests wire in a fake. The many <span class="mono">mock_*.go</span> files in the Milvus source are largely auto-generated for exactly these Catalog/kv interfaces. <strong>Abstraction is not only for elegance, but to be independently verifiable</strong>.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/metastore/catalog.go</span><span class="ln">Catalog interfaces (excerpt)</span></div>
+  <pre><span class="cm">// RootCoord metadata: db/collection/partition; methods carry ts (multi-version)</span>
+<span class="kw">type</span> RootCoordCatalog <span class="kw">interface</span> {
+    CreateCollection(ctx, coll *model.Collection, ts Timestamp) <span class="kw">error</span>
+    GetCollectionByID(ctx, dbID, ts Timestamp, id UniqueID) (*model.Collection, <span class="kw">error</span>)
+    DropCollection(ctx, coll *model.Collection, ts Timestamp) <span class="kw">error</span>
+    <span class="cm">// ... partitions, aliases, credentials, roles ...</span>
+}
+
+<span class="cm">// DataCoord metadata: segments and channels</span>
+<span class="kw">type</span> DataCoordCatalog <span class="kw">interface</span> {
+    ListSegments(ctx, collectionID <span class="kw">int64</span>) ([]*datapb.SegmentInfo, <span class="kw">error</span>)
+    AddSegment(ctx, segment *datapb.SegmentInfo) <span class="kw">error</span>
+    DropSegment(ctx, segment *datapb.SegmentInfo) <span class="kw">error</span>
+}</pre>
+</div>
+
+<h2>The kv layer: the primitives beneath Catalog</h2>
+<p>Below Catalog is a set of <strong>incrementally stacked</strong> interfaces in <span class="inline">pkg/kv/kv.go</span>. At the bottom is <span class="mono">BaseKV</span>: the plainest create/read/delete — <span class="mono">Save/Load/Remove/MultiSave/LoadWithPrefix</span>.
+Above it, <span class="mono">TxnKV</span> adds <strong>transactions</strong> (<span class="mono">MultiSaveAndRemove</span> — multiple writes and deletes all succeed or all fail, crucial for "alter schema while deleting old keys").
+Above that, <span class="mono">MetaKv</span> adds <strong>leases</strong> and <span class="mono">CompareVersionAndSwap</span> (optimistic locking). At the top, <span class="mono">WatchKV</span> adds <span class="mono">Watch</span> — the very foundation of service discovery and the "assign work" mechanism.</p>
+
+<p>This "interface-on-interface" stacking is the same engineering aesthetic as <span class="mono">Component</span> in Lesson 9: <strong>depend on exactly the layer whose capabilities you need</strong>. A module that only reads config depends on <span class="mono">BaseKV</span>;
+a Catalog that needs transactions depends on <span class="mono">TxnKV</span>; service discovery that watches for changes depends on <span class="mono">WatchKV</span>. Implementations live in <span class="mono">internal/kv/etcd</span> (the etcd version) and <span class="mono">internal/kv/mem</span> (an in-memory version for tests).
+Here is the contract stacking from <span class="mono">BaseKV</span> all the way up to <span class="mono">WatchKV</span>:</p>
+
+<p>That <span class="mono">CompareVersionAndSwap</span> (compare-then-swap, i.e. CAS) on <span class="mono">MetaKv</span> deserves a callout: it is the basis of <strong>optimistic locking</strong>. Imagine two coordinator replicas both wanting to edit the same metadata; if each writes blindly, the later write silently overwrites the earlier — a lost update.
+CAS instead "<strong>writes carrying the version I saw</strong>" — the write succeeds only if etcd's version still matches what I read; if someone changed it meanwhile (version moved), the write fails and the caller must re-read and retry. This blocks the read-then-write race at the storage layer, sparing upper layers from rolling their own distributed lock. <strong>Transactions guarantee atomicity of a group of writes; CAS guarantees one write isn't overwritten</strong> — together they uphold metadata correctness under concurrency.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">pkg/kv/kv.go</span><span class="ln">BaseKV → TxnKV → MetaKv → WatchKV</span></div>
+  <pre><span class="cm">// the plainest create/read/delete</span>
+<span class="kw">type</span> BaseKV <span class="kw">interface</span> {
+    Load(ctx, key) (<span class="kw">string</span>, <span class="kw">error</span>)
+    Save(ctx, key, value) <span class="kw">error</span>
+    Remove(ctx, key) <span class="kw">error</span>
+    LoadWithPrefix(ctx, key) ([]<span class="kw">string</span>, []<span class="kw">string</span>, <span class="kw">error</span>)
+    <span class="cm">// ... MultiSave / MultiRemove / Has ...</span>
+}
+
+<span class="kw">type</span> TxnKV  <span class="kw">interface</span> { BaseKV; MultiSaveAndRemove(...) }   <span class="cm">// +transactions</span>
+<span class="kw">type</span> MetaKv <span class="kw">interface</span> { TxnKV; CompareVersionAndSwap(...) }  <span class="cm">// +lease/CAS</span>
+<span class="kw">type</span> WatchKV <span class="kw">interface</span> { MetaKv; Watch(ctx, key) WatchChan } <span class="cm">// +watch</span></pre>
+</div>
+
+<h2>What goes where: etcd vs object storage</h2>
+<p>A common question: with both etcd and object storage, what goes in which? The answer is a single line drawn on <strong>size and role</strong> — <strong>small, critical "metadata" that needs strong consistency and watching goes to etcd; bulky "data and indexes" that only need reliable storage go to object storage</strong>.
+Metadata keeps only a <strong>reference path</strong> into object storage. This keeps etcd forever "thin," so watch and consistency hold up; object storage grows linearly with data but never participates in consistency coordination — it's cheap and stackable without limit.</p>
+
+<p>This divide is not fastidiousness but is forced by etcd's hard constraints. etcd is a Raft-based <strong>strongly consistent</strong> store; every write must reach consensus across a majority of replicas — which makes it <strong>reliable but also "expensive"</strong>: it imposes conservative caps on single-value size and total data volume, with throughput far below object storage.
+If someone took a shortcut and stuffed a few-hundred-MB vector binlog straight into etcd, at best it drags down watch and leader election, at worst it paralyzes the cluster's whole metadata layer. So "<strong>bulk data always sinks to object storage; etcd keeps only the path</strong>" is not optional but a red line. Remember it and you'll instantly grasp the crux of any "metadata vs data" layering: <strong>spend strong consistency where it matters most, and don't make it pay for massive data</strong>.</p>
+
+<table class="t">
+  <tr><th>Content</th><th>Where</th><th>Why</th></tr>
+  <tr><td>collection schema, partitions, aliases</td><td class="mono">etcd</td><td>small, critical, needs strong consistency + versions</td></tr>
+  <tr><td>segment metadata (SegmentInfo, binlog paths)</td><td class="mono">etcd</td><td>records "where a segment is"; tiny itself</td></tr>
+  <tr><td>load info, replicas, targets</td><td class="mono">etcd</td><td>QueryCoord's scheduling basis; needs watch</td></tr>
+  <tr><td>discovery session (address + lease)</td><td class="mono">etcd</td><td>transient state, auto-expires via lease</td></tr>
+  <tr><td>vector binlogs, index files</td><td class="mono">object storage</td><td>bulky; only needs reliable storage; metadata keeps a reference</td></tr>
+  <tr><td>write-ahead log (WAL)</td><td class="mono">message queue</td><td>the carrier for Lesson 7's "log-as-data"</td></tr>
+</table>
+
+<p>While here, nail down the three external dependencies once more from the metadata angle: <strong>etcd owns "state and coordination," object storage owns "bulk data," the message queue owns "the write pipeline."</strong> Lesson 8 met them from a deployment angle; here you see their roles in the <strong>metadata path</strong>. Each guards its own turf without trespassing — the underlying support that lets Milvus cleanly split "store" from "compute," and "control" from "data."</p>
+
+<h2>watch: coordinators assign, nodes pick up</h2>
+<p>The final piece is how the control plane <strong>pushes</strong> decisions down to the data plane. The mechanism is still etcd watch, but reversed: instead of nodes registering and coordinators watching, <strong>coordinators write the "assignment plan" into etcd and nodes watch their own slice</strong>.
+For instance, DataCoord decides "vchannel-A is handled by datanode-2" and writes that channel assignment into etcd; datanode-2 watches the key belonging to it and starts consuming that channel. QueryCoord assigns segments similarly — which is exactly the previous lesson's "distribution converging to target" realized at the storage layer: the target is written into etcd, and nodes watch and act on it.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">node Register()</div><div class="nd">writes leased session to etcd</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">coord WatchServices</div><div class="nd">learns "who's alive, where"</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">coord writes assignment</div><div class="nd">channel/segment plan into etcd</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">node watches, picks up</div><div class="nd">sees its own key, starts executing</div></div>
+</div>
+
+<p>Collapse the whole chain to one line: <strong>etcd is both the "filing cabinet" (stores metadata) and the "bulletin board" (publishes assignments, drives discovery)</strong>. Components rarely shout directly to fix state; instead they cooperate indirectly via "write etcd / watch etcd" — the physical realization of Lesson 9's discipline "cross-plane communication only via interfaces and etcd."
+Once you understand where metadata lives, how components discover each other, and how coordinators assign work, you hold the last key that runs through the entire distributed part.</p>
+
+<p>One last reality: "watch is not as simple as it looks." Networks jitter, connections drop, and once a watch disconnects and reconnects, the few events in between may be missed. Milvus's answer: remember a <strong>revision (a version watermark)</strong> when watching, and after a reconnect <strong>resume from that watermark</strong> rather than starting over;
+the sturdier pattern is "<strong>full pull once, then incremental watch</strong>" — first take a current snapshot with <span class="mono">GetSessions</span>/<span class="mono">LoadWithPrefix</span> to align state, then open the watch carrying that snapshot's revision, so you neither miss events nor double-process them. You'll notice <span class="mono">WatchServices</span> returns a revision to the caller for exactly this.
+The reminder is: <strong>watch is a "notification," not the "truth"</strong> — the truth is always the current state in etcd; the notification just saves you from polling. Read any "watch for changes" code with this mindset and you won't be fooled by the illusion that "events are never lost."</p>
+
+<div class="card macro">
+  <div class="tag">🌍 The big picture</div>
+  In one line: <strong>coordinators speak business language → Catalog translates to key-value language → kv writes it into etcd (small, critical metadata) or object storage (bulky data/index)</strong>.
+  In parallel, components <strong>Register() a leased session</strong> and coordinators <strong>WatchServices</strong> for discovery; assignment goes the other way — <strong>coordinators write the plan into etcd and nodes watch to pick it up</strong>.
+  So etcd plays both "filing cabinet + bulletin board": it persists state and lets the two planes cooperate indirectly. That is the glue binding all five earlier roles together.
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Three layers down</strong>: coordinators (business verbs) → metastore's <span class="mono">Catalog</span> interfaces → <span class="mono">kv</span> primitives → etcd / object storage. Each layer down is more generic, less business-aware.</li>
+    <li><strong>Catalog abstraction</strong>: <span class="mono">internal/metastore/catalog.go</span> splits by coordinator into <span class="mono">RootCoordCatalog / DataCoordCatalog / QueryCoordCatalog</span>, hiding the backend; RootCoord's methods carry <span class="mono">ts</span> (multi-version/snapshot).</li>
+    <li><strong>kv layer</strong>: <span class="mono">pkg/kv/kv.go</span> stacks <span class="mono">BaseKV → TxnKV → MetaKv → WatchKV</span> (CRUD → transactions → lease/CAS → watch), implemented in <span class="mono">internal/kv/etcd</span>.</li>
+    <li><strong>What goes where</strong>: small, critical metadata needing strong consistency + watch goes to etcd; bulky vectors/indexes go to object storage, with metadata keeping only a reference path.</li>
+    <li><strong>Discovery + assignment</strong>: components <span class="mono">Register()</span> a leased session and coordinators <span class="mono">WatchServices</span> for up/down; assignment is reversed — coordinators write plans into etcd and nodes watch to pick up.</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. From coordinator down to etcd, which layers does a CreateCollection traverse, and what is each layer's role?</div>
+  <ol class="opts">
+    <li>The coordinator hand-assembles etcd keys and writes with no middle layer</li>
+    <li>Write object storage first, then etcd syncs asynchronously</li>
+    <li>The Proxy writes SQL straight into etcd</li>
+    <li>coordinator (business verb) → metastore's Catalog interface (translate to key-value language) → kv primitives (Save/MultiSave) → etcd / object storage; each layer down is more generic, less business-aware</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. Three layers: coordinators speak business language, Catalog translates and decomposes objects, kv offers Save/MultiSave primitives, finally writing etcd. Each layer is more generic, so swapping the backend leaves upper layers untouched - layered decoupling</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Why must vector binlogs and index files go to object storage rather than being stuffed into etcd?</div>
+  <ol class="opts">
+    <li>etcd cannot store binary, only text</li>
+    <li>etcd is a Raft strongly-consistent store with conservative caps on value size and total volume; stuffing bulk data drags down watch and leader election. Bulk data should sink to object storage, with etcd keeping only a path reference</li>
+    <li>Because index files must be SQL-queryable</li>
+    <li>Object storage is more strongly consistent than etcd, so bulk goes there</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. The divide is by size and role: small, critical metadata needing strong consistency and watch goes to etcd; bulky data/index needing only reliable storage goes to object storage. Spend strong consistency where it matters, don't make it pay for massive data</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Components register a leased session in etcd instead of writing an alive=true flag. What is the key benefit of this 'lease + renewal' design?</div>
+  <ol class="opts">
+    <li>It requires every node to manually deregister before exit</li>
+    <li>It makes 'alive' a state that must be continually renewed; on kill-9 or power loss the heartbeat stops, the lease expires, and etcd auto-purges the record with no cleanup by anyone</li>
+    <li>It stores query data inside the session to speed things up</li>
+    <li>It routes search traffic through etcd</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. 'Failure is the default': the system assumes a node may vanish suddenly with no chance to flip a flag. A lease makes being alive an exception that must be continually proven; stop the heartbeat and the record auto-vanishes. A session stores an address, not data; traffic still goes direct</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>'Watch is a notification, not the truth.' Explain this: when a coordinator's watch drops and reconnects on a network jitter and misses some events, what mechanisms (revision; full-pull-then-incremental) keep nodes eventually getting the correct assignment without 'missing work'.</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="13-querycoord.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">QueryCoordV2</span><span class="lang-en">QueryCoordV2</span></div></a><a class="next" href="../index.html"><div class="dir"><span class="lang-zh">完成 →</span><span class="lang-en">Done →</span></div><div class="ttl"><span class="lang-zh">返回目录</span><span class="lang-en">Back to index</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>

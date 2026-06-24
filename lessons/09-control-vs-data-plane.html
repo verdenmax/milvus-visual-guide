@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>09 · 控制面 vs 数据面 / Control plane vs data plane - Milvus 图解教程</title>
+<meta name="description" content="第三部分 · 分布式架构｜控制面 vs 数据面 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="09 · 控制面 vs 数据面 / Control plane vs data plane - Milvus 图解教程">
+<meta property="og:description" content="第三部分 · 分布式架构｜控制面 vs 数据面 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="09 · 控制面 vs 数据面 / Control plane vs data plane - Milvus 图解教程">
+<meta name="twitter:description" content="第三部分 · 分布式架构｜控制面 vs 数据面 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第三部分 · 分布式架构</span><span class="lang-en">Part 3 · Distributed architecture</span></span>
+    <span class="pill">09 / 14</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:64%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第三部分 · 分布式架构</span><span class="lang-en">Part 3 · Distributed architecture</span></div>
+    <h1><span class="lang-zh">控制面 vs 数据面</span><span class="lang-en">Control plane vs data plane</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+前两部分讲清了"向量是什么"和"数据怎么存"。从这一课起，我们把镜头拉到<strong>整个集群</strong>：Milvus 由一群进程协作完成工作，
+而它们之间最根本的分工，就是<strong>控制面（control plane）</strong>与<strong>数据面（data plane）</strong>——前者<strong>决定谁该做什么</strong>，
+后者<strong>真正把活干掉</strong>。理解了这条主线，后面 RootCoord、DataCoord、QueryCoord、Proxy 各司其职的故事才会条理分明。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 生活类比</div>
+  把 Milvus 想成一座<strong>机场</strong>：<strong>塔台</strong>不搬一件行李、不开一架飞机，但它掌握全局——哪架飞机走哪条跑道、停哪个登机口、几点起飞，
+  这是<strong>控制面</strong>。而<strong>飞机和地勤</strong>才是真正运送旅客与货物的人，他们<strong>听从塔台调度</strong>，但塔台从不替他们扛箱子，这是<strong>数据面</strong>。
+  塔台关心的是"<strong>调度与元数据</strong>"，飞机关心的是"<strong>执行与吞吐</strong>"。两者一旦混在一起，机场就会瘫痪。
+</div>
+
+<h2>两个面：决策与执行</h2>
+<p>Milvus 把所有进程按职责切成两层。<strong>控制面（协调者 / coordinators）</strong>管<strong>元数据、调度、分配</strong>：集合的 schema 长什么样、
+段（segment）该分到哪台机器、哪个 QueryNode 负责哪个分片、什么时候触发 flush 与 compaction……它们<strong>做决定</strong>，但几乎不碰用户的真实数据流。
+<strong>数据面（节点 / nodes）</strong>则是<strong>干活的人</strong>：Proxy 接收请求、QueryNode 在内存里做向量检索、DataNode 把写入落盘成段、StreamingNode 承载写入日志。
+它们<strong>听协调者的安排</strong>，但真正的吞吐压力都压在它们身上。换句话说，控制面回答的是"<strong>该怎么办</strong>"，数据面回答的是"<strong>现在就办</strong>"；
+前者是一张随时更新的"作战地图"，后者是地图上正在冲锋的部队。本课接下来要做的，就是把这张地图的图例（接口）、指挥部的编制（MixCoord）、以及部队与指挥部如何通信（服务发现）一一讲清。</p>
+
+<p>这种"控制面窄、数据面宽"还有一个微妙之处值得点破：<strong>Proxy 虽属数据面，却不存任何用户数据</strong>。它是"无状态网关"——只做校验、鉴权、限流、分派，
+把请求拆给协调者要时间戳、向节点要结果，自己不持有段也不持有索引。正因如此，Proxy 可以像 Web 服务器一样<strong>随意加减实例</strong>，前面挂个负载均衡即可。
+这提醒我们：控制面/数据面是按"是否承载用户吞吐"划分的，而不是按"是否存数据"。Proxy 在数据面，是因为它<strong>站在吞吐链路上</strong>；
+而它能轻松扩缩，又恰恰因为它<strong>无状态</strong>。把"承载吞吐"和"持有状态"这两件事分开看，你才能准确理解每个组件的扩缩容策略。</p>
+
+<p>这种分层不是为了好看，而是为了<strong>可扩展与高可用</strong>：决策逻辑（元数据、调度）天然是"少而关键"的，适合集中、强一致地管理；
+执行逻辑（检索、写盘）天然是"多而繁重"的，适合横向铺开、按负载扩容。把两者拆开，你就能<strong>单独扩展数据面</strong>（加 QueryNode 提升查询吞吐）
+而不必动控制面，反之亦然。这正是"存算分离"在进程层面的延伸——上一部分讲的 etcd、对象存储、消息队列，是<strong>外部依赖</strong>；
+这一部分讲的控制面/数据面，是<strong>Milvus 自身进程</strong>的分工。</p>
+
+<p>分层还带来一个常被忽视的好处：<strong>故障隔离</strong>。数据面节点是"无状态"的——它内存里的索引和段，都是从对象存储里加载、可随时重建的副本，
+真正的"权威元数据"只在控制面与 etcd 里。于是一台 QueryNode 突然崩溃，丢的只是"一份内存副本"，控制面立刻把它负责的分片重新分给别人，
+对外几乎无感。反过来，控制面虽然关键，但它处理的请求量小、逻辑稳定，可以用更保守的方式（如多副本、强一致存储）保护。
+<strong>把"易变易崩的重活"和"稳定关键的决策"分开，正是分布式系统抗故障的基本功</strong>。</p>
+
+<p>再给一组直觉上的数量级对比：一个集群里，协调者通常只有<strong>个位数</strong>个实例（甚至就一个 MixCoord），而 QueryNode / DataNode 可以有<strong>几十上百</strong>个。
+请求量上，控制面每秒处理的多是"建表、加载、上报心跳"这类<strong>低频</strong>操作，而数据面每秒要扛<strong>成千上万</strong>条 search/insert。
+这种"<strong>控制面窄、数据面宽</strong>"的形状，决定了二者必须用完全不同的设计取向——前者求稳求准，后者求快求多。</p>
+
+<div class="layers">
+  <div class="layer l-core"><div class="lh"><span class="badge">控制面</span><span class="name">Coordinators</span></div>
+    <div class="ld">RootCoord（DDL 与身份）、DataCoord（写入侧与存储）、QueryCoord（读取侧）。掌管元数据、时间戳、段与分片的<strong>分配与调度</strong>；做决定，不扛吞吐。今天打包进一个 <strong>MixCoord</strong> 进程。</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">数据面 · 网关</span><span class="name">Proxy</span></div>
+    <div class="ld">所有客户端请求的唯一入口：校验、鉴权、限流，再把任务分派给协调者与节点。无状态，可横向扩展。</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">数据面 · 执行</span><span class="name">QueryNode / DataNode / StreamingNode</span></div>
+    <div class="ld">QueryNode 在内存里做检索；DataNode 把写入落盘成段、跑 compaction 与建索引的实际工作；StreamingNode 承载写入日志（WAL）。真正的 CPU/内存/IO 压力都在这一层。</div></div>
+  <div class="layer l-app"><div class="lh"><span class="badge">外部依赖</span><span class="name">etcd · 对象存储 · 消息队列</span></div>
+    <div class="ld">第 8 课讲过：元数据/服务发现给 etcd，数据与索引给对象存储，写入日志给消息队列。控制面与数据面都站在它们之上。</div></div>
+</div>
+
+<h2>组件接口：types.go 里的契约</h2>
+<p>这套分工不是口头约定，而是写死在 Go 接口里的。<span class="inline">internal/types/types.go</span> 用一组接口定义了"每个组件长什么样"。
+最底层是一个共同基座 <span class="inline">Component</span>：任何组件，无论协调者还是节点，都必须实现 <span class="mono">Init / Start / Stop / Register</span> 四个方法——
+<strong>初始化、启动、停止、向 etcd 注册自己</strong>。这四个动词就是一个分布式组件的"生命周期最小集"。</p>
+
+<p>在 <span class="inline">Component</span> 之上，每类组件再叠加自己的业务方法：<span class="inline">RootCoord</span> 管 DDL，<span class="inline">DataCoord</span> 管段，
+<span class="inline">QueryCoord</span> 管加载，<span class="inline">Proxy</span> 是网关，<span class="inline">QueryNode</span> / <span class="inline">DataNode</span> 是执行节点。
+其中最特别的是 <span class="inline">MixCoord</span>：它<strong>同时嵌入了三个协调者的 gRPC 服务接口</strong>，等于"一个接口、三种角色"。</p>
+
+<p>用接口而不是具体类型当"契约"，在工程上有两个实打实的好处。其一是<strong>可替换</strong>：同一个接口，本地调用时是直连实现，跨进程时是 gRPC 客户端代理，
+上层代码完全不必关心对方在本机还是在另一台机器——这正是 <span class="inline">internal/distributed/</span> 那层 gRPC 包装能"无缝插入"的前提。
+其二是<strong>可测试</strong>：接口能被 mock 出来，于是测 Proxy 的逻辑时不必真的拉起一个 MixCoord，给它一个假的实现即可。
+你会看到源码里大量 <span class="mono">//go:generate mockery</span> 注释，就是在为这些接口自动生成 mock。<strong>接口是分布式系统的"可插拔接缝"</strong>，这条思路贯穿整个 Milvus。</p>
+
+<table class="t">
+  <tr><th>接口</th><th>角色（管什么）</th><th>所在面</th><th>实现包</th></tr>
+  <tr><td class="mono">Component</td><td>所有组件的基座：Init/Start/Stop/Register</td><td>—</td><td class="mono">internal/types</td></tr>
+  <tr><td class="mono">RootCoord</td><td>DDL、元数据表、TSO、全局 ID</td><td>控制面</td><td class="mono">internal/rootcoord</td></tr>
+  <tr><td class="mono">DataCoord</td><td>段分配、flush、compaction、GC、索引调度</td><td>控制面</td><td class="mono">internal/datacoord</td></tr>
+  <tr><td class="mono">QueryCoord</td><td>加载/释放、段与分片分配、均衡、副本</td><td>控制面</td><td class="mono">internal/querycoordv2</td></tr>
+  <tr><td class="mono">Proxy</td><td>请求入口：校验、鉴权、限流、分派</td><td>数据面</td><td class="mono">internal/proxy</td></tr>
+  <tr><td class="mono">QueryNode</td><td>内存中执行向量检索</td><td>数据面</td><td class="mono">internal/querynodev2</td></tr>
+  <tr><td class="mono">DataNode</td><td>落盘成段、跑 compaction、建索引</td><td>数据面</td><td class="mono">internal/datanode</td></tr>
+  <tr><td class="mono">MixCoord</td><td>把三个协调者打包进一个进程</td><td>控制面</td><td class="mono">internal/coordinator</td></tr>
+</table>
+
+<p>下面这段就是契约的核心：<span class="inline">Component</span> 的四个方法，以及 <span class="inline">MixCoord</span> 如何把三个协调者的服务接口
+<strong>一口气嵌进来</strong>。注意 <span class="mono">RootCoordServer / QueryCoordServer / DataCoordServer</span> 是 proto 生成的 gRPC 服务接口，
+它们来自 <span class="mono">milvus-proto</span> 的 <span class="mono">rootcoordpb / querypb / datapb</span> 包，而不是 Milvus 仓库里手写的类型。</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/types/types.go</span><span class="ln">Component / MixCoord 接口</span></div>
+  <pre><span class="cm">// 所有组件的共同基座：生命周期最小集</span>
+<span class="kw">type</span> Component <span class="kw">interface</span> {
+    Init() <span class="kw">error</span>
+    Start() <span class="kw">error</span>
+    Stop() <span class="kw">error</span>
+    Register() <span class="kw">error</span>   <span class="cm">// 向 etcd 注册自己（服务发现）</span>
+}
+
+<span class="cm">// MixCoord：一个接口，嵌入三个协调者的 gRPC 服务</span>
+<span class="kw">type</span> MixCoord <span class="kw">interface</span> {
+    Component
+    rootcoordpb.RootCoordServer   <span class="cm">// RootCoord 角色</span>
+    querypb.QueryCoordServer      <span class="cm">// QueryCoord 角色</span>
+    datapb.DataCoordServer        <span class="cm">// DataCoord 角色</span>
+    <span class="cm">// ... 外加少量跨协调者的聚合方法</span>
+}</pre>
+</div>
+
+<h2>MixCoord：一个进程，三个角色</h2>
+<p>很多人第一次看 Milvus 架构图会数出"三个协调者进程"，但<strong>今天的真实部署里，它们被打包进同一个进程——MixCoord</strong>。
+也就是说，RootCoord、DataCoord、QueryCoord 在<strong>逻辑上是三个角色</strong>，但在<strong>物理上是一个可执行体</strong>。
+这个打包逻辑在 <span class="inline">internal/coordinator/mix_coord.go</span> 里：一个 <span class="mono">mixCoordImpl</span> 同时持有三套协调者的实现，对外用 <span class="mono">NewMixCoordServer</span> 启动。</p>
+
+<p>为什么这么做？因为三个协调者之间<strong>交互极其频繁</strong>（DataCoord 要问 RootCoord 要时间戳、QueryCoord 要问 DataCoord 段在哪里），
+把它们放进一个进程能<strong>省掉大量跨进程 RPC</strong>，部署也更简单。但接口仍然<strong>各自独立</strong>，意味着将来若有需要，依旧能拆回三个进程而不动业务逻辑。
+对外，<span class="inline">internal/distributed/mixcoord</span> 把它包成一个 gRPC 服务器——注意 <span class="inline">internal/distributed/</span> 下<strong>没有</strong>单独的 rootcoord/datacoord/querycoord 目录，
+正印证了"三合一"的现状。</p>
+
+<p>这其实是 Milvus 架构演进的一个缩影。早期版本里，三个协调者是<strong>三个独立进程</strong>，各自启动、各自注册、彼此用 gRPC 通信；
+这在概念上很干净，但运维上要管三套进程，且协调者之间频繁的内部调用都得走网络，徒增延迟。后来社区把它们<strong>合并成 MixCoord</strong>：
+对内三套实现共享同一进程、直接函数调用；对外仍暴露三套服务接口，向后兼容。<strong>"逻辑上分、物理上合"</strong>是一种典型的工程折中——
+它保留了清晰的职责边界（接口不变），又收割了同进程协作的性能与运维红利。所以当你看老一点的设计文档说"DataCoord 进程"时，别困惑：
+那是<strong>角色名</strong>，今天它住在 MixCoord 这套房子里。本教程统一遵循"代码为准"：以仓库里真实的 <span class="mono">mixCoordImpl</span> 为现状描述。</p>
+
+<div class="cols">
+  <div class="col"><h4>控制面在想什么</h4><p>"这个新集合的元数据存哪？""这批新写入该开一个新段还是续用旧段？""这个 QueryNode 挂了，它负责的分片谁来接？"
+  ——全是<strong>决策与分配</strong>问题。控制面要的是<strong>正确、一致、全局视角</strong>，不追求高吞吐。</p></div>
+  <div class="col"><h4>数据面在想什么</h4><p>"这条 search 请求，我在自己内存里的索引上算 topK""这批 insert，我追加到当前段的列存里""这个段太碎了，我把它和邻居合并"
+  ——全是<strong>执行</strong>问题。数据面要的是<strong>快、并行、可水平扩容</strong>，单点挂掉不影响全局元数据。</p></div>
+</div>
+
+<h2>服务发现与会话：etcd 怎么把它们粘起来</h2>
+<p>进程拆成两面之后，新问题来了：Proxy 怎么知道 MixCoord 在哪个地址？QueryCoord 怎么知道现在有几台活着的 QueryNode？
+答案是 <strong>etcd 上的会话（session）机制</strong>。每个组件启动时执行 <span class="mono">Register()</span>，在 etcd 里写下一条带<strong>租约（lease）</strong>的 session 记录——
+"我是 querynode-3，地址在这里，我还活着"。租约要靠<strong>定期续约</strong>维持，一旦进程崩溃、心跳停止，租约到期、记录自动消失。</p>
+
+<p>另一端，协调者<strong>watch</strong>这些 session 的目录：有节点上线，watch 立刻收到"新增"事件；有节点掉线，收到"删除"事件。
+于是控制面始终掌握着<strong>当前活着的节点清单</strong>，可以据此分配段、做均衡、在故障时把工作转移给别人。这套"注册—续约—监听"就是 Milvus 的<strong>服务发现</strong>，
+也是控制面/数据面能动态协作的底座。它的实现我们留到第 14 课细看，这里先记住它的角色。</p>
+
+<p>这里有个容易混淆的点：<strong>session 里存的是"地址"，不是"数据"</strong>。etcd 在这条链路上扮演的是"通讯录 + 心跳板"，它告诉你"谁在、在哪"，
+但真正的 search/insert 流量绝不经过 etcd——那会瞬间把它打爆。组件拿到对方地址后，是<strong>点对点直连 gRPC</strong> 发请求的。
+把 etcd 想成机场的<strong>航班信息屏</strong>：它显示哪架飞机在哪个登机口，但旅客是走廊桥直接登机，而不是挤到信息屏前面去。
+这条"控制信息走 etcd、数据流量走直连"的分界，和本课的控制面/数据面是同一种哲学在不同层面的复现。</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">节点启动</div><div class="nd">QueryNode/DataNode…</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">Register()</div><div class="nd">写带租约的 session 到 etcd</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">协调者 watch</div><div class="nd">收到"节点上线"事件</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">分配工作</div><div class="nd">把段/分片派给它</div></div>
+</div>
+
+<p>把这一课收束成一句话：Milvus 是一支<strong>分工明确的团队</strong>——协调者动脑、节点动手，etcd 当通讯录。
+读懂了"谁决策、谁执行、靠什么互相找到"，接下来四课分别深入每个协调者时，你就能始终把它放回这张大图里，不至于迷失在细节里。</p>
+
+<h2>三条边界纪律：别让两个面互相越界</h2>
+<p>有了大图，最后给三条"边界纪律"，它们能帮你在读后面源码时迅速判断"这段逻辑该属于哪个面"。<strong>第一条：权威元数据只属于控制面</strong>。
+集合 schema、段的归属、分片的分配，这些"真相"只能由协调者写、由 etcd 与元数据存储持久化；数据面节点哪怕在内存里缓存了一份，也只是<strong>只读副本</strong>，
+随时可丢、随时可重建。任何"节点擅自改元数据"都是设计上的越界。</p>
+
+<p><strong>第二条：用户数据吞吐只属于数据面</strong>。一条 search 的几千次距离计算、一批 insert 的列存追加，绝不能跑到协调者身上——否则控制面会被海量请求压垮，
+全局调度随之停摆。协调者只在"决策时刻"被触达：建表、加载、上报、故障转移，都是低频事件。<strong>把高频吞吐挡在控制面之外，是保证集群稳定的红线</strong>。</p>
+
+<p><strong>第三条：跨面通信只走接口与 etcd</strong>。两个面不靠"共享内存"或"偷看对方文件"协作，而是要么通过 <span class="inline">types.go</span> 定义的接口发 RPC，
+要么通过 etcd 的 session 与 watch 间接感知。这条纪律换来的是<strong>松耦合</strong>：你可以独立升级、重启、扩缩任意一个组件，只要它仍遵守接口契约、仍按时续约 session，
+整个系统就能继续运转。后面每深入一个协调者，不妨都用这三条纪律回看一眼——它能帮你把纷繁的细节，重新归位到"决策 vs 执行"这条主线上。</p>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  一句话串起来：<strong>控制面（协调者）决定谁做什么 → 数据面（节点）真正执行 → types.go 用接口写死契约 → MixCoord 把三个协调者打包成一个进程 → etcd 的 session 让两面互相发现</strong>。
+  这张"决策 vs 执行"的大图，是后面 RootCoord / DataCoord / QueryCoord / Proxy 每一课的共同坐标系。
+</div>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>两个面</strong>：控制面=协调者（管元数据、调度、分配，做决定）；数据面=节点（Proxy/QueryNode/DataNode，真正干活）。</li>
+    <li><strong>接口契约</strong>：<span class="mono">internal/types/types.go</span> 里，<span class="mono">Component</span>（Init/Start/Stop/Register）是基座，各组件在其上叠加业务方法。</li>
+    <li><strong>MixCoord</strong>：三个协调者今天打包进一个进程（<span class="mono">internal/coordinator/mix_coord.go</span>），它<strong>嵌入三套 gRPC 服务接口</strong>——逻辑三角色、物理一进程。</li>
+    <li><strong>分层为了扩展</strong>：少而关键的决策集中管理，多而繁重的执行横向扩容，两面可独立伸缩。</li>
+    <li><strong>服务发现</strong>：组件用 <span class="mono">Register()</span> 在 etcd 写带租约的 session，协调者 watch 它们，实现动态上线/下线感知（详见第 14 课）。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. Proxy 既不存段也不存索引，为什么本课仍把它划进“数据面”而不是“控制面”？</div>
+  <ol class="opts">
+    <li>因为 Proxy 比协调者启动得更晚</li>
+    <li>因为只有控制面才允许存数据</li>
+    <li>因为 Proxy 不实现任何 types.go 接口</li>
+    <li>因为控制面/数据面是按“是否承载用户吞吐”划分的，Proxy 站在每条请求的吞吐链路上；它能轻松扩缩是因为无状态，而非因为它属于控制面</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。划分依据是“是否承载用户吞吐”，不是“是否存数据”。Proxy 站在吞吐链路上故属数据面；它无状态故可随意扩缩。把“承载吞吐”和“持有状态”分开看，才能准确理解每个组件的扩缩容策略</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. types.go 里所有组件共有的基座接口 Component 规定了哪四个方法？这反映了什么设计意图？</div>
+  <ol class="opts">
+    <li>Read/Write/Flush/Compact，强调存储能力</li>
+    <li>Login/Logout/Auth/Rate，强调安全</li>
+    <li>Search/Insert/Delete/Query，强调数据操作</li>
+    <li>Init/Start/Stop/Register —— 一个分布式组件的“生命周期最小集”，其中 Register 是向 etcd 注册自己以支持服务发现</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。Component 抽出每个组件都需要的“生命周期最小集”：初始化、启动、停止、注册。用接口而非具体类型当契约，换来可替换（本地直连或 gRPC 代理）与可测试（mock）两大好处</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. “MixCoord 把三个协调者打包进一个进程”——下面哪种描述最准确？</div>
+  <ol class="opts">
+    <li>MixCoord 取代了所有数据面节点</li>
+    <li>MixCoord 只是三个协调者的负载均衡器</li>
+    <li>三个协调者被合并成一个新角色，原有职责消失</li>
+    <li>RootCoord/DataCoord/QueryCoord 在逻辑上仍是三个角色，物理上是同一个可执行体；MixCoord 接口同时嵌入了三套 gRPC 服务</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。逻辑三角色、物理一进程：mixCoordImpl 同时持有三套协调者实现，MixCoord 接口嵌入三套 gRPC 服务。打包减少了部署与跨进程通信开销，但职责边界仍清晰</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>假如把一条 search 的距离计算“顺手”放到协调者上执行，短期看似乎省了一次 RPC。请论证为什么这会破坏整个集群的稳定性，并用本课“三条边界纪律”解释正确做法。</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Parts 1 and 2 covered "what a vector is" and "how data is stored." From here we zoom out to the <strong>whole cluster</strong>:
+Milvus is a group of cooperating processes, and their most fundamental division of labor is the <strong>control plane</strong> vs the
+<strong>data plane</strong> — the former <strong>decides who does what</strong>, the latter <strong>actually does the work</strong>.
+Grasp this through-line and the next four lessons on RootCoord, DataCoord, QueryCoord, and Proxy fall neatly into place.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Picture Milvus as an <strong>airport</strong>. The <strong>control tower</strong> carries no luggage and flies no plane, yet it holds the
+  global picture — which runway each plane takes, which gate it parks at, when it departs. That is the <strong>control plane</strong>.
+  The <strong>planes and ground crew</strong> are who actually move passengers and cargo; they <strong>obey the tower</strong>, but the tower never
+  hauls a box for them. That is the <strong>data plane</strong>. The tower cares about <strong>scheduling and metadata</strong>; the planes care about
+  <strong>execution and throughput</strong>. Mix the two and the airport grinds to a halt.
+</div>
+
+<h2>Two planes: deciding vs executing</h2>
+<p>Milvus splits every process by responsibility. The <strong>control plane (coordinators)</strong> owns <strong>metadata, scheduling, assignment</strong>:
+what a collection's schema looks like, which machine a segment goes to, which QueryNode serves which shard, when to trigger flush and compaction.
+They <strong>make decisions</strong> but barely touch the user's real data stream. The <strong>data plane (nodes)</strong> are the <strong>workers</strong>: Proxy receives requests,
+QueryNode runs vector search in memory, DataNode persists writes into segments, StreamingNode carries the write log. They <strong>follow the coordinators</strong>,
+yet all the throughput pressure lands on them. Put differently, the control plane answers "<strong>what should be done</strong>" and the data plane answers "<strong>do it now</strong>";
+the former is a constantly-updated battle map, the latter the troops charging across it. The rest of this lesson explains that map's legend (the interfaces), the headquarters' org chart (MixCoord), and how troops and HQ communicate (service discovery).</p>
+
+<p>This "narrow control, wide data" shape has a subtle point worth naming: <strong>Proxy is in the data plane yet stores no user data</strong>. It's a "stateless gateway" — it only validates, authenticates, rate-limits, and dispatches,
+asking coordinators for timestamps and nodes for results, holding no segments and no indexes itself. Precisely because of that, Proxy can <strong>add and remove instances freely</strong> like a web server, with a load balancer in front.
+The lesson: the control/data split is by "does it carry user throughput," not by "does it store data." Proxy is in the data plane because it <strong>sits on the throughput path</strong>;
+and it scales easily exactly because it is <strong>stateless</strong>. Separate "carries throughput" from "holds state" and you can read each component's scaling strategy correctly.</p>
+
+<p>This layering isn't cosmetic — it exists for <strong>scalability and availability</strong>. Decision logic (metadata, scheduling) is "few but critical"
+and suits centralized, strongly-consistent management; execution logic (search, persistence) is "many and heavy" and suits spreading out and scaling by load.
+Split them and you can <strong>scale the data plane alone</strong> (add QueryNodes for query throughput) without touching the control plane, and vice versa.
+This is "storage-compute separation" extended to the process level — the etcd / object storage / message queue from Part 2 are <strong>external dependencies</strong>;
+the control/data plane here is the division of labor among <strong>Milvus's own processes</strong>.</p>
+
+<p>Layering brings an often-overlooked benefit: <strong>fault isolation</strong>. Data-plane nodes are "stateless" — the indexes and segments in their memory are
+replicas loaded from object storage and rebuildable at any time; the real "authoritative metadata" lives only in the control plane and etcd. So when a QueryNode
+suddenly crashes, all that's lost is "one in-memory copy"; the control plane immediately reassigns its shards to others, almost invisibly to clients. Conversely,
+the control plane is critical but handles little traffic with stable logic, so it can be protected more conservatively (multi-replica, strongly-consistent storage).
+<strong>Separating "the volatile, crash-prone heavy lifting" from "the stable, critical decisions" is a basic fault-tolerance discipline in distributed systems.</strong></p>
+
+<p>Here's an order-of-magnitude intuition: in a cluster, coordinators usually number in the <strong>single digits</strong> (often just one MixCoord), while QueryNodes / DataNodes
+can be in the <strong>dozens or hundreds</strong>. By traffic, the control plane mostly handles <strong>low-frequency</strong> operations per second — create-table, load, heartbeat reports —
+while the data plane carries <strong>thousands</strong> of search/insert per second. This "<strong>narrow control plane, wide data plane</strong>" shape forces the two to adopt
+entirely different design stances: the former optimizes for stability and correctness, the latter for speed and volume.</p>
+
+<div class="layers">
+  <div class="layer l-core"><div class="lh"><span class="badge">control plane</span><span class="name">Coordinators</span></div>
+    <div class="ld">RootCoord (DDL &amp; identity), DataCoord (write side &amp; storage), QueryCoord (read side). Own metadata, timestamps, and the <strong>assignment/scheduling</strong> of segments and shards; they decide, they don't shoulder throughput. Today packed into one <strong>MixCoord</strong> process.</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">data plane · gateway</span><span class="name">Proxy</span></div>
+    <div class="ld">The single entry for all client requests: validate, authenticate, rate-limit, then dispatch tasks to coordinators and nodes. Stateless, horizontally scalable.</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">data plane · execute</span><span class="name">QueryNode / DataNode / StreamingNode</span></div>
+    <div class="ld">QueryNode searches in memory; DataNode persists writes into segments and runs the real compaction/index-build work; StreamingNode carries the write log (WAL). All the CPU/memory/IO pressure lives here.</div></div>
+  <div class="layer l-app"><div class="lh"><span class="badge">external deps</span><span class="name">etcd · object storage · message queue</span></div>
+    <div class="ld">From Lesson 8: metadata/service-discovery to etcd, data/indexes to object storage, the write log to the message queue. Both planes stand on top of these.</div></div>
+</div>
+
+<h2>Component interfaces: the contract in types.go</h2>
+<p>This division isn't a verbal agreement — it's frozen into Go interfaces. <span class="inline">internal/types/types.go</span> defines "what each component looks like."
+At the very bottom is a shared base, <span class="inline">Component</span>: any component, coordinator or node, must implement four methods <span class="mono">Init / Start / Stop / Register</span> —
+<strong>initialize, start, stop, and register itself with etcd</strong>. Those four verbs are the minimal lifecycle of a distributed component.</p>
+
+<p>Above <span class="inline">Component</span>, each component adds its own business methods: <span class="inline">RootCoord</span> owns DDL, <span class="inline">DataCoord</span> owns segments,
+<span class="inline">QueryCoord</span> owns loading, <span class="inline">Proxy</span> is the gateway, <span class="inline">QueryNode</span> / <span class="inline">DataNode</span> are execution nodes.
+The special one is <span class="inline">MixCoord</span>: it <strong>embeds all three coordinators' gRPC service interfaces at once</strong> — "one interface, three roles."</p>
+
+<p>Using interfaces rather than concrete types as the "contract" buys two real engineering wins. First, <strong>substitutability</strong>: the same interface is a direct implementation for a local call
+and a gRPC client proxy across processes, so upper-layer code never cares whether the peer is on this machine or another — exactly what lets the gRPC wrappers in <span class="inline">internal/distributed/</span> slot in seamlessly.
+Second, <strong>testability</strong>: an interface can be mocked, so testing Proxy logic needs no real MixCoord — just hand it a fake implementation. You'll see many <span class="mono">//go:generate mockery</span>
+comments in the source generating mocks for these very interfaces. <strong>Interfaces are the "pluggable seams" of a distributed system</strong>, a theme running through all of Milvus.</p>
+
+<table class="t">
+  <tr><th>Interface</th><th>Role (owns what)</th><th>Plane</th><th>Impl package</th></tr>
+  <tr><td class="mono">Component</td><td>Base of all: Init/Start/Stop/Register</td><td>—</td><td class="mono">internal/types</td></tr>
+  <tr><td class="mono">RootCoord</td><td>DDL, meta table, TSO, global IDs</td><td>control</td><td class="mono">internal/rootcoord</td></tr>
+  <tr><td class="mono">DataCoord</td><td>segment alloc, flush, compaction, GC, index sched</td><td>control</td><td class="mono">internal/datacoord</td></tr>
+  <tr><td class="mono">QueryCoord</td><td>load/release, segment &amp; shard assign, balance, replicas</td><td>control</td><td class="mono">internal/querycoordv2</td></tr>
+  <tr><td class="mono">Proxy</td><td>request entry: validate, auth, rate-limit, dispatch</td><td>data</td><td class="mono">internal/proxy</td></tr>
+  <tr><td class="mono">QueryNode</td><td>execute vector search in memory</td><td>data</td><td class="mono">internal/querynodev2</td></tr>
+  <tr><td class="mono">DataNode</td><td>persist segments, run compaction, build indexes</td><td>data</td><td class="mono">internal/datanode</td></tr>
+  <tr><td class="mono">MixCoord</td><td>packs the three coordinators into one process</td><td>control</td><td class="mono">internal/coordinator</td></tr>
+</table>
+
+<p>Here is the heart of the contract: <span class="inline">Component</span>'s four methods, and how <span class="inline">MixCoord</span> <strong>embeds all three coordinator service interfaces in one breath</strong>.
+Note that <span class="mono">RootCoordServer / QueryCoordServer / DataCoordServer</span> are proto-generated gRPC service interfaces from
+<span class="mono">milvus-proto</span>'s <span class="mono">rootcoordpb / querypb / datapb</span> packages, not hand-written types in the Milvus repo.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/types/types.go</span><span class="ln">Component / MixCoord interfaces</span></div>
+  <pre><span class="cm">// Shared base of every component: the minimal lifecycle</span>
+<span class="kw">type</span> Component <span class="kw">interface</span> {
+    Init() <span class="kw">error</span>
+    Start() <span class="kw">error</span>
+    Stop() <span class="kw">error</span>
+    Register() <span class="kw">error</span>   <span class="cm">// register self with etcd (service discovery)</span>
+}
+
+<span class="cm">// MixCoord: one interface embedding three coordinators' gRPC services</span>
+<span class="kw">type</span> MixCoord <span class="kw">interface</span> {
+    Component
+    rootcoordpb.RootCoordServer   <span class="cm">// the RootCoord role</span>
+    querypb.QueryCoordServer      <span class="cm">// the QueryCoord role</span>
+    datapb.DataCoordServer        <span class="cm">// the DataCoord role</span>
+    <span class="cm">// ... plus a few cross-coordinator aggregate methods</span>
+}</pre>
+</div>
+
+<h2>MixCoord: one process, three roles</h2>
+<p>On first look at a Milvus diagram, many people count "three coordinator processes," but <strong>in today's real deployment they are packed into one process — MixCoord</strong>.
+That is, RootCoord, DataCoord, and QueryCoord are <strong>three roles logically</strong> but <strong>one executable physically</strong>.
+The packaging lives in <span class="inline">internal/coordinator/mix_coord.go</span>: a single <span class="mono">mixCoordImpl</span> holds all three coordinator implementations and is started via <span class="mono">NewMixCoordServer</span>.</p>
+
+<p>Why? Because the three coordinators <strong>interact extremely often</strong> (DataCoord asks RootCoord for timestamps; QueryCoord asks DataCoord where segments live).
+Putting them in one process <strong>saves a mountain of cross-process RPCs</strong> and simplifies deployment. Yet the interfaces stay <strong>independent</strong>, so they could be split back into three processes later without touching business logic.
+Externally, <span class="inline">internal/distributed/mixcoord</span> wraps it as one gRPC server — note there is <strong>no</strong> separate rootcoord/datacoord/querycoord directory under <span class="inline">internal/distributed/</span>,
+which confirms the "three-in-one" reality.</p>
+
+<p>This is really a microcosm of Milvus's architectural evolution. In early versions the three coordinators were <strong>three separate processes</strong>, each starting, registering, and talking over gRPC;
+conceptually clean, but operationally you managed three sets of processes, and the frequent internal calls between coordinators all crossed the network, adding latency. The community later <strong>merged them into MixCoord</strong>:
+internally the three implementations share one process with direct function calls; externally it still exposes all three service interfaces, staying backward-compatible. <strong>"Split logically, merged physically"</strong> is a classic engineering trade-off —
+it keeps clear responsibility boundaries (interfaces unchanged) while reaping the performance and ops dividends of same-process collaboration. So when an older design doc says "the DataCoord process," don't be puzzled:
+that's a <strong>role name</strong>; today it lives inside the MixCoord house. This guide follows "code is truth," describing the present state via the real <span class="mono">mixCoordImpl</span> in the repo.</p>
+
+<div class="cols">
+  <div class="col"><h4>What the control plane thinks</h4><p>"Where do I store this new collection's metadata?" "Should this batch of writes open a new segment or continue an old one?" "This QueryNode died — who takes its shard?"
+  — all <strong>decision and assignment</strong> questions. The control plane wants <strong>correctness, consistency, a global view</strong>, not raw throughput.</p></div>
+  <div class="col"><h4>What the data plane thinks</h4><p>"This search request — I compute topK on my in-memory index." "This insert — I append to the current segment's columnar store." "This segment is too fragmented — I merge it with neighbors."
+  — all <strong>execution</strong> questions. The data plane wants <strong>speed, parallelism, horizontal scaling</strong>; one dying node doesn't lose global metadata.</p></div>
+</div>
+
+<h2>Service discovery and sessions: how etcd glues them together</h2>
+<p>Once processes split into two planes, a new problem appears: how does Proxy know MixCoord's address? How does QueryCoord know how many QueryNodes are alive right now?
+The answer is the <strong>session mechanism on etcd</strong>. On startup each component runs <span class="mono">Register()</span>, writing a session record with a <strong>lease</strong> into etcd —
+"I am querynode-3, here's my address, I'm alive." The lease must be kept by <strong>periodic renewal</strong>; once the process crashes and heartbeats stop, the lease expires and the record vanishes automatically.</p>
+
+<p>On the other end, coordinators <strong>watch</strong> these session directories: a node comes up and the watch immediately gets an "added" event; a node drops and it gets a "deleted" event.
+Thus the control plane always holds the <strong>current list of live nodes</strong> and can assign segments, rebalance, and on failure shift work to others.
+This "register — renew — watch" loop is Milvus's <strong>service discovery</strong>, the foundation that lets the two planes cooperate dynamically. We dive into its implementation in Lesson 14; for now just remember its role.</p>
+
+<p>One easy point of confusion: <strong>a session stores an "address," not "data."</strong> On this path etcd plays "address book + heartbeat board," telling you "who's up and where,"
+but the real search/insert traffic never goes through etcd — that would instantly overwhelm it. Once a component has the peer's address, it sends requests over a <strong>direct point-to-point gRPC</strong> connection.
+Think of etcd as the airport's <strong>flight information board</strong>: it shows which plane is at which gate, but passengers board via the jet bridge directly rather than crowding around the board.
+This split — "control info through etcd, data traffic direct" — is the same philosophy as this lesson's control/data plane, replayed at a different layer.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">node starts</div><div class="nd">QueryNode/DataNode…</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">Register()</div><div class="nd">write leased session to etcd</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">coordinator watches</div><div class="nd">gets "node up" event</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">assign work</div><div class="nd">hand it segments/shards</div></div>
+</div>
+
+<p>To wrap this lesson in one line: Milvus is a <strong>team with a clear division of labor</strong> — coordinators think, nodes act, etcd is the address book.
+Once you grasp "who decides, who executes, and how they find each other," the next four lessons that drill into each coordinator stay anchored to this big picture, never lost in the details.</p>
+
+<h2>Three boundary disciplines: keep the planes from trespassing</h2>
+<p>With the big picture in hand, here are three "boundary disciplines" that help you quickly judge "which plane does this logic belong to" while reading later source.
+<strong>One: authoritative metadata belongs only to the control plane.</strong> Collection schema, segment ownership, shard assignment — these "truths" may only be written by coordinators
+and persisted by etcd and the metadata store; even if a data-plane node caches a copy in memory, it is just a <strong>read-only replica</strong>, droppable and rebuildable anytime.
+Any "node editing metadata on its own" is a design trespass.</p>
+
+<p><strong>Two: user-data throughput belongs only to the data plane.</strong> A search's thousands of distance computations, an insert batch's columnar appends — these must never land on a coordinator,
+or the control plane gets crushed by traffic and global scheduling stalls with it. Coordinators are touched only at "decision moments": create-table, load, reporting, failover — all low-frequency events.
+<strong>Keeping high-frequency throughput out of the control plane is the red line for cluster stability.</strong></p>
+
+<p><strong>Three: cross-plane communication goes only through interfaces and etcd.</strong> The two planes don't cooperate via "shared memory" or "peeking at each other's files" — they either send RPCs through
+the interfaces defined in <span class="inline">types.go</span>, or sense each other indirectly through etcd's sessions and watches. This discipline buys <strong>loose coupling</strong>: you can upgrade, restart, or scale any one
+component independently, and as long as it still honors the interface contract and renews its session on time, the whole system keeps running. As you drill into each coordinator later, re-read it through these three disciplines —
+they snap the swirl of details back onto the "decide vs execute" through-line.</p>
+
+<div class="card macro">
+  <div class="tag">🌍 The big picture</div>
+  In one line: <strong>the control plane (coordinators) decides who does what → the data plane (nodes) actually executes → types.go freezes the contract in interfaces → MixCoord packs the three coordinators into one process → etcd sessions let the two planes discover each other</strong>.
+  This "decide vs execute" picture is the shared coordinate system for every later lesson on RootCoord / DataCoord / QueryCoord / Proxy.
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Two planes</strong>: control = coordinators (own metadata, scheduling, assignment; decide); data = nodes (Proxy/QueryNode/DataNode; actually work).</li>
+    <li><strong>Interface contract</strong>: in <span class="mono">internal/types/types.go</span>, <span class="mono">Component</span> (Init/Start/Stop/Register) is the base; each component adds business methods on top.</li>
+    <li><strong>MixCoord</strong>: the three coordinators are packed into one process today (<span class="mono">internal/coordinator/mix_coord.go</span>); it <strong>embeds all three gRPC service interfaces</strong> — three roles logically, one process physically.</li>
+    <li><strong>Layering for scale</strong>: few-but-critical decisions centralized; many-and-heavy execution scaled out; the two planes scale independently.</li>
+    <li><strong>Service discovery</strong>: components <span class="mono">Register()</span> a leased session in etcd, coordinators watch them — dynamic up/down awareness (detailed in Lesson 14).</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. The Proxy stores neither segments nor indexes, so why does this lesson still place it in the 'data plane' rather than the 'control plane'?</div>
+  <ol class="opts">
+    <li>Because the Proxy starts up later than the coordinators</li>
+    <li>Because only the control plane is allowed to store data</li>
+    <li>Because the Proxy implements no interface in types.go</li>
+    <li>Because the split is by 'whether it carries user throughput'; the Proxy sits on every request's throughput path; it scales easily because it is stateless, not because it belongs to the control plane</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. The criterion is 'does it carry user throughput', not 'does it store data'. The Proxy is on the throughput path so it is data plane; it is stateless so it scales freely. Separating 'carries throughput' from 'holds state' is the key to each component's scaling story</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. What four methods does the shared base interface Component in types.go require, and what design intent does that reflect?</div>
+  <ol class="opts">
+    <li>Read/Write/Flush/Compact, emphasizing storage ability</li>
+    <li>Login/Logout/Auth/Rate, emphasizing security</li>
+    <li>Search/Insert/Delete/Query, emphasizing data ops</li>
+    <li>Init/Start/Stop/Register - the minimal lifecycle of a distributed component, where Register registers itself in etcd for service discovery</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. Component abstracts the minimal lifecycle every component needs: init, start, stop, register. Using an interface (not a concrete type) as the contract buys replaceability (direct or gRPC proxy) and testability (mocking)</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 'MixCoord packs the three coordinators into one process' - which description is most accurate?</div>
+  <ol class="opts">
+    <li>MixCoord replaces all data-plane nodes</li>
+    <li>MixCoord is merely a load balancer in front of the three coordinators</li>
+    <li>The three coordinators merge into a brand-new role and their old duties vanish</li>
+    <li>RootCoord/DataCoord/QueryCoord remain three roles logically but are one executable physically; the MixCoord interface embeds all three gRPC services at once</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. Three roles logically, one process physically: mixCoordImpl holds all three coordinator impls and the MixCoord interface embeds all three gRPC services. Packaging cuts deployment and cross-process overhead while keeping duties distinct</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>Suppose you 'conveniently' ran a search's distance computation on a coordinator to save one RPC. Argue why this would wreck cluster stability, and use this lesson's 'three boundary disciplines' to explain the right approach.</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="08-dependencies-and-deployment.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">依赖与部署形态</span><span class="lang-en">Dependencies &amp; deployment</span></div></a><a class="next" href="10-proxy.html"><div class="dir"><span class="lang-zh">下一课 →</span><span class="lang-en">Next →</span></div><div class="ttl"><span class="lang-zh">Proxy 网关</span><span class="lang-en">The Proxy gateway</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>

@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>13 · QueryCoordV2 / QueryCoordV2 - Milvus 图解教程</title>
+<meta name="description" content="第三部分 · 分布式架构｜QueryCoordV2 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="13 · QueryCoordV2 / QueryCoordV2 - Milvus 图解教程">
+<meta property="og:description" content="第三部分 · 分布式架构｜QueryCoordV2 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="13 · QueryCoordV2 / QueryCoordV2 - Milvus 图解教程">
+<meta name="twitter:description" content="第三部分 · 分布式架构｜QueryCoordV2 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第三部分 · 分布式架构</span><span class="lang-en">Part 3 · Distributed architecture</span></span>
+    <span class="pill">13 / 14</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:92%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第三部分 · 分布式架构</span><span class="lang-en">Part 3 · Distributed architecture</span></div>
+    <h1><span class="lang-zh">QueryCoordV2</span><span class="lang-en">QueryCoordV2</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+DataCoord 管"数据怎么写进去、怎么存好"，这一课的 <strong>QueryCoordV2（查询协调者）</strong>则管"数据怎么被搜出来"。它是读取侧的总调度：把要查的集合<strong>加载</strong>进 QueryNode 的内存，
+把段和分片<strong>分配</strong>给各个节点，用<strong>均衡器</strong>让负载均匀，用<strong>副本</strong>换来高可用与高吞吐，还时刻盯着"<strong>当前分布</strong>"与"<strong>目标分布</strong>"的差距去校正。读懂它，你就握住了向量检索在分布式层面的全貌。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 生活类比</div>
+  把 QueryCoordV2 想成一座<strong>大图书馆的阅览室调度主任</strong>。库房里（对象存储）躺着海量的书（段），但读者不能直接进库房翻——主任得先把要用的书<strong>搬上阅览室的书架（加载进 QueryNode 内存）</strong>，读者才能快速取阅。
+  他要决定<strong>哪本书放哪个书架</strong>（段分配），让每个书架的书量均匀、别挤在一处（均衡）；热门的书还会<strong>多备几本副本</strong>分放不同书架，这样一个书架坏了别处还能借到（高可用），多人同时借也不必排队（高吞吐）。
+  他手里始终攥着两张表：<strong>现在每个书架上实际有哪些书</strong>，和<strong>理想情况下应该有哪些书</strong>——他的工作，就是不断让前者向后者靠拢。
+</div>
+
+<h2>加载与释放：搜索的前提</h2>
+<p>第一个要打破的直觉是：<strong>在 Milvus 里，数据"存着"不等于"能搜"</strong>。一个集合的段安安静静躺在对象存储里，本身是搜不了的；必须先经过 <strong>load（加载）</strong>——QueryCoord 把这个集合的段与索引调度进若干 QueryNode 的内存，
+建立起可供检索的在线副本，集合才进入"可搜索"状态。反过来，<strong>release（释放）</strong>则把这些内存占用还回去，集合重新变为"只存不搜"。这就是为什么你在用 Milvus 时，建完集合、灌完数据，还要显式 <span class="mono">load_collection</span> 之后才能 search。</p>
+
+<p>为什么要有这道"加载"的门槛，而不是让所有数据随时可搜？因为向量检索是<strong>内存密集</strong>的：ANN 索引要常驻内存才能快（第 5、6 课），而内存是昂贵且有限的资源。如果把所有集合无脑全部加载，内存很快就会被撑爆。
+于是 Milvus 把"<strong>是否占用宝贵的查询内存</strong>"这个决定权，通过 load/release 交到用户手里——你想搜哪个集合，就把哪个加载进来；暂时不用了，就释放掉腾出空间。QueryCoord 正是这道闸门的看守者，它统一掌管"此刻哪些集合在线、各自加载在哪些节点上"。</p>
+
+<p>这道闸门的存在，也让 Milvus 能优雅地支持"<strong>数据量远大于内存</strong>"的场景。你可以往一个集合里灌入远超单机内存的数据，安心地存在对象存储里；真正要查时，再按需把需要的集合（甚至按分区、按需局部）加载进来。
+换句话说，<strong>存储容量由对象存储兜底、查询能力由内存决定</strong>，两者解耦。这正是第 7 课"存算分离"在读取侧的直接体现——你不必为了能查一点数据，就被迫把全部数据都常驻昂贵的内存里。</p>
+
+<p>加载远不只是"把文件读进内存"这么简单，它是一连串协调动作的总和：要确定这个集合有哪些段、哪些分片；要为每个段、每条分片通道挑选承载的 QueryNode；要把它们的索引也一并就位；
+还要在加载完成后，让 Proxy 能查到"这个集合现在加载在哪、分了几个副本、每个分片的 delegator 是谁"，这样查询才能被正确地扇出。这一整套，正是 QueryCoord 作为读取侧大脑要操心的事。</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>用户请求加载</h4><p><span class="mono">load_collection</span> 经 Proxy 到达 QueryCoord。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>确定目标分布</h4><p>算出这个集合该有哪些段、哪些分片，要加载几个副本——形成"目标（target）"。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>分配段与分片</h4><p>把段、分片通道（delegator）分派给各个 QueryNode。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>节点加载</h4><p>QueryNode 从对象存储拉取段与索引，载入内存，建立在线副本。</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>校正到位</h4><p>观测"当前分布"逼近"目标分布"，全部就位后集合变为可搜索。</p></div></div>
+</div>
+
+<h2>段与分片的分配：谁来搜哪一块</h2>
+<p>一个大集合往往有成百上千个段、若干个分片，而 QueryNode 有很多台——所以核心问题是：<strong>哪个段、哪条分片该交给哪台 QueryNode？</strong>QueryCoord 要做两类分配。一类是<strong>段分配</strong>：把历史的、已落盘的段（第 12 课的 Flushed 段）摊到各个节点的内存里，每个节点负责自己那一摊段的局部检索。
+另一类是<strong>分片（通道）分配</strong>：每个分片对应一条 vchannel，由某台 QueryNode 上的 <strong>delegator（分片代理 / shard leader）</strong>负责。delegator 是这条分片的"门面"，它既要协调该分片下所有段的查询，又要承接该分片最新的、还没落盘的增量数据（growing 段）。</p>
+
+<p>为什么要区分"段"与"分片/delegator"两层？因为一次查询要看到的，既有<strong>历史数据</strong>（已落盘的 sealed/flushed 段），也有<strong>最新数据</strong>（还在内存里流动的 growing 段）。delegator 正是把这两者缝合起来的关键角色：
+它代表一条分片，把对历史段的查询<strong>扇出</strong>给持有这些段的 QueryNode，再把这条分片上最新的增量也一并查上，最后<strong>归并</strong>成这条分片的完整结果。于是 Proxy 只需把查询发给各分片的 delegator，就能拿到"历史 + 最新"都不漏的答案。这套机制的细节（跨分片归并）会在第 29 课深入，这里先抓住角色分工。</p>
+
+<p>delegator 这个角色还解释了一个常见疑问：为什么 Milvus 能做到"刚写进去的数据立刻就能被搜到"（在合适的一致性级别下）？因为最新的 growing 增量本就由 delegator 直接持有并参与查询，不必等它落盘、不必等它被加载——
+查询打到 delegator 时，它把"已落盘的历史段结果"和"手里最新的内存增量结果"现场合并，于是新旧数据一个都不漏。这正是写入侧（DataCoord 的段流转）与读取侧（QueryCoord 的 delegator）在同一条分片上<strong>无缝接力</strong>的体现：数据在写侧从 growing 一路走向 flushed，在读侧则由 delegator 始终盯着这条流，保证查询看到的永远是完整的当下。</p>
+
+<div class="cols">
+  <div class="col"><h4>段分配 segment</h4><p>把已落盘的<strong>历史段</strong>摊给各个 QueryNode，每台负责一部分段的局部 topK 检索。关注的是<strong>把存量数据均匀铺开</strong>，让检索算力水平扩展。</p></div>
+  <div class="col"><h4>分片分配 delegator</h4><p>每条分片由一个 <strong>delegator</strong> 承载，缝合该分片的历史段查询与最新 growing 增量，并对外作为这条分片的查询门面。关注的是<strong>让每条数据流都有人负责到最新</strong>。</p></div>
+</div>
+
+<h2>均衡器：让负载不偏不倚</h2>
+<p>分配不是一次性的。节点会上线下线、集合会增删、各节点的负载会逐渐倾斜——于是需要一个 <strong>均衡器（balancer）</strong>持续地把段和分片<strong>重新摊匀</strong>。它的目标朴素而重要：别让某台 QueryNode 又热又挤、另一台却闲着，
+因为查询的整体延迟往往被<strong>最忙的那台</strong>拖累。当有新节点加入，均衡器要把一部分段迁过去让它分担；当某节点离开，它负责的段要被接管到别处；当负载长期不均，也要主动搬运校正。</p>
+
+<p>Milvus 的均衡器有不止一种策略。最简单的是<strong>轮询（round-robin）</strong>：纯按数量把段均匀分，不管每个段实际多大、多热——实现简单，适合分布相对均匀的场景。更精细的是<strong>打分（score-based）</strong>策略：综合考虑节点的段数、行数、内存占用等"真实负载"来打分，
+把段往负载更轻的节点放。两种策略对应不同取舍：轮询图省事、求均匀的数量，打分图精准、求均匀的真实压力。它们都实现了同一个 <span class="mono">Balance</span> 接口，由 QueryCoord 按需选用。</p>
+
+<p>均衡这件事还有一个微妙的代价必须权衡：<strong>搬迁本身是有成本的</strong>。把一个段从 A 节点挪到 B 节点，意味着 B 要重新从对象存储拉取这个段、重新载入内存、重建必要的状态，期间还要小心别影响正在进行的查询。
+所以均衡器不能见到一点点不均就疯狂搬运——那会让集群陷入"反复折腾、净收益为负"的抖动。好的均衡策略懂得<strong>设阈值、留余量、慢慢收敛</strong>：只有当不均衡程度超过某个门槛、且收益明显大于搬迁成本时才动手。这种"克制的勤奋"，正是分布式均衡设计里最考验功力的地方。</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/querycoordv2/balance/balance.go</span><span class="ln">Balance 接口：产出段与通道的搬迁计划</span></div>
+  <pre><span class="kw">type</span> Balance <span class="kw">interface</span> {
+    <span class="cm">// 为一个副本均衡段与通道，返回"该怎么搬"的计划</span>
+    BalanceReplica(ctx context.Context, replica *meta.Replica) (
+        []assign.SegmentAssignPlan, []assign.ChannelAssignPlan)
+
+    <span class="cm">// 取出底层的分配策略（轮询 / 打分）</span>
+    GetAssignPolicy() assign.AssignPolicy
+}
+
+<span class="cm">// 轮询均衡器：纯按数量把段/通道均匀分到各节点</span>
+<span class="kw">type</span> RoundRobinBalancer <span class="kw">struct</span> { <span class="cm">/* ... */</span> }</pre>
+</div>
+
+<h2>副本：用冗余换高可用与高吞吐</h2>
+<p>加载一个集合时，你可以让它有<strong>多个副本（replica）</strong>——也就是把同一个集合的段，在<strong>不同的 QueryNode 上各加载一份</strong>。副本一举换来两样好东西。其一是<strong>高可用（HA）</strong>：某个副本所在的节点挂了，
+另一个副本还在别处好端端地服务，查询不中断、数据不丢可用性。其二是<strong>高吞吐</strong>：多个副本可以<strong>并行分担</strong>查询流量，同样一个集合，两个副本理论上能扛近两倍的并发查询。冗余在这里不是浪费，而是<strong>稳与快</strong>的来源。</p>
+
+<p>当然副本不是免费的：N 个副本就要 N 倍的查询内存。所以副本数是用户根据"这个集合多重要、查询量多大"来权衡的旋钮——核心业务、超高并发的集合多开几个副本，冷僻的集合一个就够。QueryCoord 的 <span class="mono">ReplicaManager</span> 统一管理这些副本：每个副本里有哪些节点、各自承载哪些段，都记在它这本账上。
+这呼应了第 9 课"协调者持有真相、节点执行"的分工——副本怎么排布是 QueryCoord 决定并记账的，QueryNode 只管把分到自己头上的段加载好、查好。</p>
+
+<p>这里还藏着一个常被忽略的细节：副本之间并不是简单的"完全镜像"，而是各自独立地承载该集合的全部数据、独立地做均衡。这样设计的好处是，<strong>一个副本内部的搬迁、扩缩，不会牵连另一个副本</strong>，故障与负载彼此隔离。
+当一次查询打进来，Proxy 会从可用的副本里挑一个去执行（通常按负载或就近原则），于是流量天然地被分摊到各副本上。可以说，副本既是"<strong>纵向的安全垫</strong>"（挂了有备份），也是"<strong>横向的扩音器</strong>"（并发被放大）——这正是为什么我们把它列为读取侧最重要的可用性与扩展手段。</p>
+
+<h2>分布 vs 目标：永不停歇的校正</h2>
+<p>在深入这套校正机制前，先把这一课出现的几个核心概念列成一张表，理清各自的角色——它们正是 QueryCoordV2 这本"账"里最重要的几栏：</p>
+
+<table class="t">
+  <tr><th>概念</th><th>是什么</th><th>角色</th></tr>
+  <tr><td><strong>distribution 分布</strong></td><td>当前实际加载现状</td><td>记录"哪个段此刻真的在哪台节点"</td></tr>
+  <tr><td><strong>target 目标</strong></td><td>期望的理想布局</td><td>声明"应该加载成什么样"，供校正参照</td></tr>
+  <tr><td><strong>replica 副本</strong></td><td>集合的一份在线拷贝</td><td>换取高可用与高吞吐，N 份即 N 倍内存</td></tr>
+  <tr><td><strong>delegator 分片代理</strong></td><td>一条分片的查询门面</td><td>缝合历史段与最新 growing 增量</td></tr>
+  <tr><td><strong>balancer 均衡器</strong></td><td>负载再平衡器</td><td>持续把段/分片摊匀，避免热点</td></tr>
+</table>
+
+<p>QueryCoordV2 这个"V2"架构里最精髓的设计，是它把状态拆成了<strong>两张视图</strong>来管理。一张叫<strong>分布（distribution）</strong>：现在<strong>实际</strong>是什么样——哪个段此刻真的加载在哪台节点、哪条分片的 delegator 现在在哪。
+另一张叫<strong>目标（target）</strong>：理想中<strong>应该</strong>是什么样——根据集合的加载请求、副本数、均衡策略算出来的期望布局。两者之间几乎总有差距：节点刚挂、段刚迁、加载刚发起……现实永远在追赶理想。</p>
+
+<p>QueryCoord 的核心循环，就是一群<strong>观测者（observer）</strong>不断比对这两张表，发现差距就生成动作去抹平它：目标里该有但分布里还没有的段，就调度加载；分布里多出来、目标里已不需要的，就释放；该搬的搬、该补的补。
+这种"<strong>声明目标 → 持续校正现状向目标收敛</strong>"的设计，正是现代分布式系统（如 Kubernetes 的 reconcile）公认的健壮范式：你不去写一长串"先做这步再做那步"的脆弱流程，而是只声明"我想要的终态"，让系统自己一轮一轮地逼近。
+目标本身还分<strong>当前目标（current target）</strong>与<strong>下一目标（next target）</strong>，用来平滑地从旧布局过渡到新布局而不打断正在进行的查询。理解了这套"分布逼近目标"的循环，你就抓住了 QueryCoordV2 区别于老架构的灵魂。</p>
+
+<p>为什么要分"当前"与"下一"两个目标？想象一次大规模的重新加载或均衡：如果直接把目标一步换成全新布局，正在用旧布局执行的查询就可能突然找不到段。两段式目标让系统能<strong>先准备好下一目标、待新布局就绪后再平滑切换</strong>，
+让旧查询走完、新查询走新布局，整个过程对用户无感。这种"<strong>双缓冲式</strong>"的切换，把"既要变、又不能停"这对矛盾化解得干净利落。至此，从 load 到分配、到均衡、到副本、再到这套分布逼近目标的循环，QueryCoordV2 作为读取侧大脑的全貌就清晰了——
+它和上一课的 DataCoord 一写一读，共同撑起了 Milvus 在分布式层面"既能稳稳存好、又能快快搜出"的两端。</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">用户 load</div><div class="nd">声明要搜的集合</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">QueryCoord</div><div class="nd">算目标·分配·均衡</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">QueryNode</div><div class="nd">加载段·当 delegator</div></div>
+  <div class="arrow">↺</div>
+  <div class="node"><div class="nt">observer</div><div class="nd">分布逼近目标</div></div>
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  QueryCoordV2 是读取侧的总调度。它的世界从 <strong>load</strong> 开始：存着不等于能搜，必须把集合的段与索引加载进 QueryNode 内存才可检索。它做两类分配——把历史段摊给各节点、把每条分片交给一个 delegator（缝合历史段与最新 growing 增量）；
+  用均衡器（轮询 / 打分两种策略，同一 <span class="mono">Balance</span> 接口）持续把负载摊匀；用副本换取高可用与高吞吐。最精髓的是"<strong>分布 vs 目标</strong>"：观测者不断让"实际加载现状"向"期望布局"收敛——声明终态、持续校正，正是它健壮的根源。
+</div>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>load / release</strong>：存着 ≠ 能搜；必须把集合段与索引加载进 QueryNode 内存才可检索，释放则还回内存。</li>
+    <li><strong>两类分配</strong>：段分配（把历史段摊给各节点）+ 分片分配（每条分片一个 <strong>delegator</strong>，缝合历史段与最新 growing 增量）。</li>
+    <li><strong>均衡器</strong>：持续把段/分片摊匀，避免热点；有轮询与打分两种策略，同实现 <span class="mono">Balance</span> 接口。</li>
+    <li><strong>副本</strong>：同集合在不同节点各加载一份，换来高可用（节点挂了还有副本）与高吞吐（并行分担查询），代价是 N 倍内存。</li>
+    <li><strong>分布 vs 目标</strong>：distribution=实际现状、target=期望布局；observer 持续校正使现状逼近目标（含 current/next target 平滑过渡）。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. QueryCoordV2 的世界从“load”开始。为什么“存了”不等于“能查”？</div>
+  <ol class="opts">
+    <li>因为对象存储默认禁止读取</li>
+    <li>因为存储后的段会自动加密，需解密才可查</li>
+    <li>因为查询必须先经过 DataCoord 审批</li>
+    <li>段与索引必须被加载进 QueryNode 内存才可检索；load 把数据搬进内存，release 再把内存还回去</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。检索发生在 QueryNode 内存里。落盘只是“持久化”，要可查必须把段与索引加载进内存。load/release 就是这层“可检索性”的开关，也是 QueryCoord 调度的起点</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. QueryCoordV2 健壮性的核心是“distribution 向 target 收敛”。这句话最准确的含义是？</div>
+  <ol class="opts">
+    <li>target=期望布局，distribution=实际已加载状态；observer 持续比对并纠偏，让实际不断逼近期望——声明终态、持续校正</li>
+    <li>把所有段一次性加载到一个节点上</li>
+    <li>distribution 是配置文件，target 是运行日志</li>
+    <li>两者必须时刻完全相等，否则集群停机</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：A</strong>。这是声明式调度：你描述“想要的终态（target）”，系统观测“实际状态（distribution）”并持续纠偏。节点崩溃、负载倾斜都靠这套收敛自动修复，而非一次性命令式操作</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. QueryCoordV2 用“副本（replica）”买到了什么，代价是什么？</div>
+  <ol class="opts">
+    <li>同一集合在不同节点各加载一份，换来高可用（一份挂了还有别份）与吞吐（并行分担查询），代价是 N 倍内存</li>
+    <li>副本只用于备份，不参与查询</li>
+    <li>副本能减少总内存占用</li>
+    <li>把数据压缩以省内存，但会降低召回</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：A</strong>。副本是“以内存换可用性与吞吐”：每份副本独立加载在不同节点，节点死了还有别的副本顶上，多副本还能并行分担查询；代价是内存随副本数线性增长</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>你的集群里某个 QueryNode 反复成为查询热点（CPU 长期顶满），而其它节点很闲。请用“balancer + distribution/target”解释 QueryCoordV2 会如何自动缓解，并说说在什么情况下它仍可能无能为力（需要人为干预）。</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+DataCoord governs "how data is written in and stored well"; this lesson's <strong>QueryCoordV2 (the query coordinator)</strong> governs "how data is searched out." It is the read side's master scheduler: it <strong>loads</strong> the collections to be queried into QueryNode memory,
+<strong>assigns</strong> segments and shards to nodes, uses a <strong>balancer</strong> to even out load, uses <strong>replicas</strong> to buy high availability and throughput, and constantly watches the gap between the "<strong>current distribution</strong>" and the "<strong>target distribution</strong>" to correct it. Understand it and you grasp vector retrieval's whole picture at the distributed layer.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of QueryCoordV2 as the <strong>reading-room dispatch director of a great library</strong>. In the stacks (object storage) lie vast numbers of books (segments), but readers can't rummage there directly — the director must first move the needed books <strong>onto the reading-room shelves (load into QueryNode memory)</strong> before readers can fetch them fast.
+  He decides <strong>which book goes on which shelf</strong> (segment assignment), keeping each shelf's book count even and not crammed in one spot (balancing); popular books get <strong>several copies</strong> on different shelves, so if one shelf breaks you can still borrow elsewhere (high availability), and many readers borrowing at once needn't queue (high throughput).
+  He always holds two lists: <strong>which books each shelf actually has now</strong>, and <strong>which books it ideally should have</strong> — his job is to keep nudging the former toward the latter.
+</div>
+
+<h2>Load and release: the prerequisite for search</h2>
+<p>The first intuition to break: <strong>in Milvus, data being "stored" doesn't mean it's "searchable."</strong> A collection's segments lying quietly in object storage can't be searched as-is; they must first go through <strong>load</strong> — QueryCoord schedules that collection's segments and indexes into several QueryNodes' memory,
+building online copies available for retrieval, and only then does the collection enter the "searchable" state. Conversely, <strong>release</strong> returns that memory, turning the collection back to "stored but not searched." That's why, using Milvus, after creating a collection and ingesting data, you must still explicitly <span class="mono">load_collection</span> before you can search.</p>
+
+<p>Why this "load" threshold rather than making all data searchable anytime? Because vector retrieval is <strong>memory-intensive</strong>: ANN indexes must reside in memory to be fast (Lessons 5 & 6), and memory is an expensive, limited resource. Loading every collection blindly would soon blow memory.
+So Milvus hands the decision of "<strong>whether to occupy precious query memory</strong>" to the user via load/release — load the collection you want to search; release it to free space when idle. QueryCoord is the keeper of this gate, uniformly governing "which collections are online right now, and on which nodes each is loaded."</p>
+
+<p>This gate also lets Milvus gracefully support the "<strong>data far larger than memory</strong>" scenario. You can ingest into a collection far more data than a single machine's memory, resting safely in object storage; only when you actually query do you load the needed collection (even partially, by partition, on demand) into memory.
+In other words, <strong>storage capacity is backstopped by object storage while query capability is determined by memory</strong> — the two decoupled. This is Lesson 7's "storage-compute separation" made concrete on the read side — you needn't keep all data resident in expensive memory just to query a little of it.</p>
+
+<p>Loading is far more than "reading files into memory"; it is the sum of a chain of coordination acts: determine which segments and shards this collection has; pick a hosting QueryNode for each segment and each shard channel; bring their indexes into place too;
+and after loading completes, let the Proxy discover "where this collection is now loaded, how many replicas, who is each shard's delegator," so queries can be fanned out correctly. This whole set is what QueryCoord, as the read side's brain, must tend.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>User requests load</h4><p><span class="mono">load_collection</span> reaches QueryCoord via the Proxy.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Determine the target</h4><p>compute which segments and shards this collection should have, and how many replicas — forming the "target."</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Assign segments and shards</h4><p>dispatch segments and shard channels (delegators) to QueryNodes.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Nodes load</h4><p>QueryNodes pull segments and indexes from object storage into memory, building online copies.</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>Correct into place</h4><p>observe the "current distribution" approaching the "target"; once all in place the collection becomes searchable.</p></div></div>
+</div>
+
+<h2>Segment and shard assignment: who searches which piece</h2>
+<p>A big collection often has hundreds or thousands of segments and several shards, while there are many QueryNodes — so the core question is: <strong>which segment, which shard goes to which QueryNode?</strong> QueryCoord does two kinds of assignment. One is <strong>segment assignment</strong>: spreading historical, flushed segments (Lesson 12's Flushed segments) across nodes' memory, each node handling local retrieval over its share.
+The other is <strong>shard (channel) assignment</strong>: each shard maps to a vchannel, hosted by a <strong>delegator (shard proxy / shard leader)</strong> on some QueryNode. The delegator is that shard's "face": it both coordinates queries over all segments under the shard and takes on the shard's latest, not-yet-flushed incremental data (growing segments).</p>
+
+<p>Why distinguish the "segment" and "shard/delegator" layers? Because one query must see both <strong>historical data</strong> (flushed/sealed segments) and the <strong>latest data</strong> (growing segments still flowing in memory). The delegator is the key role stitching the two together:
+representing one shard, it <strong>fans out</strong> queries over historical segments to the QueryNodes holding them, also queries the shard's latest increments, and finally <strong>reduces</strong> them into that shard's complete result. So the Proxy need only send queries to each shard's delegator to get an answer that misses neither "history nor latest." The details of this mechanism (cross-shard reduce) go deep in Lesson 29; here just grasp the role division.</p>
+
+<p>The delegator role also explains a common question: why can Milvus make "data just written immediately searchable" (under a suitable consistency level)? Because the latest growing increments are held directly by the delegator and participate in queries — no need to wait for flush, no need to wait to be loaded —
+when a query reaches the delegator, it merges on the spot the "results from flushed historical segments" with the "latest in-memory increment results it holds," so neither old nor new data is missed. This is exactly the <strong>seamless relay</strong> between the write side (DataCoord's segment transitions) and the read side (QueryCoord's delegator) on the same shard: on the write side data travels from growing to flushed, while on the read side the delegator always watches this stream, ensuring queries always see a complete present.</p>
+
+<div class="cols">
+  <div class="col"><h4>Segment assignment</h4><p>Spread flushed <strong>historical segments</strong> across QueryNodes, each doing local topK over part of the segments. The focus: <strong>spread the existing data evenly</strong> so retrieval compute scales out.</p></div>
+  <div class="col"><h4>Delegator assignment</h4><p>Each shard is hosted by a <strong>delegator</strong> that stitches the shard's historical-segment queries with its latest growing increments, serving as the shard's query face. The focus: <strong>ensure every data stream is covered up to the latest</strong>.</p></div>
+</div>
+
+<h2>The balancer: keeping load impartial</h2>
+<p>Assignment isn't one-off. Nodes come and go, collections are added and dropped, each node's load gradually skews — so a <strong>balancer</strong> is needed to continually <strong>re-spread</strong> segments and shards. Its goal is plain yet important: don't let one QueryNode be hot and crammed while another sits idle,
+because overall query latency is often dragged down by <strong>the busiest one</strong>. When a new node joins, the balancer must migrate some segments over to share load; when a node leaves, its segments must be taken over elsewhere; when load stays uneven, it must proactively move things to correct it.</p>
+
+<p>Milvus's balancer has more than one strategy. The simplest is <strong>round-robin</strong>: spread segments evenly purely by count, regardless of each segment's actual size or heat — simple to implement, fit for relatively uniform distributions. The finer one is the <strong>score-based</strong> strategy: scoring by a node's "real load" — segment count, row count, memory usage — and placing segments on lighter-loaded nodes.
+The two embody different trade-offs: round-robin for simplicity and even counts, score-based for precision and even real pressure. Both implement the same <span class="mono">Balance</span> interface, chosen by QueryCoord as needed.</p>
+
+<p>Balancing also carries a subtle cost to weigh: <strong>migration itself isn't free</strong>. Moving a segment from node A to node B means B must re-pull the segment from object storage, reload it into memory, and rebuild necessary state, all while being careful not to disturb in-flight queries.
+So the balancer can't frantically shuffle at the slightest imbalance — that would throw the cluster into "constant churn with negative net gain" thrash. A good balancing strategy knows to <strong>set thresholds, leave margins, and converge slowly</strong>: it acts only when the imbalance exceeds some bar and the gain clearly outweighs the migration cost. This "restrained diligence" is exactly where distributed balancing design most tests one's skill.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/querycoordv2/balance/balance.go</span><span class="ln">The Balance interface: produce segment and channel move plans</span></div>
+  <pre><span class="kw">type</span> Balance <span class="kw">interface</span> {
+    <span class="cm">// balance segments and channels for a replica; return "how to move" plans</span>
+    BalanceReplica(ctx context.Context, replica *meta.Replica) (
+        []assign.SegmentAssignPlan, []assign.ChannelAssignPlan)
+
+    <span class="cm">// fetch the underlying assign policy (round-robin / score-based)</span>
+    GetAssignPolicy() assign.AssignPolicy
+}
+
+<span class="cm">// Round-robin balancer: spread segments/channels evenly by count</span>
+<span class="kw">type</span> RoundRobinBalancer <span class="kw">struct</span> { <span class="cm">/* ... */</span> }</pre>
+</div>
+
+<h2>Replicas: trading redundancy for HA and throughput</h2>
+<p>When loading a collection, you can give it <strong>multiple replicas</strong> — that is, load the same collection's segments <strong>once each on different QueryNodes</strong>. Replicas buy two good things at once. First, <strong>high availability (HA)</strong>: if a node holding one replica dies,
+another replica is still serving fine elsewhere, queries uninterrupted, availability preserved. Second, <strong>high throughput</strong>: multiple replicas can <strong>share query traffic in parallel</strong>; for the same collection, two replicas can in theory handle nearly twice the concurrent queries. Redundancy here is no waste but the source of <strong>steadiness and speed</strong>.</p>
+
+<p>Of course replicas aren't free: N replicas cost N times the query memory. So replica count is a knob the user weighs by "how important this collection is, how heavy its query load" — core, ultra-concurrent collections get more replicas, obscure ones need just one. QueryCoord's <span class="mono">ReplicaManager</span> uniformly manages these replicas: which nodes are in each replica and which segments each carries are all kept on its ledger.
+This echoes Lesson 9's "coordinators hold the truth, nodes execute" division — how replicas are laid out is decided and booked by QueryCoord, while QueryNodes just load and search the segments assigned to them.</p>
+
+<p>A commonly overlooked detail hides here: replicas are not simple "exact mirrors"; each independently carries the collection's full data and independently balances. The benefit: <strong>migration and scaling within one replica don't entangle another replica</strong> — faults and load are isolated from each other.
+When a query arrives, the Proxy picks one available replica to execute on (usually by load or proximity), so traffic is naturally spread across replicas. You could say a replica is both a "<strong>vertical safety cushion</strong>" (a backup if one dies) and a "<strong>horizontal amplifier</strong>" (concurrency magnified) — which is why we rank it the read side's most important availability and scaling lever.</p>
+
+<h2>Distribution vs target: the ever-running correction</h2>
+<p>Before diving into this correction mechanism, let's tabulate the core concepts of this lesson to clarify each one's role — they are the most important columns in QueryCoordV2's "ledger":</p>
+
+<table class="t">
+  <tr><th>Concept</th><th>What it is</th><th>Role</th></tr>
+  <tr><td><strong>distribution</strong></td><td>the current actual loaded state</td><td>records "which segment is really on which node right now"</td></tr>
+  <tr><td><strong>target</strong></td><td>the desired ideal layout</td><td>declares "what it should be loaded as," the reference for correction</td></tr>
+  <tr><td><strong>replica</strong></td><td>an online copy of a collection</td><td>buys HA and throughput; N copies = N× memory</td></tr>
+  <tr><td><strong>delegator</strong></td><td>a shard's query face</td><td>stitches historical segments with the latest growing increments</td></tr>
+  <tr><td><strong>balancer</strong></td><td>the load re-balancer</td><td>continually spreads segments/shards evenly, avoiding hotspots</td></tr>
+</table>
+
+<p>The most essential design in this "V2" architecture is that it splits state into <strong>two views</strong>. One is the <strong>distribution</strong>: what it <strong>actually</strong> looks like now — which segment is really loaded on which node at this moment, where each shard's delegator currently is.
+The other is the <strong>target</strong>: what it <strong>ought</strong> to look like — the desired layout computed from the collection's load request, replica count, and balancing strategy. There is almost always a gap between them: a node just died, a segment just migrated, a load just started... reality forever chasing the ideal.</p>
+
+<p>QueryCoord's core loop is a swarm of <strong>observers</strong> constantly comparing these two and, on finding a gap, generating actions to close it: a segment the target wants but the distribution lacks gets scheduled to load; one the distribution has but the target no longer needs gets released; move what should move, fill what should fill.
+This "<strong>declare the target → continually correct the actual toward it</strong>" design is exactly the robust paradigm modern distributed systems (like Kubernetes' reconcile) acknowledge: instead of writing a long, brittle "do this step then that step" procedure, you only declare "the end state I want" and let the system converge round by round.
+The target itself further splits into <strong>current target</strong> and <strong>next target</strong>, to transition smoothly from old layout to new without interrupting in-flight queries. Grasp this "distribution approaching target" loop and you hold the soul that distinguishes QueryCoordV2 from the old architecture.</p>
+
+<p>Why split "current" and "next" targets? Imagine a large-scale reload or rebalance: swapping the target to a brand-new layout in one step could leave queries running on the old layout suddenly unable to find segments. The two-stage target lets the system <strong>prepare the next target first, then switch smoothly once the new layout is ready</strong>,
+letting old queries finish and new queries use the new layout, the whole process invisible to users. This "<strong>double-buffered</strong>" switch resolves the tension of "must change, yet must not stop" cleanly. With that, from load to assignment, to balancing, to replicas, and on to this distribution-approaching-target loop, QueryCoordV2's whole picture as the read side's brain is clear —
+it and last lesson's DataCoord, one writing and one reading, together hold up Milvus's two ends at the distributed layer: "store soundly, search swiftly."</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">user load</div><div class="nd">declare the collection to search</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">QueryCoord</div><div class="nd">target·assign·balance</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">QueryNode</div><div class="nd">load segments·be delegator</div></div>
+  <div class="arrow">↺</div>
+  <div class="node"><div class="nt">observer</div><div class="nd">distribution → target</div></div>
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 The big picture</div>
+  QueryCoordV2 is the read side's master scheduler. Its world starts at <strong>load</strong>: stored doesn't mean searchable — a collection's segments and indexes must be loaded into QueryNode memory to be retrievable. It does two kinds of assignment — spread historical segments across nodes, and give each shard a delegator (stitching historical segments with the latest growing increments);
+  it uses a balancer (round-robin / score-based, one <span class="mono">Balance</span> interface) to keep load even; it uses replicas to buy HA and throughput. Most essential is "<strong>distribution vs target</strong>": observers keep converging "actual loaded state" toward "desired layout" — declare the end state, continually correct — the root of its robustness.
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>load / release</strong>: stored ≠ searchable; a collection's segments and indexes must be loaded into QueryNode memory to be retrievable; release returns the memory.</li>
+    <li><strong>Two assignments</strong>: segment assignment (spread historical segments across nodes) + shard assignment (each shard gets a <strong>delegator</strong> stitching historical segments with the latest growing increments).</li>
+    <li><strong>Balancer</strong>: continually re-spreads segments/shards to avoid hotspots; has round-robin and score-based strategies, both implementing the <span class="mono">Balance</span> interface.</li>
+    <li><strong>Replicas</strong>: the same collection loaded once each on different nodes, buying HA (a replica survives a node death) and throughput (parallel query sharing), at the cost of N× memory.</li>
+    <li><strong>Distribution vs target</strong>: distribution = actual current state, target = desired layout; observers continually correct the actual toward the target (with current/next target for smooth transition).</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. QueryCoordV2's world starts at 'load'. Why does 'stored' not equal 'searchable'?</div>
+  <ol class="opts">
+    <li>Because object storage forbids reads by default</li>
+    <li>Because stored segments are auto-encrypted and need decryption to query</li>
+    <li>Because queries must first be approved by DataCoord</li>
+    <li>Segments and indexes must be loaded into QueryNode memory to be retrievable; load brings data into memory, release returns it</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. Search happens in QueryNode memory. Flushing only persists; to be searchable, segments and indexes must be loaded into memory. load/release toggles this 'searchability' and is the starting point of QueryCoord's scheduling</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. The core of QueryCoordV2's robustness is 'distribution converges to target'. What does this most precisely mean?</div>
+  <ol class="opts">
+    <li>target = desired layout, distribution = actual loaded state; observers continually compare and correct so the actual keeps approaching the desired - declare the end state, keep correcting</li>
+    <li>Load all segments onto one node at once</li>
+    <li>distribution is a config file, target is a runtime log</li>
+    <li>The two must always be exactly equal or the cluster halts</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. This is declarative scheduling: you describe the desired end state (target), and the system observes the actual state (distribution) and continually corrects. Node crashes and skew are auto-healed by convergence, not one-shot imperative commands</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. What do 'replicas' buy QueryCoordV2, and at what cost?</div>
+  <ol class="opts">
+    <li>The same collection loaded once each on different nodes, buying HA (one dies, others survive) and throughput (parallel query sharing), at the cost of N times the memory</li>
+    <li>Replicas are backup-only and never serve queries</li>
+    <li>Replicas reduce total memory usage</li>
+    <li>Compresses data to save memory but lowers recall</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. Replicas trade memory for availability and throughput: each replica loads independently on different nodes, so a node death is survived and queries can be shared in parallel; the cost is memory growing linearly with replica count</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>In your cluster one QueryNode keeps becoming a query hotspot (CPU pinned) while others sit idle. Using 'balancer + distribution/target', explain how QueryCoordV2 auto-mitigates this, and when it might still be powerless (needing human intervention).</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="12-datacoord.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">DataCoord</span><span class="lang-en">DataCoord</span></div></a><a class="next" href="14-metadata-and-coordination.html"><div class="dir"><span class="lang-zh">下一课 →</span><span class="lang-en">Next →</span></div><div class="ttl"><span class="lang-zh">元数据与协调</span><span class="lang-en">Metadata &amp; coordination</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>

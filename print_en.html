@@ -321,7 +321,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 8 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 14 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
@@ -332,6 +332,12 @@ details[open] > summary { list-style: none; }
   <li>The data model</li>
   <li>Segments & log-as-data</li>
   <li>Dependencies & deployment</li>
+  <li>Control plane vs data plane</li>
+  <li>The Proxy gateway</li>
+  <li>RootCoord</li>
+  <li>DataCoord</li>
+  <li>QueryCoordV2</li>
+  <li>Metadata & coordination</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -2484,6 +2490,1305 @@ If you've read this far, congratulations—you've laid all the foundations.</p>
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
     <li>You're taking a prototype to production: data grows from millions to billions, concurrency rises, HA is required. Describe how you'd evolve across Lite/Standalone/Cluster, which external dependencies (etcd, object storage, MQ) must move from 'built-in/local' to 'external production clusters' along the way, and why the API barely changes.</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Control plane vs data plane</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Parts 1 and 2 covered "what a vector is" and "how data is stored." From here we zoom out to the <strong>whole cluster</strong>:
+Milvus is a group of cooperating processes, and their most fundamental division of labor is the <strong>control plane</strong> vs the
+<strong>data plane</strong> — the former <strong>decides who does what</strong>, the latter <strong>actually does the work</strong>.
+Grasp this through-line and the next four lessons on RootCoord, DataCoord, QueryCoord, and Proxy fall neatly into place.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Picture Milvus as an <strong>airport</strong>. The <strong>control tower</strong> carries no luggage and flies no plane, yet it holds the
+  global picture — which runway each plane takes, which gate it parks at, when it departs. That is the <strong>control plane</strong>.
+  The <strong>planes and ground crew</strong> are who actually move passengers and cargo; they <strong>obey the tower</strong>, but the tower never
+  hauls a box for them. That is the <strong>data plane</strong>. The tower cares about <strong>scheduling and metadata</strong>; the planes care about
+  <strong>execution and throughput</strong>. Mix the two and the airport grinds to a halt.
+</div>
+
+<h2>Two planes: deciding vs executing</h2>
+<p>Milvus splits every process by responsibility. The <strong>control plane (coordinators)</strong> owns <strong>metadata, scheduling, assignment</strong>:
+what a collection's schema looks like, which machine a segment goes to, which QueryNode serves which shard, when to trigger flush and compaction.
+They <strong>make decisions</strong> but barely touch the user's real data stream. The <strong>data plane (nodes)</strong> are the <strong>workers</strong>: Proxy receives requests,
+QueryNode runs vector search in memory, DataNode persists writes into segments, StreamingNode carries the write log. They <strong>follow the coordinators</strong>,
+yet all the throughput pressure lands on them. Put differently, the control plane answers "<strong>what should be done</strong>" and the data plane answers "<strong>do it now</strong>";
+the former is a constantly-updated battle map, the latter the troops charging across it. The rest of this lesson explains that map's legend (the interfaces), the headquarters' org chart (MixCoord), and how troops and HQ communicate (service discovery).</p>
+
+<p>This "narrow control, wide data" shape has a subtle point worth naming: <strong>Proxy is in the data plane yet stores no user data</strong>. It's a "stateless gateway" — it only validates, authenticates, rate-limits, and dispatches,
+asking coordinators for timestamps and nodes for results, holding no segments and no indexes itself. Precisely because of that, Proxy can <strong>add and remove instances freely</strong> like a web server, with a load balancer in front.
+The lesson: the control/data split is by "does it carry user throughput," not by "does it store data." Proxy is in the data plane because it <strong>sits on the throughput path</strong>;
+and it scales easily exactly because it is <strong>stateless</strong>. Separate "carries throughput" from "holds state" and you can read each component's scaling strategy correctly.</p>
+
+<p>This layering isn't cosmetic — it exists for <strong>scalability and availability</strong>. Decision logic (metadata, scheduling) is "few but critical"
+and suits centralized, strongly-consistent management; execution logic (search, persistence) is "many and heavy" and suits spreading out and scaling by load.
+Split them and you can <strong>scale the data plane alone</strong> (add QueryNodes for query throughput) without touching the control plane, and vice versa.
+This is "storage-compute separation" extended to the process level — the etcd / object storage / message queue from Part 2 are <strong>external dependencies</strong>;
+the control/data plane here is the division of labor among <strong>Milvus's own processes</strong>.</p>
+
+<p>Layering brings an often-overlooked benefit: <strong>fault isolation</strong>. Data-plane nodes are "stateless" — the indexes and segments in their memory are
+replicas loaded from object storage and rebuildable at any time; the real "authoritative metadata" lives only in the control plane and etcd. So when a QueryNode
+suddenly crashes, all that's lost is "one in-memory copy"; the control plane immediately reassigns its shards to others, almost invisibly to clients. Conversely,
+the control plane is critical but handles little traffic with stable logic, so it can be protected more conservatively (multi-replica, strongly-consistent storage).
+<strong>Separating "the volatile, crash-prone heavy lifting" from "the stable, critical decisions" is a basic fault-tolerance discipline in distributed systems.</strong></p>
+
+<p>Here's an order-of-magnitude intuition: in a cluster, coordinators usually number in the <strong>single digits</strong> (often just one MixCoord), while QueryNodes / DataNodes
+can be in the <strong>dozens or hundreds</strong>. By traffic, the control plane mostly handles <strong>low-frequency</strong> operations per second — create-table, load, heartbeat reports —
+while the data plane carries <strong>thousands</strong> of search/insert per second. This "<strong>narrow control plane, wide data plane</strong>" shape forces the two to adopt
+entirely different design stances: the former optimizes for stability and correctness, the latter for speed and volume.</p>
+
+<div class="layers">
+  <div class="layer l-core"><div class="lh"><span class="badge">control plane</span><span class="name">Coordinators</span></div>
+    <div class="ld">RootCoord (DDL &amp; identity), DataCoord (write side &amp; storage), QueryCoord (read side). Own metadata, timestamps, and the <strong>assignment/scheduling</strong> of segments and shards; they decide, they don't shoulder throughput. Today packed into one <strong>MixCoord</strong> process.</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">data plane · gateway</span><span class="name">Proxy</span></div>
+    <div class="ld">The single entry for all client requests: validate, authenticate, rate-limit, then dispatch tasks to coordinators and nodes. Stateless, horizontally scalable.</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">data plane · execute</span><span class="name">QueryNode / DataNode / StreamingNode</span></div>
+    <div class="ld">QueryNode searches in memory; DataNode persists writes into segments and runs the real compaction/index-build work; StreamingNode carries the write log (WAL). All the CPU/memory/IO pressure lives here.</div></div>
+  <div class="layer l-app"><div class="lh"><span class="badge">external deps</span><span class="name">etcd · object storage · message queue</span></div>
+    <div class="ld">From Lesson 8: metadata/service-discovery to etcd, data/indexes to object storage, the write log to the message queue. Both planes stand on top of these.</div></div>
+</div>
+
+<h2>Component interfaces: the contract in types.go</h2>
+<p>This division isn't a verbal agreement — it's frozen into Go interfaces. <span class="inline">internal/types/types.go</span> defines "what each component looks like."
+At the very bottom is a shared base, <span class="inline">Component</span>: any component, coordinator or node, must implement four methods <span class="mono">Init / Start / Stop / Register</span> —
+<strong>initialize, start, stop, and register itself with etcd</strong>. Those four verbs are the minimal lifecycle of a distributed component.</p>
+
+<p>Above <span class="inline">Component</span>, each component adds its own business methods: <span class="inline">RootCoord</span> owns DDL, <span class="inline">DataCoord</span> owns segments,
+<span class="inline">QueryCoord</span> owns loading, <span class="inline">Proxy</span> is the gateway, <span class="inline">QueryNode</span> / <span class="inline">DataNode</span> are execution nodes.
+The special one is <span class="inline">MixCoord</span>: it <strong>embeds all three coordinators' gRPC service interfaces at once</strong> — "one interface, three roles."</p>
+
+<p>Using interfaces rather than concrete types as the "contract" buys two real engineering wins. First, <strong>substitutability</strong>: the same interface is a direct implementation for a local call
+and a gRPC client proxy across processes, so upper-layer code never cares whether the peer is on this machine or another — exactly what lets the gRPC wrappers in <span class="inline">internal/distributed/</span> slot in seamlessly.
+Second, <strong>testability</strong>: an interface can be mocked, so testing Proxy logic needs no real MixCoord — just hand it a fake implementation. You'll see many <span class="mono">//go:generate mockery</span>
+comments in the source generating mocks for these very interfaces. <strong>Interfaces are the "pluggable seams" of a distributed system</strong>, a theme running through all of Milvus.</p>
+
+<table class="t">
+  <tr><th>Interface</th><th>Role (owns what)</th><th>Plane</th><th>Impl package</th></tr>
+  <tr><td class="mono">Component</td><td>Base of all: Init/Start/Stop/Register</td><td>—</td><td class="mono">internal/types</td></tr>
+  <tr><td class="mono">RootCoord</td><td>DDL, meta table, TSO, global IDs</td><td>control</td><td class="mono">internal/rootcoord</td></tr>
+  <tr><td class="mono">DataCoord</td><td>segment alloc, flush, compaction, GC, index sched</td><td>control</td><td class="mono">internal/datacoord</td></tr>
+  <tr><td class="mono">QueryCoord</td><td>load/release, segment &amp; shard assign, balance, replicas</td><td>control</td><td class="mono">internal/querycoordv2</td></tr>
+  <tr><td class="mono">Proxy</td><td>request entry: validate, auth, rate-limit, dispatch</td><td>data</td><td class="mono">internal/proxy</td></tr>
+  <tr><td class="mono">QueryNode</td><td>execute vector search in memory</td><td>data</td><td class="mono">internal/querynodev2</td></tr>
+  <tr><td class="mono">DataNode</td><td>persist segments, run compaction, build indexes</td><td>data</td><td class="mono">internal/datanode</td></tr>
+  <tr><td class="mono">MixCoord</td><td>packs the three coordinators into one process</td><td>control</td><td class="mono">internal/coordinator</td></tr>
+</table>
+
+<p>Here is the heart of the contract: <span class="inline">Component</span>'s four methods, and how <span class="inline">MixCoord</span> <strong>embeds all three coordinator service interfaces in one breath</strong>.
+Note that <span class="mono">RootCoordServer / QueryCoordServer / DataCoordServer</span> are proto-generated gRPC service interfaces from
+<span class="mono">milvus-proto</span>'s <span class="mono">rootcoordpb / querypb / datapb</span> packages, not hand-written types in the Milvus repo.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/types/types.go</span><span class="ln">Component / MixCoord interfaces</span></div>
+  <pre><span class="cm">// Shared base of every component: the minimal lifecycle</span>
+<span class="kw">type</span> Component <span class="kw">interface</span> {
+    Init() <span class="kw">error</span>
+    Start() <span class="kw">error</span>
+    Stop() <span class="kw">error</span>
+    Register() <span class="kw">error</span>   <span class="cm">// register self with etcd (service discovery)</span>
+}
+
+<span class="cm">// MixCoord: one interface embedding three coordinators' gRPC services</span>
+<span class="kw">type</span> MixCoord <span class="kw">interface</span> {
+    Component
+    rootcoordpb.RootCoordServer   <span class="cm">// the RootCoord role</span>
+    querypb.QueryCoordServer      <span class="cm">// the QueryCoord role</span>
+    datapb.DataCoordServer        <span class="cm">// the DataCoord role</span>
+    <span class="cm">// ... plus a few cross-coordinator aggregate methods</span>
+}</pre>
+</div>
+
+<h2>MixCoord: one process, three roles</h2>
+<p>On first look at a Milvus diagram, many people count "three coordinator processes," but <strong>in today's real deployment they are packed into one process — MixCoord</strong>.
+That is, RootCoord, DataCoord, and QueryCoord are <strong>three roles logically</strong> but <strong>one executable physically</strong>.
+The packaging lives in <span class="inline">internal/coordinator/mix_coord.go</span>: a single <span class="mono">mixCoordImpl</span> holds all three coordinator implementations and is started via <span class="mono">NewMixCoordServer</span>.</p>
+
+<p>Why? Because the three coordinators <strong>interact extremely often</strong> (DataCoord asks RootCoord for timestamps; QueryCoord asks DataCoord where segments live).
+Putting them in one process <strong>saves a mountain of cross-process RPCs</strong> and simplifies deployment. Yet the interfaces stay <strong>independent</strong>, so they could be split back into three processes later without touching business logic.
+Externally, <span class="inline">internal/distributed/mixcoord</span> wraps it as one gRPC server — note there is <strong>no</strong> separate rootcoord/datacoord/querycoord directory under <span class="inline">internal/distributed/</span>,
+which confirms the "three-in-one" reality.</p>
+
+<p>This is really a microcosm of Milvus's architectural evolution. In early versions the three coordinators were <strong>three separate processes</strong>, each starting, registering, and talking over gRPC;
+conceptually clean, but operationally you managed three sets of processes, and the frequent internal calls between coordinators all crossed the network, adding latency. The community later <strong>merged them into MixCoord</strong>:
+internally the three implementations share one process with direct function calls; externally it still exposes all three service interfaces, staying backward-compatible. <strong>"Split logically, merged physically"</strong> is a classic engineering trade-off —
+it keeps clear responsibility boundaries (interfaces unchanged) while reaping the performance and ops dividends of same-process collaboration. So when an older design doc says "the DataCoord process," don't be puzzled:
+that's a <strong>role name</strong>; today it lives inside the MixCoord house. This guide follows "code is truth," describing the present state via the real <span class="mono">mixCoordImpl</span> in the repo.</p>
+
+<div class="cols">
+  <div class="col"><h4>What the control plane thinks</h4><p>"Where do I store this new collection's metadata?" "Should this batch of writes open a new segment or continue an old one?" "This QueryNode died — who takes its shard?"
+  — all <strong>decision and assignment</strong> questions. The control plane wants <strong>correctness, consistency, a global view</strong>, not raw throughput.</p></div>
+  <div class="col"><h4>What the data plane thinks</h4><p>"This search request — I compute topK on my in-memory index." "This insert — I append to the current segment's columnar store." "This segment is too fragmented — I merge it with neighbors."
+  — all <strong>execution</strong> questions. The data plane wants <strong>speed, parallelism, horizontal scaling</strong>; one dying node doesn't lose global metadata.</p></div>
+</div>
+
+<h2>Service discovery and sessions: how etcd glues them together</h2>
+<p>Once processes split into two planes, a new problem appears: how does Proxy know MixCoord's address? How does QueryCoord know how many QueryNodes are alive right now?
+The answer is the <strong>session mechanism on etcd</strong>. On startup each component runs <span class="mono">Register()</span>, writing a session record with a <strong>lease</strong> into etcd —
+"I am querynode-3, here's my address, I'm alive." The lease must be kept by <strong>periodic renewal</strong>; once the process crashes and heartbeats stop, the lease expires and the record vanishes automatically.</p>
+
+<p>On the other end, coordinators <strong>watch</strong> these session directories: a node comes up and the watch immediately gets an "added" event; a node drops and it gets a "deleted" event.
+Thus the control plane always holds the <strong>current list of live nodes</strong> and can assign segments, rebalance, and on failure shift work to others.
+This "register — renew — watch" loop is Milvus's <strong>service discovery</strong>, the foundation that lets the two planes cooperate dynamically. We dive into its implementation in Lesson 14; for now just remember its role.</p>
+
+<p>One easy point of confusion: <strong>a session stores an "address," not "data."</strong> On this path etcd plays "address book + heartbeat board," telling you "who's up and where,"
+but the real search/insert traffic never goes through etcd — that would instantly overwhelm it. Once a component has the peer's address, it sends requests over a <strong>direct point-to-point gRPC</strong> connection.
+Think of etcd as the airport's <strong>flight information board</strong>: it shows which plane is at which gate, but passengers board via the jet bridge directly rather than crowding around the board.
+This split — "control info through etcd, data traffic direct" — is the same philosophy as this lesson's control/data plane, replayed at a different layer.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">node starts</div><div class="nd">QueryNode/DataNode…</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">Register()</div><div class="nd">write leased session to etcd</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">coordinator watches</div><div class="nd">gets "node up" event</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">assign work</div><div class="nd">hand it segments/shards</div></div>
+</div>
+
+<p>To wrap this lesson in one line: Milvus is a <strong>team with a clear division of labor</strong> — coordinators think, nodes act, etcd is the address book.
+Once you grasp "who decides, who executes, and how they find each other," the next four lessons that drill into each coordinator stay anchored to this big picture, never lost in the details.</p>
+
+<h2>Three boundary disciplines: keep the planes from trespassing</h2>
+<p>With the big picture in hand, here are three "boundary disciplines" that help you quickly judge "which plane does this logic belong to" while reading later source.
+<strong>One: authoritative metadata belongs only to the control plane.</strong> Collection schema, segment ownership, shard assignment — these "truths" may only be written by coordinators
+and persisted by etcd and the metadata store; even if a data-plane node caches a copy in memory, it is just a <strong>read-only replica</strong>, droppable and rebuildable anytime.
+Any "node editing metadata on its own" is a design trespass.</p>
+
+<p><strong>Two: user-data throughput belongs only to the data plane.</strong> A search's thousands of distance computations, an insert batch's columnar appends — these must never land on a coordinator,
+or the control plane gets crushed by traffic and global scheduling stalls with it. Coordinators are touched only at "decision moments": create-table, load, reporting, failover — all low-frequency events.
+<strong>Keeping high-frequency throughput out of the control plane is the red line for cluster stability.</strong></p>
+
+<p><strong>Three: cross-plane communication goes only through interfaces and etcd.</strong> The two planes don't cooperate via "shared memory" or "peeking at each other's files" — they either send RPCs through
+the interfaces defined in <span class="inline">types.go</span>, or sense each other indirectly through etcd's sessions and watches. This discipline buys <strong>loose coupling</strong>: you can upgrade, restart, or scale any one
+component independently, and as long as it still honors the interface contract and renews its session on time, the whole system keeps running. As you drill into each coordinator later, re-read it through these three disciplines —
+they snap the swirl of details back onto the "decide vs execute" through-line.</p>
+
+<div class="card macro">
+  <div class="tag">🌍 The big picture</div>
+  In one line: <strong>the control plane (coordinators) decides who does what → the data plane (nodes) actually executes → types.go freezes the contract in interfaces → MixCoord packs the three coordinators into one process → etcd sessions let the two planes discover each other</strong>.
+  This "decide vs execute" picture is the shared coordinate system for every later lesson on RootCoord / DataCoord / QueryCoord / Proxy.
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Two planes</strong>: control = coordinators (own metadata, scheduling, assignment; decide); data = nodes (Proxy/QueryNode/DataNode; actually work).</li>
+    <li><strong>Interface contract</strong>: in <span class="mono">internal/types/types.go</span>, <span class="mono">Component</span> (Init/Start/Stop/Register) is the base; each component adds business methods on top.</li>
+    <li><strong>MixCoord</strong>: the three coordinators are packed into one process today (<span class="mono">internal/coordinator/mix_coord.go</span>); it <strong>embeds all three gRPC service interfaces</strong> — three roles logically, one process physically.</li>
+    <li><strong>Layering for scale</strong>: few-but-critical decisions centralized; many-and-heavy execution scaled out; the two planes scale independently.</li>
+    <li><strong>Service discovery</strong>: components <span class="mono">Register()</span> a leased session in etcd, coordinators watch them — dynamic up/down awareness (detailed in Lesson 14).</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. The Proxy stores neither segments nor indexes, so why does this lesson still place it in the 'data plane' rather than the 'control plane'?</div>
+  <ol class="opts">
+    <li>Because the Proxy starts up later than the coordinators</li>
+    <li>Because only the control plane is allowed to store data</li>
+    <li>Because the Proxy implements no interface in types.go</li>
+    <li>Because the split is by 'whether it carries user throughput'; the Proxy sits on every request's throughput path; it scales easily because it is stateless, not because it belongs to the control plane</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. The criterion is 'does it carry user throughput', not 'does it store data'. The Proxy is on the throughput path so it is data plane; it is stateless so it scales freely. Separating 'carries throughput' from 'holds state' is the key to each component's scaling story</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. What four methods does the shared base interface Component in types.go require, and what design intent does that reflect?</div>
+  <ol class="opts">
+    <li>Read/Write/Flush/Compact, emphasizing storage ability</li>
+    <li>Login/Logout/Auth/Rate, emphasizing security</li>
+    <li>Search/Insert/Delete/Query, emphasizing data ops</li>
+    <li>Init/Start/Stop/Register - the minimal lifecycle of a distributed component, where Register registers itself in etcd for service discovery</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. Component abstracts the minimal lifecycle every component needs: init, start, stop, register. Using an interface (not a concrete type) as the contract buys replaceability (direct or gRPC proxy) and testability (mocking)</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 'MixCoord packs the three coordinators into one process' - which description is most accurate?</div>
+  <ol class="opts">
+    <li>MixCoord replaces all data-plane nodes</li>
+    <li>MixCoord is merely a load balancer in front of the three coordinators</li>
+    <li>The three coordinators merge into a brand-new role and their old duties vanish</li>
+    <li>RootCoord/DataCoord/QueryCoord remain three roles logically but are one executable physically; the MixCoord interface embeds all three gRPC services at once</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. Three roles logically, one process physically: mixCoordImpl holds all three coordinator impls and the MixCoord interface embeds all three gRPC services. Packaging cuts deployment and cross-process overhead while keeping duties distinct</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>Suppose you 'conveniently' ran a search's distance computation on a coordinator to save one RPC. Argue why this would wreck cluster stability, and use this lesson's 'three boundary disciplines' to explain the right approach.</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>The Proxy gateway</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Last lesson we hovered over the whole cluster: coordinators decide, nodes execute. This lesson zooms into the data plane's front line, the
+<strong>Proxy (the gateway)</strong> — the <strong>single entry point</strong> for every client request. It is the doorkeeper (validate, authenticate, rate-limit),
+the dispatcher (queue requests and hand them to coordinators and nodes), and the aggregator (merge results from many shards into one answer).
+Understand the Proxy and you hold the full arc of "a request from entering the door to leaving it."
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Picture the Proxy as a big hospital's <strong>triage desk</strong>: a patient (request) walks in, the desk first checks identity and registration (auth) and whether you still
+  have a slot today (rate limit), then routes you by case into different <strong>queues</strong> — paperwork changes go to the "admin window" (DDL), shots and IVs go to "treatment" (DML),
+  scans and reports go to "labs" (DQL). The desk itself <strong>treats no one and scans nothing</strong>, yet the whole hospital's order depends on it; it also <strong>stores no medical records</strong>,
+  so you can open more desks anytime to share the crowd — exactly the essence of the Proxy being "stateless and horizontally scalable."
+</div>
+
+<h2>Single entry: the milvuspb API surface</h2>
+<p>Whether you use the Python SDK, Go SDK, or REST, a request ultimately lands on the <strong>gRPC service</strong> the Proxy exposes. That service's contract is defined by proto,
+in the <span class="inline">milvuspb</span> package (from <span class="mono">milvus-proto/go-api/v3/milvuspb</span>, not hand-written types in the repo). A <span class="mono">CreateCollection</span>,
+an <span class="mono">Insert</span>, a <span class="mono">Search</span> each map to a method <span class="mono">func (node *Proxy) Xxx(...)</span> on the Proxy side.
+In other words, <strong>the Proxy is the implementation of the public MilvusService API</strong>, while the coordinator and node interfaces are all "internal."</p>
+
+<p>This "external vs internal" boundary matters: the client only ever talks to the Proxy and never needs to know how many QueryNodes sit behind it, where segments live, or where the TSO comes from.
+The Proxy <strong>encapsulates all that complexity</strong> behind itself. So however the backend scales, changes, or fails over, it's transparent to the client — the API is stable, the topology is free.
+That's why Lesson 8 could say "Lite / Standalone / Cluster, one API": what changes is backend scale; what stays is the surface the Proxy exposes.</p>
+
+<p>One layer deeper, the Proxy also plays an easily-missed role: <strong>translator between protocol and topology</strong>. The client sends <strong>business semantics</strong> like "search this vector in collection A, topK=10,"
+but what the backend must actually do is "which QueryNodes is collection A loaded on right now, how many shards does it have, who is each shard's delegator, into how many parallel calls should the request be split."
+The Proxy bridges that gap using its cached metadata. It must keep this "routing table" updated as the collection's load state and shard distribution change, or it would send a request to a node that no longer serves that shard.
+Precisely because this "translation" only reads metadata and never writes it, multiple Proxies can each hold their own cache and serve independently without syncing — the <strong>prerequisite</strong> for stateless scaling.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">client SDK</div><div class="nd">Python / Go / REST</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">Proxy</div><div class="nd">milvuspb service impl</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">coordinators</div><div class="nd">for timestamps / metadata</div></div>
+  <div class="arrow">＋</div>
+  <div class="node"><div class="nt">nodes</div><div class="nd">QueryNode / DataNode do work</div></div>
+</div>
+
+<h2>Three gates: validate, authenticate, rate-limit</h2>
+<p>Once a request enters the Proxy it isn't executed right away — it must first pass a chain of <strong>interceptors</strong>. This is standard gRPC practice: before the real business method,
+a set of middlewares vet the request one by one. Milvus splits them into clear, single-purpose files:</p>
+
+<ul>
+  <li><strong>Authentication</strong>: who are you? <span class="inline">authentication_interceptor.go</span> checks username/password or token; unknown callers are rejected.</li>
+  <li><strong>Privilege</strong>: are you allowed to do this? <span class="inline">privilege_interceptor.go</span> checks the RBAC role against this collection/operation.</li>
+  <li><strong>Database routing</strong>: which database do you mean? <span class="inline">database_interceptor.go</span> pins the request to the right db context.</li>
+  <li><strong>Rate limit</strong>: are you hammering us today? <span class="inline">rate_limit_interceptor.go</span> throttles or blocks writes/queries by quota to protect the backend.</li>
+</ul>
+
+<p>Together these four gates are the Proxy's full "doorkeeper" duty. Because they sit <strong>before business logic</strong>, an illegal, unauthorized, or over-quota request is stopped
+before it ever reaches queueing and execution — saving backend compute and holding the line on security and stability. Note these are all <strong>stateless judgments</strong> (querying metadata and quotas),
+so spinning up more Proxy instances lets each one vet independently, with no need to sync with the others.</p>
+
+<p>The <strong>rate-limit</strong> gate deserves an extra word, because it embodies the Proxy's instinct to "protect the backend." Vector-DB writes and queries are both "heavy": one bulk insert can pour in hundreds of thousands of rows at once,
+one high-topK, large-nprobe search can saturate a QueryNode. If the Proxy accepted everything, a traffic spike would drive the backend straight into out-of-memory or tail-latency blowups.
+So the limiter applies <strong>backpressure</strong> per configured quota (which can be split by collection, by operation kind, by tenant): pass it if we can bear it, otherwise throttle, queue, or reject outright with a "retry later" hint.
+This is a "rather slow a few requests than crash the whole cluster" trade-off — placed at the very front exactly because <strong>the earlier you stop overload, the cheaper it is</strong>.</p>
+
+<table class="t">
+  <tr><th>Gate</th><th>Question</th><th>Impl file</th><th>If it fails</th></tr>
+  <tr><td><strong>Auth</strong></td><td>who are you</td><td class="mono">authentication_interceptor.go</td><td>reject connection</td></tr>
+  <tr><td><strong>Privilege</strong></td><td>may you do this</td><td class="mono">privilege_interceptor.go</td><td>permission error</td></tr>
+  <tr><td><strong>DB routing</strong></td><td>which database</td><td class="mono">database_interceptor.go</td><td>db not found</td></tr>
+  <tr><td><strong>Rate limit</strong></td><td>over quota</td><td class="mono">rate_limit_interceptor.go</td><td>throttle / reject</td></tr>
+</table>
+
+<h2>The task scheduler: three queues, three lanes</h2>
+<p>Past the gates, requests don't all execute in a stampede — each is wrapped into a <strong>task</strong> and placed into the <strong>task scheduler</strong>.
+This is the Proxy's "scheduling brain," holding three <strong>independent queues</strong> that split traffic by request kind:</p>
+
+<p>This "a queue per kind" design rests on a plain yet deep observation: <strong>different requests demand fundamentally different things from the system, and mixing them only drags everyone down</strong>.
+Creating a table (DDL) might happen a few times a year but must be flawless and strictly ordered; inserting data (DML) happens thousands of times a second and wants high throughput and durability;
+querying (DQL) is latency-sensitive and mutually independent and wants maximum concurrency. Cramming them into one queue is like making an ambulance, a convoy of trucks, and a stream of cars share one single-lane road — nobody goes fast.
+Separate lanes let each move at its own speed.</p>
+
+<ul>
+  <li><strong>ddQueue (DDL)</strong>: data-definition — create/drop collection, partition, index, alias. These change <strong>metadata structure</strong> and must run strictly serially and in order.</li>
+  <li><strong>dmQueue (DML)</strong>: data-manipulation — insert, delete, upsert. These are <strong>writes</strong> that need timestamps and go into the WAL/message queue.</li>
+  <li><strong>dqQueue (DQL)</strong>: data-query — search, query. These are <strong>reads</strong> that fan out to multiple shards and then merge.</li>
+</ul>
+
+<p>Why three queues instead of one big queue? Because the three kinds have <strong>completely different ordering constraints, concurrency, and resource profiles</strong>. DDL changes structure and must be carefully serial,
+or two concurrent "alter schema" calls collide; DML is a write that cares about order and durability; DQL is a read that cares about concurrency and latency, with little inter-dependence and high parallelism.
+<strong>Physically isolating</strong> them lets the scheduler apply the most fitting policy to each lane — high-concurrency reads aren't blocked behind a slow DDL, and vice versa.
+(The source actually has a fourth <span class="inline">dcQueue</span>, a "data control queue" for operations like flush that control data state; here we focus on the main three.)</p>
+
+<p>Inside each queue hides a key design: a task's <strong>two-stage lifecycle</strong>. After a task enters the queue it goes through <span class="mono">PreExecute</span> (pre-checks: translate the collection name to an ID, verify fields match, fill in defaults),
+then <span class="mono">Execute</span> (the real work: send RPCs, await results), and finally <span class="mono">PostExecute</span> (wrap-up: reduce, assemble the response).
+The scheduler separately manages an "unissued" and an "active" stage in order to control concurrency — for example, DML writes must have their assigned timestamps <strong>take effect in order</strong>,
+so a task that got a later timestamp must not run ahead. This mechanism keeps "when the next task may move forward" firmly in the scheduler's hands, the basis for the Proxy maintaining correct ordering under high concurrency.
+You needn't memorize each method name, but keep the intuition: <strong>queueing isn't just ordering — it simultaneously guards both "timestamp order" and "resource concurrency."</strong></p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/proxy/task_scheduler.go</span><span class="ln">taskScheduler and its three queues</span></div>
+  <pre><span class="kw">type</span> taskScheduler <span class="kw">struct</span> {
+    ddQueue *ddTaskQueue   <span class="cm">// DDL: create/drop collection, partition, index, alias</span>
+    dmQueue *dmTaskQueue   <span class="cm">// DML: insert / delete / upsert</span>
+    dqQueue *dqTaskQueue   <span class="cm">// DQL: search / query</span>
+
+    <span class="cm">// data control queue, for flush etc. that control data state</span>
+    dcQueue *ddTaskQueue
+    <span class="cm">// ... ctx / cancel / waitgroup</span>
+}
+
+<span class="kw">func</span> newTaskScheduler(ctx context.Context, tso tsoAllocator, ...) (*taskScheduler, <span class="kw">error</span>) {
+    s := &amp;taskScheduler{ ... }
+    s.ddQueue = newDdTaskQueue(tso)
+    s.dmQueue = newDmTaskQueue(tso)
+    s.dqQueue = newDqTaskQueue(tso)
+    <span class="kw">return</span> s, <span class="kw">nil</span>
+}</pre>
+</div>
+
+<h2>One request's journey inside</h2>
+<p>Putting it together, here is a request's full pipeline inside the Proxy. Note step ④ "get a timestamp": as each write/query task is enqueued, it asks the coordinator's <strong>TSO</strong> for a global timestamp
+(detailed next lesson on RootCoord) that fixes this operation's place on the global timeline — exactly Lesson 3's "role of timestamps," realized at the Proxy layer.
+What's most worth savoring is how this pipeline breaks a seemingly simple call into five stages — "<strong>gate → queue → order → fan out → reduce</strong>" — each mapping to some backend subsystem: gating relies on RBAC and quota metadata,
+ordering on RootCoord's TSO, fan-out and reduce on the shard distribution QueryCoord maintains. A request's "life" is really the Proxy repeatedly borrowing strength from the control plane and then gathering the results back.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>receive</h4><p>gRPC/REST hits a Proxy milvuspb method, e.g. <span class="mono">Search</span>.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>three gates</h4><p>auth → privilege → db routing → rate limit, interceptors vet in turn.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>wrap as task, pick queue</h4><p>route into ddQueue / dmQueue / dqQueue by kind.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>assign timestamp</h4><p class="mono">tsoAllocator</p><p>ask the coordinator for a global timestamp/ID, fixing this op's order.</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>execute: fan out</h4><p>DML writes into WAL/MQ; DQL sends the query to the QueryNodes serving each shard.</p></div></div>
+  <div class="step"><div class="num">6</div><div class="sc"><h4>reduce</h4><p>merge and re-rank the topK returned by multiple shards into one final result.</p></div></div>
+  <div class="step"><div class="num">7</div><div class="sc"><h4>return</h4><p>one clean answer; backend complexity is fully transparent to the caller.</p></div></div>
+</div>
+
+<h2>Reads and writes: two different paths</h2>
+<p>Placing the DML (write) and DQL (read) execution paths side by side makes clear what the Proxy's "dispatch" actually splits. They end in different places and care about different things:</p>
+
+<div class="cols">
+  <div class="col"><h4>DML write path</h4><p>After getting a timestamp, insert/delete is <strong>written into the message queue / WAL</strong> (dispatched by vchannel), to be consumed asynchronously by StreamingNode/DataNode and persisted into segments.
+  The Proxy cares about <strong>order and durability</strong> — once the write succeeds it returns; actual persistence happens in the background. This is the write-side entrance to Lesson 7's "log-as-data."</p></div>
+  <div class="col"><h4>DQL query path</h4><p>search/query is <strong>fanned out</strong> to the QueryNodes serving each shard; each node computes a local topK on its in-memory index,
+  then results are <strong>gathered back to the Proxy and reduced</strong> into a global topK. The Proxy cares about <strong>concurrency and latency</strong> — the slowest shard sets the overall speed.</p></div>
+</div>
+
+<p>This "fan-out / reduce" is the core difficulty of distributed search: each shard sees only local data, and their local optima must be <strong>correctly merged</strong> into the global optimum,
+while handling duplicates, delete markers, score normalization, and more. It's complex enough to deserve its own lesson — we dive into it in Lesson 29. Here, just remember: <strong>the Proxy is the merge point</strong>,
+the one that reassembles "partial answers scattered across machines" into "one complete answer."</p>
+
+<p>While we're here, let's clear up a common misconception: a search's <strong>consistency level</strong> is also realized at the Proxy layer. The client may demand "strong" (read every write up to now) or "bounded staleness" (tolerate a little lag for lower latency).
+The Proxy's trick: before issuing the query it decides on a <strong>guarantee timestamp</strong> to attach, telling QueryNodes "please consume data at least up to this point before answering me."
+Strong consistency uses the current latest timestamp; eventual uses a slightly older one. See — once again it's the <strong>timestamp</strong> orchestrating the visibility of reads vs writes behind the scenes, the distributed-level payoff of the seed planted in Lesson 3.
+Combine this with the earlier fan-out/reduce and you grasp the three roles the Proxy plays in a single query: <strong>router, ordering coordinator, and result merger</strong>.</p>
+
+<h2>Stateless: why the Proxy scales freely</h2>
+<p>Finally, back to that recurring line: <strong>the Proxy is stateless</strong>. It holds no segments, no indexes, no user data — the metadata it needs comes from coordinators and etcd (and can be cached),
+timestamps come from the TSO, and the real data lives in nodes and object storage. Since every Proxy instance can <strong>independently and identically</strong> do "gate — schedule — reduce," handling a traffic spike is simple:
+<strong>spin up more Proxies behind a load balancer</strong>; a request can land on any instance and behave the same. If a Proxy crashes, no data is lost, because it never stored any.</p>
+
+<p>This is the payoff of separating "carries throughput" from "holds state" (the principle from Lesson 9): the Proxy sits at the very front of the throughput path under the most pressure, yet because it is stateless
+it is the <strong>easiest part of the whole system to scale</strong>. Contrast it with the stateful, assignment-coordinated QueryNode/DataNode and you feel Milvus's layering philosophy more deeply —
+let each component carry just one kind of complexity, then stitch them together cleanly with interfaces and queues.</p>
+
+<p>But "stateless" doesn't mean "mindless forwarding." The Proxy still maintains a <strong>local cache</strong> that updates as the backend changes (collection schema, shard distribution, per-QueryNode load hints, etc.),
+or else every request would query a coordinator and the coordinator becomes the new bottleneck. This cache is "soft state" — droppable, and re-fetchable from coordinators and etcd when lost, so it doesn't break the essence of stateless scaling.
+Its updates also rely on Lesson 9's watch mechanism: when QueryCoord changes a collection's shard distribution, the relevant change propagates to the Proxy to keep its routing table fresh.
+Grasp this and you can answer a common interview question: <strong>"If the Proxy is stateless, why cache at all?" — because the cache is soft state serving performance, not hard state backing correctness</strong>; the two are fundamentally different in distributed systems.</p>
+
+<p>Finally, pull back to this part's through-line. The Proxy is the data plane's gateway, but it can't live a moment without the control plane: it asks RootCoord for timestamps (next lesson), asks QueryCoord where a collection is loaded (Lesson 13),
+and behind persisting segments is DataCoord (Lesson 12). In other words, <strong>the Proxy is the skin that translates "control-plane decisions" into "a service usable by clients."</strong>
+The next three lessons walk into these three coordinators one by one, and you'll find each supports some link of the Proxy's pipeline — read them, look back at this diagram, and everything snaps into place.</p>
+
+<div class="card macro">
+  <div class="tag">🌍 The big picture</div>
+  In one line: <strong>the Proxy is the single entry (milvuspb service) → it passes four gates auth/privilege/db/rate-limit → wraps tasks into ddQueue/dmQueue/dqQueue → asks the coordinator for a timestamp → writes fan into the WAL, queries fan out to nodes → results are reduced into one answer and returned</strong>.
+  It is stateless, so it scales horizontally behind a load balancer. Hold this pipeline in mind and every coordinator ahead is one link behind it.
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Single entry</strong>: the Proxy implements the public <span class="mono">milvuspb</span> MilvusService (gRPC/REST), encapsulating all backend topology behind it.</li>
+    <li><strong>Four gates</strong>: auth / privilege / db routing / rate limit, each an independent interceptor sitting before business logic.</li>
+    <li><strong>Three queues</strong>: <span class="mono">ddQueue</span>(DDL), <span class="mono">dmQueue</span>(DML), <span class="mono">dqQueue</span>(DQL), physically isolated by ordering and concurrency profile (plus a <span class="mono">dcQueue</span> for flush). See <span class="mono">task_scheduler.go</span>.</li>
+    <li><strong>Timestamps</strong>: each write/read task asks the coordinator's TSO for a global timestamp to fix its order (detailed in Lesson 11).</li>
+    <li><strong>Two paths</strong>: DML fans into the WAL/MQ (durability); DQL fans out to QueryNodes then <strong>reduces</strong> (concurrency/latency; reduce deep-dived in Lesson 29).</li>
+    <li><strong>Stateless</strong>: stores no data, scales horizontally behind a load balancer — the easiest link to scale.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. The Proxy's task scheduler routes requests into three queues - ddQueue / dmQueue / dqQueue. What is the main purpose of this physical separation?</div>
+  <ol class="opts">
+    <li>Because gRPC requires each method to own a queue</li>
+    <li>To cache vector data in the Proxy's memory</li>
+    <li>To make the three kinds share one global lock</li>
+    <li>The three kinds have different ordering constraints and concurrency profiles: DDL must be strictly serial, DML/DQL can be highly concurrent; separate queues let each schedule under its own rules without dragging the others</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. DDL must be serial to keep structure single-versioned; DML/DQL want high concurrency and low latency. Isolating tasks of different ordering/concurrency profiles lets each queue schedule under its own constraint - essential for stability and speed (a dcQueue also handles flush)</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Why is the Proxy called 'the most easily scaled' part of Milvus?</div>
+  <ol class="opts">
+    <li>Because it runs inside the coordinator process</li>
+    <li>Because it needs no auth or rate limiting</li>
+    <li>Because it is stateless - it holds no segments or indexes, only validates/dispatches/reduces; instances can be added or removed like web servers behind a load balancer</li>
+    <li>Because it stores all data on its local disk</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. Statelessness is the key to horizontal scaling: holding no user data, any Proxy instance can serve any request, so instances scale freely behind a balancer. This echoes Lesson 9's 'carries throughput is not holds state'</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. How is a search request turned into a final result at the Proxy?</div>
+  <ol class="opts">
+    <li>Only the first shard is queried and the rest ignored</li>
+    <li>The Proxy scans all vectors in its own memory to compute topK</li>
+    <li>Fan-out to the QueryNodes owning each shard, each computes a local topK, then results are gathered back at the Proxy and reduced into a global topK</li>
+    <li>The request is handed to RootCoord to run the search</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. Distributed search is fan-out then reduce: each shard sees only local data and computes a local topK; the Proxy is the meeting point that merges them into a global topK, and the slowest shard sets the latency (reduce details in Lesson 29)</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>A client demands a 'strong' read (sees all writes up to now). Explain how the Proxy conveys this to QueryNodes via a 'guarantee timestamp', and the trade-off among consistency level, freshness, and latency.</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>RootCoord</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Last lesson the Proxy kept asking a "coordinator" for one thing while queuing — a <strong>global timestamp</strong>. The issuer is this lesson's star, <strong>RootCoord (the root coordinator)</strong>.
+It owns two big jobs: first, all <strong>DDL</strong> (create/drop collection, partition, alias, database) and the <strong>meta table</strong> behind it; second, handing out <strong>time</strong> and <strong>identity</strong> cluster-wide —
+monotonically increasing TSO timestamps and globally unique IDs. It is Milvus's "<strong>ordering brain</strong>."
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of RootCoord as a nation's <strong>civil registry + national time service</strong>. On one hand it is the <strong>registry office</strong>: who is born (create collection), who is deregistered (drop collection), who renames or re-files (alter schema / alias) —
+  all must be entered in its <strong>master ledger (the meta table)</strong>, and only then does it count. On the other hand it is the <strong>time-broadcast tower</strong>: every clock in the country syncs to it — the time it emits <strong>only increases, never repeats</strong>,
+  so events happening anywhere can be ordered into one agreed sequence. It also <strong>issues ID numbers</strong>: every newborn thing gets a nationally unique number. <strong>Register, broadcast time, issue numbers</strong> — one office, three big jobs.
+</div>
+
+<h2>Big job one: DDL and the meta table</h2>
+<p>When you <span class="mono">create_collection</span>, add a partition, make an alias, or create a new database, these are all <strong>DDL (data definition language)</strong>.
+They change not the data itself but the <strong>structure and identity of data</strong> — which fields a collection has, who is the primary key, how many dimensions the vector is, how many partitions. Such information needs one <strong>authoritative, durable, unique</strong> record,
+or the whole cluster will disagree on "what the collection looks like." The record RootCoord holds is the <strong>meta table</strong>, whose interface is <span class="inline">IMetaTable</span>.</p>
+
+<p>Why must DDL be funneled to one place and serialized? Because structural changes are <strong>inherently allergic to concurrency</strong>. Imagine two clients altering the same collection's schema at once, or one adding a partition while another drops the collection —
+if each does its own thing, metadata contradicts itself and the "collection definition" backend nodes read splits too. Funneling all DDL into one brain and booking it in order is the simplest, most reliable way to guarantee <strong>structural consistency</strong>.
+This echoes last lesson's design where the Proxy queues DDL into <span class="mono">ddQueue</span> and runs it strictly serially — both ends cooperate to keep "there is only ever one version of the structure."</p>
+
+<p>You might worry: if all DDL is serial, isn't it too slow? In practice it's not a problem, because DDL is a <strong>low-frequency but high-value</strong> operation — once a collection's schema is set, it often won't change for months;
+the truly high-frequency operations are data-plane ones like insert and search, which travel a completely different concurrent path (last lesson's dmQueue / dqQueue). Making "rare but must-be-correct" things strictly serial, and letting "frequent and parallelizable" things run concurrently,
+this design philosophy of <strong>divide-and-conquer by frequency and consistency requirement</strong> runs through all of Milvus. RootCoord willingly serves as DDL's "single-file bridge" precisely because few cross that bridge, yet every crosser must be guaranteed not to fall off.</p>
+
+<p>The meta table isn't done by just keeping things in memory; it is <strong>backed by persistence</strong>: every registration eventually writes to etcd (the next lesson covers "where things live"). On startup RootCoord <strong>replays</strong> the full metadata from the persistent layer into memory,
+and that in-memory copy then serves both as a <strong>read cache</strong> (the Proxy frequently asks "what is collection A's ID and schema") and as something kept <strong>in sync to disk</strong> on each DDL. So even if RootCoord restarts, collection definitions aren't lost —
+this is exactly how "metadata" enjoys the same reliability treatment as "data."</p>
+
+<p>Let's walk one most-common <span class="mono">create_collection</span> through this registration path; you'll see RootCoord's three big jobs all <strong>take the stage at once</strong> within a single action: issue a number, fix an order, book the record.
+This also explains why "creating a table" looks like one SDK call yet stirs the entire ordering brain behind the scenes.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Proxy receives DDL</h4><p>client <span class="mono">create_collection</span>, after Proxy checks, enters <span class="mono">ddQueue</span> strictly serially.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Issue number</h4><p class="mono">idAllocator.Alloc</p><p>RootCoord allocates a globally unique collectionID for the new collection.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Fix order</h4><p class="mono">tsoAllocator</p><p>get a TSO timestamp to mark this structural change's place on the global timeline.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Book the record</h4><p>write the collection definition into <span class="mono">IMetaTable</span>, persisted to etcd via catalog/kv.</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>Broadcast</h4><p>deliver this DDL in order over the streaming channel so nodes update their views.</p></div></div>
+</div>
+
+<p>What's most worth remembering here is the order and cooperation of "<strong>issue number → fix order → book record → broadcast</strong>": first a unique identity, then a position in time, then writing it as an authoritative record, and only then letting the whole cluster know.
+If any step goes wrong, the cluster's understanding of "who this collection is, when it was created, what it looks like" cracks. RootCoord chaining these four steps in one place, in order, is precisely the weight behind the word "authoritative."</p>
+
+<table class="t">
+  <tr><th>Responsibility</th><th>Mechanism</th><th>Interface / file</th></tr>
+  <tr><td>Create/drop collection, partition, alias, db</td><td>Serialized DDL registration</td><td class="mono">IMetaTable</td></tr>
+  <tr><td>Authoritative in-memory metadata view</td><td>Startup replay + read cache</td><td class="mono">MetaTable struct</td></tr>
+  <tr><td>Metadata persistence</td><td>Write to etcd (via catalog/kv)</td><td class="mono">meta_table.go</td></tr>
+  <tr><td>Issue timestamps</td><td>Global TSO allocator</td><td class="mono">tsoAllocator</td></tr>
+  <tr><td>Issue unique IDs</td><td>Global ID allocator</td><td class="mono">idAllocator</td></tr>
+</table>
+
+<h2>Big job two: TSO, the cluster's unified clock</h2>
+<p><strong>TSO (Timestamp Oracle)</strong> is RootCoord's weightiest job. It promises one thing, but a priceless one: every timestamp it emits is <strong>globally unique and monotonically increasing</strong>.
+With it, writes and queries scattered across machines can be placed on <strong>one timeline</strong> and ordered — exactly the source of Lesson 3's "role of timestamps" and Lesson 10's Proxy "getting a timestamp."
+Without a unified clock, a distributed system cannot answer the most basic question: "which of these two events came first?"</p>
+
+<p>This timestamp is conceptually a <strong>hybrid value</strong>: the high bits are physical time (wall-clock milliseconds), the low bits a logical counter, packed into one 64-bit integer. The physical part keeps it roughly tracking real time,
+the logical part keeps many emitted in the same millisecond distinct. You needn't memorize exact bit widths; just grasp the intuition: <strong>it acts like time yet guarantees uniqueness and order</strong>. Hence comparing two timestamps
+equals comparing the order of two events on the global timeline — the cornerstone for Milvus's consistent reads, read/write isolation, and "data up to a given point in time."</p>
+
+<p>TSO also has an elegant engineering design: <strong>batch allocation + high-water-mark persistence</strong>. RootCoord does not write etcd for each timestamp (too slow); instead it periodically advances and persists a <strong>high-water mark</strong> to etcd,
+after which, within that already-persisted range, issuing timestamps is pure in-memory work — very fast. A background ticker periodically calls <span class="mono">UpdateTSO</span> to advance and flush the mark. This is both fast and <strong>crash-safe</strong>:
+if RootCoord dies and restarts, the mark it reads back from etcd is always <strong>greater than or equal to</strong> any timestamp previously issued, so the fatal regression "timestamps after restart are smaller than before" can never happen.</p>
+
+<p>Why is "never regress" so important? Because all of Milvus's consistency rests on the assumption that "timestamps can be compared." A query carries a <strong>read-guarantee timestamp</strong>, agreeing "I want to read all writes up to this point";
+writes each fall into the log carrying their own timestamps. As long as timestamps are globally monotonic, a node can cleanly decide "which writes this query should see, and which are too new and should be ignored." Once timestamps regress or repeat, that decision collapses:
+data that should be visible gets missed, or data that shouldn't appear surfaces early — and consistency breaks. So RootCoord would rather spend a bit more on persistence than let the iron law of "monotonic" slip. This is also why time-issuing <strong>can have only one source</strong>:
+two clocks each issuing their own can never guarantee global monotonicity.</p>
+
+<p>A common question lurks here: if issuing each timestamp is so careful, won't it become the cluster's bottleneck? The answer is no — precisely because of batch allocation, <strong>the vast majority of timestamp requests complete instantly in memory</strong>,
+and only the periodic mark advance touches etcd. In other words, the slow step is amortized down to a very low frequency, while the fast step carries nearly all the traffic. This is a classic distributed-systems trade-off — "<strong>batch the expensive operation, make the cheap operation high-frequency</strong>" —
+and you'll see the same pattern again when we cover segment allocation and ID allocation. Grasp TSO and you hold the key to reading Milvus's consistency model.</p>
+
+<div class="timeline">
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t1</span><span class="tl-c">Proxy enqueues write A, gets timestamp ts=100 from RootCoord</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t2</span><span class="tl-c">Another Proxy writes B, gets ts=101 (100 is never reissued)</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t3</span><span class="tl-c">Query C gets read-guarantee ts=102, reads all writes with ts&lt;=102</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t4</span><span class="tl-c">Background ticker advances the high-water mark and persists to etcd (no regression on crash)</span></div>
+</div>
+
+<h2>Big job three: globally unique IDs</h2>
+<p>Besides handing out time, RootCoord <strong>hands out numbers</strong>. Collections, partitions, segments — each needs a <strong>cluster-wide unique</strong> 64-bit ID to identify itself. This is highly isomorphic to TSO:
+also required to be unique, also <strong>batch-allocated</strong> for performance — fetch a range of IDs from the persistent layer into memory at once, then issue within that range as pure in-memory work, fetching the next range when exhausted.
+So whatever machine, whatever moment requests, the IDs never collide. When the Proxy wants to create a collection it grabs a batch from RootCoord's <span class="mono">idAllocator.Alloc(count)</span> in one shot.</p>
+
+<p>You might ask: why not use locally generated random IDs like UUIDs? Because Milvus needs more than "unique" — it needs "<strong>compact and comparable</strong>": a 64-bit integer saves memory and indexes better than a 128-bit string, and an increasing sequence number even carries a hint of "who was created first."
+Central issuing adds one round-trip to RootCoord, but thanks to batch allocation that round-trip is amortized to nearly nothing, buying in return a clean, unified, sortable identity system for the whole cluster. Once more, a classic trade-off of "spend a little coordination cost to gain global order."</p>
+
+<p>Putting "issue time" and "issue numbers" in one place is no accident: both need a <strong>globally unique issuing source</strong>, both rely on the same "fetch a range, dispense fast in memory, persist a high-water mark against regression" mechanism.
+RootCoord is their natural home — it is already the cluster's "single, authoritative, serialized" point. Grasp this and you see why we call it the "<strong>ordering brain</strong>":
+the final verdict on <strong>time</strong> and <strong>identity</strong> in the cluster comes from here.</p>
+
+<p>Worth noting is the <strong>shared origin</strong> of TSO and ID in the implementation: in the source they share the same "global allocator" idea underneath, even reusing the same KV handle for persistence (you'll see <span class="mono">tsoKV</span> fed to both allocators in the code below).
+The only difference: one allocates timestamps that "track the wall clock," the other allocates pure sequence numbers that "just increase, indifferent to physical time." Making them isomorphic siblings cuts implementation burden and gives "uniqueness" one unified source of guarantee.
+For users, just remember: <strong>wherever a globally unique identifier or a globally unified ordering is needed, RootCoord the issuing desk stands behind it</strong>.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/rootcoord/root_coord.go</span><span class="ln">Wiring the TSO and ID allocators</span></div>
+  <pre><span class="kw">type</span> Core <span class="kw">struct</span> {
+    <span class="cm">// ...</span>
+    idAllocator  allocator.Interface   <span class="cm">// global unique ID allocator</span>
+    tsoAllocator tso2.Allocator        <span class="cm">// global TSO timestamp allocator</span>
+}
+
+<span class="cm">// At startup: wire the ID allocator</span>
+idAllocator := allocator.NewGlobalIDAllocator(globalIDAllocatorKey, tsoKV)
+c.idAllocator = idAllocator
+
+<span class="cm">// Wire the TSO allocator (backed by the tso package's GlobalTSOAllocator)</span>
+tsoAllocator := tso2.NewGlobalTSOAllocator(globalTSOAllocatorKey, tsoKV)
+c.tsoAllocator = tsoAllocator
+
+<span class="cm">// The scheduler receives both; DDL tasks use them to get numbers and order</span>
+c.scheduler = newScheduler(c.ctx, c.idAllocator, c.tsoAllocator)</pre>
+</div>
+
+<h2>How DDL propagates, and where RootCoord lives</h2>
+<p>Once a DDL is booked, merely writing the meta table isn't enough — backend nodes must also learn "the collection changed." RootCoord broadcasts DDL over a <strong>streaming channel</strong>,
+letting relevant nodes consume the structural change in order. This "DDL over a streaming log" path is itself subtle, but it belongs to a later treatment of the <strong>write path / streaming system</strong>; here just keep one intuition:
+<strong>DDL isn't done once written — like a timestamped message, it is delivered in order to those who need it</strong>. Only then can schema changes achieve, in a distributed setting, "everyone eventually sees the same version, in a consistent order."</p>
+
+<p>Why must DDL also carry a timestamp and travel an ordered log? Because structural change and data write are really <strong>the same kind of problem</strong> in a distributed setting: both need "order" to become global consensus. Imagine an "add a field" DDL and a batch of inserts happening almost simultaneously;
+nodes must decide whether that batch should be interpreted under the old or the new schema — and it's exactly the TSO timestamps each carries that decide. So DDL and DML are uniformly ordered on the same timeline, and a node need only faithfully "replay in timestamp order"
+to reach a self-consistent, identical-for-everyone view of the world. This again confirms RootCoord's core value as the "ordering brain": <strong>by folding both structure and data into one ordering, the whole cluster gains a unified causality.</strong></p>
+
+<p>Finally, recall last lesson's conclusion: today's RootCoord is not a standalone process but <strong>runs inside the single MixCoord process</strong> together with DataCoord and QueryCoord, playing the "root coordination" logical role (see Lesson 9).
+So when we say "ask RootCoord for a timestamp," physically we are talking to that slice of logic inside the MixCoord process. We give it its own lesson because its <strong>responsibility boundary</strong> is clear and critical:
+who orders, who issues numbers, who guards metadata — for these three, look to RootCoord. Next lesson turns to the other write-side brain, <strong>DataCoord</strong> (Lesson 12), to see how segments get allocated, sealed, and flushed.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">Proxy</div><div class="nd">DDL / get time·ID</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">RootCoord</div><div class="nd">register·time·numbers</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">meta table</div><div class="nd">IMetaTable → etcd</div></div>
+  <div class="arrow">＋</div>
+  <div class="node"><div class="nt">streaming</div><div class="nd">broadcast DDL to nodes</div></div>
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 The big picture</div>
+  RootCoord is the cluster's "single, authoritative, serialized" point. It does three things, all of which must be done in <strong>one place</strong>: register DDL (so a collection's structure has only one version), issue TSO timestamps (one unified timeline for the whole cluster), and issue globally unique IDs (a non-colliding identity for everything).
+  Both timestamps and IDs trade "batch a range + persist a high-water mark" for being fast yet regression-proof; metadata is backed by etcd persistence and replayed on startup. It co-lives with the other two coordinators inside the MixCoord process — logically independent, physically cohabiting.
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>DDL + metadata</strong>: create/drop collection, partition, alias, db all funnel to RootCoord for serial registration in <span class="mono">IMetaTable</span>, backed by etcd persistence.</li>
+    <li><strong>TSO timestamps</strong>: globally unique, monotonically increasing; conceptually a 64-bit "physical time + logical counter" hybrid giving distributed events one timeline.</li>
+    <li><strong>Batch + high-water mark</strong>: TSO/ID are batch-allocated and dispensed fast in memory; a high-water mark persisted to etcd prevents any regression on restart.</li>
+    <li><strong>Global IDs</strong>: unique 64-bit identities for collections/partitions/segments, dispensed in batches by <span class="mono">idAllocator.Alloc</span>.</li>
+    <li><strong>Lives in MixCoord</strong>: today RootCoord is a logical role inside the MixCoord process (Lesson 9); DDL is broadcast in order to nodes over a streaming channel.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Why must TSO timestamps be issued by RootCoord as 'the single point', rather than generated locally by each node?</div>
+  <ol class="opts">
+    <li>Because nodes have no permission to access etcd</li>
+    <li>Because timestamps must equal the exact wall-clock value</li>
+    <li>Because local clocks are faster than RootCoord</li>
+    <li>A single issuer guarantees globally monotonic, non-conflicting timestamps - one unified timeline for distributed events; local generation would reorder and collide, breaking causality</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. A globally unique, monotonic timeline underpins distributed ordering and consistency. Only a central issuer guarantees it; TSO is conceptually a 64-bit 'physical time + logical counter' hybrid, and a single issuer is no bottleneck thanks to batching</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. RootCoord issues TSO/ID with 'allocate a batch + persist a high watermark'. What does this design buy at once?</div>
+  <ol class="opts">
+    <li>Delegates issuance to each DataNode</li>
+    <li>Persist to etcd on every single ID for absolute precision</li>
+    <li>Lets IDs roll back to reuse old values</li>
+    <li>Both fast and rollback-proof: hand out a whole batch from memory, persisting only the high watermark to etcd; after a crash it resumes from the watermark and never reissues a used value</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. Per-value persistence is too slow; pure in-memory rolls back on restart. Batch allocation keeps issuance in-memory fast, while the persisted high watermark prevents rollback and duplication after a crash - a classic performance-vs-safety trade-off</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Why must all DDL (create/drop collection, partition, alias, database) funnel through RootCoord for serial registration?</div>
+  <ol class="opts">
+    <li>Because only RootCoord can access object storage</li>
+    <li>Because DDL must bypass etcd</li>
+    <li>Because DDL is more CPU-heavy than DML</li>
+    <li>Serial registration guarantees one authoritative version of the structure, avoiding conflicts from concurrent schema changes; metadata lands in IMetaTable, persisted to etcd and replayed on startup</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. The schema must be singly authoritative, or two concurrent DDLs would clobber each other. A single serial registrar is the simplest reliable guarantee; metadata persisted in etcd is replayed to rebuild the in-memory view on restart</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>RootCoord is a 'single, authoritative, serial' point, which sounds like a bottleneck and a single point of failure. Using 'batch issuance', 'MixCoord replicas/leader election', and 'etcd persistence', argue why it is in practice neither slow nor fragile.</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>DataCoord</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+RootCoord governs "structure and time"; this lesson's <strong>DataCoord (the data coordinator)</strong> governs "<strong>where data lands, how it lands, when it's cleaned</strong>." It is the write-side master scheduler: it assigns incoming rows into <strong>segments</strong>,
+seals, flushes, compacts, and reclaims them at the right moments, and arranges how indexes get built along the way. Understand DataCoord and you grasp how Lesson 7's "log-as-data, segment-as-vessel" actually runs at the distributed layer.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of DataCoord as the <strong>dispatch supervisor of a giant warehouse</strong>. Goods (data rows) keep arriving; he first directs workers to <strong>stack them into the crate currently being filled (the growing segment)</strong>;
+  when a crate is full, it gets <strong>sealed</strong>, labeled with a manifest, and moved into the <strong>permanent vault (flushed to binlogs)</strong>. When too many small crates clutter the vault, he schedules <strong>merging (compaction)</strong> to free space;
+  expired, voided crates he sends crews to <strong>haul away (GC)</strong>. He also decides which worker (datanode) handles each intake line (vchannel), and which goods need an <strong>extra catalog (index build)</strong> for fast future lookup. He never lifts a crate himself, yet the whole warehouse's order lives in his head.
+</div>
+
+<h2>Segment allocation: starting from a single row</h2>
+<p>When a batch of inserts comes in via the Proxy, those rows must ultimately be organized into <strong>segments</strong> — Milvus's basic unit of storage and retrieval (Lesson 7). But "which segment this batch goes into" is not decided by a node on a whim; it is uniformly <strong>allocated</strong> by DataCoord.
+It maintains, for each collection and each shard, the segment currently <strong>growing</strong>, and dispatches new rows into it; when that segment is <strong>full</strong> (row count or capacity hits a threshold) or has <strong>aged enough</strong> (timeout), it <strong>seals</strong> it and opens a fresh growing segment to keep receiving.</p>
+
+<p>Why must one center allocate segments rather than each datanode going its own way? Because segments are <strong>referenced consistently cluster-wide</strong>: QueryCoord needs to know which segments exist and which QueryNode each is loaded onto; compaction needs to know which small segments can merge; GC needs to know which segments are useless.
+If segment creation were decentralized and arbitrary, these downstream coordinations would lose a unified "ledger." By <strong>funneling management</strong> of "where segments come from and what state they're in," the whole write side gains a consistent, traceable view. When allocating a segment it stamps the initial state <span class="mono">commonpb.SegmentState_Growing</span>,
+and books every later state transition too.</p>
+
+<p>One easily-confused point worth clarifying: DataCoord <strong>allocates</strong> segments and <strong>records</strong> their states, but what actually <strong>writes</strong> data into segments and <strong>flushes</strong> them into files are the working nodes — datanode / streamingnode. This is again Lesson 9's "coordinators decide, nodes execute" made concrete —
+DataCoord is the brain that gives orders and marks the ledger, while nodes are the hands that haul bricks and flush to disk. Separating "decision" from "execution" lets the write side have both unified order and the ability to scale out multiple workers in parallel.</p>
+
+<p>Segment size is also an art, and it is exactly what DataCoord must weigh: too small, and the count explodes — queries open hundreds or thousands of files and metadata bloats; too big, and a single segment loads slowly and each compaction moves a huge amount of data.
+So DataCoord compromises with two conditions — "<strong>fill threshold + timeout</strong>": high-write collections seal segments quickly by "fill," low-write collections rely on "timeout" so a segment doesn't sit half-full for ages, unable to flush and become queryable. This seemingly humble "when to seal" decision
+directly shapes a collection's later query performance and storage overhead, and is among the most everyday yet most critical judgments DataCoord makes as the write side's brain.</p>
+
+<h2>A segment's life: a journey of four states</h2>
+<p>From birth to death, a segment follows a clear <strong>state machine</strong>. These state names aren't arbitrary; they are proto-defined enums <span class="mono">commonpb.SegmentState_*</span> (note: they belong to go-api's commonpb package, not datacoord's own types).
+Understand this transition and you understand the whole process of data "going from active in-memory writes, step by step, to immutable files on disk":</p>
+
+<div class="timeline">
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">Growing</span><span class="tl-c">growing: DataCoord keeps allocating new rows in; the segment is active in memory receiving writes</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">Sealed</span><span class="tl-c">sealed: full or timed out, no longer accepts new rows, awaiting flush</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">Flushing</span><span class="tl-c">flushing: being written into binlog files persisted to object storage</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">Flushed</span><span class="tl-c">flushed: becomes an <strong>immutable</strong> persistent segment, loadable, indexable, mergeable</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">Dropped</span><span class="tl-c">dropped: merged away by compaction or deleted, awaiting GC to clean its files</span></div>
+</div>
+
+<p>This path's key turning point is <strong>Flushed</strong>: once flushed, a segment becomes <strong>immutable</strong>. This is the cornerstone of Milvus's entire storage model — immutability means it can be safely loaded by many QueryNodes at once, indexed without worry, and cached without fear of being overwritten.
+All "modifications" (deletes, updates) don't touch the flushed segment; they are appended as <strong>new writes + delta logs</strong>, and queries merge base data with deltas into the latest view. This is exactly Lesson 7's essence of "log-as-data": <strong>append only, never modify in place</strong>.
+DataCoord's state machine is precisely guarding this contract of "once solidified, immutable."</p>
+
+<p>Besides the four main states, there are a few side states: <span class="mono">Importing</span> (an intermediate state for bulk import), <span class="mono">NotExist</span> (placeholder/absent), and the <span class="mono">Dropped</span> above.
+You needn't memorize them all, but grasp the main thread: <strong>a segment's life is a one-way journey "from mutable to immutable, from memory to disk, from active to reclaimed,"</strong> and DataCoord is the issuer of every step on it. Each transition it books into metadata,
+so that even if a node restarts or a coordinator fails over, the cluster can recover from the ledger "which step each segment has reached."</p>
+
+<p>Making segment state an explicit state machine has a deeper benefit: <strong>it turns "is the data safe right now" into a precisely answerable question</strong>. A still-Growing segment has data only in memory — a node crash may lose it; an already-Flushed segment has data in object storage — recoverable through any crash.
+So when a user calls the flush API wanting to ensure "the data I just wrote is persisted," the system need only check whether the relevant segments have all reached Flushed to give a definite answer. The state machine isn't just internal bookkeeping; it lands the abstract matter of "durability guarantee" into concrete, visible, queryable states.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/datacoord/segment_manager.go</span><span class="ln">stamp Growing on a new segment, switch to Sealed when sealing</span></div>
+  <pre><span class="kw">import</span> <span class="st">"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"</span>
+
+<span class="cm">// A newly allocated segment starts in Growing</span>
+segmentInfo := &amp;SegmentInfo{
+    State: commonpb.SegmentState_Growing,
+    <span class="cm">// ... collectionID / partitionID / channel ...</span>
+}
+
+<span class="cm">// After full or timeout, switch the segment to Sealed; no more new rows</span>
+<span class="kw">if</span> err := s.meta.SetState(ctx, id, commonpb.SegmentState_Sealed); err != nil {
+    <span class="kw">return</span> err
+}</pre>
+</div>
+
+<h2>Flush, compact, reclaim: three background jobs</h2>
+<p>Sealing a segment is just the start; DataCoord must also tend three continuously running background jobs. First is <strong>Flush</strong>: turning a sealed segment into binlog files, persisted to object storage. Only after flush has data "safely landed" —
+even if all in-memory data is lost, it can be rebuilt from object storage. Flush is scheduled by DataCoord and executed by datanode; it is the bridge from "active in-memory writes" to "durable archives on disk."</p>
+
+<p>Worth noting: a flush isn't a single file but a set of <strong>binlogs</strong> — column data, statistics, and delete logs all written separately. Splitting by column lets later queries read only the fields they need, and keeping deletes apart preserves the "append-only" discipline. So one segment becomes a small bundle of files in object storage, and DataCoord records the paths to all of them in metadata for later loading, compaction, and GC to reference precisely.</p>
+
+<table class="t">
+  <tr><th>Background job</th><th>Trigger</th><th>Executed by</th><th>Effect</th></tr>
+  <tr><td><strong>Flush</strong></td><td>after a segment is sealed</td><td class="mono">datanode</td><td>solidify into immutable binlog; data safely landed</td></tr>
+  <tr><td><strong>Compaction</strong></td><td>small segments / too many deltas</td><td class="mono">datanode</td><td>merge small into big, apply deletes; lighter queries</td></tr>
+  <tr><td><strong>GC</strong></td><td>files unreferenced and past retention</td><td class="mono">datacoord</td><td>delete garbage from object storage; reclaim space</td></tr>
+  <tr><td><strong>Index scheduling</strong></td><td>after a segment is flushed</td><td class="mono">datanode worker</td><td>build ANN index for the segment; faster retrieval</td></tr>
+</table>
+
+<p>Second is <strong>Compaction</strong>. As flushes accumulate, a collection piles up many <strong>small segments</strong>, and deletions produce many delta logs. Many small segments mean more files to open per query and higher overhead; many deltas mean each query does more "base data + deletes" merging.
+So DataCoord periodically schedules compaction to <strong>merge small segments into big ones</strong>, <strong>apply delete logs into data</strong> (so-called L0 compaction), plus clustering compaction to improve retrieval locality. The specific algorithms (deep dive in Lesson 19) we won't expand here,
+but remember its value: <strong>compaction trades background tidying for foreground query lightness</strong>. It is the inevitable price of an LSM-style "append-only" storage model, and the secret to keeping it performant over the long run.</p>
+
+<p>Compaction scheduling isn't one-size-fits-all either; several <strong>policies</strong> each play their part: some watch for "too many small segments" to trigger merges, some specifically handle delete logs piling up in the L0 layer, some do clustering re-layout to improve vector locality, and some force-merge on the user's explicit request.
+DataCoord weighs signals like segment count, size, and delete ratio to pick the right moment and policy to dispatch tasks — neither too often (wasting compute and contending with writes) nor too lazy (letting small segments and deletes pile up and slow queries). This judgment of "when, and in which way, to tidy"
+is a key part of write-side performance tuning.</p>
+
+<p>Third is <strong>GC (garbage collection)</strong>. Old segments merged away by compaction, deleted collections, leftovers from failed imports — if these files aren't cleaned, object storage piles up and burns money for nothing. DataCoord's <span class="inline">garbage_collector</span> periodically patrols,
+finds files that are "no longer referenced by any metadata and past a safe retention period," and safely deletes them from object storage. The discretion here is crucial: delete too early and you might wrongly remove data still referenced by a slow query; delete too late and you waste space. So GC is always <strong>conservative and cautious</strong>, preferring to keep things a while longer over risking a wrong deletion.</p>
+
+<p>Look at these three together and you see they jointly answer one question: <strong>how do you keep an "append-only, never-modify-in-place" storage system healthy over the long run?</strong> Append-only means fast writes, concurrency-friendly, inherently reliable — but the price is files keep multiplying, and a delete is only a logical mark, not a physical removal.
+Flush solidifies data safely, compaction tidies fragments and truly redeems logical deletes, GC hauls away the garbage left after tidying. The three act like a logistics crew, quietly keeping storage clean and efficient while foreground queries notice nothing.
+This is why we call DataCoord the "<strong>write side's steward</strong>" — it worries not only about "how to write in" but about "how this pile of data stays sound for the long term once written."</p>
+
+<div class="cols">
+  <div class="col"><h4>Compaction (merge)</h4><p>Merge <strong>many small segments into big ones</strong> and apply delete logs into data, cutting the file count and merge overhead per query. It's "<strong>tidying</strong>," aimed at faster queries. Deep dive in Lesson 19.</p></div>
+  <div class="col"><h4>GC (reclaim)</h4><p>Delete files that are <strong>no longer referenced</strong> and past retention from object storage, reclaiming space and cutting cost. It's "<strong>hauling away</strong>," aimed at not letting garbage pile up endlessly. The principle: rather conservative than wrongly deleting.</p></div>
+</div>
+
+<h2>Channel assignment and index scheduling, and "no indexnode"</h2>
+<p>Beyond segments, DataCoord also handles <strong>channel assignment</strong>: deciding which datanode / streamingnode consumes and flushes each collection's each <span class="mono">vchannel</span> (virtual data channel).
+Channels are the carriers of write streams; spreading them evenly across nodes lets write throughput scale out; if a node dies, DataCoord <strong>reassigns</strong> the channels it owned to others, keeping writes uninterrupted. This "who owns which channel" ledger is likewise kept by DataCoord.</p>
+
+<p>Channel assignment may look like mere "task handing-out," but it quietly carries two layers of write-side concern: <strong>load balancing</strong> and <strong>fault tolerance</strong>. For balancing, DataCoord must avoid piling too many busy channels on one node, or it becomes a write bottleneck;
+for tolerance, once it discovers via etcd's session mechanism (detailed in Lessons 9 and 14) that a datanode has gone missing, it must immediately hand that node's channels to healthy ones so interrupted writes recover fast. You'll find this highly symmetric, in spirit, with the next lesson's QueryCoord doing "segment/channel assignment + rebalancing" on the query side —
+one balances the write side, the other the query side, but both follow the same coordinator philosophy of "central bookkeeping, dynamic scheduling, failover."</p>
+
+<p>Finally, <strong>index-build scheduling</strong>. For vectors to be efficiently searchable, ANN indexes must be built first (Lessons 5 & 6). DataCoord <strong>schedules</strong> these index-build tasks: which segment to index, with what params, assigned to whom.
+A commonly misunderstood fact must be made clear: <strong>Milvus today has no standalone indexnode process</strong>. Although index-build tasks are scheduled by DataCoord, what actually <strong>runs the build is a worker inside datanode</strong>.
+You can see the evidence in code: the <span class="mono">DataNodeClient</span> interface directly <strong>embeds</strong> <span class="mono">workerpb.IndexNodeClient</span> — meaning the "index node" capability has been merged into datanode, rather than spun up as a separate process.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/types/types.go</span><span class="ln">DataNodeClient embeds IndexNode capability: no standalone indexnode</span></div>
+  <pre><span class="kw">type</span> DataNodeClient <span class="kw">interface</span> {
+    component
+    datapb.DataNodeClient
+    workerpb.IndexNodeClient   <span class="cm">// index-build worker folded into datanode</span>
+}</pre>
+</div>
+
+<p>This "no indexnode" fact is the same evolutionary direction as Lesson 9's "MixCoord folds three coordinators into one process": <strong>merge once-separate roles to lower deployment and ops complexity</strong>. Early Milvus did have a standalone indexnode,
+but as the architecture evolved, index building was folded into the datanode worker. If a doc you read still describes "indexnode as a standalone component," defer to the code — <strong>in the code DataNodeClient embeds IndexNodeClient, and that is today's reality</strong>.
+DataCoord thus becomes the write side's genuine steward: segments, channels, flush, compaction, GC, index scheduling — every facet of writing data sits on its ledger.</p>
+
+<p>Why is index building especially fit to fold into datanode rather than be its own node? Because index building is essentially a <strong>batch-style heavy compute task</strong>: read an already-flushed segment, run the ANN graph-building algorithm over it, write the result back to object storage.
+It is highly homologous to what datanode already does — "read and write segment files" — sharing the same data-access capabilities and node resources. Folding it in saves deploying and monitoring a whole class of process, and lets index building reuse datanode's IO and cache nearby. This embodies a main thread of Milvus's recent architectural evolution:
+<strong>merge where possible, carry more responsibility with fewer process types</strong>, making small-to-medium deployments lighter and ops easier — echoing Lesson 8's choice between Standalone and Cluster forms.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">Proxy write</div><div class="nd">insert via vchannel</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">DataCoord</div><div class="nd">segment·schedule·book</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">DataNode worker</div><div class="nd">flush·compact·index</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">object storage</div><div class="nd">binlog / index files</div></div>
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 The big picture</div>
+  DataCoord is the write side's master scheduler, at its core a <strong>segment state machine</strong>: Growing → Sealed → Flushing → Flushed (then Dropped). It allocates segments and records every transition, but flush, compaction, and index building are all executed by datanode workers — decision separated from execution.
+  Flush safely solidifies data into immutable binlogs; compaction trades background tidying for foreground query lightness; GC conservatively hauls away unreferenced files; channel assignment lets writes scale out. Key fact: <strong>no standalone indexnode</strong> — the index-build worker is folded into datanode (DataNodeClient embeds IndexNodeClient).
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Segment allocation</strong>: DataCoord maintains each shard's current growing segment; seals it on full/timeout and opens a new one; it books all segment states.</li>
+    <li><strong>State machine</strong>: <span class="mono">commonpb.SegmentState_*</span> runs Growing → Sealed → Flushing → Flushed → Dropped; note it lives in go-api's commonpb package, not datapb.</li>
+    <li><strong>Flushed is immutable</strong>: flushed segments are read-only; deletes/updates append as new writes + delta — append only, never modify in place (Lesson 7).</li>
+    <li><strong>Three background jobs</strong>: Flush to disk, Compaction merges small segments and applies deletes (deep dive Lesson 19), GC conservatively reclaims unreferenced files.</li>
+    <li><strong>Channels and indexes</strong>: assign vchannels to nodes; schedule index builds. <strong>No standalone indexnode</strong> — the build worker is folded into datanode (DataNodeClient embeds IndexNodeClient).</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. What is DataCoord's segment state machine roughly, and who actually performs the flush and compaction?</div>
+  <ol class="opts">
+    <li>Growing → Sealed → Flushing → Flushed → (Dropped); DataCoord only allocates segments and bookkeeps transitions, while flush/compaction/index-build run on datanode workers</li>
+    <li>Segments have only 'exists' and 'deleted', and the Proxy flushes them</li>
+    <li>Each QueryNode decides segment state on its own</li>
+    <li>DataCoord itself performs all flush and compaction</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. Decide vs execute: DataCoord is the write-side scheduler maintaining the SegmentState_* machine and allocating segments, but the real IO (flush, compaction, index build) runs on datanode workers - the control/data plane split in action</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Regarding 'index building', which statement matches Milvus's actual current architecture?</div>
+  <ol class="opts">
+    <li>Indexes are built and stored by etcd</li>
+    <li>A dedicated standalone indexnode process builds indexes</li>
+    <li>Indexes are built ad hoc by the Proxy before returning results</li>
+    <li>There is no standalone indexnode; the index-build worker is folded into the datanode (DataNodeClient embeds IndexNodeClient), scheduled by DataCoord</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. A common-misconception fix: Milvus has no standalone indexnode; the build worker is merged into the datanode and DataCoord schedules it. Index files end up in object storage, with metadata recording their reference</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 'Flushed means immutable' - so how are deletes and updates implemented?</div>
+  <ol class="opts">
+    <li>A flushed segment is read-only; deletes/updates are appended as new writes + deltas and merged at query time - append-only, never in-place edits</li>
+    <li>A delete instantly physically erases the whole segment</li>
+    <li>Open the old binlog and overwrite the row in place</li>
+    <li>An update requires reverting the segment back to Growing</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. Immutable + append-only continues Lesson 7's 'log-as-data': deletes record deltas, updates write new values, merged at query time; compaction tidies small segments and deletes in the background, trading background work for a lighter foreground query</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>Too many tiny segments slow queries; compaction merges them but burns IO and CPU. Design your own compaction trigger policy (by segment count, by size, by delete ratio...) and explain how it balances 'a light foreground query' against 'bounded background cost'.</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>QueryCoordV2</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+DataCoord governs "how data is written in and stored well"; this lesson's <strong>QueryCoordV2 (the query coordinator)</strong> governs "how data is searched out." It is the read side's master scheduler: it <strong>loads</strong> the collections to be queried into QueryNode memory,
+<strong>assigns</strong> segments and shards to nodes, uses a <strong>balancer</strong> to even out load, uses <strong>replicas</strong> to buy high availability and throughput, and constantly watches the gap between the "<strong>current distribution</strong>" and the "<strong>target distribution</strong>" to correct it. Understand it and you grasp vector retrieval's whole picture at the distributed layer.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of QueryCoordV2 as the <strong>reading-room dispatch director of a great library</strong>. In the stacks (object storage) lie vast numbers of books (segments), but readers can't rummage there directly — the director must first move the needed books <strong>onto the reading-room shelves (load into QueryNode memory)</strong> before readers can fetch them fast.
+  He decides <strong>which book goes on which shelf</strong> (segment assignment), keeping each shelf's book count even and not crammed in one spot (balancing); popular books get <strong>several copies</strong> on different shelves, so if one shelf breaks you can still borrow elsewhere (high availability), and many readers borrowing at once needn't queue (high throughput).
+  He always holds two lists: <strong>which books each shelf actually has now</strong>, and <strong>which books it ideally should have</strong> — his job is to keep nudging the former toward the latter.
+</div>
+
+<h2>Load and release: the prerequisite for search</h2>
+<p>The first intuition to break: <strong>in Milvus, data being "stored" doesn't mean it's "searchable."</strong> A collection's segments lying quietly in object storage can't be searched as-is; they must first go through <strong>load</strong> — QueryCoord schedules that collection's segments and indexes into several QueryNodes' memory,
+building online copies available for retrieval, and only then does the collection enter the "searchable" state. Conversely, <strong>release</strong> returns that memory, turning the collection back to "stored but not searched." That's why, using Milvus, after creating a collection and ingesting data, you must still explicitly <span class="mono">load_collection</span> before you can search.</p>
+
+<p>Why this "load" threshold rather than making all data searchable anytime? Because vector retrieval is <strong>memory-intensive</strong>: ANN indexes must reside in memory to be fast (Lessons 5 & 6), and memory is an expensive, limited resource. Loading every collection blindly would soon blow memory.
+So Milvus hands the decision of "<strong>whether to occupy precious query memory</strong>" to the user via load/release — load the collection you want to search; release it to free space when idle. QueryCoord is the keeper of this gate, uniformly governing "which collections are online right now, and on which nodes each is loaded."</p>
+
+<p>This gate also lets Milvus gracefully support the "<strong>data far larger than memory</strong>" scenario. You can ingest into a collection far more data than a single machine's memory, resting safely in object storage; only when you actually query do you load the needed collection (even partially, by partition, on demand) into memory.
+In other words, <strong>storage capacity is backstopped by object storage while query capability is determined by memory</strong> — the two decoupled. This is Lesson 7's "storage-compute separation" made concrete on the read side — you needn't keep all data resident in expensive memory just to query a little of it.</p>
+
+<p>Loading is far more than "reading files into memory"; it is the sum of a chain of coordination acts: determine which segments and shards this collection has; pick a hosting QueryNode for each segment and each shard channel; bring their indexes into place too;
+and after loading completes, let the Proxy discover "where this collection is now loaded, how many replicas, who is each shard's delegator," so queries can be fanned out correctly. This whole set is what QueryCoord, as the read side's brain, must tend.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>User requests load</h4><p><span class="mono">load_collection</span> reaches QueryCoord via the Proxy.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Determine the target</h4><p>compute which segments and shards this collection should have, and how many replicas — forming the "target."</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Assign segments and shards</h4><p>dispatch segments and shard channels (delegators) to QueryNodes.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Nodes load</h4><p>QueryNodes pull segments and indexes from object storage into memory, building online copies.</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>Correct into place</h4><p>observe the "current distribution" approaching the "target"; once all in place the collection becomes searchable.</p></div></div>
+</div>
+
+<h2>Segment and shard assignment: who searches which piece</h2>
+<p>A big collection often has hundreds or thousands of segments and several shards, while there are many QueryNodes — so the core question is: <strong>which segment, which shard goes to which QueryNode?</strong> QueryCoord does two kinds of assignment. One is <strong>segment assignment</strong>: spreading historical, flushed segments (Lesson 12's Flushed segments) across nodes' memory, each node handling local retrieval over its share.
+The other is <strong>shard (channel) assignment</strong>: each shard maps to a vchannel, hosted by a <strong>delegator (shard proxy / shard leader)</strong> on some QueryNode. The delegator is that shard's "face": it both coordinates queries over all segments under the shard and takes on the shard's latest, not-yet-flushed incremental data (growing segments).</p>
+
+<p>Why distinguish the "segment" and "shard/delegator" layers? Because one query must see both <strong>historical data</strong> (flushed/sealed segments) and the <strong>latest data</strong> (growing segments still flowing in memory). The delegator is the key role stitching the two together:
+representing one shard, it <strong>fans out</strong> queries over historical segments to the QueryNodes holding them, also queries the shard's latest increments, and finally <strong>reduces</strong> them into that shard's complete result. So the Proxy need only send queries to each shard's delegator to get an answer that misses neither "history nor latest." The details of this mechanism (cross-shard reduce) go deep in Lesson 29; here just grasp the role division.</p>
+
+<p>The delegator role also explains a common question: why can Milvus make "data just written immediately searchable" (under a suitable consistency level)? Because the latest growing increments are held directly by the delegator and participate in queries — no need to wait for flush, no need to wait to be loaded —
+when a query reaches the delegator, it merges on the spot the "results from flushed historical segments" with the "latest in-memory increment results it holds," so neither old nor new data is missed. This is exactly the <strong>seamless relay</strong> between the write side (DataCoord's segment transitions) and the read side (QueryCoord's delegator) on the same shard: on the write side data travels from growing to flushed, while on the read side the delegator always watches this stream, ensuring queries always see a complete present.</p>
+
+<div class="cols">
+  <div class="col"><h4>Segment assignment</h4><p>Spread flushed <strong>historical segments</strong> across QueryNodes, each doing local topK over part of the segments. The focus: <strong>spread the existing data evenly</strong> so retrieval compute scales out.</p></div>
+  <div class="col"><h4>Delegator assignment</h4><p>Each shard is hosted by a <strong>delegator</strong> that stitches the shard's historical-segment queries with its latest growing increments, serving as the shard's query face. The focus: <strong>ensure every data stream is covered up to the latest</strong>.</p></div>
+</div>
+
+<h2>The balancer: keeping load impartial</h2>
+<p>Assignment isn't one-off. Nodes come and go, collections are added and dropped, each node's load gradually skews — so a <strong>balancer</strong> is needed to continually <strong>re-spread</strong> segments and shards. Its goal is plain yet important: don't let one QueryNode be hot and crammed while another sits idle,
+because overall query latency is often dragged down by <strong>the busiest one</strong>. When a new node joins, the balancer must migrate some segments over to share load; when a node leaves, its segments must be taken over elsewhere; when load stays uneven, it must proactively move things to correct it.</p>
+
+<p>Milvus's balancer has more than one strategy. The simplest is <strong>round-robin</strong>: spread segments evenly purely by count, regardless of each segment's actual size or heat — simple to implement, fit for relatively uniform distributions. The finer one is the <strong>score-based</strong> strategy: scoring by a node's "real load" — segment count, row count, memory usage — and placing segments on lighter-loaded nodes.
+The two embody different trade-offs: round-robin for simplicity and even counts, score-based for precision and even real pressure. Both implement the same <span class="mono">Balance</span> interface, chosen by QueryCoord as needed.</p>
+
+<p>Balancing also carries a subtle cost to weigh: <strong>migration itself isn't free</strong>. Moving a segment from node A to node B means B must re-pull the segment from object storage, reload it into memory, and rebuild necessary state, all while being careful not to disturb in-flight queries.
+So the balancer can't frantically shuffle at the slightest imbalance — that would throw the cluster into "constant churn with negative net gain" thrash. A good balancing strategy knows to <strong>set thresholds, leave margins, and converge slowly</strong>: it acts only when the imbalance exceeds some bar and the gain clearly outweighs the migration cost. This "restrained diligence" is exactly where distributed balancing design most tests one's skill.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/querycoordv2/balance/balance.go</span><span class="ln">The Balance interface: produce segment and channel move plans</span></div>
+  <pre><span class="kw">type</span> Balance <span class="kw">interface</span> {
+    <span class="cm">// balance segments and channels for a replica; return "how to move" plans</span>
+    BalanceReplica(ctx context.Context, replica *meta.Replica) (
+        []assign.SegmentAssignPlan, []assign.ChannelAssignPlan)
+
+    <span class="cm">// fetch the underlying assign policy (round-robin / score-based)</span>
+    GetAssignPolicy() assign.AssignPolicy
+}
+
+<span class="cm">// Round-robin balancer: spread segments/channels evenly by count</span>
+<span class="kw">type</span> RoundRobinBalancer <span class="kw">struct</span> { <span class="cm">/* ... */</span> }</pre>
+</div>
+
+<h2>Replicas: trading redundancy for HA and throughput</h2>
+<p>When loading a collection, you can give it <strong>multiple replicas</strong> — that is, load the same collection's segments <strong>once each on different QueryNodes</strong>. Replicas buy two good things at once. First, <strong>high availability (HA)</strong>: if a node holding one replica dies,
+another replica is still serving fine elsewhere, queries uninterrupted, availability preserved. Second, <strong>high throughput</strong>: multiple replicas can <strong>share query traffic in parallel</strong>; for the same collection, two replicas can in theory handle nearly twice the concurrent queries. Redundancy here is no waste but the source of <strong>steadiness and speed</strong>.</p>
+
+<p>Of course replicas aren't free: N replicas cost N times the query memory. So replica count is a knob the user weighs by "how important this collection is, how heavy its query load" — core, ultra-concurrent collections get more replicas, obscure ones need just one. QueryCoord's <span class="mono">ReplicaManager</span> uniformly manages these replicas: which nodes are in each replica and which segments each carries are all kept on its ledger.
+This echoes Lesson 9's "coordinators hold the truth, nodes execute" division — how replicas are laid out is decided and booked by QueryCoord, while QueryNodes just load and search the segments assigned to them.</p>
+
+<p>A commonly overlooked detail hides here: replicas are not simple "exact mirrors"; each independently carries the collection's full data and independently balances. The benefit: <strong>migration and scaling within one replica don't entangle another replica</strong> — faults and load are isolated from each other.
+When a query arrives, the Proxy picks one available replica to execute on (usually by load or proximity), so traffic is naturally spread across replicas. You could say a replica is both a "<strong>vertical safety cushion</strong>" (a backup if one dies) and a "<strong>horizontal amplifier</strong>" (concurrency magnified) — which is why we rank it the read side's most important availability and scaling lever.</p>
+
+<h2>Distribution vs target: the ever-running correction</h2>
+<p>Before diving into this correction mechanism, let's tabulate the core concepts of this lesson to clarify each one's role — they are the most important columns in QueryCoordV2's "ledger":</p>
+
+<table class="t">
+  <tr><th>Concept</th><th>What it is</th><th>Role</th></tr>
+  <tr><td><strong>distribution</strong></td><td>the current actual loaded state</td><td>records "which segment is really on which node right now"</td></tr>
+  <tr><td><strong>target</strong></td><td>the desired ideal layout</td><td>declares "what it should be loaded as," the reference for correction</td></tr>
+  <tr><td><strong>replica</strong></td><td>an online copy of a collection</td><td>buys HA and throughput; N copies = N× memory</td></tr>
+  <tr><td><strong>delegator</strong></td><td>a shard's query face</td><td>stitches historical segments with the latest growing increments</td></tr>
+  <tr><td><strong>balancer</strong></td><td>the load re-balancer</td><td>continually spreads segments/shards evenly, avoiding hotspots</td></tr>
+</table>
+
+<p>The most essential design in this "V2" architecture is that it splits state into <strong>two views</strong>. One is the <strong>distribution</strong>: what it <strong>actually</strong> looks like now — which segment is really loaded on which node at this moment, where each shard's delegator currently is.
+The other is the <strong>target</strong>: what it <strong>ought</strong> to look like — the desired layout computed from the collection's load request, replica count, and balancing strategy. There is almost always a gap between them: a node just died, a segment just migrated, a load just started... reality forever chasing the ideal.</p>
+
+<p>QueryCoord's core loop is a swarm of <strong>observers</strong> constantly comparing these two and, on finding a gap, generating actions to close it: a segment the target wants but the distribution lacks gets scheduled to load; one the distribution has but the target no longer needs gets released; move what should move, fill what should fill.
+This "<strong>declare the target → continually correct the actual toward it</strong>" design is exactly the robust paradigm modern distributed systems (like Kubernetes' reconcile) acknowledge: instead of writing a long, brittle "do this step then that step" procedure, you only declare "the end state I want" and let the system converge round by round.
+The target itself further splits into <strong>current target</strong> and <strong>next target</strong>, to transition smoothly from old layout to new without interrupting in-flight queries. Grasp this "distribution approaching target" loop and you hold the soul that distinguishes QueryCoordV2 from the old architecture.</p>
+
+<p>Why split "current" and "next" targets? Imagine a large-scale reload or rebalance: swapping the target to a brand-new layout in one step could leave queries running on the old layout suddenly unable to find segments. The two-stage target lets the system <strong>prepare the next target first, then switch smoothly once the new layout is ready</strong>,
+letting old queries finish and new queries use the new layout, the whole process invisible to users. This "<strong>double-buffered</strong>" switch resolves the tension of "must change, yet must not stop" cleanly. With that, from load to assignment, to balancing, to replicas, and on to this distribution-approaching-target loop, QueryCoordV2's whole picture as the read side's brain is clear —
+it and last lesson's DataCoord, one writing and one reading, together hold up Milvus's two ends at the distributed layer: "store soundly, search swiftly."</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">user load</div><div class="nd">declare the collection to search</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">QueryCoord</div><div class="nd">target·assign·balance</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">QueryNode</div><div class="nd">load segments·be delegator</div></div>
+  <div class="arrow">↺</div>
+  <div class="node"><div class="nt">observer</div><div class="nd">distribution → target</div></div>
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 The big picture</div>
+  QueryCoordV2 is the read side's master scheduler. Its world starts at <strong>load</strong>: stored doesn't mean searchable — a collection's segments and indexes must be loaded into QueryNode memory to be retrievable. It does two kinds of assignment — spread historical segments across nodes, and give each shard a delegator (stitching historical segments with the latest growing increments);
+  it uses a balancer (round-robin / score-based, one <span class="mono">Balance</span> interface) to keep load even; it uses replicas to buy HA and throughput. Most essential is "<strong>distribution vs target</strong>": observers keep converging "actual loaded state" toward "desired layout" — declare the end state, continually correct — the root of its robustness.
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>load / release</strong>: stored ≠ searchable; a collection's segments and indexes must be loaded into QueryNode memory to be retrievable; release returns the memory.</li>
+    <li><strong>Two assignments</strong>: segment assignment (spread historical segments across nodes) + shard assignment (each shard gets a <strong>delegator</strong> stitching historical segments with the latest growing increments).</li>
+    <li><strong>Balancer</strong>: continually re-spreads segments/shards to avoid hotspots; has round-robin and score-based strategies, both implementing the <span class="mono">Balance</span> interface.</li>
+    <li><strong>Replicas</strong>: the same collection loaded once each on different nodes, buying HA (a replica survives a node death) and throughput (parallel query sharing), at the cost of N× memory.</li>
+    <li><strong>Distribution vs target</strong>: distribution = actual current state, target = desired layout; observers continually correct the actual toward the target (with current/next target for smooth transition).</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. QueryCoordV2's world starts at 'load'. Why does 'stored' not equal 'searchable'?</div>
+  <ol class="opts">
+    <li>Because object storage forbids reads by default</li>
+    <li>Because stored segments are auto-encrypted and need decryption to query</li>
+    <li>Because queries must first be approved by DataCoord</li>
+    <li>Segments and indexes must be loaded into QueryNode memory to be retrievable; load brings data into memory, release returns it</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. Search happens in QueryNode memory. Flushing only persists; to be searchable, segments and indexes must be loaded into memory. load/release toggles this 'searchability' and is the starting point of QueryCoord's scheduling</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. The core of QueryCoordV2's robustness is 'distribution converges to target'. What does this most precisely mean?</div>
+  <ol class="opts">
+    <li>target = desired layout, distribution = actual loaded state; observers continually compare and correct so the actual keeps approaching the desired - declare the end state, keep correcting</li>
+    <li>Load all segments onto one node at once</li>
+    <li>distribution is a config file, target is a runtime log</li>
+    <li>The two must always be exactly equal or the cluster halts</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. This is declarative scheduling: you describe the desired end state (target), and the system observes the actual state (distribution) and continually corrects. Node crashes and skew are auto-healed by convergence, not one-shot imperative commands</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. What do 'replicas' buy QueryCoordV2, and at what cost?</div>
+  <ol class="opts">
+    <li>The same collection loaded once each on different nodes, buying HA (one dies, others survive) and throughput (parallel query sharing), at the cost of N times the memory</li>
+    <li>Replicas are backup-only and never serve queries</li>
+    <li>Replicas reduce total memory usage</li>
+    <li>Compresses data to save memory but lowers recall</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. Replicas trade memory for availability and throughput: each replica loads independently on different nodes, so a node death is survived and queries can be shared in parallel; the cost is memory growing linearly with replica count</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>In your cluster one QueryNode keeps becoming a query hotspot (CPU pinned) while others sit idle. Using 'balancer + distribution/target', explain how QueryCoordV2 auto-mitigates this, and when it might still be powerless (needing human intervention).</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Metadata & coordination</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+The last five lessons introduced the control/data planes and the four roles: Proxy, RootCoord, DataCoord, QueryCoordV2. But the "global map" each one holds — a collection's schema, where segments live, who loaded what, which node is still alive — <strong>where is it stored, and how do they stay in sync</strong>?
+This lesson is the <strong>glue that binds the whole architecture</strong>: <strong>etcd</strong> as the metadata store, <strong>sessions</strong> for service discovery, the <strong>metastore/Catalog</strong> abstraction over metadata I/O, the <strong>kv</strong> layer for primitives, and <strong>watch</strong> so coordinators assign work and nodes pick it up.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of the metadata system as a building's <strong>front desk + archive room</strong>. <strong>etcd is the front desk</strong>: every resident (component) signs the register on move-in — "who I am, which unit, am I still here" — and gets a <strong>keycard that must be periodically renewed (a lease)</strong>; forget to renew and the desk knows you've moved out.
+  The <strong>archive room (object storage)</strong> holds the genuinely bulky things — furniture, equipment (data and index files); the desk only notes "the piano belongs to unit 7, shelf 3 in storeroom" — it never drags the piano to the front desk.
+  And <strong>the Catalog is the archivist</strong>: everyone who reads or writes archives goes through that one standard window, never rummaging the storeroom themselves.
+</div>
+
+<h2>The whole picture: metadata from coordinators down to etcd</h2>
+<p>Stack what this lesson covers and you won't get lost. At the top are the <strong>coordinators</strong> — RootCoord/DataCoord/QueryCoord — the <strong>producers and consumers</strong> of metadata: creating a collection writes a schema, segmenting records a segment, loading saves a replica.
+They never hand-assemble etcd keys; they call the next layer's <strong>metastore Catalog interface</strong>, reading/writing metadata with "business verbs" like <span class="mono">CreateCollection</span>, <span class="mono">AddSegment</span>, <span class="mono">SaveReplica</span>.
+Below Catalog sits the <strong>kv layer</strong> — serializing "a Collection object" into "a series of key/values" and calling primitives like <span class="mono">Save</span>/<span class="mono">MultiSave</span>/<span class="mono">LoadWithPrefix</span>. At the very bottom, kv actually writes bytes into <strong>etcd</strong> (small, critical metadata) or hands bulk data to <strong>object storage</strong>.</p>
+
+<div class="layers">
+  <div class="layer l-core"><div class="lh"><span class="badge">produce/consume</span><span class="name">Coordinators</span></div>
+    <div class="ld">RootCoord/DataCoord/QueryCoord read/write metadata while deciding: schema, segments, indexes, replicas, load state. They speak only "business verbs," never touch storage details.</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">abstract interface</span><span class="name">metastore · Catalog</span></div>
+    <div class="ld"><span class="mono">RootCoordCatalog / DataCoordCatalog / QueryCoordCatalog</span>: abstract "persist collection/segment/replica metadata" into interfaces, hiding whether the backend is etcd or something else.</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">primitives</span><span class="name">kv layer</span></div>
+    <div class="ld"><span class="mono">BaseKV / TxnKV / MetaKv / WatchKV</span> (<span class="mono">pkg/kv/kv.go</span>): Save/Load/Remove, transactions, leases, watchable. Implementations in <span class="mono">internal/kv/etcd</span>.</div></div>
+  <div class="layer l-app"><div class="lh"><span class="badge">where it lands</span><span class="name">etcd · object storage</span></div>
+    <div class="ld">Small, critical metadata goes to etcd (strongly consistent, watchable); bulky vector/index files go to object storage, with metadata keeping only a reference path.</div></div>
+</div>
+
+<p>The essence of this picture is one line: <strong>coordinators speak "business language," Catalog translates to "key-value language," and kv writes it into etcd</strong>. Each layer down is more generic and cares less about business meaning.
+Because Catalog is that translator, RootCoord never needs to know "how many keys a collection is split into in etcd"; and when the storage backend is swapped (say etcd for TiKV), the upper layers change not a single line. That is <strong>layered decoupling</strong> applied to the metadata system.</p>
+
+<p>Walk "create a collection" end to end to feel the pipeline. The client sends CreateCollection, Proxy forwards it to RootCoord; RootCoord first allocates a global timestamp and some IDs from itself (Lesson 11), assembles the schema into a <span class="mono">model.Collection</span> domain object, then calls <span class="mono">RootCoordCatalog.CreateCollection(ctx, coll, ts)</span>.
+At Catalog the object is <strong>decomposed</strong>: one key for the collection, one per field, one per partition... then <span class="mono">kv.MultiSave</span> writes that batch of key/values into etcd <strong>atomically in one transaction</strong>. Across the whole chain RootCoord only said "create a collection"; "into how many keys, and how to keep it atomic" was quietly absorbed by the two layers below. That is the hallmark of good abstraction: <strong>the upper intent is simple, the lower complexity is encapsulated</strong>.</p>
+
+<h2>etcd and sessions: how components discover each other</h2>
+<p>Metadata must "persist," but components must also "find" each other. Lesson 9 mentioned: at startup each component calls <span class="mono">Register()</span>, writing a <strong>leased</strong> session into etcd — "I am querynode-3, my gRPC address is here, I'm alive."
+This lives in <span class="inline">internal/util/sessionutil/session_util.go</span>: a <span class="mono">Session</span> struct holds a <span class="mono">LeaseID</span>, and a background goroutine keeps <strong>renewing the lease (keepalive)</strong>; once the process crashes and the heartbeat stops, the lease expires and etcd auto-deletes the session record.</p>
+
+<p>On the other end, coordinators call <span class="mono">WatchServices</span> to <strong>watch</strong> the prefix directory of these sessions: a node comes up and an "added" event fires instantly; a node drops (lease expires) and a "deleted" event fires.
+So the control plane always holds a <strong>live roster of nodes</strong>, using it to assign segments, balance load, and reassign work on failure. This "<strong>register → renew → watch</strong>" is Milvus's service discovery — it shares the same etcd as metadata, but carries the <strong>transient state</strong> of "who's here, where," not the <strong>persistent metadata</strong> of "what a collection looks like."</p>
+
+<p>Reiterate that red line from Lesson 9: <strong>a session stores an "address," not "data."</strong> On this path etcd is an "address book + heartbeat board"; it tells you "who's here, where," but real search/insert traffic never passes through etcd — that would instantly overwhelm it. Once a component has the peer's address, it sends requests over <strong>direct point-to-point gRPC</strong>. Control info via etcd, data traffic direct — a divide that runs through all of Milvus.</p>
+
+<p>Why insist on "lease + renewal" instead of simply writing an <span class="mono">alive=true</span> flag? Because the hardest thing in a distributed system is not "graceful exit" but "<strong>sudden disappearance</strong>" — a process gets kill -9'd, a machine loses power, a cable is yanked. In those cases nobody gets a chance to flip the flag to false.
+The beauty of a lease is that it <strong>makes "being alive" something you must keep paying to maintain</strong>: the moment the heartbeat stops, etcd itself purges the record when the lease expires, with no cleanup by anyone. This is a "<strong>failure is the default</strong>" design — the system assumes a node may vanish at any time, and being alive is the exception that must be continually proven. Grasp this and you grasp the same philosophy behind nearly every distributed heartbeat mechanism.</p>
+
+<p>One practical detail worth noting: all these keys (metadata and sessions alike) hang under a unified <strong>metaRoot prefix</strong> (config-driven, e.g. <span class="mono">by-dev/meta</span>). This lets one etcd cluster <strong>isolate multiple Milvus instances</strong> — each uses its own prefix, never crossing wires. It's also why <span class="mono">LoadWithPrefix</span> and <span class="mono">WatchWithPrefix</span> appear everywhere in the source: in etcd's flat key/value space, <strong>a prefix is a namespace</strong>, the basic device by which Milvus organizes its whole metadata graph.</p>
+
+<h2>metastore and Catalog: the "archive interface" for metadata</h2>
+<p>Now the core abstraction. <span class="inline">internal/metastore/catalog.go</span> defines several interfaces <strong>split by coordinator</strong>: <span class="mono">RootCoordCatalog</span> owns databases/collections/partitions/aliases/credentials/roles;
+<span class="mono">DataCoordCatalog</span> owns segments (<span class="mono">ListSegments</span>/<span class="mono">AddSegment</span>/<span class="mono">DropSegment</span>), channels, indexes; <span class="mono">QueryCoordCatalog</span> owns load info (<span class="mono">SaveCollection</span>/<span class="mono">SaveReplica</span>/<span class="mono">SaveCollectionTargets</span>).
+Every method is a <strong>business verb</strong>, and its arguments are domain objects like <span class="mono">model.Collection</span>, <span class="mono">datapb.SegmentInfo</span>, <span class="mono">querypb.Replica</span> — not raw bytes.</p>
+
+<p>Notice the symmetry: the three catalog interfaces map exactly onto the three coordinators from Lessons 11–13. RootCoord owns "what exists" (schema/DDL), DataCoord owns "where data sits" (segments/channels), QueryCoord owns "what's loaded" (replicas/targets). Each coordinator persists only its own slice of the world through its own catalog, and the slices barely overlap. That clean partition is why the three roles can be reasoned about — and packaged into one MixCoord process — without their metadata stepping on each other. The Catalog split is the storage-layer mirror of the responsibility split you already learned.</p>
+
+<p>Note that many RootCoordCatalog methods carry a <span class="mono">ts typeutil.Timestamp</span> argument — because RootCoord's metadata is <strong>multi-versioned</strong>: DDL operations hang on a timestamp, so "the schema as seen at a given instant" can be reproduced exactly.
+Historically this was done by a "snapshot kv" layer — storing different versions of the same key as multiple records keyed by timestamp, reading the latest "no later than instant T." It makes consistency levels and time-travel reads possible. Today Catalog's concrete impl (<span class="mono">internal/metastore/kv/rootcoord</span>) holds a <span class="mono">kv.TxnKV</span> and splits domain objects into key/value pairs.</p>
+
+<p>Funneling metadata I/O through the Catalog interface has another big engineering payoff: <strong>testability</strong>. To test RootCoord's create-collection logic you needn't spin up a real etcd — hand it a mock Catalog, or an in-memory kv (<span class="mono">internal/kv/mem</span>), and tests run fast and stable.
+This is the same move as Lesson 9's "interfaces as pluggable seams": <strong>wherever code touches the outside world (storage, network), insulate it behind an interface</strong>, so production wires in real etcd while tests wire in a fake. The many <span class="mono">mock_*.go</span> files in the Milvus source are largely auto-generated for exactly these Catalog/kv interfaces. <strong>Abstraction is not only for elegance, but to be independently verifiable</strong>.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/metastore/catalog.go</span><span class="ln">Catalog interfaces (excerpt)</span></div>
+  <pre><span class="cm">// RootCoord metadata: db/collection/partition; methods carry ts (multi-version)</span>
+<span class="kw">type</span> RootCoordCatalog <span class="kw">interface</span> {
+    CreateCollection(ctx, coll *model.Collection, ts Timestamp) <span class="kw">error</span>
+    GetCollectionByID(ctx, dbID, ts Timestamp, id UniqueID) (*model.Collection, <span class="kw">error</span>)
+    DropCollection(ctx, coll *model.Collection, ts Timestamp) <span class="kw">error</span>
+    <span class="cm">// ... partitions, aliases, credentials, roles ...</span>
+}
+
+<span class="cm">// DataCoord metadata: segments and channels</span>
+<span class="kw">type</span> DataCoordCatalog <span class="kw">interface</span> {
+    ListSegments(ctx, collectionID <span class="kw">int64</span>) ([]*datapb.SegmentInfo, <span class="kw">error</span>)
+    AddSegment(ctx, segment *datapb.SegmentInfo) <span class="kw">error</span>
+    DropSegment(ctx, segment *datapb.SegmentInfo) <span class="kw">error</span>
+}</pre>
+</div>
+
+<h2>The kv layer: the primitives beneath Catalog</h2>
+<p>Below Catalog is a set of <strong>incrementally stacked</strong> interfaces in <span class="inline">pkg/kv/kv.go</span>. At the bottom is <span class="mono">BaseKV</span>: the plainest create/read/delete — <span class="mono">Save/Load/Remove/MultiSave/LoadWithPrefix</span>.
+Above it, <span class="mono">TxnKV</span> adds <strong>transactions</strong> (<span class="mono">MultiSaveAndRemove</span> — multiple writes and deletes all succeed or all fail, crucial for "alter schema while deleting old keys").
+Above that, <span class="mono">MetaKv</span> adds <strong>leases</strong> and <span class="mono">CompareVersionAndSwap</span> (optimistic locking). At the top, <span class="mono">WatchKV</span> adds <span class="mono">Watch</span> — the very foundation of service discovery and the "assign work" mechanism.</p>
+
+<p>This "interface-on-interface" stacking is the same engineering aesthetic as <span class="mono">Component</span> in Lesson 9: <strong>depend on exactly the layer whose capabilities you need</strong>. A module that only reads config depends on <span class="mono">BaseKV</span>;
+a Catalog that needs transactions depends on <span class="mono">TxnKV</span>; service discovery that watches for changes depends on <span class="mono">WatchKV</span>. Implementations live in <span class="mono">internal/kv/etcd</span> (the etcd version) and <span class="mono">internal/kv/mem</span> (an in-memory version for tests).
+Here is the contract stacking from <span class="mono">BaseKV</span> all the way up to <span class="mono">WatchKV</span>:</p>
+
+<p>That <span class="mono">CompareVersionAndSwap</span> (compare-then-swap, i.e. CAS) on <span class="mono">MetaKv</span> deserves a callout: it is the basis of <strong>optimistic locking</strong>. Imagine two coordinator replicas both wanting to edit the same metadata; if each writes blindly, the later write silently overwrites the earlier — a lost update.
+CAS instead "<strong>writes carrying the version I saw</strong>" — the write succeeds only if etcd's version still matches what I read; if someone changed it meanwhile (version moved), the write fails and the caller must re-read and retry. This blocks the read-then-write race at the storage layer, sparing upper layers from rolling their own distributed lock. <strong>Transactions guarantee atomicity of a group of writes; CAS guarantees one write isn't overwritten</strong> — together they uphold metadata correctness under concurrency.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">pkg/kv/kv.go</span><span class="ln">BaseKV → TxnKV → MetaKv → WatchKV</span></div>
+  <pre><span class="cm">// the plainest create/read/delete</span>
+<span class="kw">type</span> BaseKV <span class="kw">interface</span> {
+    Load(ctx, key) (<span class="kw">string</span>, <span class="kw">error</span>)
+    Save(ctx, key, value) <span class="kw">error</span>
+    Remove(ctx, key) <span class="kw">error</span>
+    LoadWithPrefix(ctx, key) ([]<span class="kw">string</span>, []<span class="kw">string</span>, <span class="kw">error</span>)
+    <span class="cm">// ... MultiSave / MultiRemove / Has ...</span>
+}
+
+<span class="kw">type</span> TxnKV  <span class="kw">interface</span> { BaseKV; MultiSaveAndRemove(...) }   <span class="cm">// +transactions</span>
+<span class="kw">type</span> MetaKv <span class="kw">interface</span> { TxnKV; CompareVersionAndSwap(...) }  <span class="cm">// +lease/CAS</span>
+<span class="kw">type</span> WatchKV <span class="kw">interface</span> { MetaKv; Watch(ctx, key) WatchChan } <span class="cm">// +watch</span></pre>
+</div>
+
+<h2>What goes where: etcd vs object storage</h2>
+<p>A common question: with both etcd and object storage, what goes in which? The answer is a single line drawn on <strong>size and role</strong> — <strong>small, critical "metadata" that needs strong consistency and watching goes to etcd; bulky "data and indexes" that only need reliable storage go to object storage</strong>.
+Metadata keeps only a <strong>reference path</strong> into object storage. This keeps etcd forever "thin," so watch and consistency hold up; object storage grows linearly with data but never participates in consistency coordination — it's cheap and stackable without limit.</p>
+
+<p>This divide is not fastidiousness but is forced by etcd's hard constraints. etcd is a Raft-based <strong>strongly consistent</strong> store; every write must reach consensus across a majority of replicas — which makes it <strong>reliable but also "expensive"</strong>: it imposes conservative caps on single-value size and total data volume, with throughput far below object storage.
+If someone took a shortcut and stuffed a few-hundred-MB vector binlog straight into etcd, at best it drags down watch and leader election, at worst it paralyzes the cluster's whole metadata layer. So "<strong>bulk data always sinks to object storage; etcd keeps only the path</strong>" is not optional but a red line. Remember it and you'll instantly grasp the crux of any "metadata vs data" layering: <strong>spend strong consistency where it matters most, and don't make it pay for massive data</strong>.</p>
+
+<table class="t">
+  <tr><th>Content</th><th>Where</th><th>Why</th></tr>
+  <tr><td>collection schema, partitions, aliases</td><td class="mono">etcd</td><td>small, critical, needs strong consistency + versions</td></tr>
+  <tr><td>segment metadata (SegmentInfo, binlog paths)</td><td class="mono">etcd</td><td>records "where a segment is"; tiny itself</td></tr>
+  <tr><td>load info, replicas, targets</td><td class="mono">etcd</td><td>QueryCoord's scheduling basis; needs watch</td></tr>
+  <tr><td>discovery session (address + lease)</td><td class="mono">etcd</td><td>transient state, auto-expires via lease</td></tr>
+  <tr><td>vector binlogs, index files</td><td class="mono">object storage</td><td>bulky; only needs reliable storage; metadata keeps a reference</td></tr>
+  <tr><td>write-ahead log (WAL)</td><td class="mono">message queue</td><td>the carrier for Lesson 7's "log-as-data"</td></tr>
+</table>
+
+<p>While here, nail down the three external dependencies once more from the metadata angle: <strong>etcd owns "state and coordination," object storage owns "bulk data," the message queue owns "the write pipeline."</strong> Lesson 8 met them from a deployment angle; here you see their roles in the <strong>metadata path</strong>. Each guards its own turf without trespassing — the underlying support that lets Milvus cleanly split "store" from "compute," and "control" from "data."</p>
+
+<h2>watch: coordinators assign, nodes pick up</h2>
+<p>The final piece is how the control plane <strong>pushes</strong> decisions down to the data plane. The mechanism is still etcd watch, but reversed: instead of nodes registering and coordinators watching, <strong>coordinators write the "assignment plan" into etcd and nodes watch their own slice</strong>.
+For instance, DataCoord decides "vchannel-A is handled by datanode-2" and writes that channel assignment into etcd; datanode-2 watches the key belonging to it and starts consuming that channel. QueryCoord assigns segments similarly — which is exactly the previous lesson's "distribution converging to target" realized at the storage layer: the target is written into etcd, and nodes watch and act on it.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">node Register()</div><div class="nd">writes leased session to etcd</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">coord WatchServices</div><div class="nd">learns "who's alive, where"</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">coord writes assignment</div><div class="nd">channel/segment plan into etcd</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">node watches, picks up</div><div class="nd">sees its own key, starts executing</div></div>
+</div>
+
+<p>Collapse the whole chain to one line: <strong>etcd is both the "filing cabinet" (stores metadata) and the "bulletin board" (publishes assignments, drives discovery)</strong>. Components rarely shout directly to fix state; instead they cooperate indirectly via "write etcd / watch etcd" — the physical realization of Lesson 9's discipline "cross-plane communication only via interfaces and etcd."
+Once you understand where metadata lives, how components discover each other, and how coordinators assign work, you hold the last key that runs through the entire distributed part.</p>
+
+<p>One last reality: "watch is not as simple as it looks." Networks jitter, connections drop, and once a watch disconnects and reconnects, the few events in between may be missed. Milvus's answer: remember a <strong>revision (a version watermark)</strong> when watching, and after a reconnect <strong>resume from that watermark</strong> rather than starting over;
+the sturdier pattern is "<strong>full pull once, then incremental watch</strong>" — first take a current snapshot with <span class="mono">GetSessions</span>/<span class="mono">LoadWithPrefix</span> to align state, then open the watch carrying that snapshot's revision, so you neither miss events nor double-process them. You'll notice <span class="mono">WatchServices</span> returns a revision to the caller for exactly this.
+The reminder is: <strong>watch is a "notification," not the "truth"</strong> — the truth is always the current state in etcd; the notification just saves you from polling. Read any "watch for changes" code with this mindset and you won't be fooled by the illusion that "events are never lost."</p>
+
+<div class="card macro">
+  <div class="tag">🌍 The big picture</div>
+  In one line: <strong>coordinators speak business language → Catalog translates to key-value language → kv writes it into etcd (small, critical metadata) or object storage (bulky data/index)</strong>.
+  In parallel, components <strong>Register() a leased session</strong> and coordinators <strong>WatchServices</strong> for discovery; assignment goes the other way — <strong>coordinators write the plan into etcd and nodes watch to pick it up</strong>.
+  So etcd plays both "filing cabinet + bulletin board": it persists state and lets the two planes cooperate indirectly. That is the glue binding all five earlier roles together.
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Three layers down</strong>: coordinators (business verbs) → metastore's <span class="mono">Catalog</span> interfaces → <span class="mono">kv</span> primitives → etcd / object storage. Each layer down is more generic, less business-aware.</li>
+    <li><strong>Catalog abstraction</strong>: <span class="mono">internal/metastore/catalog.go</span> splits by coordinator into <span class="mono">RootCoordCatalog / DataCoordCatalog / QueryCoordCatalog</span>, hiding the backend; RootCoord's methods carry <span class="mono">ts</span> (multi-version/snapshot).</li>
+    <li><strong>kv layer</strong>: <span class="mono">pkg/kv/kv.go</span> stacks <span class="mono">BaseKV → TxnKV → MetaKv → WatchKV</span> (CRUD → transactions → lease/CAS → watch), implemented in <span class="mono">internal/kv/etcd</span>.</li>
+    <li><strong>What goes where</strong>: small, critical metadata needing strong consistency + watch goes to etcd; bulky vectors/indexes go to object storage, with metadata keeping only a reference path.</li>
+    <li><strong>Discovery + assignment</strong>: components <span class="mono">Register()</span> a leased session and coordinators <span class="mono">WatchServices</span> for up/down; assignment is reversed — coordinators write plans into etcd and nodes watch to pick up.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. From coordinator down to etcd, which layers does a CreateCollection traverse, and what is each layer's role?</div>
+  <ol class="opts">
+    <li>The coordinator hand-assembles etcd keys and writes with no middle layer</li>
+    <li>Write object storage first, then etcd syncs asynchronously</li>
+    <li>The Proxy writes SQL straight into etcd</li>
+    <li>coordinator (business verb) → metastore's Catalog interface (translate to key-value language) → kv primitives (Save/MultiSave) → etcd / object storage; each layer down is more generic, less business-aware</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. Three layers: coordinators speak business language, Catalog translates and decomposes objects, kv offers Save/MultiSave primitives, finally writing etcd. Each layer is more generic, so swapping the backend leaves upper layers untouched - layered decoupling</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Why must vector binlogs and index files go to object storage rather than being stuffed into etcd?</div>
+  <ol class="opts">
+    <li>etcd cannot store binary, only text</li>
+    <li>etcd is a Raft strongly-consistent store with conservative caps on value size and total volume; stuffing bulk data drags down watch and leader election. Bulk data should sink to object storage, with etcd keeping only a path reference</li>
+    <li>Because index files must be SQL-queryable</li>
+    <li>Object storage is more strongly consistent than etcd, so bulk goes there</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. The divide is by size and role: small, critical metadata needing strong consistency and watch goes to etcd; bulky data/index needing only reliable storage goes to object storage. Spend strong consistency where it matters, don't make it pay for massive data</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Components register a leased session in etcd instead of writing an alive=true flag. What is the key benefit of this 'lease + renewal' design?</div>
+  <ol class="opts">
+    <li>It requires every node to manually deregister before exit</li>
+    <li>It makes 'alive' a state that must be continually renewed; on kill-9 or power loss the heartbeat stops, the lease expires, and etcd auto-purges the record with no cleanup by anyone</li>
+    <li>It stores query data inside the session to speed things up</li>
+    <li>It routes search traffic through etcd</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. 'Failure is the default': the system assumes a node may vanish suddenly with no chance to flip a flag. A lease makes being alive an exception that must be continually proven; stop the heartbeat and the record auto-vanishes. A session stores an address, not data; traffic still goes direct</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>'Watch is a notification, not the truth.' Explain this: when a coordinator's watch drops and reconnects on a network jitter and misses some events, what mechanisms (revision; full-pull-then-incremental) keep nodes eventually getting the correct assignment without 'missing work'.</li>
   </ul>
 </div>
 </div>

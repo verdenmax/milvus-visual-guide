@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>12 · DataCoord / DataCoord - Milvus 图解教程</title>
+<meta name="description" content="第三部分 · 分布式架构｜DataCoord - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="12 · DataCoord / DataCoord - Milvus 图解教程">
+<meta property="og:description" content="第三部分 · 分布式架构｜DataCoord - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="12 · DataCoord / DataCoord - Milvus 图解教程">
+<meta name="twitter:description" content="第三部分 · 分布式架构｜DataCoord - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第三部分 · 分布式架构</span><span class="lang-en">Part 3 · Distributed architecture</span></span>
+    <span class="pill">12 / 14</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:85%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第三部分 · 分布式架构</span><span class="lang-en">Part 3 · Distributed architecture</span></div>
+    <h1><span class="lang-zh">DataCoord</span><span class="lang-en">DataCoord</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+RootCoord 管"结构与时间"，这一课的 <strong>DataCoord（数据协调者）</strong>则管"<strong>数据落到哪、怎么落、何时清</strong>"。它是写入侧的总调度：把涌进来的行分配到一个个<strong>段（segment）</strong>里，
+在合适的时机封存、落盘、合并、回收，还顺手安排索引怎么建。读懂 DataCoord，你就理解了第 7 课"日志即数据、段即载体"在分布式层面的真正运转。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 生活类比</div>
+  把 DataCoord 想成一座<strong>大型仓库的调度主管</strong>。货物（数据行）源源不断到货，他先指挥工人把货<strong>码进当前正在装的那个货箱（growing 段）</strong>；
+  箱子装满了，就<strong>封箱（sealed）</strong>、贴上清单、搬进<strong>永久库房（落盘成 binlog）</strong>。库房里零碎的小箱子多了，他安排<strong>并箱（compaction）</strong>腾地方；
+  过期作废的箱子，他派人<strong>清运（GC）</strong>。他还得决定每条入库流水线（vchannel）由哪个工人（datanode）负责，以及哪些货要<strong>额外编目录（建索引）</strong>方便日后快速查找。他从不亲手搬货，但整个仓库的秩序全在他脑子里。
+</div>
+
+<h2>段的分配：从一行数据说起</h2>
+<p>当一批 insert 经 Proxy 写进来，这些行最终要被组织进<strong>段（segment）</strong>——Milvus 存储与检索的基本单位（第 7 课）。但"该把这批行放进哪个段"并不是节点自己拍脑袋决定的，而是由 DataCoord 统一<strong>分配</strong>。
+它维护着每个集合、每个分片当前<strong>正在增长（growing）</strong>的那个段，把新来的行分派进去；当这个段<strong>写满了</strong>（行数或容量达到阈值），或者<strong>攒够久了</strong>（超时），就把它<strong>封存（seal）</strong>，再开一个新的 growing 段接着收。</p>
+
+<p>为什么要由一个中心来分配段，而不是每个 datanode 各自为政？因为段是要被<strong>全集群一致地引用</strong>的：QueryCoord 要知道有哪些段、分别加载到哪台 QueryNode；compaction 要知道哪些小段可以合并；GC 要知道哪些段已经没用。
+如果段的产生是去中心、随意的，这些下游协调就会失去统一的"账本"。DataCoord 把"段从哪来、现在是什么状态"这件事<strong>收口管理</strong>，整个写入侧才有了一致、可追溯的视图。它分配段时会给段打上 <span class="mono">commonpb.SegmentState_Growing</span> 的初始状态，
+后续每一次状态流转也都由它记账。</p>
+
+<p>这里有一个容易混淆的点值得说清：DataCoord <strong>分配</strong>段、<strong>记录</strong>段的状态，但真正把数据<strong>写进</strong>段、把段<strong>刷成文件</strong>的，是 datanode / streamingnode 这些干活的节点。这又是第 9 课"协调者决策、节点执行"的一次具体落地——
+DataCoord 是那个发号施令、在账本上勾画的大脑，节点才是搬砖落盘的双手。把"决策"与"执行"分开，写入侧才能既有统一秩序、又能水平扩展出多个 worker 并行干活。</p>
+
+<p>段的大小也是一门学问，而这恰恰是 DataCoord 要权衡的：段太小，则数量爆炸，查询要打开成百上千个文件、元数据也臃肿；段太大，则单段加载慢、compaction 一次要搬动的数据量也大。
+于是 DataCoord 用"<strong>写满阈值 + 超时</strong>"两个条件来折中——高写入量的集合靠"写满"快速封段，低写入量的集合靠"超时"避免一个段半天攒不满、迟迟不能落盘被查询到。这个看似不起眼的"何时封段"决策，
+直接影响着集合后续的查询性能与存储开销，是 DataCoord 作为写入侧大脑最日常、也最关键的判断之一。</p>
+
+<h2>段的一生：四个状态的旅程</h2>
+<p>一个段从诞生到消亡，会经历一条清晰的<strong>状态机</strong>。这些状态名不是随便起的，它们是 proto 里定义好的枚举 <span class="mono">commonpb.SegmentState_*</span>（注意：它属于 go-api 的 commonpb 包，不在 datacoord 自己的类型里）。
+理解这条状态流转，就理解了数据"从内存里的活跃写入，一步步固化成磁盘上不可变文件"的全过程：</p>
+
+<div class="timeline">
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">Growing</span><span class="tl-c">正在增长：DataCoord 把新行不断分配进来，段还在内存里活跃接收写入</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">Sealed</span><span class="tl-c">已封存：写满或超时，不再接收新行，等待落盘</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">Flushing</span><span class="tl-c">落盘中：正在把段写成 binlog 文件持久化到对象存储</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">Flushed</span><span class="tl-c">已落盘：成为<strong>不可变</strong>的持久段，可被加载、索引、合并</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">Dropped</span><span class="tl-c">已废弃：被 compaction 合并掉或被删除，等待 GC 清理其文件</span></div>
+</div>
+
+<p>这条链路的关键转折是 <strong>Flushed</strong>：一旦落盘，段就<strong>不可变（immutable）</strong>了。这是 Milvus 整个存储模型的基石——不可变意味着可以安全地被多个 QueryNode 同时加载、可以放心地建索引、可以被缓存而不必担心被改写。
+所有的"修改"（删除、更新）都不去改已落盘的段，而是以<strong>新的写入 + delta 日志</strong>的形式追加，查询时再把基础数据与 delta 合并出最新视图。这正是第 7 课"日志即数据"的精髓：<strong>只追加、不就地改</strong>。
+DataCoord 的状态机，就是在严格守护这个"一旦固化便不可变"的契约。</p>
+
+<p>除了主干的四态，还有几个旁支状态：<span class="mono">Importing</span>（批量导入专用的中间态）、<span class="mono">NotExist</span>（占位/不存在），以及上面提到的 <span class="mono">Dropped</span>。
+你不必背全，但要抓住主线直觉：<strong>段的一生，是一条"从可变到不可变、从内存到磁盘、从活跃到回收"的单向旅程</strong>，而 DataCoord 就是这条旅程上每一步的签发人。每一次状态切换它都会落账到元数据里，
+这样即便节点重启、协调者切换，集群也能从账本里恢复出"每个段现在走到了哪一步"。</p>
+
+<p>把段状态做成一台显式的状态机，还有一个深层好处：<strong>它让"数据现在安不安全"变成一个可被精确判断的问题</strong>。一个还在 Growing 的段，数据只在内存里，节点一挂就可能丢；一个已经 Flushed 的段，数据已在对象存储里，怎么挂都能恢复。
+于是当用户调用 flush 接口、想确保"我刚写的数据已经持久化"，系统只需检查相关段是否都已到达 Flushed 状态即可给出确定的回答。状态机不只是内部记账，它把"持久性保证"这件抽象的事，落成了一个个看得见、查得到的具体状态。</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/datacoord/segment_manager.go</span><span class="ln">分配新段时打上 Growing，封存时切到 Sealed</span></div>
+  <pre><span class="kw">import</span> <span class="st">"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"</span>
+
+<span class="cm">// 新分配的段，初始状态为 Growing</span>
+segmentInfo := &amp;SegmentInfo{
+    State: commonpb.SegmentState_Growing,
+    <span class="cm">// ... collectionID / partitionID / channel ...</span>
+}
+
+<span class="cm">// 写满或超时后，把段切到 Sealed，不再接收新行</span>
+<span class="kw">if</span> err := s.meta.SetState(ctx, id, commonpb.SegmentState_Sealed); err != nil {
+    <span class="kw">return</span> err
+}</pre>
+</div>
+
+<h2>落盘、合并、回收：三件后台大事</h2>
+<p>段被封存只是开始，DataCoord 还要操心三件持续运转的后台工作。第一件是 <strong>Flush（落盘）</strong>：把 sealed 段真正写成 binlog 文件、持久化到对象存储。落盘之后，数据才算"安全着陆"——
+即便所有内存数据丢失，也能从对象存储里重建。Flush 由 DataCoord 调度、datanode 执行，是连接"内存中的活跃写入"与"磁盘上的持久档案"的桥梁。</p>
+
+<p>值得一提的是，一次 flush 并非写出单个文件，而是一组 <strong>binlog</strong>——列数据、统计信息、删除日志各自分开写。按列拆分让后续查询只读需要的字段，把删除单独存放则维持了"只追加"的纪律。于是一个段在对象存储里其实是一小簇文件，DataCoord 会把它们的路径全部记进元数据，供日后加载、compaction 与 GC 精确引用。</p>
+
+<table class="t">
+  <tr><th>后台工作</th><th>触发时机</th><th>由谁执行</th><th>效果</th></tr>
+  <tr><td><strong>Flush 落盘</strong></td><td>段被 seal 后</td><td class="mono">datanode</td><td>段固化为不可变 binlog，数据安全着陆</td></tr>
+  <tr><td><strong>Compaction 合并</strong></td><td>小段堆积 / delta 过多</td><td class="mono">datanode</td><td>小段并大段、应用 delete，查询更轻快</td></tr>
+  <tr><td><strong>GC 回收</strong></td><td>文件无引用且过保留期</td><td class="mono">datacoord</td><td>从对象存储删除垃圾，回收空间省成本</td></tr>
+  <tr><td><strong>索引调度</strong></td><td>段 flushed 后</td><td class="mono">datanode worker</td><td>为段构建 ANN 索引，加速检索</td></tr>
+</table>
+
+<p>第二件是 <strong>Compaction（合并）</strong>。随着不断 flush，集合里会积累大量<strong>小段</strong>，还会因为删除而产生大量 delta 日志。小段多了，查询要打开的文件就多、开销就大；delta 多了，每次查询都要做更多"基础数据 + 删除"的合并。
+于是 DataCoord 周期性地调度 compaction，把多个小段<strong>合并成大段</strong>、把 delete 日志<strong>应用进数据</strong>（即所谓 L0 compaction），还有为提升检索局部性的 clustering compaction。合并的具体算法（深入是第 19 课）这里不展开，
+但要记住它的价值：<strong>compaction 是用后台的整理，换前台查询的轻快</strong>。它是 LSM 式"只追加"存储模型必然要付出的代价，也是它能长期保持高性能的秘诀。</p>
+
+<p>compaction 的调度也并非一刀切，而是有多种<strong>策略</strong>各司其职：有的盯着"小段太多"触发合并，有的专门处理 L0 层里堆积的 delete 日志，有的为提升向量数据的局部性做 clustering 重排，还有的在用户主动要求时做强制合并。
+DataCoord 会综合段的数量、大小、delete 比例等信号，挑选合适的时机与策略下发任务——既不能太频繁（白白消耗算力、和写入抢资源），也不能太懒（让小段和 delete 越积越拖慢查询）。这种"什么时候、用哪种方式整理"的拿捏，
+正是写入侧性能调优的关键一环。</p>
+
+<p>第三件是 <strong>GC（垃圾回收）</strong>。compaction 合并掉的旧段、被删除的集合、导入失败的残留——这些文件如果不清理，对象存储会越积越多、白白烧钱。DataCoord 的 <span class="inline">garbage_collector</span> 周期性地巡检，
+找出那些"已经没有任何元数据引用、且过了安全保留期"的文件，安全地从对象存储删除。这里的分寸很关键：删早了可能误删还在被某个慢查询引用的数据，删晚了又浪费空间，所以 GC 总是<strong>保守而谨慎</strong>，宁可多留一会儿也不冒错删的风险。</p>
+
+<p>把这三件事放在一起看，你会发现它们共同回答了一个问题：<strong>如何让一个"只追加、不就地改"的存储系统长期保持健康？</strong>只追加意味着写得快、并发友好、天然可靠，但代价是文件会不断增多、删除只是逻辑标记而非物理移除。
+Flush 负责把数据安全固化，compaction 负责把碎片整理、把逻辑删除真正兑现，GC 负责把整理后留下的垃圾清走。三者像一支后勤队伍，在前台查询毫无察觉的情况下，默默维持着存储的整洁与高效。
+这也是为什么我们说 DataCoord 是"<strong>写入侧的总管</strong>"——它操心的不只是"怎么写进去"，更是"写进去之后这堆数据如何长治久安"。</p>
+
+<div class="cols">
+  <div class="col"><h4>Compaction 合并</h4><p>把许多<strong>小段并成大段</strong>、把 delete 日志应用进数据，减少查询要打开的文件数与合并开销。是"<strong>整理</strong>"，目标是让查询更快。深入见第 19 课。</p></div>
+  <div class="col"><h4>GC 回收</h4><p>把<strong>没人再引用</strong>且过了保留期的文件从对象存储删除，回收空间、节省成本。是"<strong>清运</strong>"，目标是不让垃圾无限堆积。原则是宁可保守也不误删。</p></div>
+</div>
+
+<h2>通道分配与索引调度，以及"没有 indexnode"</h2>
+<p>除了管段，DataCoord 还负责<strong>通道（channel）分配</strong>：决定每个集合的每条 <span class="mono">vchannel</span>（虚拟数据通道）由哪个 datanode / streamingnode 来负责消费与落盘。
+通道是写入流的载体，把它们均匀地分给各个节点，写入吞吐才能水平扩展；某个节点挂了，DataCoord 还要把它负责的通道<strong>重新分配</strong>给别人，保证写入不中断。这套"谁负责哪条通道"的账，同样由 DataCoord 统一记。</p>
+
+<p>通道分配看似只是"派活"，其实暗含着写入侧的<strong>负载均衡</strong>与<strong>故障容错</strong>两层考量。负载均衡上，DataCoord 要避免把太多繁忙的通道压在同一个节点，否则它会成为写入瓶颈；
+容错上，一旦它通过 etcd 的会话机制（第 9 课、第 14 课会细讲）发现某个 datanode 失联，就必须立刻把那个节点身上的通道转交给健在的节点，让中断的写入尽快恢复。你会发现，这和下一课 QueryCoord 给查询侧做的"段/通道分配 + 再平衡"
+在思路上高度对称——一个管写入侧的均衡，一个管查询侧的均衡，但都遵循"中心记账、动态调度、故障转移"这同一套协调者哲学。</p>
+
+<p>最后是<strong>索引构建调度</strong>。向量要能被高效检索，得先建好 ANN 索引（第 5、6 课）。DataCoord 负责<strong>调度</strong>这些索引构建任务：哪个段该建索引、用什么参数、派给谁建。
+这里有一个常被误解的事实，必须讲清楚：<strong>Milvus 今天没有独立的 indexnode 进程</strong>。索引构建任务虽然由 DataCoord 调度，但真正<strong>执行构建的是 datanode 里的 worker</strong>。
+在代码里你能看到证据：<span class="mono">DataNodeClient</span> 接口直接<strong>内嵌</strong>了 <span class="mono">workerpb.IndexNodeClient</span>——也就是说，"索引节点"的能力被合并进了 datanode，而不是另起一个进程。</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/types/types.go</span><span class="ln">DataNodeClient 内嵌 IndexNode 能力：没有独立 indexnode</span></div>
+  <pre><span class="kw">type</span> DataNodeClient <span class="kw">interface</span> {
+    component
+    datapb.DataNodeClient
+    workerpb.IndexNodeClient   <span class="cm">// 索引构建 worker 直接并入 datanode</span>
+}</pre>
+</div>
+
+<p>这条"没有 indexnode"的事实，和第 9 课"MixCoord 把三个协调者合进一个进程"是同一种演进方向：<strong>把曾经独立的角色合并，降低部署与运维的复杂度</strong>。早期 Milvus 确有独立的 indexnode，
+但随着架构演进，索引构建被收进了 datanode worker。如果你读到的旧文档还在讲"indexnode 是一个独立组件"，请以代码为准——<strong>代码里 DataNodeClient 内嵌 IndexNodeClient，就是当下的事实</strong>。
+DataCoord 因此成了写入侧名副其实的总管：段、通道、落盘、合并、回收、索引调度，写数据这件事的方方面面，都在它的账本上。</p>
+
+<p>为什么索引构建特别适合并入 datanode，而不是单独成节点？因为索引构建本质上是一个<strong>批处理型的重计算任务</strong>：读取一个已 flushed 的段、在上面跑 ANN 建图算法、把结果写回对象存储。
+它和 datanode 已经在做的"读写段文件"高度同源，共享同一批数据访问能力与节点资源。把它并进来，既省去了一类进程的部署与监控，又让索引构建能就近复用 datanode 的 IO 与缓存。这正体现了 Milvus 近年架构演进的一条主线：
+<strong>能合则合，用更少的进程类型承担更多职责</strong>，从而让中小规模部署更轻、运维更省心——这与第 8 课 Standalone / Cluster 的形态选择遥相呼应。</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">Proxy 写入</div><div class="nd">insert 经 vchannel</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">DataCoord</div><div class="nd">分段·调度·记账</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">DataNode worker</div><div class="nd">落盘·合并·建索引</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">对象存储</div><div class="nd">binlog / 索引文件</div></div>
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  DataCoord 是写入侧的总调度，核心是一台<strong>段的状态机</strong>：Growing → Sealed → Flushing → Flushed（再到 Dropped）。它分配段、记录每一次状态流转，但落盘、合并、建索引都交给 datanode worker 执行——决策与执行分离。
+  落盘把数据安全固化成不可变 binlog；compaction 用后台整理换前台查询轻快；GC 保守地清运无人引用的文件；通道分配让写入水平扩展。关键事实：<strong>没有独立 indexnode</strong>，索引构建 worker 已并入 datanode（DataNodeClient 内嵌 IndexNodeClient）。
+</div>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>段的分配</strong>：DataCoord 维护每个分片当前的 growing 段，写满或超时就 seal、再开新段；段状态由它统一记账。</li>
+    <li><strong>状态机</strong>：<span class="mono">commonpb.SegmentState_*</span> 走 Growing → Sealed → Flushing → Flushed → Dropped；注意它在 go-api 的 commonpb 包，不在 datapb。</li>
+    <li><strong>Flushed 即不可变</strong>：落盘后的段只读，删除/更新以新写入 + delta 形式追加——只追加、不就地改（第 7 课）。</li>
+    <li><strong>三件后台事</strong>：Flush 落盘、Compaction 合并小段与应用 delete（深入第 19 课）、GC 保守回收无引用文件。</li>
+    <li><strong>通道与索引</strong>：分配 vchannel 给节点；调度索引构建。<strong>没有独立 indexnode</strong>——构建 worker 并入 datanode（DataNodeClient 内嵌 IndexNodeClient）。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. DataCoord 维护的段状态机大致是怎样的？谁来执行真正的落盘与合并？</div>
+  <ol class="opts">
+    <li>Growing → Sealed → Flushing → Flushed →（Dropped）；DataCoord 只分配段、记账状态流转，落盘/合并/建索引交给 datanode worker 执行</li>
+    <li>段只有“存在”和“删除”两态，由 Proxy 执行落盘</li>
+    <li>段状态由每个 QueryNode 各自决定</li>
+    <li>DataCoord 自己执行所有落盘与合并</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：A</strong>。决策与执行分离：DataCoord 是写入侧的总调度，维护 SegmentState_* 状态机并分配段，但真正的 IO（落盘、compaction、建索引）由 datanode worker 干。这正是控制面/数据面分工的体现</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. 关于“索引构建”，下面哪条符合当前 Milvus 的真实架构？</div>
+  <ol class="opts">
+    <li>索引由 etcd 负责构建与存储</li>
+    <li>有一个独立的 indexnode 进程专门建索引</li>
+    <li>索引由 Proxy 在返回结果前临时构建</li>
+    <li>没有独立的 indexnode；索引构建 worker 已并入 datanode（DataNodeClient 内嵌 IndexNodeClient），由 DataCoord 调度</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。这是常见误解的纠正点：Milvus 已没有独立 indexnode，构建 worker 并入 datanode，DataCoord 负责调度。索引文件最终存对象存储，元数据记录其引用</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. “Flushed 即不可变”意味着删除和更新如何实现？</div>
+  <ol class="opts">
+    <li>落盘后的段只读；删除/更新以新写入 + delta 形式追加，查询时再合并——只追加、不就地改</li>
+    <li>删除会立刻物理擦除整个段</li>
+    <li>直接打开旧 binlog 就地覆盖对应行</li>
+    <li>更新要求先把段状态退回 Growing</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：A</strong>。不可变 + 只追加是第 7 课“日志即数据”的延续：删除记 delta、更新写新值，查询时合并生效；compaction 在后台把小段与 delete 整理掉，用后台整理换前台查询轻快</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>段太小太多会拖慢查询，compaction 能合并它们却要消耗 IO 与 CPU。请设计你心中的 compaction 触发策略（按段数、按大小、按 delete 比例……），并说明它如何平衡“前台查询轻快”与“后台开销可控”。</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+RootCoord governs "structure and time"; this lesson's <strong>DataCoord (the data coordinator)</strong> governs "<strong>where data lands, how it lands, when it's cleaned</strong>." It is the write-side master scheduler: it assigns incoming rows into <strong>segments</strong>,
+seals, flushes, compacts, and reclaims them at the right moments, and arranges how indexes get built along the way. Understand DataCoord and you grasp how Lesson 7's "log-as-data, segment-as-vessel" actually runs at the distributed layer.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of DataCoord as the <strong>dispatch supervisor of a giant warehouse</strong>. Goods (data rows) keep arriving; he first directs workers to <strong>stack them into the crate currently being filled (the growing segment)</strong>;
+  when a crate is full, it gets <strong>sealed</strong>, labeled with a manifest, and moved into the <strong>permanent vault (flushed to binlogs)</strong>. When too many small crates clutter the vault, he schedules <strong>merging (compaction)</strong> to free space;
+  expired, voided crates he sends crews to <strong>haul away (GC)</strong>. He also decides which worker (datanode) handles each intake line (vchannel), and which goods need an <strong>extra catalog (index build)</strong> for fast future lookup. He never lifts a crate himself, yet the whole warehouse's order lives in his head.
+</div>
+
+<h2>Segment allocation: starting from a single row</h2>
+<p>When a batch of inserts comes in via the Proxy, those rows must ultimately be organized into <strong>segments</strong> — Milvus's basic unit of storage and retrieval (Lesson 7). But "which segment this batch goes into" is not decided by a node on a whim; it is uniformly <strong>allocated</strong> by DataCoord.
+It maintains, for each collection and each shard, the segment currently <strong>growing</strong>, and dispatches new rows into it; when that segment is <strong>full</strong> (row count or capacity hits a threshold) or has <strong>aged enough</strong> (timeout), it <strong>seals</strong> it and opens a fresh growing segment to keep receiving.</p>
+
+<p>Why must one center allocate segments rather than each datanode going its own way? Because segments are <strong>referenced consistently cluster-wide</strong>: QueryCoord needs to know which segments exist and which QueryNode each is loaded onto; compaction needs to know which small segments can merge; GC needs to know which segments are useless.
+If segment creation were decentralized and arbitrary, these downstream coordinations would lose a unified "ledger." By <strong>funneling management</strong> of "where segments come from and what state they're in," the whole write side gains a consistent, traceable view. When allocating a segment it stamps the initial state <span class="mono">commonpb.SegmentState_Growing</span>,
+and books every later state transition too.</p>
+
+<p>One easily-confused point worth clarifying: DataCoord <strong>allocates</strong> segments and <strong>records</strong> their states, but what actually <strong>writes</strong> data into segments and <strong>flushes</strong> them into files are the working nodes — datanode / streamingnode. This is again Lesson 9's "coordinators decide, nodes execute" made concrete —
+DataCoord is the brain that gives orders and marks the ledger, while nodes are the hands that haul bricks and flush to disk. Separating "decision" from "execution" lets the write side have both unified order and the ability to scale out multiple workers in parallel.</p>
+
+<p>Segment size is also an art, and it is exactly what DataCoord must weigh: too small, and the count explodes — queries open hundreds or thousands of files and metadata bloats; too big, and a single segment loads slowly and each compaction moves a huge amount of data.
+So DataCoord compromises with two conditions — "<strong>fill threshold + timeout</strong>": high-write collections seal segments quickly by "fill," low-write collections rely on "timeout" so a segment doesn't sit half-full for ages, unable to flush and become queryable. This seemingly humble "when to seal" decision
+directly shapes a collection's later query performance and storage overhead, and is among the most everyday yet most critical judgments DataCoord makes as the write side's brain.</p>
+
+<h2>A segment's life: a journey of four states</h2>
+<p>From birth to death, a segment follows a clear <strong>state machine</strong>. These state names aren't arbitrary; they are proto-defined enums <span class="mono">commonpb.SegmentState_*</span> (note: they belong to go-api's commonpb package, not datacoord's own types).
+Understand this transition and you understand the whole process of data "going from active in-memory writes, step by step, to immutable files on disk":</p>
+
+<div class="timeline">
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">Growing</span><span class="tl-c">growing: DataCoord keeps allocating new rows in; the segment is active in memory receiving writes</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">Sealed</span><span class="tl-c">sealed: full or timed out, no longer accepts new rows, awaiting flush</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">Flushing</span><span class="tl-c">flushing: being written into binlog files persisted to object storage</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">Flushed</span><span class="tl-c">flushed: becomes an <strong>immutable</strong> persistent segment, loadable, indexable, mergeable</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">Dropped</span><span class="tl-c">dropped: merged away by compaction or deleted, awaiting GC to clean its files</span></div>
+</div>
+
+<p>This path's key turning point is <strong>Flushed</strong>: once flushed, a segment becomes <strong>immutable</strong>. This is the cornerstone of Milvus's entire storage model — immutability means it can be safely loaded by many QueryNodes at once, indexed without worry, and cached without fear of being overwritten.
+All "modifications" (deletes, updates) don't touch the flushed segment; they are appended as <strong>new writes + delta logs</strong>, and queries merge base data with deltas into the latest view. This is exactly Lesson 7's essence of "log-as-data": <strong>append only, never modify in place</strong>.
+DataCoord's state machine is precisely guarding this contract of "once solidified, immutable."</p>
+
+<p>Besides the four main states, there are a few side states: <span class="mono">Importing</span> (an intermediate state for bulk import), <span class="mono">NotExist</span> (placeholder/absent), and the <span class="mono">Dropped</span> above.
+You needn't memorize them all, but grasp the main thread: <strong>a segment's life is a one-way journey "from mutable to immutable, from memory to disk, from active to reclaimed,"</strong> and DataCoord is the issuer of every step on it. Each transition it books into metadata,
+so that even if a node restarts or a coordinator fails over, the cluster can recover from the ledger "which step each segment has reached."</p>
+
+<p>Making segment state an explicit state machine has a deeper benefit: <strong>it turns "is the data safe right now" into a precisely answerable question</strong>. A still-Growing segment has data only in memory — a node crash may lose it; an already-Flushed segment has data in object storage — recoverable through any crash.
+So when a user calls the flush API wanting to ensure "the data I just wrote is persisted," the system need only check whether the relevant segments have all reached Flushed to give a definite answer. The state machine isn't just internal bookkeeping; it lands the abstract matter of "durability guarantee" into concrete, visible, queryable states.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/datacoord/segment_manager.go</span><span class="ln">stamp Growing on a new segment, switch to Sealed when sealing</span></div>
+  <pre><span class="kw">import</span> <span class="st">"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"</span>
+
+<span class="cm">// A newly allocated segment starts in Growing</span>
+segmentInfo := &amp;SegmentInfo{
+    State: commonpb.SegmentState_Growing,
+    <span class="cm">// ... collectionID / partitionID / channel ...</span>
+}
+
+<span class="cm">// After full or timeout, switch the segment to Sealed; no more new rows</span>
+<span class="kw">if</span> err := s.meta.SetState(ctx, id, commonpb.SegmentState_Sealed); err != nil {
+    <span class="kw">return</span> err
+}</pre>
+</div>
+
+<h2>Flush, compact, reclaim: three background jobs</h2>
+<p>Sealing a segment is just the start; DataCoord must also tend three continuously running background jobs. First is <strong>Flush</strong>: turning a sealed segment into binlog files, persisted to object storage. Only after flush has data "safely landed" —
+even if all in-memory data is lost, it can be rebuilt from object storage. Flush is scheduled by DataCoord and executed by datanode; it is the bridge from "active in-memory writes" to "durable archives on disk."</p>
+
+<p>Worth noting: a flush isn't a single file but a set of <strong>binlogs</strong> — column data, statistics, and delete logs all written separately. Splitting by column lets later queries read only the fields they need, and keeping deletes apart preserves the "append-only" discipline. So one segment becomes a small bundle of files in object storage, and DataCoord records the paths to all of them in metadata for later loading, compaction, and GC to reference precisely.</p>
+
+<table class="t">
+  <tr><th>Background job</th><th>Trigger</th><th>Executed by</th><th>Effect</th></tr>
+  <tr><td><strong>Flush</strong></td><td>after a segment is sealed</td><td class="mono">datanode</td><td>solidify into immutable binlog; data safely landed</td></tr>
+  <tr><td><strong>Compaction</strong></td><td>small segments / too many deltas</td><td class="mono">datanode</td><td>merge small into big, apply deletes; lighter queries</td></tr>
+  <tr><td><strong>GC</strong></td><td>files unreferenced and past retention</td><td class="mono">datacoord</td><td>delete garbage from object storage; reclaim space</td></tr>
+  <tr><td><strong>Index scheduling</strong></td><td>after a segment is flushed</td><td class="mono">datanode worker</td><td>build ANN index for the segment; faster retrieval</td></tr>
+</table>
+
+<p>Second is <strong>Compaction</strong>. As flushes accumulate, a collection piles up many <strong>small segments</strong>, and deletions produce many delta logs. Many small segments mean more files to open per query and higher overhead; many deltas mean each query does more "base data + deletes" merging.
+So DataCoord periodically schedules compaction to <strong>merge small segments into big ones</strong>, <strong>apply delete logs into data</strong> (so-called L0 compaction), plus clustering compaction to improve retrieval locality. The specific algorithms (deep dive in Lesson 19) we won't expand here,
+but remember its value: <strong>compaction trades background tidying for foreground query lightness</strong>. It is the inevitable price of an LSM-style "append-only" storage model, and the secret to keeping it performant over the long run.</p>
+
+<p>Compaction scheduling isn't one-size-fits-all either; several <strong>policies</strong> each play their part: some watch for "too many small segments" to trigger merges, some specifically handle delete logs piling up in the L0 layer, some do clustering re-layout to improve vector locality, and some force-merge on the user's explicit request.
+DataCoord weighs signals like segment count, size, and delete ratio to pick the right moment and policy to dispatch tasks — neither too often (wasting compute and contending with writes) nor too lazy (letting small segments and deletes pile up and slow queries). This judgment of "when, and in which way, to tidy"
+is a key part of write-side performance tuning.</p>
+
+<p>Third is <strong>GC (garbage collection)</strong>. Old segments merged away by compaction, deleted collections, leftovers from failed imports — if these files aren't cleaned, object storage piles up and burns money for nothing. DataCoord's <span class="inline">garbage_collector</span> periodically patrols,
+finds files that are "no longer referenced by any metadata and past a safe retention period," and safely deletes them from object storage. The discretion here is crucial: delete too early and you might wrongly remove data still referenced by a slow query; delete too late and you waste space. So GC is always <strong>conservative and cautious</strong>, preferring to keep things a while longer over risking a wrong deletion.</p>
+
+<p>Look at these three together and you see they jointly answer one question: <strong>how do you keep an "append-only, never-modify-in-place" storage system healthy over the long run?</strong> Append-only means fast writes, concurrency-friendly, inherently reliable — but the price is files keep multiplying, and a delete is only a logical mark, not a physical removal.
+Flush solidifies data safely, compaction tidies fragments and truly redeems logical deletes, GC hauls away the garbage left after tidying. The three act like a logistics crew, quietly keeping storage clean and efficient while foreground queries notice nothing.
+This is why we call DataCoord the "<strong>write side's steward</strong>" — it worries not only about "how to write in" but about "how this pile of data stays sound for the long term once written."</p>
+
+<div class="cols">
+  <div class="col"><h4>Compaction (merge)</h4><p>Merge <strong>many small segments into big ones</strong> and apply delete logs into data, cutting the file count and merge overhead per query. It's "<strong>tidying</strong>," aimed at faster queries. Deep dive in Lesson 19.</p></div>
+  <div class="col"><h4>GC (reclaim)</h4><p>Delete files that are <strong>no longer referenced</strong> and past retention from object storage, reclaiming space and cutting cost. It's "<strong>hauling away</strong>," aimed at not letting garbage pile up endlessly. The principle: rather conservative than wrongly deleting.</p></div>
+</div>
+
+<h2>Channel assignment and index scheduling, and "no indexnode"</h2>
+<p>Beyond segments, DataCoord also handles <strong>channel assignment</strong>: deciding which datanode / streamingnode consumes and flushes each collection's each <span class="mono">vchannel</span> (virtual data channel).
+Channels are the carriers of write streams; spreading them evenly across nodes lets write throughput scale out; if a node dies, DataCoord <strong>reassigns</strong> the channels it owned to others, keeping writes uninterrupted. This "who owns which channel" ledger is likewise kept by DataCoord.</p>
+
+<p>Channel assignment may look like mere "task handing-out," but it quietly carries two layers of write-side concern: <strong>load balancing</strong> and <strong>fault tolerance</strong>. For balancing, DataCoord must avoid piling too many busy channels on one node, or it becomes a write bottleneck;
+for tolerance, once it discovers via etcd's session mechanism (detailed in Lessons 9 and 14) that a datanode has gone missing, it must immediately hand that node's channels to healthy ones so interrupted writes recover fast. You'll find this highly symmetric, in spirit, with the next lesson's QueryCoord doing "segment/channel assignment + rebalancing" on the query side —
+one balances the write side, the other the query side, but both follow the same coordinator philosophy of "central bookkeeping, dynamic scheduling, failover."</p>
+
+<p>Finally, <strong>index-build scheduling</strong>. For vectors to be efficiently searchable, ANN indexes must be built first (Lessons 5 & 6). DataCoord <strong>schedules</strong> these index-build tasks: which segment to index, with what params, assigned to whom.
+A commonly misunderstood fact must be made clear: <strong>Milvus today has no standalone indexnode process</strong>. Although index-build tasks are scheduled by DataCoord, what actually <strong>runs the build is a worker inside datanode</strong>.
+You can see the evidence in code: the <span class="mono">DataNodeClient</span> interface directly <strong>embeds</strong> <span class="mono">workerpb.IndexNodeClient</span> — meaning the "index node" capability has been merged into datanode, rather than spun up as a separate process.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/types/types.go</span><span class="ln">DataNodeClient embeds IndexNode capability: no standalone indexnode</span></div>
+  <pre><span class="kw">type</span> DataNodeClient <span class="kw">interface</span> {
+    component
+    datapb.DataNodeClient
+    workerpb.IndexNodeClient   <span class="cm">// index-build worker folded into datanode</span>
+}</pre>
+</div>
+
+<p>This "no indexnode" fact is the same evolutionary direction as Lesson 9's "MixCoord folds three coordinators into one process": <strong>merge once-separate roles to lower deployment and ops complexity</strong>. Early Milvus did have a standalone indexnode,
+but as the architecture evolved, index building was folded into the datanode worker. If a doc you read still describes "indexnode as a standalone component," defer to the code — <strong>in the code DataNodeClient embeds IndexNodeClient, and that is today's reality</strong>.
+DataCoord thus becomes the write side's genuine steward: segments, channels, flush, compaction, GC, index scheduling — every facet of writing data sits on its ledger.</p>
+
+<p>Why is index building especially fit to fold into datanode rather than be its own node? Because index building is essentially a <strong>batch-style heavy compute task</strong>: read an already-flushed segment, run the ANN graph-building algorithm over it, write the result back to object storage.
+It is highly homologous to what datanode already does — "read and write segment files" — sharing the same data-access capabilities and node resources. Folding it in saves deploying and monitoring a whole class of process, and lets index building reuse datanode's IO and cache nearby. This embodies a main thread of Milvus's recent architectural evolution:
+<strong>merge where possible, carry more responsibility with fewer process types</strong>, making small-to-medium deployments lighter and ops easier — echoing Lesson 8's choice between Standalone and Cluster forms.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">Proxy write</div><div class="nd">insert via vchannel</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">DataCoord</div><div class="nd">segment·schedule·book</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">DataNode worker</div><div class="nd">flush·compact·index</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">object storage</div><div class="nd">binlog / index files</div></div>
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 The big picture</div>
+  DataCoord is the write side's master scheduler, at its core a <strong>segment state machine</strong>: Growing → Sealed → Flushing → Flushed (then Dropped). It allocates segments and records every transition, but flush, compaction, and index building are all executed by datanode workers — decision separated from execution.
+  Flush safely solidifies data into immutable binlogs; compaction trades background tidying for foreground query lightness; GC conservatively hauls away unreferenced files; channel assignment lets writes scale out. Key fact: <strong>no standalone indexnode</strong> — the index-build worker is folded into datanode (DataNodeClient embeds IndexNodeClient).
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Segment allocation</strong>: DataCoord maintains each shard's current growing segment; seals it on full/timeout and opens a new one; it books all segment states.</li>
+    <li><strong>State machine</strong>: <span class="mono">commonpb.SegmentState_*</span> runs Growing → Sealed → Flushing → Flushed → Dropped; note it lives in go-api's commonpb package, not datapb.</li>
+    <li><strong>Flushed is immutable</strong>: flushed segments are read-only; deletes/updates append as new writes + delta — append only, never modify in place (Lesson 7).</li>
+    <li><strong>Three background jobs</strong>: Flush to disk, Compaction merges small segments and applies deletes (deep dive Lesson 19), GC conservatively reclaims unreferenced files.</li>
+    <li><strong>Channels and indexes</strong>: assign vchannels to nodes; schedule index builds. <strong>No standalone indexnode</strong> — the build worker is folded into datanode (DataNodeClient embeds IndexNodeClient).</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. What is DataCoord's segment state machine roughly, and who actually performs the flush and compaction?</div>
+  <ol class="opts">
+    <li>Growing → Sealed → Flushing → Flushed → (Dropped); DataCoord only allocates segments and bookkeeps transitions, while flush/compaction/index-build run on datanode workers</li>
+    <li>Segments have only 'exists' and 'deleted', and the Proxy flushes them</li>
+    <li>Each QueryNode decides segment state on its own</li>
+    <li>DataCoord itself performs all flush and compaction</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. Decide vs execute: DataCoord is the write-side scheduler maintaining the SegmentState_* machine and allocating segments, but the real IO (flush, compaction, index build) runs on datanode workers - the control/data plane split in action</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Regarding 'index building', which statement matches Milvus's actual current architecture?</div>
+  <ol class="opts">
+    <li>Indexes are built and stored by etcd</li>
+    <li>A dedicated standalone indexnode process builds indexes</li>
+    <li>Indexes are built ad hoc by the Proxy before returning results</li>
+    <li>There is no standalone indexnode; the index-build worker is folded into the datanode (DataNodeClient embeds IndexNodeClient), scheduled by DataCoord</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. A common-misconception fix: Milvus has no standalone indexnode; the build worker is merged into the datanode and DataCoord schedules it. Index files end up in object storage, with metadata recording their reference</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 'Flushed means immutable' - so how are deletes and updates implemented?</div>
+  <ol class="opts">
+    <li>A flushed segment is read-only; deletes/updates are appended as new writes + deltas and merged at query time - append-only, never in-place edits</li>
+    <li>A delete instantly physically erases the whole segment</li>
+    <li>Open the old binlog and overwrite the row in place</li>
+    <li>An update requires reverting the segment back to Growing</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. Immutable + append-only continues Lesson 7's 'log-as-data': deletes record deltas, updates write new values, merged at query time; compaction tidies small segments and deletes in the background, trading background work for a lighter foreground query</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>Too many tiny segments slow queries; compaction merges them but burns IO and CPU. Design your own compaction trigger policy (by segment count, by size, by delete ratio...) and explain how it balances 'a light foreground query' against 'bounded background cost'.</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="11-rootcoord.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">RootCoord</span><span class="lang-en">RootCoord</span></div></a><a class="next" href="13-querycoord.html"><div class="dir"><span class="lang-zh">下一课 →</span><span class="lang-en">Next →</span></div><div class="ttl"><span class="lang-zh">QueryCoordV2</span><span class="lang-en">QueryCoordV2</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>

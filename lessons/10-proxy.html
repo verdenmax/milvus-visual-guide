@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>10 · Proxy 网关 / The Proxy gateway - Milvus 图解教程</title>
+<meta name="description" content="第三部分 · 分布式架构｜Proxy 网关 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="10 · Proxy 网关 / The Proxy gateway - Milvus 图解教程">
+<meta property="og:description" content="第三部分 · 分布式架构｜Proxy 网关 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="10 · Proxy 网关 / The Proxy gateway - Milvus 图解教程">
+<meta name="twitter:description" content="第三部分 · 分布式架构｜Proxy 网关 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第三部分 · 分布式架构</span><span class="lang-en">Part 3 · Distributed architecture</span></span>
+    <span class="pill">10 / 14</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:71%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第三部分 · 分布式架构</span><span class="lang-en">Part 3 · Distributed architecture</span></div>
+    <h1><span class="lang-zh">Proxy 网关</span><span class="lang-en">The Proxy gateway</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+上一课我们站在高空俯瞰整个集群：协调者决策、节点执行。这一课聚焦数据面最前线的<strong>Proxy（代理 / 网关）</strong>——
+所有客户端请求的<strong>唯一入口</strong>。它既是门卫（校验、鉴权、限流），又是调度员（把请求排进不同队列、分派给协调者与节点），
+还是汇总者（把多个分片的结果合并成一份答案）。读懂 Proxy，你就握住了"一次请求从进门到出门"的全貌。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 生活类比</div>
+  把 Proxy 想成一家大医院的<strong>分诊台</strong>：病人（请求）一进门，分诊台先核对身份与挂号（鉴权）、看你今天号还够不够（限流），
+  再按病情把你分到不同<strong>队列</strong>——挂号改信息走"行政窗口"（DDL），打针输液走"治疗区"（DML），做检查看报告走"检验科"（DQL）。
+  分诊台自己<strong>不看病、不拍片</strong>，但全院的秩序都靠它维持；它也<strong>不保存病历</strong>，所以可以随时多开几个窗口分担人流——这正是 Proxy"无状态、可横向扩展"的精髓。
+</div>
+
+<h2>唯一入口：milvuspb 这套 API 表面</h2>
+<p>无论你用 Python SDK、Go SDK 还是 REST，请求最终都会打到 Proxy 暴露的 <strong>gRPC 服务</strong>上。这套服务的契约由 proto 定义，
+对应包是 <span class="inline">milvuspb</span>（来自 <span class="mono">milvus-proto/go-api/v3/milvuspb</span>，而非仓库里手写的类型）。一个 <span class="mono">CreateCollection</span>、
+一个 <span class="mono">Insert</span>、一个 <span class="mono">Search</span>，在 Proxy 这边都对应一个方法 <span class="mono">func (node *Proxy) Xxx(...)</span>。
+换句话说，<strong>Proxy 就是 MilvusService 这套对外 API 的实现体</strong>，而协调者与节点的接口都是"对内"的。</p>
+
+<p>这层"对外/对内"的分界很重要：客户端永远只和 Proxy 说话，看不见也不需要知道后面有几台 QueryNode、段存在哪、TSO 从哪来。
+Proxy 把这些复杂度<strong>全部封装</strong>在身后。于是后端怎么扩、怎么改、怎么做故障转移，对客户端都是透明的——API 稳定，拓扑随意。
+这也是为什么我们能在第 8 课说"Lite / Standalone / Cluster 同一套 API"：变的是后端规模，不变的是 Proxy 暴露的这张表面。</p>
+
+<p>再往深一层看，Proxy 还承担了一个容易被忽略的角色：<strong>协议与拓扑的翻译官</strong>。客户端发来的是"我要在集合 A 里搜这个向量、要 topK=10"这种<strong>业务语义</strong>，
+但后端真正要做的，是"集合 A 现在加载在哪几台 QueryNode 上、它有几个分片、每个分片的 delegator 是谁、要把请求拆成几路发出去"。
+这中间的鸿沟，全靠 Proxy 用它缓存的元数据来填平。它要随时跟着集合的加载状态、分片分布而更新这张"路由表"，否则就会把请求发给一台早已不负责该分片的节点。
+正因为这份"翻译"工作只读元数据、不改元数据，多个 Proxy 才能各自持有一份缓存、彼此独立地服务，而不需要互相同步——这是它能无状态扩展的<strong>前提条件</strong>。</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">客户端 SDK</div><div class="nd">Python / Go / REST</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">Proxy</div><div class="nd">milvuspb 服务实现</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">协调者</div><div class="nd">要时间戳 / 元数据</div></div>
+  <div class="arrow">＋</div>
+  <div class="node"><div class="nt">节点</div><div class="nd">QueryNode / DataNode 干活</div></div>
+</div>
+
+<h2>三道关卡：校验、鉴权、限流</h2>
+<p>请求进了 Proxy，并不会立刻被执行，而要先过三道<strong>拦截器（interceptor）</strong>。这是 gRPC 的标准玩法：在真正的业务方法之前，
+串接一组中间件，逐个把关。Milvus 把它们拆成独立文件，职责清晰：</p>
+
+<ul>
+  <li><strong>鉴权（authentication）</strong>：你是谁？<span class="inline">authentication_interceptor.go</span> 校验用户名/密码或 token，认不出来直接拒。</li>
+  <li><strong>权限（privilege）</strong>：你能不能做这件事？<span class="inline">privilege_interceptor.go</span> 检查 RBAC 角色对这个集合/操作有没有授权。</li>
+  <li><strong>数据库路由（database）</strong>：你说的是哪个 database？<span class="inline">database_interceptor.go</span> 把请求归到正确的 db 上下文。</li>
+  <li><strong>限流（rate limit）</strong>：你今天是不是太猛了？<span class="inline">rate_limit_interceptor.go</span> 按配额给写入/查询降速甚至挡回，保护后端不被打垮。</li>
+</ul>
+
+<p>这四关合起来，就是 Proxy 作为"门卫"的全部职责。它们<strong>挡在业务逻辑之前</strong>，意味着一个非法、越权或超额的请求，
+根本到不了排队和执行阶段就被拦下——既省后端算力，也守住了安全与稳定的底线。注意这些都是<strong>无状态的判断</strong>（查的是元数据与配额），
+所以多开几个 Proxy 实例，每个都能独立完成把关，不需要彼此同步。</p>
+
+<p>其中<strong>限流</strong>这一关，值得多说一句，因为它体现了 Proxy"保护后端"的自觉。向量数据库的写入与查询都很"重"：一次大批量 insert 可能瞬间灌入几十万行，
+一次高 topK、大 nprobe 的 search 可能让 QueryNode 满负荷。如果 Proxy 来者不拒，突发流量会直接把后端打到内存溢出或长尾飙升。
+于是限流器按配置的配额（可以按集合、按操作类型、按租户细分）给请求<strong>背压（backpressure）</strong>：能扛就放行，扛不住就降速、排队甚至直接拒绝并提示稍后重试。
+这是一种"宁可让少数请求慢一点、也不让整个集群崩掉"的取舍——把它放在最前端，正是因为<strong>越早拦住过载，代价越小</strong>。</p>
+
+<table class="t">
+  <tr><th>关卡</th><th>问的问题</th><th>实现文件</th><th>不过会怎样</th></tr>
+  <tr><td><strong>鉴权</strong></td><td>你是谁</td><td class="mono">authentication_interceptor.go</td><td>拒绝连接</td></tr>
+  <tr><td><strong>权限</strong></td><td>你能不能做</td><td class="mono">privilege_interceptor.go</td><td>无权限错误</td></tr>
+  <tr><td><strong>数据库路由</strong></td><td>哪个 database</td><td class="mono">database_interceptor.go</td><td>找不到库</td></tr>
+  <tr><td><strong>限流</strong></td><td>是否超额</td><td class="mono">rate_limit_interceptor.go</td><td>限速 / 拒绝</td></tr>
+</table>
+
+<h2>任务调度器：三个队列各管一摊</h2>
+<p>过了关卡，请求并不会一窝蜂直接执行，而是被包装成<strong>任务（task）</strong>放进<strong>任务调度器（task scheduler）</strong>。
+这是 Proxy 的"调度大脑"，它内部维护着三个<strong>独立队列</strong>，按请求类型分流：</p>
+
+<p>这种"按类型分队列"的设计，背后是一个朴素却深刻的观察：<strong>不同请求对系统的诉求根本不同，混在一起只会互相拖累</strong>。
+建一张表（DDL）一年也许只发生几次，但必须万无一失、严格有序；插入数据（DML）每秒成千上万，要的是高吞吐和持久化保证；
+查询（DQL）延迟敏感、彼此独立，要的是极致并发。把它们塞进同一个队列，等于让一辆救护车、一队货车和一群轿车挤同一条单车道——谁都快不了。
+分车道，才能各行其速。</p>
+
+<ul>
+  <li><strong>ddQueue（DDL 队列）</strong>：数据定义类——建/删集合、分区、索引、别名。这类操作改的是<strong>元数据结构</strong>，要严格串行、按序执行。</li>
+  <li><strong>dmQueue（DML 队列）</strong>：数据操作类——insert、delete、upsert。这类是<strong>写入</strong>，要拿时间戳、要写进 WAL/消息队列。</li>
+  <li><strong>dqQueue（DQL 队列）</strong>：数据查询类——search、query。这类是<strong>读取</strong>，要扇出到多个分片再合并结果。</li>
+</ul>
+
+<p>为什么要分三个队列而不是一个大队列？因为这三类请求的<strong>排序约束、并发度、资源画像完全不同</strong>。DDL 改结构，必须谨慎串行，
+否则两个并发的"改 schema"会打架；DML 是写，关心顺序与持久化；DQL 是读，关心并发与延迟，彼此之间几乎无依赖、可以大量并行。
+把它们<strong>物理隔离</strong>，调度器就能对每条流水线施加最合适的策略——读的高并发不会被某个慢 DDL 堵住，反之亦然。
+（源码里其实还有第四个 <span class="inline">dcQueue</span>"数据控制队列"，用于 flush 这类控制写入状态的操作，这里先聚焦主三条。）</p>
+
+<p>队列内部还藏着一个关键设计：<strong>任务的两段式生命周期</strong>。一个任务进队后，先经历 <span class="mono">PreExecute</span>（执行前校验：把集合名翻译成 ID、检查字段是否匹配、补全默认参数），
+再到 <span class="mono">Execute</span>（真正干活：发 RPC、等结果），最后 <span class="mono">PostExecute</span>（收尾：归并、组装返回）。
+调度器之所以要把"未发出（unissued）"和"执行中（active）"两个阶段分开管理，是为了控制并发——比如 DML 写入要保证拿到的时间戳<strong>按序生效</strong>，
+就不能让后拿到时间戳的任务抢先执行。这套机制把"什么时候允许下一个任务往前走"牢牢攥在调度器手里，是 Proxy 能在高并发下仍维持正确时序的根基。
+你不必记住每个方法名，但要记住这个直觉：<strong>排队不只是排个先后，更是在为"时间戳顺序"和"资源并发"两件事同时把关</strong>。</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/proxy/task_scheduler.go</span><span class="ln">taskScheduler 与三个队列</span></div>
+  <pre><span class="kw">type</span> taskScheduler <span class="kw">struct</span> {
+    ddQueue *ddTaskQueue   <span class="cm">// DDL：建/删 集合、分区、索引、别名</span>
+    dmQueue *dmTaskQueue   <span class="cm">// DML：insert / delete / upsert</span>
+    dqQueue *dqTaskQueue   <span class="cm">// DQL：search / query</span>
+
+    <span class="cm">// 数据控制队列，用于 flush 等控制数据状态的操作</span>
+    dcQueue *ddTaskQueue
+    <span class="cm">// ... ctx / cancel / waitgroup</span>
+}
+
+<span class="kw">func</span> newTaskScheduler(ctx context.Context, tso tsoAllocator, ...) (*taskScheduler, <span class="kw">error</span>) {
+    s := &amp;taskScheduler{ ... }
+    s.ddQueue = newDdTaskQueue(tso)
+    s.dmQueue = newDmTaskQueue(tso)
+    s.dqQueue = newDqTaskQueue(tso)
+    <span class="kw">return</span> s, <span class="kw">nil</span>
+}</pre>
+</div>
+
+<h2>一次请求的内部旅程</h2>
+<p>把上面拼起来，看一条请求在 Proxy 里走完的完整流水线。注意第 ④ 步"拿时间戳"：每个写入/查询任务在入队时都会向协调者的 <strong>TSO</strong> 要一个全局时间戳
+（下一课讲 RootCoord 时细说），它决定了这条操作在全局时间线上的位置——这正是第 3 课"时间戳的角色"在 Proxy 这一层的落地。
+这条流水线最值得玩味的，是它把一次看似简单的调用拆成了"<strong>把关 → 排队 → 定序 → 扇出 → 归并</strong>"五个阶段，每个阶段都对应后端某个子系统：把关靠 RBAC 与配额元数据，
+定序靠 RootCoord 的 TSO，扇出与归并靠 QueryCoord 维护的分片分布。一个请求的"一生"，其实就是 Proxy 不断向控制面借力、再把结果收拢的过程。</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>接收请求</h4><p>gRPC/REST 打到 Proxy 的 milvuspb 方法，如 <span class="mono">Search</span>。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>三道关卡</h4><p>鉴权 → 权限 → 数据库路由 → 限流，拦截器逐个把关。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>包装成任务、选队列</h4><p>按类型进 ddQueue / dmQueue / dqQueue。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>分配时间戳</h4><p class="mono">tsoAllocator</p><p>向协调者要全局时间戳/ID，定下这条操作的时序。</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>执行：扇出</h4><p>DML 写进 WAL/MQ；DQL 把查询发给负责各分片的 QueryNode。</p></div></div>
+  <div class="step"><div class="num">6</div><div class="sc"><h4>归并 reduce</h4><p>把多个分片返回的 topK 合并、重排成一份最终结果。</p></div></div>
+  <div class="step"><div class="num">7</div><div class="sc"><h4>返回客户端</h4><p>一份干净的答案，后端的复杂度对调用方完全透明。</p></div></div>
+</div>
+
+<h2>读与写：两条不同的路</h2>
+<p>把 DML（写）和 DQL（读）的执行路径并排看，能更清楚 Proxy 的"分派"到底在分什么。它们的终点不同、关心的东西也不同：</p>
+
+<div class="cols">
+  <div class="col"><h4>DML 写入路径</h4><p>insert/delete 拿到时间戳后，被<strong>写进消息队列 / WAL</strong>（按 vchannel 分发），由 StreamingNode/DataNode 异步消费、落盘成段。
+  Proxy 关心的是<strong>顺序与持久化</strong>——写成功即返回，真正落盘在后台进行。这正是第 7 课"日志即数据"的写侧入口。</p></div>
+  <div class="col"><h4>DQL 查询路径</h4><p>search/query 被<strong>扇出（fan-out）</strong>到负责各个分片的 QueryNode，每个节点在自己内存里的索引上算出局部 topK，
+  再把结果<strong>汇总回 Proxy 归并（reduce）</strong>成全局 topK。Proxy 关心的是<strong>并发与延迟</strong>——慢的那个分片决定整体快慢。</p></div>
+</div>
+
+<p>这条"扇出—归并"是分布式检索的核心难点：单个分片只看见局部数据，必须把它们的局部最优<strong>正确地合并</strong>成全局最优，
+还要处理重复、删除标记、分数归一等细节。它足够复杂，值得单开一课——我们留到第 29 课深挖。这里你只需记住：<strong>Proxy 是这次归并的汇合点</strong>，
+是它把"分散在多台机器上的部分答案"重新拼成"一份完整答案"。</p>
+
+<p>顺带厘清一个常见误解：search 的"<strong>一致性级别</strong>"也是在 Proxy 这一层落地的。客户端可以要求"强一致"（读到此刻为止的所有写入）或"有界过期"（容忍一点点延迟换更低延时）。
+Proxy 的做法是：在发出查询前，决定带上一个<strong>保证时间戳（guarantee timestamp）</strong>，告诉 QueryNode"请把数据至少消费到这个时间点再回答我"。
+强一致就用当前最新的时间戳，最终一致就用一个稍旧的。你看，又是<strong>时间戳</strong>在背后统一调度读与写的可见性——这正是第 3 课埋下的伏笔在分布式层面的兑现。
+把这一点和前面的扇出/归并合起来，你就理解了 Proxy 在一次查询里同时扮演的三个角色：<strong>路由器、时序协调者、结果归并器</strong>。</p>
+
+<h2>无状态：Proxy 为什么能随便扩</h2>
+<p>最后回到那句反复出现的话：<strong>Proxy 是无状态的</strong>。它不持有任何段、任何索引、任何用户数据——它需要的元数据来自协调者与 etcd（且可缓存），
+时间戳来自 TSO，真正的数据在节点和对象存储里。既然每个 Proxy 实例都能<strong>独立、对等地</strong>完成"把关—调度—归并"，那么应对流量高峰就很简单：
+<strong>多开几个 Proxy，前面挂一个负载均衡器</strong>，请求随便落到哪个实例都一样。某个 Proxy 崩了也不丢数据，因为它本来就没存数据。</p>
+
+<p>这就是把"承载吞吐"和"持有状态"分开设计的回报（第 9 课讲过这条原则）：Proxy 站在吞吐链路最前端，压力最大，但因为无状态，
+它反而是整个系统里<strong>最容易扩展</strong>的一环。把它和"有状态、需要协调分配"的 QueryNode/DataNode 对照，你会更深刻地体会 Milvus 的分层哲学——
+让每个组件只承担一种复杂度，再用接口与队列把它们干净地缝起来。</p>
+
+<p>不过"无状态"并不等于"无脑转发"。Proxy 仍要维护一份会随后端变化而更新的<strong>本地缓存</strong>（集合 schema、分片分布、各 QueryNode 的负载提示等），
+否则每个请求都去问一次协调者，协调者就成了新瓶颈。这份缓存是"软状态"——可以丢、丢了能从协调者与 etcd 重新拉回来，所以不破坏无状态扩展的本质。
+它的更新同样借助第 9 课讲的 watch 机制：当 QueryCoord 改变了某个集合的分片分布，相关变更会传导到 Proxy，让它的路由表保持新鲜。
+理解了这一点，你就能回答一个常见面试题：<strong>"Proxy 既然无状态，为什么还要缓存？"——因为缓存是为性能服务的软状态，而非为正确性兜底的硬状态</strong>，两者在分布式系统里有本质区别。</p>
+
+<p>最后把视角拉回这一部分的主线。Proxy 是数据面的网关，但它一刻也离不开控制面：要时间戳找 RootCoord（下一课），要知道集合加载在哪找 QueryCoord（第 13 课），
+要落盘成段背后是 DataCoord（第 12 课）。换句话说，<strong>Proxy 是把"控制面的决策"翻译成"对客户端可用的服务"的那层皮</strong>。
+接下来三课我们逐个走进这三个协调者，你会发现每一个都在为 Proxy 这条流水线的某一环提供支撑——读完它们，再回看这张图，一切都会严丝合缝。</p>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  一句话串起来：<strong>Proxy 是唯一入口（milvuspb 服务）→ 先过鉴权/权限/数据库/限流四关 → 包装成任务进 ddQueue/dmQueue/dqQueue 三个队列 → 向协调者要时间戳 → 写入扇进 WAL、查询扇出到节点 → 归并成一份结果返回</strong>。
+  它无状态，所以可以横向扩展、前挂负载均衡。把这条流水线记牢，后面每个协调者都是它身后的一环。
+</div>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>唯一入口</strong>：Proxy 实现对外的 <span class="mono">milvuspb</span> MilvusService（gRPC/REST），把后端拓扑全部封装在身后。</li>
+    <li><strong>四道关卡</strong>：鉴权 / 权限 / 数据库路由 / 限流，由独立 interceptor 实现，挡在业务逻辑之前。</li>
+    <li><strong>三个队列</strong>：<span class="mono">ddQueue</span>(DDL)、<span class="mono">dmQueue</span>(DML)、<span class="mono">dqQueue</span>(DQL)，按排序约束与并发画像物理隔离（另有 <span class="mono">dcQueue</span> 管 flush）。见 <span class="mono">task_scheduler.go</span>。</li>
+    <li><strong>时间戳</strong>：每个写/读任务入队时向协调者 TSO 要全局时间戳，定下时序（详见第 11 课）。</li>
+    <li><strong>读写两路</strong>：DML 扇进 WAL/MQ 关心持久化；DQL 扇出到 QueryNode 再<strong>归并 reduce</strong>，关心并发与延迟（reduce 深入见第 29 课）。</li>
+    <li><strong>无状态</strong>：不存数据，可横向扩展、负载均衡，是最易扩的一环。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. Proxy 的任务调度器把请求分进 ddQueue / dmQueue / dqQueue 三个队列。这种物理隔离的主要目的是什么？</div>
+  <ol class="opts">
+    <li>因为 gRPC 要求每种方法独占一个队列</li>
+    <li>为了把向量数据缓存在 Proxy 内存里</li>
+    <li>为了让三类请求共享同一把全局锁</li>
+    <li>三类操作的排序约束与并发画像不同：DDL 需严格串行，DML/DQL 可高并发；分队列才能各按自己的约束调度，互不拖累</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。DDL（建删表）必须串行以保证结构唯一；DML/DQL 追求高并发与低延迟。把不同排序与并发画像的任务物理隔离，各队列按自身约束调度，是稳定与性能的前提（另有 dcQueue 管 flush）</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. 为什么说 Proxy 是 Milvus 里“最易扩展的一环”？</div>
+  <ol class="opts">
+    <li>因为它运行在协调者进程内部</li>
+    <li>因为它不需要鉴权与限流</li>
+    <li>因为它无状态——不持有段或索引，只做校验/分派/归并；可像 Web 服务器一样随意加减实例，前面挂个负载均衡即可</li>
+    <li>因为它把所有数据都存在本地磁盘上</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：C</strong>。无状态是横向扩展的钥匙：Proxy 不持有用户数据，任何实例都能处理任何请求，于是可任意增减、负载均衡。这正呼应第 9 课“承载吞吐≠持有状态”的区分</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 一条 search 请求在 Proxy 这里如何被处理成最终结果？</div>
+  <ol class="opts">
+    <li>只查询第一个分片，忽略其余</li>
+    <li>Proxy 自己在内存里扫描全部向量算出 topK</li>
+    <li>扇出（fan-out）到负责各分片的 QueryNode 各算局部 topK，再汇总回 Proxy 归并（reduce）成全局 topK</li>
+    <li>请求被转给 RootCoord 执行检索</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：C</strong>。分布式检索是“扇出—归并”：每个分片只看局部数据，算出局部 topK，Proxy 作为汇合点把它们正确合并成全局 topK，慢的那个分片决定整体延迟（reduce 细节见第 29 课）</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>客户端要求“强一致”读（读到此刻为止的所有写入）。请说明 Proxy 如何用“保证时间戳（guarantee timestamp）”把这个要求传达给 QueryNode，以及它和一致性级别、延迟之间的取舍。</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Last lesson we hovered over the whole cluster: coordinators decide, nodes execute. This lesson zooms into the data plane's front line, the
+<strong>Proxy (the gateway)</strong> — the <strong>single entry point</strong> for every client request. It is the doorkeeper (validate, authenticate, rate-limit),
+the dispatcher (queue requests and hand them to coordinators and nodes), and the aggregator (merge results from many shards into one answer).
+Understand the Proxy and you hold the full arc of "a request from entering the door to leaving it."
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Picture the Proxy as a big hospital's <strong>triage desk</strong>: a patient (request) walks in, the desk first checks identity and registration (auth) and whether you still
+  have a slot today (rate limit), then routes you by case into different <strong>queues</strong> — paperwork changes go to the "admin window" (DDL), shots and IVs go to "treatment" (DML),
+  scans and reports go to "labs" (DQL). The desk itself <strong>treats no one and scans nothing</strong>, yet the whole hospital's order depends on it; it also <strong>stores no medical records</strong>,
+  so you can open more desks anytime to share the crowd — exactly the essence of the Proxy being "stateless and horizontally scalable."
+</div>
+
+<h2>Single entry: the milvuspb API surface</h2>
+<p>Whether you use the Python SDK, Go SDK, or REST, a request ultimately lands on the <strong>gRPC service</strong> the Proxy exposes. That service's contract is defined by proto,
+in the <span class="inline">milvuspb</span> package (from <span class="mono">milvus-proto/go-api/v3/milvuspb</span>, not hand-written types in the repo). A <span class="mono">CreateCollection</span>,
+an <span class="mono">Insert</span>, a <span class="mono">Search</span> each map to a method <span class="mono">func (node *Proxy) Xxx(...)</span> on the Proxy side.
+In other words, <strong>the Proxy is the implementation of the public MilvusService API</strong>, while the coordinator and node interfaces are all "internal."</p>
+
+<p>This "external vs internal" boundary matters: the client only ever talks to the Proxy and never needs to know how many QueryNodes sit behind it, where segments live, or where the TSO comes from.
+The Proxy <strong>encapsulates all that complexity</strong> behind itself. So however the backend scales, changes, or fails over, it's transparent to the client — the API is stable, the topology is free.
+That's why Lesson 8 could say "Lite / Standalone / Cluster, one API": what changes is backend scale; what stays is the surface the Proxy exposes.</p>
+
+<p>One layer deeper, the Proxy also plays an easily-missed role: <strong>translator between protocol and topology</strong>. The client sends <strong>business semantics</strong> like "search this vector in collection A, topK=10,"
+but what the backend must actually do is "which QueryNodes is collection A loaded on right now, how many shards does it have, who is each shard's delegator, into how many parallel calls should the request be split."
+The Proxy bridges that gap using its cached metadata. It must keep this "routing table" updated as the collection's load state and shard distribution change, or it would send a request to a node that no longer serves that shard.
+Precisely because this "translation" only reads metadata and never writes it, multiple Proxies can each hold their own cache and serve independently without syncing — the <strong>prerequisite</strong> for stateless scaling.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">client SDK</div><div class="nd">Python / Go / REST</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">Proxy</div><div class="nd">milvuspb service impl</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">coordinators</div><div class="nd">for timestamps / metadata</div></div>
+  <div class="arrow">＋</div>
+  <div class="node"><div class="nt">nodes</div><div class="nd">QueryNode / DataNode do work</div></div>
+</div>
+
+<h2>Three gates: validate, authenticate, rate-limit</h2>
+<p>Once a request enters the Proxy it isn't executed right away — it must first pass a chain of <strong>interceptors</strong>. This is standard gRPC practice: before the real business method,
+a set of middlewares vet the request one by one. Milvus splits them into clear, single-purpose files:</p>
+
+<ul>
+  <li><strong>Authentication</strong>: who are you? <span class="inline">authentication_interceptor.go</span> checks username/password or token; unknown callers are rejected.</li>
+  <li><strong>Privilege</strong>: are you allowed to do this? <span class="inline">privilege_interceptor.go</span> checks the RBAC role against this collection/operation.</li>
+  <li><strong>Database routing</strong>: which database do you mean? <span class="inline">database_interceptor.go</span> pins the request to the right db context.</li>
+  <li><strong>Rate limit</strong>: are you hammering us today? <span class="inline">rate_limit_interceptor.go</span> throttles or blocks writes/queries by quota to protect the backend.</li>
+</ul>
+
+<p>Together these four gates are the Proxy's full "doorkeeper" duty. Because they sit <strong>before business logic</strong>, an illegal, unauthorized, or over-quota request is stopped
+before it ever reaches queueing and execution — saving backend compute and holding the line on security and stability. Note these are all <strong>stateless judgments</strong> (querying metadata and quotas),
+so spinning up more Proxy instances lets each one vet independently, with no need to sync with the others.</p>
+
+<p>The <strong>rate-limit</strong> gate deserves an extra word, because it embodies the Proxy's instinct to "protect the backend." Vector-DB writes and queries are both "heavy": one bulk insert can pour in hundreds of thousands of rows at once,
+one high-topK, large-nprobe search can saturate a QueryNode. If the Proxy accepted everything, a traffic spike would drive the backend straight into out-of-memory or tail-latency blowups.
+So the limiter applies <strong>backpressure</strong> per configured quota (which can be split by collection, by operation kind, by tenant): pass it if we can bear it, otherwise throttle, queue, or reject outright with a "retry later" hint.
+This is a "rather slow a few requests than crash the whole cluster" trade-off — placed at the very front exactly because <strong>the earlier you stop overload, the cheaper it is</strong>.</p>
+
+<table class="t">
+  <tr><th>Gate</th><th>Question</th><th>Impl file</th><th>If it fails</th></tr>
+  <tr><td><strong>Auth</strong></td><td>who are you</td><td class="mono">authentication_interceptor.go</td><td>reject connection</td></tr>
+  <tr><td><strong>Privilege</strong></td><td>may you do this</td><td class="mono">privilege_interceptor.go</td><td>permission error</td></tr>
+  <tr><td><strong>DB routing</strong></td><td>which database</td><td class="mono">database_interceptor.go</td><td>db not found</td></tr>
+  <tr><td><strong>Rate limit</strong></td><td>over quota</td><td class="mono">rate_limit_interceptor.go</td><td>throttle / reject</td></tr>
+</table>
+
+<h2>The task scheduler: three queues, three lanes</h2>
+<p>Past the gates, requests don't all execute in a stampede — each is wrapped into a <strong>task</strong> and placed into the <strong>task scheduler</strong>.
+This is the Proxy's "scheduling brain," holding three <strong>independent queues</strong> that split traffic by request kind:</p>
+
+<p>This "a queue per kind" design rests on a plain yet deep observation: <strong>different requests demand fundamentally different things from the system, and mixing them only drags everyone down</strong>.
+Creating a table (DDL) might happen a few times a year but must be flawless and strictly ordered; inserting data (DML) happens thousands of times a second and wants high throughput and durability;
+querying (DQL) is latency-sensitive and mutually independent and wants maximum concurrency. Cramming them into one queue is like making an ambulance, a convoy of trucks, and a stream of cars share one single-lane road — nobody goes fast.
+Separate lanes let each move at its own speed.</p>
+
+<ul>
+  <li><strong>ddQueue (DDL)</strong>: data-definition — create/drop collection, partition, index, alias. These change <strong>metadata structure</strong> and must run strictly serially and in order.</li>
+  <li><strong>dmQueue (DML)</strong>: data-manipulation — insert, delete, upsert. These are <strong>writes</strong> that need timestamps and go into the WAL/message queue.</li>
+  <li><strong>dqQueue (DQL)</strong>: data-query — search, query. These are <strong>reads</strong> that fan out to multiple shards and then merge.</li>
+</ul>
+
+<p>Why three queues instead of one big queue? Because the three kinds have <strong>completely different ordering constraints, concurrency, and resource profiles</strong>. DDL changes structure and must be carefully serial,
+or two concurrent "alter schema" calls collide; DML is a write that cares about order and durability; DQL is a read that cares about concurrency and latency, with little inter-dependence and high parallelism.
+<strong>Physically isolating</strong> them lets the scheduler apply the most fitting policy to each lane — high-concurrency reads aren't blocked behind a slow DDL, and vice versa.
+(The source actually has a fourth <span class="inline">dcQueue</span>, a "data control queue" for operations like flush that control data state; here we focus on the main three.)</p>
+
+<p>Inside each queue hides a key design: a task's <strong>two-stage lifecycle</strong>. After a task enters the queue it goes through <span class="mono">PreExecute</span> (pre-checks: translate the collection name to an ID, verify fields match, fill in defaults),
+then <span class="mono">Execute</span> (the real work: send RPCs, await results), and finally <span class="mono">PostExecute</span> (wrap-up: reduce, assemble the response).
+The scheduler separately manages an "unissued" and an "active" stage in order to control concurrency — for example, DML writes must have their assigned timestamps <strong>take effect in order</strong>,
+so a task that got a later timestamp must not run ahead. This mechanism keeps "when the next task may move forward" firmly in the scheduler's hands, the basis for the Proxy maintaining correct ordering under high concurrency.
+You needn't memorize each method name, but keep the intuition: <strong>queueing isn't just ordering — it simultaneously guards both "timestamp order" and "resource concurrency."</strong></p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/proxy/task_scheduler.go</span><span class="ln">taskScheduler and its three queues</span></div>
+  <pre><span class="kw">type</span> taskScheduler <span class="kw">struct</span> {
+    ddQueue *ddTaskQueue   <span class="cm">// DDL: create/drop collection, partition, index, alias</span>
+    dmQueue *dmTaskQueue   <span class="cm">// DML: insert / delete / upsert</span>
+    dqQueue *dqTaskQueue   <span class="cm">// DQL: search / query</span>
+
+    <span class="cm">// data control queue, for flush etc. that control data state</span>
+    dcQueue *ddTaskQueue
+    <span class="cm">// ... ctx / cancel / waitgroup</span>
+}
+
+<span class="kw">func</span> newTaskScheduler(ctx context.Context, tso tsoAllocator, ...) (*taskScheduler, <span class="kw">error</span>) {
+    s := &amp;taskScheduler{ ... }
+    s.ddQueue = newDdTaskQueue(tso)
+    s.dmQueue = newDmTaskQueue(tso)
+    s.dqQueue = newDqTaskQueue(tso)
+    <span class="kw">return</span> s, <span class="kw">nil</span>
+}</pre>
+</div>
+
+<h2>One request's journey inside</h2>
+<p>Putting it together, here is a request's full pipeline inside the Proxy. Note step ④ "get a timestamp": as each write/query task is enqueued, it asks the coordinator's <strong>TSO</strong> for a global timestamp
+(detailed next lesson on RootCoord) that fixes this operation's place on the global timeline — exactly Lesson 3's "role of timestamps," realized at the Proxy layer.
+What's most worth savoring is how this pipeline breaks a seemingly simple call into five stages — "<strong>gate → queue → order → fan out → reduce</strong>" — each mapping to some backend subsystem: gating relies on RBAC and quota metadata,
+ordering on RootCoord's TSO, fan-out and reduce on the shard distribution QueryCoord maintains. A request's "life" is really the Proxy repeatedly borrowing strength from the control plane and then gathering the results back.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>receive</h4><p>gRPC/REST hits a Proxy milvuspb method, e.g. <span class="mono">Search</span>.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>three gates</h4><p>auth → privilege → db routing → rate limit, interceptors vet in turn.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>wrap as task, pick queue</h4><p>route into ddQueue / dmQueue / dqQueue by kind.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>assign timestamp</h4><p class="mono">tsoAllocator</p><p>ask the coordinator for a global timestamp/ID, fixing this op's order.</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>execute: fan out</h4><p>DML writes into WAL/MQ; DQL sends the query to the QueryNodes serving each shard.</p></div></div>
+  <div class="step"><div class="num">6</div><div class="sc"><h4>reduce</h4><p>merge and re-rank the topK returned by multiple shards into one final result.</p></div></div>
+  <div class="step"><div class="num">7</div><div class="sc"><h4>return</h4><p>one clean answer; backend complexity is fully transparent to the caller.</p></div></div>
+</div>
+
+<h2>Reads and writes: two different paths</h2>
+<p>Placing the DML (write) and DQL (read) execution paths side by side makes clear what the Proxy's "dispatch" actually splits. They end in different places and care about different things:</p>
+
+<div class="cols">
+  <div class="col"><h4>DML write path</h4><p>After getting a timestamp, insert/delete is <strong>written into the message queue / WAL</strong> (dispatched by vchannel), to be consumed asynchronously by StreamingNode/DataNode and persisted into segments.
+  The Proxy cares about <strong>order and durability</strong> — once the write succeeds it returns; actual persistence happens in the background. This is the write-side entrance to Lesson 7's "log-as-data."</p></div>
+  <div class="col"><h4>DQL query path</h4><p>search/query is <strong>fanned out</strong> to the QueryNodes serving each shard; each node computes a local topK on its in-memory index,
+  then results are <strong>gathered back to the Proxy and reduced</strong> into a global topK. The Proxy cares about <strong>concurrency and latency</strong> — the slowest shard sets the overall speed.</p></div>
+</div>
+
+<p>This "fan-out / reduce" is the core difficulty of distributed search: each shard sees only local data, and their local optima must be <strong>correctly merged</strong> into the global optimum,
+while handling duplicates, delete markers, score normalization, and more. It's complex enough to deserve its own lesson — we dive into it in Lesson 29. Here, just remember: <strong>the Proxy is the merge point</strong>,
+the one that reassembles "partial answers scattered across machines" into "one complete answer."</p>
+
+<p>While we're here, let's clear up a common misconception: a search's <strong>consistency level</strong> is also realized at the Proxy layer. The client may demand "strong" (read every write up to now) or "bounded staleness" (tolerate a little lag for lower latency).
+The Proxy's trick: before issuing the query it decides on a <strong>guarantee timestamp</strong> to attach, telling QueryNodes "please consume data at least up to this point before answering me."
+Strong consistency uses the current latest timestamp; eventual uses a slightly older one. See — once again it's the <strong>timestamp</strong> orchestrating the visibility of reads vs writes behind the scenes, the distributed-level payoff of the seed planted in Lesson 3.
+Combine this with the earlier fan-out/reduce and you grasp the three roles the Proxy plays in a single query: <strong>router, ordering coordinator, and result merger</strong>.</p>
+
+<h2>Stateless: why the Proxy scales freely</h2>
+<p>Finally, back to that recurring line: <strong>the Proxy is stateless</strong>. It holds no segments, no indexes, no user data — the metadata it needs comes from coordinators and etcd (and can be cached),
+timestamps come from the TSO, and the real data lives in nodes and object storage. Since every Proxy instance can <strong>independently and identically</strong> do "gate — schedule — reduce," handling a traffic spike is simple:
+<strong>spin up more Proxies behind a load balancer</strong>; a request can land on any instance and behave the same. If a Proxy crashes, no data is lost, because it never stored any.</p>
+
+<p>This is the payoff of separating "carries throughput" from "holds state" (the principle from Lesson 9): the Proxy sits at the very front of the throughput path under the most pressure, yet because it is stateless
+it is the <strong>easiest part of the whole system to scale</strong>. Contrast it with the stateful, assignment-coordinated QueryNode/DataNode and you feel Milvus's layering philosophy more deeply —
+let each component carry just one kind of complexity, then stitch them together cleanly with interfaces and queues.</p>
+
+<p>But "stateless" doesn't mean "mindless forwarding." The Proxy still maintains a <strong>local cache</strong> that updates as the backend changes (collection schema, shard distribution, per-QueryNode load hints, etc.),
+or else every request would query a coordinator and the coordinator becomes the new bottleneck. This cache is "soft state" — droppable, and re-fetchable from coordinators and etcd when lost, so it doesn't break the essence of stateless scaling.
+Its updates also rely on Lesson 9's watch mechanism: when QueryCoord changes a collection's shard distribution, the relevant change propagates to the Proxy to keep its routing table fresh.
+Grasp this and you can answer a common interview question: <strong>"If the Proxy is stateless, why cache at all?" — because the cache is soft state serving performance, not hard state backing correctness</strong>; the two are fundamentally different in distributed systems.</p>
+
+<p>Finally, pull back to this part's through-line. The Proxy is the data plane's gateway, but it can't live a moment without the control plane: it asks RootCoord for timestamps (next lesson), asks QueryCoord where a collection is loaded (Lesson 13),
+and behind persisting segments is DataCoord (Lesson 12). In other words, <strong>the Proxy is the skin that translates "control-plane decisions" into "a service usable by clients."</strong>
+The next three lessons walk into these three coordinators one by one, and you'll find each supports some link of the Proxy's pipeline — read them, look back at this diagram, and everything snaps into place.</p>
+
+<div class="card macro">
+  <div class="tag">🌍 The big picture</div>
+  In one line: <strong>the Proxy is the single entry (milvuspb service) → it passes four gates auth/privilege/db/rate-limit → wraps tasks into ddQueue/dmQueue/dqQueue → asks the coordinator for a timestamp → writes fan into the WAL, queries fan out to nodes → results are reduced into one answer and returned</strong>.
+  It is stateless, so it scales horizontally behind a load balancer. Hold this pipeline in mind and every coordinator ahead is one link behind it.
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Single entry</strong>: the Proxy implements the public <span class="mono">milvuspb</span> MilvusService (gRPC/REST), encapsulating all backend topology behind it.</li>
+    <li><strong>Four gates</strong>: auth / privilege / db routing / rate limit, each an independent interceptor sitting before business logic.</li>
+    <li><strong>Three queues</strong>: <span class="mono">ddQueue</span>(DDL), <span class="mono">dmQueue</span>(DML), <span class="mono">dqQueue</span>(DQL), physically isolated by ordering and concurrency profile (plus a <span class="mono">dcQueue</span> for flush). See <span class="mono">task_scheduler.go</span>.</li>
+    <li><strong>Timestamps</strong>: each write/read task asks the coordinator's TSO for a global timestamp to fix its order (detailed in Lesson 11).</li>
+    <li><strong>Two paths</strong>: DML fans into the WAL/MQ (durability); DQL fans out to QueryNodes then <strong>reduces</strong> (concurrency/latency; reduce deep-dived in Lesson 29).</li>
+    <li><strong>Stateless</strong>: stores no data, scales horizontally behind a load balancer — the easiest link to scale.</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. The Proxy's task scheduler routes requests into three queues - ddQueue / dmQueue / dqQueue. What is the main purpose of this physical separation?</div>
+  <ol class="opts">
+    <li>Because gRPC requires each method to own a queue</li>
+    <li>To cache vector data in the Proxy's memory</li>
+    <li>To make the three kinds share one global lock</li>
+    <li>The three kinds have different ordering constraints and concurrency profiles: DDL must be strictly serial, DML/DQL can be highly concurrent; separate queues let each schedule under its own rules without dragging the others</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. DDL must be serial to keep structure single-versioned; DML/DQL want high concurrency and low latency. Isolating tasks of different ordering/concurrency profiles lets each queue schedule under its own constraint - essential for stability and speed (a dcQueue also handles flush)</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Why is the Proxy called 'the most easily scaled' part of Milvus?</div>
+  <ol class="opts">
+    <li>Because it runs inside the coordinator process</li>
+    <li>Because it needs no auth or rate limiting</li>
+    <li>Because it is stateless - it holds no segments or indexes, only validates/dispatches/reduces; instances can be added or removed like web servers behind a load balancer</li>
+    <li>Because it stores all data on its local disk</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. Statelessness is the key to horizontal scaling: holding no user data, any Proxy instance can serve any request, so instances scale freely behind a balancer. This echoes Lesson 9's 'carries throughput is not holds state'</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. How is a search request turned into a final result at the Proxy?</div>
+  <ol class="opts">
+    <li>Only the first shard is queried and the rest ignored</li>
+    <li>The Proxy scans all vectors in its own memory to compute topK</li>
+    <li>Fan-out to the QueryNodes owning each shard, each computes a local topK, then results are gathered back at the Proxy and reduced into a global topK</li>
+    <li>The request is handed to RootCoord to run the search</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. Distributed search is fan-out then reduce: each shard sees only local data and computes a local topK; the Proxy is the meeting point that merges them into a global topK, and the slowest shard sets the latency (reduce details in Lesson 29)</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>A client demands a 'strong' read (sees all writes up to now). Explain how the Proxy conveys this to QueryNodes via a 'guarantee timestamp', and the trade-off among consistency level, freshness, and latency.</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="09-control-vs-data-plane.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">控制面 vs 数据面</span><span class="lang-en">Control plane vs data plane</span></div></a><a class="next" href="11-rootcoord.html"><div class="dir"><span class="lang-zh">下一课 →</span><span class="lang-en">Next →</span></div><div class="ttl"><span class="lang-zh">RootCoord</span><span class="lang-en">RootCoord</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>

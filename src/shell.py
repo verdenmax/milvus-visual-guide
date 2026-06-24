@@ -63,6 +63,18 @@ PAGES = [
      "第二部分 · 前置基础", "Part 2 · Foundations"),
     ("08-dependencies-and-deployment.html", "依赖与部署形态", "Dependencies & deployment",
      "第二部分 · 前置基础", "Part 2 · Foundations"),
+    ("09-control-vs-data-plane.html", "控制面 vs 数据面", "Control plane vs data plane",
+     "第三部分 · 分布式架构", "Part 3 · Distributed architecture"),
+    ("10-proxy.html", "Proxy 网关", "The Proxy gateway",
+     "第三部分 · 分布式架构", "Part 3 · Distributed architecture"),
+    ("11-rootcoord.html", "RootCoord", "RootCoord",
+     "第三部分 · 分布式架构", "Part 3 · Distributed architecture"),
+    ("12-datacoord.html", "DataCoord", "DataCoord",
+     "第三部分 · 分布式架构", "Part 3 · Distributed architecture"),
+    ("13-querycoord.html", "QueryCoordV2", "QueryCoordV2",
+     "第三部分 · 分布式架构", "Part 3 · Distributed architecture"),
+    ("14-metadata-and-coordination.html", "元数据与协调", "Metadata & coordination",
+     "第三部分 · 分布式架构", "Part 3 · Distributed architecture"),
 ]
 
 
@@ -516,6 +528,18 @@ SUBTITLES = {
                          "segment lifecycle; vchannel→pchannel; log-as-data; columnar layout"),
     "08-dependencies-and-deployment.html": ("etcd · 对象存储 · 消息队列 · Lite/Standalone/Cluster",
                                             "etcd; object storage; message queue; Lite/Standalone/Cluster"),
+    "09-control-vs-data-plane.html": ("协调者 vs 节点 · types.go 接口 · MixCoord · 服务发现",
+                                      "coordinators vs nodes; types.go interfaces; MixCoord; service discovery"),
+    "10-proxy.html": ("唯一入口 · 校验/鉴权/限流 · ddQueue/dmQueue/dqQueue · 扇出归并",
+                      "single entry; validate/auth/rate-limit; ddQueue/dmQueue/dqQueue; fan-out & reduce"),
+    "11-rootcoord.html": ("DDL · 元数据表 · TSO 时间戳 · 全局 ID 分配",
+                          "DDL; meta table; TSO timestamps; global ID allocation"),
+    "12-datacoord.html": ("段分配 · flush/compaction · GC · 索引构建调度",
+                          "segment allocation; flush/compaction; GC; index-build scheduling"),
+    "13-querycoord.html": ("加载/释放 · 段与分片分配 · 均衡 · 副本 · distribution↔target",
+                           "load/release; segment & shard assignment; balance; replicas; distribution↔target"),
+    "14-metadata-and-coordination.html": ("etcd · session 服务发现 · Catalog · kv 层 · watch 派活",
+                                          "etcd; session discovery; Catalog; kv layer; watch-driven assignment"),
 }
 
 
