@@ -283,6 +283,10 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 .timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
   color: var(--blue); font-weight: 700; }
 .timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.timeline .tl-row { display: flex; align-items: flex-start; gap: .6rem; padding: .12rem 0; }
+.timeline .tl-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: .45rem; }
+.timeline .tl-t { font-family: ui-monospace, monospace; font-weight: 700; color: var(--accent-ink); min-width: 2.4rem; font-size: .82rem; flex-shrink: 0; margin-top: .18rem; }
+.timeline .tl-c { font-size: .9rem; color: var(--muted); }
 
 /* ---- worked-example trace: one concrete input, stepped through ---- */
 .trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
@@ -3301,7 +3305,7 @@ You can see the evidence in code: the <span class="mono">DataNodeClient</span> i
 <div class="codefile">
   <div class="cf-head"><span class="dot"></span><span class="path">internal/types/types.go</span><span class="ln">DataNodeClient embeds IndexNode capability: no standalone indexnode</span></div>
   <pre><span class="kw">type</span> DataNodeClient <span class="kw">interface</span> {
-    component
+    io.Closer
     datapb.DataNodeClient
     workerpb.IndexNodeClient   <span class="cm">// index-build worker folded into datanode</span>
 }</pre>
@@ -3661,7 +3665,7 @@ This is the same move as Lesson 9's "interfaces as pluggable seams": <strong>whe
 <h2>The kv layer: the primitives beneath Catalog</h2>
 <p>Below Catalog is a set of <strong>incrementally stacked</strong> interfaces in <span class="inline">pkg/kv/kv.go</span>. At the bottom is <span class="mono">BaseKV</span>: the plainest create/read/delete — <span class="mono">Save/Load/Remove/MultiSave/LoadWithPrefix</span>.
 Above it, <span class="mono">TxnKV</span> adds <strong>transactions</strong> (<span class="mono">MultiSaveAndRemove</span> — multiple writes and deletes all succeed or all fail, crucial for "alter schema while deleting old keys").
-Above that, <span class="mono">MetaKv</span> adds <strong>leases</strong> and <span class="mono">CompareVersionAndSwap</span> (optimistic locking). At the top, <span class="mono">WatchKV</span> adds <span class="mono">Watch</span> — the very foundation of service discovery and the "assign work" mechanism.</p>
+Above that, <span class="mono">MetaKv</span> adds <span class="mono">CompareVersionAndSwap</span> (version-based optimistic locking). At the top, <span class="mono">WatchKV</span> adds <span class="mono">Watch</span> — the very foundation of service discovery and the "assign work" mechanism.</p>
 
 <p>This "interface-on-interface" stacking is the same engineering aesthetic as <span class="mono">Component</span> in Lesson 9: <strong>depend on exactly the layer whose capabilities you need</strong>. A module that only reads config depends on <span class="mono">BaseKV</span>;
 a Catalog that needs transactions depends on <span class="mono">TxnKV</span>; service discovery that watches for changes depends on <span class="mono">WatchKV</span>. Implementations live in <span class="mono">internal/kv/etcd</span> (the etcd version) and <span class="mono">internal/kv/mem</span> (an in-memory version for tests).
@@ -3682,7 +3686,7 @@ CAS instead "<strong>writes carrying the version I saw</strong>" — the write s
 }
 
 <span class="kw">type</span> TxnKV  <span class="kw">interface</span> { BaseKV; MultiSaveAndRemove(...) }   <span class="cm">// +transactions</span>
-<span class="kw">type</span> MetaKv <span class="kw">interface</span> { TxnKV; CompareVersionAndSwap(...) }  <span class="cm">// +lease/CAS</span>
+<span class="kw">type</span> MetaKv <span class="kw">interface</span> { TxnKV; CompareVersionAndSwap(...) }  <span class="cm">// +CAS (version)</span>
 <span class="kw">type</span> WatchKV <span class="kw">interface</span> { MetaKv; Watch(ctx, key) WatchChan } <span class="cm">// +watch</span></pre>
 </div>
 
@@ -3738,7 +3742,7 @@ The reminder is: <strong>watch is a "notification," not the "truth"</strong> —
   <ul>
     <li><strong>Three layers down</strong>: coordinators (business verbs) → metastore's <span class="mono">Catalog</span> interfaces → <span class="mono">kv</span> primitives → etcd / object storage. Each layer down is more generic, less business-aware.</li>
     <li><strong>Catalog abstraction</strong>: <span class="mono">internal/metastore/catalog.go</span> splits by coordinator into <span class="mono">RootCoordCatalog / DataCoordCatalog / QueryCoordCatalog</span>, hiding the backend; RootCoord's methods carry <span class="mono">ts</span> (multi-version/snapshot).</li>
-    <li><strong>kv layer</strong>: <span class="mono">pkg/kv/kv.go</span> stacks <span class="mono">BaseKV → TxnKV → MetaKv → WatchKV</span> (CRUD → transactions → lease/CAS → watch), implemented in <span class="mono">internal/kv/etcd</span>.</li>
+    <li><strong>kv layer</strong>: <span class="mono">pkg/kv/kv.go</span> stacks <span class="mono">BaseKV → TxnKV → MetaKv → WatchKV</span> (CRUD → transactions → CAS/version → watch), implemented in <span class="mono">internal/kv/etcd</span>.</li>
     <li><strong>What goes where</strong>: small, critical metadata needing strong consistency + watch goes to etcd; bulky vectors/indexes go to object storage, with metadata keeping only a reference path.</li>
     <li><strong>Discovery + assignment</strong>: components <span class="mono">Register()</span> a leased session and coordinators <span class="mono">WatchServices</span> for up/down; assignment is reversed — coordinators write plans into etcd and nodes watch to pick up.</li>
   </ul>

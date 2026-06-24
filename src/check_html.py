@@ -43,6 +43,12 @@ DIAGRAM_CLASSES = ("layers", "vflow", "flow", "cols", "cellgroup", "timeline", "
 MIN_DIAGRAMS = 6  # per lesson, counting BOTH languages (>= 3 per language)
 MIN_CJK = 3000  # per-lesson zh CJK chars (soft floor; authoring target ~4000+)
 
+# Every class used in generated HTML must be defined in shell.CSS. Catches
+# consolidation artifacts (e.g. a diagram-variant whose CSS was never merged in,
+# rendering silently broken). Whitelist intentional no-style hooks.
+CSS_DEFINED = set(re.findall(r"\.([A-Za-z][\w-]*)", shell.CSS))
+CSS_CLASS_WHITELIST = {"prev"}  # footnav prev link is styled via `.footnav a`; needs no own rule
+
 issues = []
 
 
@@ -57,9 +63,21 @@ def check_balance(name, html, tag):
         add("ERR", name, f"<{tag}> unbalanced: {o} open / {c} close")
 
 
+def check_classes(name, html):
+    """Every class used in the HTML must have a `.cls` rule in shell.CSS."""
+    seen = set()
+    for m in re.findall(r'class="([^"]+)"', html):
+        for c in m.split():
+            if c in seen or c in CSS_CLASS_WHITELIST or c in CSS_DEFINED:
+                continue
+            seen.add(c)
+            add("ERR", name, f"undefined CSS class {c!r} (no .{c} rule in shell.CSS)")
+
+
 def check_lesson(fname, html):
     for tag in ("div", "details", "table", "pre", "summary"):
         check_balance(fname, html, tag)
+    check_classes(fname, html)
     nd = len(re.findall(r"<details", html))
     ns = len(re.findall(r"<summary", html))
     if nd != ns:
@@ -141,6 +159,7 @@ def main():
     index_path = os.path.join(ROOT, shell.INDEX_FILE)
     with open(index_path, encoding="utf-8") as fh:
         idx = fh.read()
+    check_classes("index.html", idx)
     for page in PAGES:
         fname, tz, te = page[0], page[1], page[2]
         if fname not in idx:
