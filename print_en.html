@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="en" data-lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Milvus Visual Guide - Print Edition</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+
+
+body { max-width: 820px; margin: 0 auto; padding: 1.6rem; background: #fff; }
+.print-toc { margin: 1rem 0 2rem; }
+.print-toc li { margin: .2rem 0; }
+.lesson-print { padding-top: .5rem; }
+@media print {
+  .lesson-print { page-break-before: always; }
+  .lesson-print:first-of-type { page-break-before: avoid; }
+  .trace, table.t, svg, pre, .layers, .cols, .card, details { break-inside: avoid; }
+  a { color: inherit; text-decoration: none; }
+}
+details[open] > summary { list-style: none; }
+</style>
+</head>
+<body>
+<h1>Milvus Visual Guide - Print Edition</h1>
+<p style="color:var(--muted)">All 1 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<div class="print-toc"><h2>Contents</h2>
+<ol>
+  <li>What is Milvus</li>
+</ol></div>
+<section class="lesson-print">
+<h1>What is Milvus</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Milvus is an <strong>open-source, distributed vector database</strong>: it takes <strong>unstructured data</strong>
+(images, text, audio), lets an AI model encode each item into a <strong>vector</strong>, and then, across huge
+(billion-scale) collections of vectors, <strong>finds the most similar items, fast</strong>.
+Traditional databases are great at <strong>exact matching</strong> (by id, by keyword); what Milvus is great at is a
+different question — <strong>"which things are most alike in meaning?"</strong>. A database built specifically to answer
+that quickly, accurately, and at scale: that is why Milvus exists.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of a traditional database as a <strong>catalog you search by call number</strong>: you need the exact id or title to
+  land on one book. Milvus is more like a <strong>librarian who knows the content</strong>: you hand over one book and say
+  "<strong>find me a few that <em>feel</em> most like this</strong>", and they hand back the closest ones — not by title, but by
+  <strong>similarity of content</strong>. Turning "does it feel alike?" into a computable "how far apart are they?" is the
+  core trick of a vector database.
+</div>
+
+<h2>What problem does it actually solve</h2>
+<p>Most data around us is <strong>unstructured</strong> — text, images, audio, video. A computer can't directly tell whether
+"these two sentences mean the same thing" or "these two images look alike". Modern AI's answer: use an
+<strong>embedding model</strong> to encode each item into a list of floats — a <strong>vector</strong>. The key property is that
+<strong>semantically similar items land close together</strong> in that space. So "find similar content" becomes a clean
+mathematical problem: <strong>find the nearest neighbors in vector space</strong>.</p>
+
+<p>The hard part is <strong>scale</strong>: with hundreds of millions of items, each hundreds or thousands of dimensions,
+computing exact distances one by one is hopelessly slow. In practice we use
+<strong>ANN (Approximate Nearest Neighbor)</strong> search: special index structures trade a tiny bit of accuracy to turn
+retrieval from "compare against everything" into "milliseconds". Treat ANN as a <strong>first-class query</strong> and build
+storage, updates, scaling and availability around it — that is a vector database, and Milvus is a leading one.</p>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>Milvus is a database whose first-class query is ANN similarity search</strong>. It is designed for
+  <strong>billions</strong> of vectors, uses a <strong>storage-compute-separated, cloud-native (K8s)</strong> distributed
+  architecture, scales throughput horizontally, and keeps new data queryable via <strong>real-time streaming writes</strong>.
+  It is written in <strong>Go + C++</strong> (with a little Rust) and accelerated on CPU/GPU.
+</div>
+
+<div class="cols">
+  <div class="col"><h4>Traditional (scalar) DB</h4><p>Queries are <strong>exact matches</strong>: <span class="inline">WHERE id = 42</span>, keyword hits.
+  Data is structured rows/columns; indexes are B-Tree / hash. It asks "<strong>equal to which?</strong>"</p></div>
+  <div class="col"><h4>Vector DB (Milvus)</h4><p>Queries are <strong>similarity search</strong>: given a vector, return the <strong>nearest topK</strong>.
+  Data is high-dimensional vectors (+ scalar fields); indexes are ANN structures like HNSW / IVF / DiskANN. It asks "<strong>most like which?</strong>"</p></div>
+</div>
+
+<h2>Where vectors come from: embeddings turn anything into a point</h2>
+<p>Vectors don't appear out of thin air — an <strong>embedding model</strong> computes them. Think of it as an
+"<strong>understanding machine</strong>": feed in a piece of text or an image and it emits a fixed-length list of floats that
+packs the item's "meaning" into those numbers. Trained on huge datasets, it <strong>learns to give semantically close inputs
+nearby vectors</strong> — "cat" and "kitten" sit almost on top of each other, "cat" and "interest rate" land far apart. For the
+first time, "semantic similarity" has a computable ruler.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Raw data</h4><p>A sentence, an image, a clip of audio… a computer can't compare "alike or not" directly.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Embedding model</h4><p class="mono">BERT / CLIP / bge…</p><p>A trained neural net that maps each item to a fixed-dimension vector.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Vector (e.g. 768-d)</h4><p>Semantically close ⇒ points close; unrelated ⇒ points far apart.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Into Milvus</h4><p>The vector + scalar fields (id, text, price, tags…) are stored and indexed, ready to be searched.</p></div></div>
+</div>
+
+<p>Two things to remember: (1) <strong>the model decides the dimension</strong> (commonly 384 / 768 / 1536), and all vectors in one
+collection must share the <strong>same dimension</strong>; (2) <strong>use the same model for ingest and query</strong>, otherwise the two
+sides' vectors are "not in the same space" and comparing distances is meaningless. In one line: <strong>"turn data into vectors" is the
+model's job; "store, index and search huge piles of vectors fast" is Milvus's job</strong> — and this guide is about the latter.</p>
+
+<h2>ANN: trade a little accuracy for a lot of speed</h2>
+<p>With vectors in hand, the most naive search is <strong>brute force</strong>: compute the distance from the query to <strong>every</strong>
+item, then sort and take the top K. Exact, but far too slow — 100M vectors of 768-d means tens of billions of multiply-adds per query,
+which can't sustain high concurrency. <strong>ANN (Approximate Nearest Neighbor)</strong> flips the approach: organize vectors into an
+<strong>index structure</strong> ahead of time (bucketed IVF, the navigable small-world graph HNSW, disk-oriented DiskANN…), and at query
+time <strong>look at only a small set of candidates</strong>, trading a <strong>tiny recall loss</strong> for a <strong>100-1000x speedup</strong>.</p>
+
+<table class="t">
+  <tr><th>Approach</th><th>How it searches</th><th>Speed</th><th>Result</th></tr>
+  <tr><td><strong>Brute force</strong></td><td class="mono">distance to every item</td><td>slow (O(N·D))</td><td>exact</td></tr>
+  <tr><td><strong>ANN index</strong></td><td class="mono">only a few candidates</td><td>fast (milliseconds)</td><td>approximate (very high recall)</td></tr>
+</table>
+
+<p>"Approximate" sounds scary, but in practice <strong>recall is often 95-99%+</strong> while speed is hundreds of times faster than brute
+force — for almost all applications, a great trade. Milvus ships several index types so you can balance <strong>speed, memory and
+accuracy</strong> (Lesson 5 dives in).</p>
+
+<h2>Turning "similar" into "distance": what a search looks like</h2>
+<p>A vector is just <strong>a point in high-dimensional space</strong>. How alike two items are is measured by the
+<strong>distance / similarity</strong> between their vectors. Milvus supports several common metrics:
+<span class="inline">L2</span> (Euclidean, smaller = closer), <span class="inline">IP</span> (inner product, larger = closer),
+<span class="inline">COSINE</span> (cosine similarity). One <strong>search</strong> is: given a <strong>query vector</strong>, return
+the <strong>K</strong> nearest items in the collection (the <strong>topK</strong>).</p>
+
+<div class="cellgroup">
+  <div class="cg-cap"><b>One similarity search</b>: query vector <span class="mono">q</span> finds the nearest 2 of 4 stored vectors (topK=2; smaller distance = closer)</div>
+  <div class="cells"><span class="lab">q</span><span class="cell hl">0.90</span><span class="cell hl">0.10</span><span class="cell hl">0.80</span></div>
+  <div class="cells"><span class="lab">v1</span><span class="cell">0.88</span><span class="cell">0.12</span><span class="cell">0.79</span><span class="sep">→</span><span class="cell q">dist 0.03 ✓</span></div>
+  <div class="cells"><span class="lab">v2</span><span class="cell">0.20</span><span class="cell">0.95</span><span class="cell">0.15</span><span class="sep">→</span><span class="cell dim">dist 1.42</span></div>
+  <div class="cells"><span class="lab">v3</span><span class="cell">0.85</span><span class="cell">0.05</span><span class="cell">0.83</span><span class="sep">→</span><span class="cell q">dist 0.07 ✓</span></div>
+  <div class="cells"><span class="lab">v4</span><span class="cell">0.10</span><span class="cell">0.30</span><span class="cell">0.90</span><span class="sep">→</span><span class="cell dim">dist 0.96</span></div>
+</div>
+
+<p>Which metric to pick depends on how your vectors are made: <strong>normalized</strong> embeddings usually use
+<span class="inline">COSINE</span> or <span class="inline">IP</span> (the more aligned the direction, the more similar), while
+<span class="inline">L2</span> is used when absolute position matters. Within one collection, <strong>index and search must use the same
+metric</strong>, or the definition of "near" won't line up. The returned <strong>topK</strong> is sorted by distance — rank 1 is the most
+similar, and so on; apps often add a "score threshold" to drop results that "rank highest but aren't actually close enough".</p>
+
+<p>Written with the Python SDK (pymilvus), the whole thing is three steps — "create a collection → load data → search".
+Note this shows <strong>usage</strong>; later lessons drill into Milvus internals to see what these three steps actually do inside the engine.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">pymilvus quickstart</span><span class="ln">create → insert → search</span></div>
+  <pre><span class="kw">from</span> pymilvus <span class="kw">import</span> MilvusClient
+
+client = MilvusClient(<span class="st">"demo.db"</span>)               <span class="cm"># Milvus Lite: just a local file</span>
+client.create_collection(collection_name=<span class="st">"docs"</span>, dimension=<span class="nb">768</span>)
+
+client.insert(collection_name=<span class="st">"docs"</span>, data=rows)      <span class="cm"># rows: 768-d vectors + scalar fields</span>
+
+hits = client.search(
+    collection_name=<span class="st">"docs"</span>,
+    data=[query_vector],                          <span class="cm"># one query vector</span>
+    limit=<span class="nb">3</span>,                                      <span class="cm"># topK=3: the 3 most similar</span>
+    output_fields=[<span class="st">"text"</span>],                        <span class="cm"># bring the original text back too</span>
+)</pre>
+</div>
+
+<h2>Why a "database", not just a search library</h2>
+<p>You may have heard of <strong>algorithm libraries</strong> like FAISS or HNSWlib: hand them a pile of fixed vectors and they
+compute ANN. So why Milvus? Because real workloads need far more than "compute nearest neighbors once". A production-ready
+system must handle all of the following <strong>together</strong> — and that is exactly the line between a "library" and a "database":</p>
+
+<div class="cols">
+  <div class="col"><h4>Algorithm library (e.g. FAISS)</h4><p>Does ANN over a batch of <strong>relatively static</strong> vectors,
+  <strong>in memory</strong>. Persistence, inserts/deletes, scaling, fault tolerance, concurrency, filtering — all <strong>your problem</strong>.</p></div>
+  <div class="col"><h4>Database (Milvus)</h4><p>Persistence and crash recovery, <strong>real-time updates while querying</strong>,
+  <strong>scalar + vector hybrid filtering</strong>, horizontal scale to billions, high availability and consistency, multi-tenancy
+  and access control — it turns search <strong>into a service</strong>.</p></div>
+</div>
+
+<p>Laying out "what a database has and a library doesn't", at minimum:</p>
+<ul>
+  <li><strong>Persistence &amp; crash recovery</strong>: a process dies, a machine goes down — data isn't lost and can recover.</li>
+  <li><strong>Real-time mutations</strong>: keep writing/deleting while still querying fresh results, instead of "rebuild the index to take effect".</li>
+  <li><strong>Hybrid filtering</strong>: vector similarity + scalar conditions (price, time, tags, partitions) constrained together.</li>
+  <li><strong>Horizontal scale &amp; HA</strong>: add machines to grow; replicas and failover keep the service up.</li>
+  <li><strong>Multi-tenancy &amp; access control</strong>: one cluster serves many workloads, isolated, each with its own permissions.</li>
+</ul>
+
+<p>One example that nails it: across 100M products, find the 10 that are "<strong>most like this shoe image, AND price &lt; 500, AND
+in stock</strong>". A pure algorithm library only "finds the most similar by vector" — it can't attach "price, stock" conditions; Milvus
+fuses <strong>scalar filtering</strong> (a boolean expression) with <strong>vector search</strong> in one shot. This kind of "<strong>vector +
+condition</strong>" hybrid query is exactly the step that takes similarity search from a demo into real business.</p>
+
+<p>Put differently: <strong>an algorithm library solves "how to compute it fast"; a database solves "how to use it reliably,
+durably and at scale in the real world"</strong>. Milvus does use a vector-search kernel library internally (Knowhere), but adds
+everything a database is supposed to provide on top.</p>
+
+<h2>Where Milvus is used: typical scenarios</h2>
+<p>Put "find by similarity" to work and it solves a whole class of problems that look different but are alike underneath:</p>
+<div class="cols">
+  <div class="col"><h4>Retrieval-augmented generation (RAG)</h4><p>Chunk and embed documents into the DB; at question time retrieve the most relevant passages and feed them to an LLM — effectively giving the LLM <strong>long-term memory and a knowledge base</strong>. The hottest use today.</p></div>
+  <div class="col"><h4>Recommendation &amp; multimodal search</h4><p>Image-to-image, text-to-image, similar-product/content recommendation — embed "what the user likes" and find its neighbors.</p></div>
+  <div class="col"><h4>Semantic dedup / clustering</h4><p>Near-duplicate detection and large-scale clustering: "vectors close enough" means "content alike enough".</p></div>
+  <div class="col"><h4>Anomaly detection</h4><p>Normal samples cluster together; <strong>outliers</strong> (vectors far from clusters) are often the suspicious ones.</p></div>
+</div>
+
+<h2>What Milvus looks like: the distributed shape</h2>
+<p>From the very top, Milvus splits the system into three kinds of roles plus three external dependencies. Here we only sketch the
+<strong>outline</strong>; Lesson 2 draws the "project map" and Lesson 3 walks "the life of a request", zooming into each block:</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">SDK / client</div><div class="nd">pymilvus, etc.</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">Proxy</div><div class="nd">entry · validate · route</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">Coordinators</div><div class="nd">root / data / query coord</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">Worker nodes</div><div class="nd">data / query / streaming node</div></div>
+</div>
+
+<p>The three roles divide the labor: <strong>Proxy</strong> is the single entry point — it receives requests, validates and authenticates
+them, and routes each to the right node; the <strong>coordinators</strong> (RootCoord / DataCoord / QueryCoord) are the "brain" that manages
+metadata, assigns tasks and schedules load, but <strong>don't move data themselves</strong>; the actual work is done by <strong>worker
+nodes</strong> — DataNode handles writes and flushing, QueryNode loads segments and runs search, StreamingNode carries the streaming log.
+"<strong>Coordinators schedule, nodes execute</strong>" is a recurring motif of the Milvus architecture.</p>
+
+<p>Underneath sit three <strong>external dependencies</strong> doing "bookkeeping, storage, logging": <strong>etcd</strong> holds metadata
+(which collections exist, which shard is on which machine); <strong>object storage</strong> (MinIO / S3) holds the actual data and
+index files; a <strong>message queue / WAL</strong> (Pulsar / Kafka / the built-in woodpecker) carries the write log, so a "write" first
+lands on a replayable log. A core Milvus design is <strong>"log as data"</strong> — a thread we'll pull on repeatedly in the write path
+(from Lesson 15).</p>
+
+<p><strong>Why Go + C++?</strong> It's a "<strong>best tool for each job</strong>" split: <strong>Go</strong> writes the distributed
+<strong>control plane</strong> — coordination, scheduling, RPC, concurrency — where developer velocity and a friendly concurrency model
+matter; <strong>C++</strong> writes the <strong>compute-heavy kernels</strong> — in-segment search (segcore), indexing, distance math — chasing
+peak performance close to the hardware (and able to drive GPUs); plus <strong>a little Rust</strong> (tantivy) for the full-text inverted
+index. Combined with <strong>storage-compute separation</strong>, compute nodes and storage scale independently — which is what lets Milvus
+claim "<strong>elastic scaling to billions</strong>".</p>
+
+<h2>Three deployment shapes: pick one by scale</h2>
+<p>Same ideas, three sizes — from "one file" to "one cluster" — chosen by data volume and scenario:</p>
+
+<table class="t">
+  <tr><th>Shape</th><th>How it runs</th><th>Good for</th><th>Scale</th></tr>
+  <tr><td><strong>Milvus Lite</strong></td><td class="mono">pip install, one local file</td><td>learning, prototypes, laptop experiments</td><td>up to ~millions</td></tr>
+  <tr><td><strong>Standalone</strong></td><td class="mono">single machine, all components in one process</td><td>small/medium, single-host deploy</td><td>tens of millions</td></tr>
+  <tr><td><strong>Cluster</strong></td><td class="mono">distributed, replicated, on K8s</td><td>production, HA, elastic scaling</td><td>billions and beyond</td></tr>
+</table>
+
+<p>Whichever shape you pick, the <strong>external API and core concepts are the same</strong>: your
+<span class="inline">create_collection / insert / search</span> code doesn't change — the underside just grows from "one process"
+into "one cluster". An often-underrated feature is <strong>"query while you write"</strong>: data you just <span class="inline">insert</span>
+becomes searchable without waiting for an index to be built — Milvus keeps data <strong>fresh in real time</strong> via a streaming log plus
+queryable "growing segments", something we'll see again in the write and query paths. That is the lens of this guide: we don't teach
+<em>how to use</em> Milvus (the official docs do that well), we take you <strong>inside the engine to see how it implements all of this</strong>.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Vector / embedding</strong>: the list of numbers an AI model encodes data into; semantically close ⇒ vectors close.</li>
+    <li><strong>ANN similarity search</strong>: find nearest neighbors in vector space; special indexes make it milliseconds instead of brute force. Milvus treats it as a <strong>first-class query</strong>.</li>
+    <li><strong>Library vs database</strong>: a library (FAISS) just computes ANN; Milvus adds persistence, real-time updates, hybrid filtering, scaling, HA — search as a service.</li>
+    <li><strong>Overall shape</strong>: Proxy (entry) + coordinators + worker nodes, plus etcd / object storage / message queue; the core idea is "log as data".</li>
+    <li><strong>Three deployments</strong>: Lite (one file) → Standalone (single host) → Cluster (K8s), with the same API and concepts.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Milvus treats similarity search (ANN) as a first-class query. Compared with a traditional DB's exact match, what is the main difference this brings?</div>
+  <ol class="opts">
+    <li>It makes SQL JOINs faster</li>
+    <li>The query shifts from 'equal to which' to 'most like which'; data is high-dim vectors, indexes are ANN structures (HNSW/IVF), trading approximation for millisecond speed</li>
+    <li>It compresses all data into integers to save space</li>
+    <li>It drops indexes and relies on full scans for exactness</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. A vector DB fundamentally turns 'find similar' into 'find nearest neighbors in vector space'. Exact comparison is too slow at scale, so ANN indexes trade a little accuracy for millisecond retrieval. That is the core split from scalar DBs that hit exactly by id/keyword</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. If an algorithm library like FAISS can already compute ANN, why do we still need a 'database' like Milvus?</div>
+  <ol class="opts">
+    <li>Because FAISS is inaccurate and Milvus always returns exact nearest neighbors</li>
+    <li>Because FAISS only runs on GPUs</li>
+    <li>Because Milvus is faster without any index</li>
+    <li>Because real workloads also need persistence, real-time updates while querying, scalar+vector hybrid filtering, horizontal scaling, HA and consistency - turning search into a service</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. A library solves 'how to compute fast'; a database solves 'how to use it durably, reliably and at scale in the real world'. Milvus does use a vector-search kernel (Knowhere) internally, but adds persistence, streaming writes, hybrid filtering, scaling and HA on top</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Milvus offers Lite, Standalone and Cluster. From the user's code perspective, what is the most important thing they share?</div>
+  <ol class="opts">
+    <li>All three must be deployed on Kubernetes</li>
+    <li>The external API and core concepts are the same: identical create_collection / insert / search, while the underside grows from one process into a cluster without code changes</li>
+    <li>All three keep data only in memory, never persisted</li>
+    <li>All three are limited to a few million items</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. That is the value of the layered architecture: users face one API and concept set, scale is met by swapping the deployment shape, and business code barely changes. Lite suits prototypes, Standalone small/medium, Cluster billion-scale production</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>Think of an app you'd build with similarity search (image-to-image, RAG document QA, product recommendation). With pure ANN (give a vector, get topK), what is still missing? Map those to this lesson's 'library vs database' split - do you need filtering, real-time updates, or high availability?</li>
+  </ul>
+</div>
+</div>
+</section>
+</body>
+</html>
