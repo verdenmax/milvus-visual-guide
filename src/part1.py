@@ -425,3 +425,624 @@ queryable "growing segments", something we'll see again in the write and query p
 </div>
 """,
 }
+
+
+LESSON_02 = {
+    "zh": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+上一课我们站在山顶看清了"Milvus 是什么"。这一课要做的是一张<strong>全景地图</strong>：把代码仓库里几十个目录、三种编程语言、五六个运行时组件、三类外部依赖，
+一次性<strong>放到同一张图上</strong>。地图的价值不在记住每条街，而在于——之后无论我们钻进哪一课（写入、查询、索引、一致性……），
+你都能立刻指着这张图说"<strong>哦，它在这里</strong>"。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🗺️ 生活类比</div>
+  把 Milvus 想成一座<strong>分工明确的城市</strong>：<strong>市民服务大厅（Proxy）</strong>是唯一的对外窗口，所有请求先到这里登记、核验、分流；
+  <strong>市政府（MixCoord）</strong>不亲自搬砖，只管规划与调度——谁建在哪、谁负责哪一片；<strong>各施工队与仓库管理员（工作节点）</strong>才真正动手干活；
+  地底下还铺着<strong>水电管网（etcd / 对象存储 / 消息队列）</strong>。你不必记住每个人的名字，只要知道"<strong>办事去大厅、决策找市府、干活找工程队</strong>"，就永远不会迷路。
+</div>
+
+<h2>三种语言，三种活</h2>
+<p>Milvus 的源码乍看庞杂，但有一条最省力的切入线索：<strong>它用三种语言，各干一种最擅长的活</strong>。看懂这条分工，半张地图就已经在脑子里了：</p>
+
+<div class="cols">
+  <div class="col"><h4>Go · 分布式控制面</h4><p>占 <span class="inline">internal/</span> 的绝大多数。负责<strong>协调、调度、RPC、元数据、并发管理</strong>——也就是"<strong>把一群机器组织起来</strong>"这件事。Go 的并发模型与开发效率，正好适合写控制面。</p></div>
+  <div class="col"><h4>C++ · 计算内核</h4><p>集中在 <span class="inline">internal/core/</span>。负责<strong>段内检索、索引、距离计算、表达式求值</strong>这些<strong>计算密集</strong>的脏活累活，贴近硬件、追求极致性能（也能驱动 GPU）。</p></div>
+</div>
+
+<p>第三种语言是<strong>少量 Rust</strong>：它只负责一块很专的领域——<strong>全文倒排索引</strong>，藏在 <span class="inline">internal/core/thirdparty/tantivy</span> 里（tantivy 是一个 Rust 写的全文检索库）。
+所以一句话记牢分工：<strong>Go 管"把机器们协调好"，C++ 管"把一段数据搜得飞快"，Rust 管"全文检索那一小块"</strong>。
+C++ 内核里又细分成几个子模块——<span class="mono">segcore</span>（段内检索引擎）、<span class="mono">index</span>（索引构建与加载）、<span class="mono">query</span>（查询执行）、<span class="mono">exec</span>（执行算子）、<span class="mono">expr</span>（标量表达式）——
+这些名字会在后面的课里反复出现，现在混个脸熟即可。</p>
+
+<p>举个最直观的例子感受这套分工：当你发起<strong>一次 search</strong>，请求会<strong>同时穿过这三种语言</strong>——先由 <strong>Go</strong> 写的 Proxy 接住、校验、把请求路由到对的 QueryNode；
+QueryNode（也是 Go）找出该搜哪些段后，把"段内的相似度计算"这一步<strong>下沉给 C++ 的 segcore</strong> 去飞快地算；如果你的查询里还带了<strong>全文检索</strong>条件，
+那一小段就轮到 <strong>Rust 的 tantivy</strong> 出场。三种语言像接力赛一样把一次请求跑完——<strong>Go 负责"组织流程"，C++ 负责"算得快"，Rust 负责"全文那一棒"</strong>。
+看懂这一点，你就明白了为什么 Milvus 要"混血"：不是炫技，而是让每段代码都跑在它最擅长的语言上。</p>
+
+<h2>运行时有哪些组件：先纠正一个常见误解</h2>
+<p>很多旧资料会画出"<strong>三个独立的协调器</strong>"——RootCoord、DataCoord、QueryCoord 各是一个进程。<strong>这在今天的 Milvus 里已经不准确了。</strong>
+当前版本把这三个协调角色<strong>合并进了同一个进程 <span class="mono">MixCoord</span></strong>。也就是说：三个协调"角色"在代码里仍然存在（分别是 <span class="inline">internal/rootcoord</span>、
+<span class="inline">internal/datacoord</span>、<span class="inline">internal/querycoordv2</span> 三个模块），但它们<strong>被打包成一个 MixCoord 一起部署</strong>，不再是三个独立进程。</p>
+
+<p>这是一个<strong>"逻辑 vs 物理"</strong>的经典区分，务必分清：在<strong>逻辑上</strong>，元数据管理（Root）、写入与段管理（Data）、查询负载调度（Query）仍是三件不同的事；
+但在<strong>物理上</strong>，它们如今住在同一个进程里。证据就在代码里——<span class="inline">internal/types/types.go</span> 中的 <span class="mono">MixCoord</span> 接口，
+直接把 <span class="mono">RootCoordServer</span>、<span class="mono">QueryCoordServer</span>、<span class="mono">DataCoordServer</span> 三个服务接口<strong>嵌在了一起</strong>（本课末尾会贴出这段代码）。
+所以今天 Milvus 的<strong>运行时组件</strong>是这六个：</p>
+
+<table class="t">
+  <tr><th>组件</th><th>语言</th><th>职责（一句话）</th><th>internal 包</th></tr>
+  <tr><td><strong>Proxy</strong></td><td>Go</td><td>对外唯一入口：校验、鉴权、分配时间戳、路由、跨分片归并</td><td class="mono">proxy</td></tr>
+  <tr><td><strong>MixCoord</strong></td><td>Go</td><td>三合一协调器：元数据 + 段管理 + 查询调度（含 streamingcoord）</td><td class="mono">coordinator · rootcoord · datacoord · querycoordv2</td></tr>
+  <tr><td><strong>QueryNode</strong></td><td>Go + C++</td><td>加载段、执行检索；段内搜索下沉到 C++ segcore</td><td class="mono">querynodev2 · core</td></tr>
+  <tr><td><strong>DataNode</strong></td><td>Go</td><td>消费日志、攒"增长段"、刷盘成 binlog；也承担索引构建的执行</td><td class="mono">datanode · flushcommon</td></tr>
+  <tr><td><strong>StreamingNode</strong></td><td>Go</td><td>承载流式 WAL：写入先落到这条可重放的日志上</td><td class="mono">streamingnode · streamingcoord</td></tr>
+  <tr><td><strong>CDC</strong></td><td>Go</td><td>变更数据捕获：把写入变更复制到下游 / 做跨集群同步</td><td class="mono">cdc</td></tr>
+</table>
+
+<p>两个容易踩的坑顺便点破：①<strong>没有单独的 indexnode</strong>——索引构建是由 DataCoord 调度、交给一个 datanode 工作进程去跑的，并不存在一个叫"索引节点"的独立组件；
+②<strong>Standalone 与 Cluster 跑的是同一套组件</strong>，区别只在"住在几个进程里"。</p>
+
+<h2>逻辑一张图，物理两种形态</h2>
+<p>同样这六个组件，<strong>Standalone</strong>（单机）把它们<strong>塞进一个进程</strong>，省心、适合中小规模；<strong>Cluster</strong>（集群）则把每个组件<strong>拆成独立的 K8s Pod</strong>，
+各自按需扩缩容、互不拖累。注意：<strong>对你写的代码而言，两者毫无区别</strong>——同样的 <span class="inline">create_collection / insert / search</span>，底层从"一个进程"长成"一个集群"，API 与概念完全一致。</p>
+
+<div class="cols">
+  <div class="col"><h4>Standalone（单机）</h4><p>MixCoord + Proxy + 三种 Node + CDC <strong>全在一个进程</strong>里；依赖（etcd / 对象存储 / MQ）可内嵌或外接。<strong>部署简单</strong>，适合中小规模与单机生产。</p></div>
+  <div class="col"><h4>Cluster（集群）</h4><p>每个组件是<strong>独立的 Pod</strong>，QueryNode / DataNode 可各自扩到多副本。<strong>弹性、高可用</strong>，面向十亿级生产。逻辑角色不变，只是"分家"了。</p></div>
+</div>
+
+<h2>一条贯穿全书的主线：控制面 vs 数据面</h2>
+<p>如果说"三种语言"是横向的切法，那么<strong>"控制面 vs 数据面"</strong>就是纵向的切法——这是理解 Milvus 最重要的一根线，几乎每一课都会回到它。
+所谓<strong>控制面（control plane）</strong>，管的是"<strong>谁该做什么</strong>"：集合的结构、分片落在哪台机器、段该不该刷盘、查询该路由到哪个副本——
+这些<strong>决策与元数据</strong>都归 MixCoord 这个大脑。而<strong>数据面（data plane）</strong>管的是"<strong>真正把数据搬动、计算出来</strong>"：
+写入的字节、刷盘的 binlog、检索时一条条算出来的距离——这些<strong>重活</strong>全在工作节点和 C++ 内核里发生。</p>
+
+<p>为什么要这么分？因为<strong>这两件事的脾气完全不同</strong>。控制面要的是"<strong>正确、一致、别出错</strong>"——元数据错一点，整个集群就乱套，所以它宁可慢一点、走 etcd 做强一致；
+数据面要的是"<strong>快、能并行、能水平扩展</strong>"——它可以容忍"近似"、可以多副本并发，机器不够就加机器。<strong>把这两种诉求拆开</strong>，
+各自用最合适的技术去满足，正是分布式系统反复验证过的智慧。所以你会看到一句反复出现的口诀：<strong>"协调器管调度、节点管执行"</strong>——
+MixCoord 只发号施令、绝不亲手搬一个字节；DataNode / QueryNode 闷头干活、不操心全局怎么编排。</p>
+
+<p>这根主线还顺手解释了"<strong>为什么要存算分离</strong>"：当数据面的节点<strong>不自己保存长期状态</strong>（状态都托管给 etcd 和对象存储）时，它们就变成了"<strong>用完即弃</strong>"的算力——
+查询忙了就多拉几个 QueryNode、写入忙了就多拉几个 DataNode，闲了再缩回去，<strong>而数据一个字节都不会丢</strong>。计算与存储能各自独立伸缩，
+这正是 Milvus 敢承诺"<strong>弹性扩展到十亿级</strong>"的工程根基。记住这根线，后面的写入链路、查询链路、一致性，都只是它在不同场景下的展开。</p>
+
+<h2>仓库长什么样：顶层目录速记</h2>
+<p>把 git 仓库的顶层目录走一遍，你就有了"<strong>去哪找代码</strong>"的索引。它们大致按"<strong>入口 → 核心逻辑 → 共享库 → 周边</strong>"排列：</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4><span class="mono">cmd/</span> · 程序入口</h4><p>每个组件怎么启动都在这里：<span class="mono">cmd/components/</span>（mix_coord、proxy、query_node…）与 <span class="mono">cmd/roles/roles.go</span>（决定本进程跑哪些角色）。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4><span class="mono">internal/</span> · 核心逻辑</h4><p>系统的"<strong>主干</strong>"：proxy、rootcoord、datacoord、querycoordv2、querynodev2、datanode、streamingnode、coordinator(mixcoord)、core(C++)、storage、metastore、kv、distributed(gRPC 服务)、types(接口)、tso…</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4><span class="mono">pkg/</span> · 共享库</h4><p>跨组件复用的工具：日志、配置(paramtable)、proto、工具函数。注意它<strong>自带独立的 go.mod</strong>（模块名 <span class="mono">github.com/milvus-io/milvus/pkg/v3</span>）。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4><span class="mono">client/</span> · Go SDK</h4><p>官方 Go 客户端 <span class="mono">milvusclient</span>（也有独立 go.mod）。Python 的 pymilvus 在另一个仓库。</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>周边目录</h4><p><span class="mono">configs/</span>（<span class="mono">milvus.yaml</span> 配置）、<span class="mono">deployments/</span>（部署）、<span class="mono">scripts/</span>（脚本）、<span class="mono">tests/</span>（测试）、<span class="mono">docs/</span>（文档）。</p></div></div>
+</div>
+
+<h2>三块外部依赖：记账、存货、写日志</h2>
+<p>Milvus 自己不重复造轮子，而是把三件"基础设施级"的脏活外包给成熟系统。这也是<strong>存算分离</strong>能成立的前提：</p>
+<ul>
+  <li><strong>etcd · 记账</strong>：存<strong>元数据</strong>——有哪些集合、分片在哪台机器、谁是谁的副本。小而关键，是集群的"户口本"。</li>
+  <li><strong>对象存储（MinIO / S3）· 存货</strong>：存<strong>真正的数据与索引文件</strong>——刷盘后的 binlog、建好的索引。便宜、海量、持久。</li>
+  <li><strong>消息队列 / WAL（Pulsar / Kafka / 内置 woodpecker）· 写日志</strong>：承载<strong>写入日志</strong>，让"写"先落到一条<strong>可重放</strong>的日志上。这正是 Milvus "<strong>日志即数据（log as data）</strong>"的根基（第 15 课起细讲）。</li>
+</ul>
+
+<p>把这三块垫在底下，计算节点就变得"<strong>无状态</strong>"了——挂了重启、按需扩容都不丢数据，因为真正的状态都在 etcd 与对象存储里。<strong>这就是存算分离能弹性伸缩到十亿级的底气。</strong></p>
+
+<p>这里也顺手说清一个常被问到的点：<strong>这三块依赖不是"可有可无的配角"，而是 Milvus 架构的一部分</strong>。它们的选择是<strong>可插拔</strong>的——消息队列既可以用 Pulsar / Kafka 这类成熟中间件，
+也可以用 Milvus <strong>内置的 woodpecker</strong>（省去额外部署一套 MQ 的麻烦）；对象存储既可以是云上的 S3，也可以是本地自建的 MinIO。Milvus 通过一层抽象把这些差异挡在外面，
+让上层逻辑无需关心"日志到底落在哪、文件到底存在哪"。<strong>这种"把基础设施抽象掉"的设计，正是它能在云上、私有化、单机之间无缝切换的原因。</strong></p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/types/types.go</span><span class="ln">type MixCoord interface</span></div>
+  <pre><span class="cm">// MixCoord 把三个协调角色的服务接口"嵌"在一起 —— 这就是"三合一"的代码铁证</span>
+<span class="kw">type</span> MixCoord <span class="kw">interface</span> {
+    Component
+    rootcoordpb.RootCoordServer   <span class="cm">// 元数据 / DDL（Root）</span>
+    querypb.QueryCoordServer      <span class="cm">// 查询负载调度（Query）</span>
+    datapb.DataCoordServer        <span class="cm">// 段管理 / 写入协调（Data）</span>
+    <span class="cm">// …三者如今同住一个进程，对外仍是三套逻辑接口</span>
+}</pre>
+</div>
+
+<h2>四组导航模型：把任何一课都钉到地图上</h2>
+<p>最后，给你一张<strong>分四组</strong>的"导航坐标"。今后每学一课，先问自己"它属于哪一组"，再去对应的代码目录里找——这张分组图会一直陪着你：</p>
+
+<div class="layers">
+  <div class="layer l-app"><div class="lh"><span class="badge">顶层</span><span class="name">SDK / API</span></div><div class="ld">pymilvus / Go <span class="mono">milvusclient</span> —— 你写的 create / insert / search 从这里出发。</div></div>
+  <div class="layer l-app"><div class="lh"><span class="badge">① 接入层</span><span class="name">Proxy</span></div><div class="ld">唯一对外窗口：校验、鉴权、分配时间戳、路由、跨分片归并结果。</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">② 协调层</span><span class="name">MixCoord</span></div><div class="ld">三合一大脑：管元数据、管段、调度查询负载——只决策、不搬数据。</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">③ 工作节点</span><span class="name">Query / Data / Streaming Node</span></div><div class="ld">真正干活：QueryNode 搜、DataNode 写与刷盘、StreamingNode 承载 WAL。</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">内核</span><span class="name">C++ core (segcore / index / query)</span></div><div class="ld">垫在工作节点之下的计算内核：段内检索与索引的极速实现。</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">④ 存储与依赖</span><span class="name">etcd · 对象存储 · MQ/WAL</span></div><div class="ld">记账（元数据）、存货（数据与索引）、写日志（可重放的写入流）。</div></div>
+</div>
+
+<p>带着这张地图，下一课我们就<strong>让它动起来</strong>：跟着一条 insert 和一条 search，走一遍"<strong>一次请求的一生</strong>"，看请求是怎么在这四组之间流动的。</p>
+
+<h2>怎么用这张地图：给你的学习路线</h2>
+<p>地图画好了，最后教你<strong>怎么用</strong>它。本教程后面的每一部分，其实都是在<strong>放大地图上的某一块</strong>——你完全可以把它当作"导览路线"：</p>
+<ul>
+  <li><strong>遇到"写入"相关的话题</strong>（insert、WAL、刷盘、段、压缩）→ 看的是 ② 协调层的 <strong>DataCoord 角色</strong> + ③ 工作节点里的 <strong>DataNode / StreamingNode</strong>，对应 <span class="mono">internal/datanode</span>、<span class="mono">internal/streamingnode</span>、<span class="mono">internal/flushcommon</span>。这条线在<strong>第 15 课</strong>起的写入链路里展开。</li>
+  <li><strong>遇到"查询"相关的话题</strong>（search、过滤、归并、一致性）→ 看的是 ① 接入层 <strong>Proxy</strong> + ③ 工作节点里的 <strong>QueryNode</strong> + 内核 <strong>C++ segcore</strong>，对应 <span class="mono">internal/proxy</span>、<span class="mono">internal/querynodev2</span>、<span class="mono">internal/core/src/segcore</span>。这条线在<strong>第 25 课</strong>起展开。</li>
+  <li><strong>遇到"索引"相关的话题</strong>（HNSW、IVF、DiskANN、量化）→ 看的是内核 <strong>C++ index</strong> + ② 协调层 <strong>DataCoord 的索引调度</strong>，对应 <span class="mono">internal/core/src/index</span> 与 <span class="mono">internal/datacoord</span> 里的 index 相关文件。</li>
+  <li><strong>遇到"元数据 / 集合 / 权限"相关的话题</strong> → 看的是 ② 协调层的 <strong>RootCoord 角色</strong> 与 etcd，对应 <span class="mono">internal/rootcoord</span>、<span class="mono">internal/metastore</span>。</li>
+</ul>
+
+<p>换句话说：<strong>每当你不知道"这件事归谁管"，就回到这四组上对号入座</strong>。组件名、目录名、语言、职责，这四样信息你只要建立起对应关系，
+就拿到了在这套庞大代码库里<strong>自由导航</strong>的能力——而这，正是"全景地图"这一课最想留给你的东西。一张地图记不住每条街没关系，
+重要的是<strong>你永远知道自己站在哪、下一步该往哪走</strong>。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>三语言分工</strong>：Go（控制面，<span class="mono">internal/</span>）+ C++（计算内核，<span class="mono">internal/core/</span>：segcore/index/query/exec/expr）+ 少量 Rust（全文 tantivy）。</li>
+    <li><strong>MixCoord 是关键纠错点</strong>：Root/Data/Query 三个协调<strong>角色</strong>仍在，但已合并为<strong>一个 MixCoord 进程</strong>部署——逻辑三件事、物理一个进程。</li>
+    <li><strong>六个运行时组件</strong>：MixCoord、Proxy、QueryNode、DataNode、StreamingNode、CDC；<strong>没有单独 indexnode</strong>（索引由 DataCoord 调度、datanode 执行）。</li>
+    <li><strong>两种形态</strong>：Standalone 一个进程、Cluster 多个 Pod，<strong>同套组件、同套 API</strong>。</li>
+    <li><strong>仓库索引</strong>：<span class="mono">cmd/</span> 入口 · <span class="mono">internal/</span> 核心 · <span class="mono">pkg/</span> 共享库 · <span class="mono">client/</span> SDK；外部依赖 etcd / 对象存储 / MQ 支撑存算分离。</li>
+    <li><strong>四组导航</strong>：① 接入 Proxy ② 协调 MixCoord ③ 工作节点 ④ 存储与依赖，外加底层 C++ 内核与顶层 SDK。</li>
+  </ul>
+</div>
+""",
+    "en": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Last lesson we stood on the summit and saw "what Milvus is". This lesson draws a <strong>map of the whole project</strong>:
+the dozens of directories, three programming languages, half a dozen runtime components, and three external dependencies —
+all placed on <strong>one picture</strong>. A map's value isn't memorizing every street; it's that whenever we later dive into a
+lesson (writes, queries, indexing, consistency…), you can point at this map and say "<strong>ah, it lives here</strong>".
+</p>
+
+<div class="card analogy">
+  <div class="tag">🗺️ Analogy</div>
+  Think of Milvus as a <strong>city with a clear division of labor</strong>: the <strong>citizen service hall (Proxy)</strong> is the one public
+  window — every request first checks in, gets validated, and is routed there; the <strong>city government (MixCoord)</strong> doesn't lay bricks,
+  it only plans and schedules — who is built where, who owns which district; the <strong>crews and warehouse keepers (worker nodes)</strong> do
+  the actual work; and underground run the <strong>utilities (etcd / object storage / message queue)</strong>. You needn't memorize every name —
+  just "<strong>errands go to the hall, decisions to the government, work to the crews</strong>" and you'll never get lost.
+</div>
+
+<h2>Three languages, three jobs</h2>
+<p>The source looks sprawling, but there's one effortless way in: <strong>Milvus uses three languages, each doing what it's best at</strong>.
+Grasp that split and half the map is already in your head:</p>
+
+<div class="cols">
+  <div class="col"><h4>Go · distributed control plane</h4><p>Most of <span class="inline">internal/</span>. Handles <strong>coordination, scheduling, RPC, metadata, concurrency</strong> — i.e. "<strong>organizing a fleet of machines</strong>". Go's concurrency model and developer velocity fit a control plane.</p></div>
+  <div class="col"><h4>C++ · compute kernels</h4><p>Concentrated in <span class="inline">internal/core/</span>. Handles the <strong>compute-heavy</strong> grunt work — in-segment search, indexing, distance math, expression eval — close to the hardware, chasing peak speed (and able to drive GPUs).</p></div>
+</div>
+
+<p>The third language is <strong>a little Rust</strong>: it owns one very specialized area — the <strong>full-text inverted index</strong> — tucked in
+<span class="inline">internal/core/thirdparty/tantivy</span> (tantivy is a Rust full-text search library). So, in one line: <strong>Go "coordinates the
+machines", C++ "searches one piece of data blazingly fast", Rust "owns the small full-text slice"</strong>. The C++ kernel further splits into a few
+submodules — <span class="mono">segcore</span> (in-segment search), <span class="mono">index</span> (build/load indexes), <span class="mono">query</span>
+(query execution), <span class="mono">exec</span> (execution operators), <span class="mono">expr</span> (scalar expressions) — names that recur in later
+lessons; just get acquainted for now.</p>
+
+<p>A vivid example of this division: when you issue <strong>one search</strong>, the request <strong>passes through all three languages at once</strong> — first the
+<strong>Go</strong>-written Proxy catches it, validates it, and routes it to the right QueryNode; the QueryNode (also Go), after figuring out which segments to hit,
+<strong>sinks the "in-segment similarity computation" down to C++ segcore</strong> to crunch blazingly fast; and if your query carries a <strong>full-text</strong> condition,
+that small slice goes to <strong>Rust's tantivy</strong>. The three languages run a request like a relay — <strong>Go "organizes the flow", C++ "computes fast", Rust "runs the
+full-text leg"</strong>. Grasp this and you see why Milvus is "multilingual": not for show, but so each piece of code runs in the language it's best at.</p>
+
+<h2>The runtime components: first, fix a common misconception</h2>
+<p>Lots of older material draws "<strong>three separate coordinators</strong>" — RootCoord, DataCoord, QueryCoord each a process. <strong>That is no longer
+accurate in today's Milvus.</strong> The current version <strong>merges these three coordinator roles into one process, <span class="mono">MixCoord</span></strong>.
+The three coordinator "roles" still exist in code (modules <span class="inline">internal/rootcoord</span>, <span class="inline">internal/datacoord</span>,
+<span class="inline">internal/querycoordv2</span>), but they are <strong>packaged into a single MixCoord and deployed together</strong> — no longer three
+independent processes.</p>
+
+<p>This is a classic <strong>"logical vs physical"</strong> distinction — keep them straight: <strong>logically</strong>, metadata management (Root), writes
+&amp; segment management (Data), and query-load scheduling (Query) are still three different things; but <strong>physically</strong> they now live in one
+process. The proof is in the code — the <span class="mono">MixCoord</span> interface in <span class="inline">internal/types/types.go</span> <strong>embeds</strong>
+the three service interfaces <span class="mono">RootCoordServer</span>, <span class="mono">QueryCoordServer</span>, <span class="mono">DataCoordServer</span> together
+(snippet at the end of this lesson). So today's <strong>runtime components</strong> are these six:</p>
+
+<table class="t">
+  <tr><th>Component</th><th>Language</th><th>Responsibility (one line)</th><th>internal package</th></tr>
+  <tr><td><strong>Proxy</strong></td><td>Go</td><td>The one public entry: validate, auth, assign timestamp, route, reduce across shards</td><td class="mono">proxy</td></tr>
+  <tr><td><strong>MixCoord</strong></td><td>Go</td><td>Three-in-one coordinator: metadata + segment mgmt + query scheduling (incl. streamingcoord)</td><td class="mono">coordinator · rootcoord · datacoord · querycoordv2</td></tr>
+  <tr><td><strong>QueryNode</strong></td><td>Go + C++</td><td>Loads segments, runs search; in-segment search sinks into C++ segcore</td><td class="mono">querynodev2 · core</td></tr>
+  <tr><td><strong>DataNode</strong></td><td>Go</td><td>Consumes the log, builds "growing segments", flushes to binlogs; also runs index builds</td><td class="mono">datanode · flushcommon</td></tr>
+  <tr><td><strong>StreamingNode</strong></td><td>Go</td><td>Carries the streaming WAL: a write first lands on this replayable log</td><td class="mono">streamingnode · streamingcoord</td></tr>
+  <tr><td><strong>CDC</strong></td><td>Go</td><td>Change Data Capture: replicate write changes downstream / cross-cluster sync</td><td class="mono">cdc</td></tr>
+</table>
+
+<p>Two easy traps, dispelled: (1) <strong>there is no separate indexnode</strong> — index building is scheduled by DataCoord and run by a datanode worker;
+no component called "index node" exists; (2) <strong>Standalone and Cluster run the same set of components</strong> — the only difference is "how many
+processes they live in".</p>
+
+<h2>One logical picture, two physical shapes</h2>
+<p>Those same six components: <strong>Standalone</strong> (single host) <strong>packs them into one process</strong> — simple, good for small/medium scale;
+<strong>Cluster</strong> <strong>splits each into its own K8s Pod</strong> that scales independently. Note: <strong>to your code, the two are identical</strong> — the same
+<span class="inline">create_collection / insert / search</span>; the underside just grows from "one process" to "one cluster", with the same API and concepts.</p>
+
+<div class="cols">
+  <div class="col"><h4>Standalone (single host)</h4><p>MixCoord + Proxy + the three Nodes + CDC <strong>all in one process</strong>; dependencies (etcd / object storage / MQ) can be embedded or external. <strong>Simple to deploy</strong>, fits small/medium and single-host production.</p></div>
+  <div class="col"><h4>Cluster</h4><p>Each component is an <strong>independent Pod</strong>; QueryNode / DataNode scale to many replicas. <strong>Elastic, highly available</strong>, for billion-scale production. The logical roles are unchanged — they've just "moved into separate houses".</p></div>
+</div>
+
+<h2>One thread that runs through the whole guide: control plane vs data plane</h2>
+<p>If "three languages" is a horizontal cut, then <strong>"control plane vs data plane"</strong> is the vertical one — the single most important thread for
+understanding Milvus, and nearly every lesson returns to it. The <strong>control plane</strong> governs "<strong>who should do what</strong>": a collection's schema,
+which shard sits on which machine, whether a segment should flush, which replica a query routes to — these <strong>decisions and metadata</strong> belong to the
+MixCoord brain. The <strong>data plane</strong> governs "<strong>actually moving and computing the data</strong>": the written bytes, the flushed binlogs, the distances
+computed one by one at search time — that <strong>heavy lifting</strong> all happens in the worker nodes and the C++ kernel.</p>
+
+<p>Why split this way? Because <strong>the two have completely different temperaments</strong>. The control plane wants "<strong>correct, consistent, never wrong</strong>" —
+one bad metadata write and the whole cluster goes haywire, so it would rather be a bit slow and go through etcd for strong consistency; the data plane wants
+"<strong>fast, parallel, horizontally scalable</strong>" — it can tolerate "approximate", run many replicas concurrently, and add machines when short. <strong>Separating these
+two demands</strong> and satisfying each with the most fitting technology is wisdom distributed systems have proven again and again. Hence the recurring motto:
+<strong>"coordinators schedule, nodes execute"</strong> — MixCoord only gives orders and never moves a byte itself; DataNode / QueryNode just do the work and don't fret
+about global orchestration.</p>
+
+<p>This thread also neatly explains "<strong>why storage-compute separation</strong>": when data-plane nodes <strong>don't keep long-term state themselves</strong> (state is
+entrusted to etcd and object storage), they become "<strong>disposable</strong>" compute — busy on queries? spin up more QueryNodes; busy on writes? spin up more DataNodes;
+scale back when idle — <strong>and not one byte of data is lost</strong>. Compute and storage scale independently, which is the engineering foundation behind Milvus's promise
+of "<strong>elastic scaling to billions</strong>". Hold onto this thread and the later write path, query path, and consistency are all just its unfolding in different settings.</p>
+
+<h2>What the repo looks like: top-level directories at a glance</h2>
+<p>Walk the git repo's top level once and you have an index of "<strong>where to find code</strong>". They roughly follow "<strong>entry → core logic → shared libs → periphery</strong>":</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4><span class="mono">cmd/</span> · entrypoints</h4><p>How each component starts: <span class="mono">cmd/components/</span> (mix_coord, proxy, query_node…) and <span class="mono">cmd/roles/roles.go</span> (which roles this process runs).</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4><span class="mono">internal/</span> · core logic</h4><p>The system's <strong>trunk</strong>: proxy, rootcoord, datacoord, querycoordv2, querynodev2, datanode, streamingnode, coordinator(mixcoord), core(C++), storage, metastore, kv, distributed(gRPC servers), types(interfaces), tso…</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4><span class="mono">pkg/</span> · shared libs</h4><p>Cross-component utilities: logging, config (paramtable), proto, helpers. Note it has its <strong>own go.mod</strong> (module <span class="mono">github.com/milvus-io/milvus/pkg/v3</span>).</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4><span class="mono">client/</span> · Go SDK</h4><p>The official Go client <span class="mono">milvusclient</span> (also its own go.mod). Python's pymilvus lives in a separate repo.</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>Periphery</h4><p><span class="mono">configs/</span> (<span class="mono">milvus.yaml</span>), <span class="mono">deployments/</span>, <span class="mono">scripts/</span>, <span class="mono">tests/</span>, <span class="mono">docs/</span>.</p></div></div>
+</div>
+
+<h2>Three external dependencies: bookkeeping, storage, logging</h2>
+<p>Milvus doesn't reinvent wheels — it outsources three "infrastructure-grade" chores to mature systems. This is also the prerequisite for <strong>storage-compute separation</strong>:</p>
+<ul>
+  <li><strong>etcd · bookkeeping</strong>: holds <strong>metadata</strong> — which collections exist, which shard sits on which machine, who replicates whom. Small but critical, the cluster's "registry".</li>
+  <li><strong>Object storage (MinIO / S3) · the warehouse</strong>: holds the <strong>actual data and index files</strong> — flushed binlogs, built indexes. Cheap, vast, durable.</li>
+  <li><strong>Message queue / WAL (Pulsar / Kafka / built-in woodpecker) · the log</strong>: carries the <strong>write log</strong>, so a "write" first lands on a <strong>replayable</strong> log. This is the root of Milvus's "<strong>log as data</strong>" (detailed from Lesson 15).</li>
+</ul>
+
+<p>With those three underneath, compute nodes become "<strong>stateless</strong>" — crash-restart or scale-on-demand without losing data, because the real state
+lives in etcd and object storage. <strong>That is why storage-compute separation can scale elastically to billions.</strong></p>
+
+<p>One frequently asked point, settled here: <strong>these three dependencies aren't optional bit players — they're part of the Milvus architecture</strong>. Their choice is
+<strong>pluggable</strong> — the message queue can be a mature middleware like Pulsar / Kafka, or Milvus's <strong>built-in woodpecker</strong> (sparing you from deploying a separate MQ);
+object storage can be cloud S3 or self-hosted MinIO. Milvus hides these differences behind an abstraction layer, so upper logic needn't care "where exactly the log lands, where
+exactly the file is stored". <strong>This "abstract the infrastructure away" design is precisely why it can switch seamlessly among cloud, on-prem, and single-host.</strong></p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/types/types.go</span><span class="ln">type MixCoord interface</span></div>
+  <pre><span class="cm">// MixCoord embeds the three coordinator service interfaces — the code proof of "three-in-one"</span>
+<span class="kw">type</span> MixCoord <span class="kw">interface</span> {
+    Component
+    rootcoordpb.RootCoordServer   <span class="cm">// metadata / DDL (Root)</span>
+    querypb.QueryCoordServer      <span class="cm">// query-load scheduling (Query)</span>
+    datapb.DataCoordServer        <span class="cm">// segment mgmt / write coordination (Data)</span>
+    <span class="cm">// …all three now share one process, still three logical interfaces outward</span>
+}</pre>
+</div>
+
+<h2>The four-group navigation model: pin any lesson to the map</h2>
+<p>Finally, a set of <strong>four-group</strong> "navigation coordinates". For every lesson ahead, first ask "which group does it belong to?", then go to the
+matching code directory — this grouping will stay with you:</p>
+
+<div class="layers">
+  <div class="layer l-app"><div class="lh"><span class="badge">Top</span><span class="name">SDK / API</span></div><div class="ld">pymilvus / Go <span class="mono">milvusclient</span> — your create / insert / search start here.</div></div>
+  <div class="layer l-app"><div class="lh"><span class="badge">① Access</span><span class="name">Proxy</span></div><div class="ld">The one public window: validate, auth, assign timestamp, route, reduce across shards.</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">② Coordination</span><span class="name">MixCoord</span></div><div class="ld">The three-in-one brain: metadata, segments, query-load scheduling — decides, never moves data.</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">③ Worker nodes</span><span class="name">Query / Data / Streaming Node</span></div><div class="ld">The real work: QueryNode searches, DataNode writes &amp; flushes, StreamingNode carries the WAL.</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">Kernel</span><span class="name">C++ core (segcore / index / query)</span></div><div class="ld">The compute kernel beneath the worker nodes: blazing in-segment search and indexing.</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">④ Storage &amp; deps</span><span class="name">etcd · object storage · MQ/WAL</span></div><div class="ld">Bookkeeping (metadata), warehouse (data &amp; indexes), the log (a replayable write stream).</div></div>
+</div>
+
+<p>With this map in hand, the next lesson <strong>sets it in motion</strong>: we follow one insert and one search through "<strong>the life of a request</strong>"
+and watch how a request flows among these four groups.</p>
+
+<h2>How to use this map: your learning route</h2>
+<p>The map is drawn — finally, how to <strong>use</strong> it. Every later part of this guide essentially <strong>zooms into one block of the map</strong> — treat it as a tour route:</p>
+<ul>
+  <li><strong>A "write" topic</strong> (insert, WAL, flush, segments, compaction) → look at the ② <strong>DataCoord role</strong> + ③ <strong>DataNode / StreamingNode</strong>, i.e. <span class="mono">internal/datanode</span>, <span class="mono">internal/streamingnode</span>, <span class="mono">internal/flushcommon</span>. This thread unfolds in the write path from <strong>Lesson 15</strong>.</li>
+  <li><strong>A "query" topic</strong> (search, filtering, reduce, consistency) → look at the ① <strong>Proxy</strong> + ③ <strong>QueryNode</strong> + kernel <strong>C++ segcore</strong>, i.e. <span class="mono">internal/proxy</span>, <span class="mono">internal/querynodev2</span>, <span class="mono">internal/core/src/segcore</span>. Unfolds from <strong>Lesson 25</strong>.</li>
+  <li><strong>An "index" topic</strong> (HNSW, IVF, DiskANN, quantization) → look at the kernel <strong>C++ index</strong> + ② <strong>DataCoord's index scheduling</strong>, i.e. <span class="mono">internal/core/src/index</span> and the index-related files in <span class="mono">internal/datacoord</span>.</li>
+  <li><strong>A "metadata / collection / access-control" topic</strong> → look at the ② <strong>RootCoord role</strong> and etcd, i.e. <span class="mono">internal/rootcoord</span>, <span class="mono">internal/metastore</span>.</li>
+</ul>
+
+<p>In other words: <strong>whenever you don't know "who owns this thing", come back to these four groups and place it</strong>. Component name, directory name, language,
+responsibility — once you build the mapping among those four facts, you've gained the ability to <strong>navigate freely</strong> in this huge codebase — which is exactly what the
+"project map" lesson most wants to leave you with. It's fine not to memorize every street; what matters is that <strong>you always know where you stand and where to go next</strong>.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Three-language split</strong>: Go (control plane, <span class="mono">internal/</span>) + C++ (compute kernels, <span class="mono">internal/core/</span>: segcore/index/query/exec/expr) + a little Rust (full-text tantivy).</li>
+    <li><strong>MixCoord is the key correction</strong>: the Root/Data/Query coordinator <strong>roles</strong> still exist, but are merged into <strong>one MixCoord process</strong> — three things logically, one process physically.</li>
+    <li><strong>Six runtime components</strong>: MixCoord, Proxy, QueryNode, DataNode, StreamingNode, CDC; <strong>no separate indexnode</strong> (index is scheduled by DataCoord, run by a datanode).</li>
+    <li><strong>Two shapes</strong>: Standalone = one process, Cluster = many Pods — <strong>same components, same API</strong>.</li>
+    <li><strong>Repo index</strong>: <span class="mono">cmd/</span> entry · <span class="mono">internal/</span> core · <span class="mono">pkg/</span> shared libs · <span class="mono">client/</span> SDK; external deps etcd / object storage / MQ enable storage-compute separation.</li>
+    <li><strong>Four-group nav</strong>: ① Access Proxy ② Coordination MixCoord ③ Worker nodes ④ Storage &amp; deps, plus the C++ kernel below and the SDK above.</li>
+  </ul>
+</div>
+""",
+}
+
+
+LESSON_03 = {
+    "zh": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+有了上一课的全景地图，这一课我们<strong>让它动起来</strong>：跟着<strong>一条 insert</strong> 和<strong>一条 search</strong>，从客户端出发，
+走遍 Proxy、协调器、工作节点、C++ 内核，看一次请求<strong>到底经过哪些手、在每一站发生了什么</strong>。这是一条"<strong>万米高空的航线图</strong>"——
+只点出每个站点的名字与职责，细节留给后面的写入链路（<strong>第 15 课</strong>起）、查询链路（<strong>第 25 课</strong>起）、一致性（<strong>第 30 课</strong>）逐站放大。
+</p>
+
+<div class="card analogy">
+  <div class="tag">📮 生活类比</div>
+  把<strong>写入</strong>想成<strong>往邮局寄信</strong>：你不会把信直接塞进收件人家门，而是先交到<strong>邮局柜台（Proxy）</strong>，柜台<strong>盖一个时间戳（收件时间）</strong>、
+  按地址分拣，再把信<strong>登记进一本流水账（WAL 日志）</strong>。只要账记上了，这封信就"<strong>算寄出了</strong>"，哪怕后续的投递慢一点也丢不了。
+  而<strong>查询</strong>更像<strong>查档案</strong>：你说"<strong>给我看截至某个时刻为止的全部记录</strong>"，档案管理员据此圈定一个<strong>时间快照</strong>，
+  保证你看到的是一份<strong>前后一致</strong>的状态，而不是边查边变的半成品。<strong>时间戳，就是这两件事共同的钥匙。</strong>这一课，我们就握着这把钥匙，把读写两条链路彻底走通一遍。
+</div>
+
+<h2>写入的一生：insert 走过的七站</h2>
+<p>先看写。一条 <span class="inline">insert</span> 从 SDK 出发，要走过下面这条链路。请特别留意<strong>两个关键动作</strong>：在 Proxy <strong>盖时间戳</strong>、
+以及"<strong>先写日志</strong>"——这两点是后面理解一致性与崩溃恢复的地基：</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>客户端 / SDK</h4><p>pymilvus / Go <span class="mono">milvusclient</span> 把若干行（向量 + 标量字段）打包，发往 Proxy。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Proxy · 校验 + 补主键 + 盖时间戳</h4><p>校验 schema；若主键是 auto-id 就<strong>自动补上</strong>；向 <strong>TSO</strong> 申请一个全局<strong>时间戳 ts</strong>，盖在这批数据上。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Proxy · 按主键哈希分片</h4><p>用主键把每行<strong>哈希到不同的 vchannel（虚拟分片）</strong>，决定它该进哪条写入流——这样数据天然被打散到多个分片并行处理。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>追加到 WAL / 流式日志</h4><p>Proxy 把这批数据<strong>追加进 WAL</strong>（一条可重放的写入日志）。<strong>账一记上，这次写入就算成功返回了。</strong></p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>StreamingNode / DataNode · 消费日志</h4><p>工作节点<strong>顺着日志往下读</strong>，把刚写入的行<strong>放进一个"增长段（growing segment）"</strong>——一块还在内存里、可以被立即查询的数据。</p></div></div>
+  <div class="step"><div class="num">6</div><div class="sc"><h4>刷盘成 binlog</h4><p>当增长段攒到一定<strong>大小 / 时间</strong>阈值，就<strong>刷盘（flush）</strong>成<strong>binlog</strong>，持久化到对象存储，段从此"封存（sealed）"。</p></div></div>
+  <div class="step"><div class="num">7</div><div class="sc"><h4>DataCoord · 记账段元数据</h4><p><strong>DataCoord</strong>（MixCoord 里的 Data 角色）记录"<strong>哪些段、在哪、多大、刷没刷</strong>"，作为后续查询与压缩的依据。</p></div></div>
+</div>
+
+<p>这里有三个观念值得现在就刻进脑子。其一，"<strong>日志即数据（log as data）</strong>"：Milvus 把"写"先变成"<strong>往日志里追加一条记录</strong>"，
+日志才是<strong>唯一的真相来源</strong>，段、索引都只是日志的"物化视图"。这让崩溃恢复变得简单——重放日志即可。其二，"<strong>边写边查</strong>"：
+新数据进了<strong>增长段</strong>就能被搜到，<strong>不必等刷盘、更不必等建索引</strong>，这正是 Milvus 数据"实时新鲜"的来源。其三，"<strong>一批原子可见</strong>"：
+同一批 insert 共享<strong>同一个时间戳</strong>，要么一起可见、要么都不可见，不会让你查到"半批"数据。</p>
+
+<p>有一个地方值得停下来多想一层：<strong>为什么写入要"先过日志"，而不是直接写进段、写进对象存储？</strong>这看似绕了远路，实则是分布式存储的核心智慧。
+直接写段有三个麻烦：一是<strong>慢</strong>——对象存储适合"大块、批量"写，逐行写又慢又贵；二是<strong>难恢复</strong>——写到一半进程挂了，段处于"残缺"状态，很难判断哪些行成功了；
+三是<strong>难并发</strong>——多个写入者同时改同一个段，要费很大力气做锁。而"<strong>先写一条只追加（append-only）的日志</strong>"把这三件事一次解决：
+追加是<strong>顺序写</strong>，飞快；日志<strong>天然有序</strong>，重放到哪一条一清二楚，崩溃后接着重放即可；多个写入只是<strong>往同一条日志尾部排队</strong>，无需互相加锁。
+段和索引则在"<strong>事后</strong>"由消费者从日志慢慢物化出来——这就是把"<strong>写得快</strong>"和"<strong>查得快</strong>"这对矛盾<strong>解耦</strong>的关键招式。</p>
+
+<h2>查询的一生：search 走过的六站</h2>
+<p>再看读。一条 <span class="inline">search</span> 的链路和写不同——它要<strong>同时问很多个分片</strong>，再把结果<strong>层层归并</strong>成最终的 topK。
+关键动作同样有两个：在 Proxy <strong>定一个"保证时间戳"</strong>（决定你能看到多新的数据），以及把"<strong>段内的相似度计算</strong>"下沉给 <strong>C++ 内核</strong>：</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">SDK / 客户端</div><div class="nd">发起 search(向量, topK)</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">Proxy</div><div class="nd">定保证时间戳 · 建查询计划 · 按分片路由</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">QueryNode · delegator</div><div class="nd">圈定 封存段 + 增长段</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">segcore (C++)</div><div class="nd">段内检索 · 每段 topK</div></div>
+</div>
+
+<p>把这条链路一站站说清楚：</p>
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Proxy · 定"保证时间戳"</h4><p>根据你选的<strong>一致性级别</strong>推导一个 <strong>guarantee timestamp</strong>：要"看见最新"（Strong）就取最大时间，要"够快、容忍少量延迟"（Bounded）就取稍早一点的时间。这个 ts 决定了你这次能看到多新的数据。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Proxy · 建计划 + 路由</h4><p>把查询解析成一个<strong>搜索计划</strong>（向量字段、度量、topK、标量过滤条件），再按<strong>分片</strong>把请求<strong>分发到相关的 QueryNode</strong>。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>delegator · 圈定要搜的段</h4><p>每个分片有一个<strong>代理者 / 分片领导（delegator / shard leader）</strong>，它清楚本分片有哪些<strong>封存段 + 增长段</strong>，并据保证时间戳<strong>等数据"够新"了</strong>再放行搜索。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>segcore (C++) · 段内检索</h4><p>真正"算距离"的脏活下沉到 <strong>C++ 的 segcore</strong>：在每个段内沿索引找近邻，吐出<strong>这一段的 topK</strong>。</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>节点内归并</h4><p>一个 QueryNode 上可能有很多段，它先把<strong>各段的 topK 归并</strong>成"本节点的 topK"，减少要往上传的数据。</p></div></div>
+  <div class="step"><div class="num">6</div><div class="sc"><h4>Proxy · 跨分片归并 → 客户端</h4><p>Proxy 收齐<strong>各分片的 topK</strong>，再做<strong>一次全局归并</strong>，排出最终的 topK 返回客户端。<strong>"分头搜、层层并"</strong>是检索的标准套路。</p></div></div>
+</div>
+
+<p>注意搜索的"<strong>扇出—归约（scatter-gather）</strong>"形状：Proxy 把一个请求<strong>扇出</strong>给多个分片、每个分片再扇给多个段并行算，
+然后结果<strong>反向归约</strong>——段 topK → 节点 topK → 全局 topK。每一层都只往上传"前 K 个"，所以即便底下有上亿条向量，
+网络上流动的也只是<strong>很少量的候选</strong>。这就是分布式检索既<strong>快</strong>又<strong>省</strong>的关键。</p>
+
+<p>顺便回答一个常见疑问：<strong>为什么读和写要走两条不同的路？</strong>因为它们的目标根本不同。<strong>写</strong>追求"<strong>尽快落定、绝不丢失</strong>"，所以它走"日志"这条<strong>顺序、单向</strong>的快车道，
+一路向前、不回头；<strong>读</strong>追求"<strong>在海量数据里挑出最像的几条</strong>"，所以它必须<strong>扇出</strong>到所有相关分片和段、并行去算，再把结果<strong>归约</strong>回来。
+一个是"<strong>把水灌进管道</strong>"，一个是"<strong>从万千水库里舀出最甜的那几瓢</strong>"——形状自然不同。但请注意，<strong>读其实要同时看两种段</strong>：
+已经刷盘的<strong>封存段</strong>（历史数据）和还在内存里的<strong>增长段</strong>（刚写入、尚未落盘的新数据）。正因为 delegator 把这两者<strong>都纳入检索范围</strong>，
+Milvus 才能做到"<strong>边写边查</strong>"——你上一秒 insert 的数据，下一秒就能在增长段里被搜到。这也是为什么"写入的增长段"和"查询的段选择"是同一枚硬币的两面。</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/proxy · 读请求按一致性级别推导保证时间戳</span><span class="ln">parseGuaranteeTsFromConsistency</span></div>
+  <pre><span class="cm">// 一致性级别 → guarantee timestamp（决定这次 search 能看到多新的数据）</span>
+<span class="kw">switch</span> consistencyLevel {
+<span class="kw">case</span> Strong:      guaranteeTs = tMax                 <span class="cm">// 强一致：看见此刻最新</span>
+<span class="kw">case</span> Bounded:     guaranteeTs = tMax - gracefulTime  <span class="cm">// 有界：容忍少量延迟，换更低时延</span>
+<span class="kw">case</span> Eventually:  guaranteeTs = <span class="nb">1</span>                   <span class="cm">// 最终：最快，可能读到较旧快照</span>
+}
+<span class="cm">// delegator 会"等到本分片数据追上 guaranteeTs"再开始搜，从而给出一致快照</span></pre>
+</div>
+
+<h2>时间戳：读写共用的那把钥匙</h2>
+<p>把上面两条链路并排一看，你会发现<strong>时间戳（timestamp）</strong>是贯穿读写的<strong>同一根轴</strong>：<strong>写</strong>给每批数据盖一个 ts（决定它"何时发生"）；
+<strong>读</strong>用一个保证 ts 圈定一个<strong>快照</strong>（决定它"看见到何时为止")。两者用的是<strong>同一套全局时钟（TSO）</strong>，于是"先后顺序"在整个集群里有了统一的定义：</p>
+
+<div class="timeline">
+  <div class="lane"><span class="lane-label">写入流</span><span class="tslot">ts=10 批A</span><span class="tslot">ts=20 批B</span><span class="tslot">ts=30 批C</span><span class="tslot span">…持续追加…</span></div>
+  <div class="lane"><span class="lane-label">读 (Strong)</span><span class="tslot">取 ts=最新</span><span class="tslot now">看见 A·B·C 全部</span></div>
+  <div class="lane"><span class="lane-label">读 (Bounded)</span><span class="tslot">取 ts=稍早</span><span class="tslot now">看见 A·B（容忍 C 略迟）</span></div>
+</div>
+
+<p>这里只需建立<strong>直觉</strong>：保证时间戳越"新"，看到的数据越全，但可能要<strong>多等一会儿</strong>（等分片追上这个 ts）；越"旧"则越快、但可能漏掉最新写入。
+这正是<strong>一致性级别</strong>在背后做的权衡。它的完整机制——TSO 怎么发号、delegator 怎么等、快照怎么保证——留到<strong>第 30 课</strong>专门展开，这里点到为止。</p>
+
+<p>再补一句关于 <strong>TSO（Timestamp Oracle，时间戳分配器）</strong>的直觉：它是整个集群的"<strong>统一发号机</strong>"，保证发出去的时间戳<strong>全局单调递增</strong>——
+后申请的一定比先申请的大。有了这台"<strong>全局时钟</strong>"，分布在不同机器上的写入才有了公认的<strong>先后次序</strong>，读取也才能用一个 ts 干净地切出"<strong>截至此刻</strong>"的快照。
+你可以把它想成银行叫号机：每个人来都撕一张号，号码只增不减，于是"谁先谁后"再无争议。TSO 住在 MixCoord 里（Root 角色），Proxy 每次处理读写都先向它<strong>要一个号</strong>。
+正是这台朴素的发号机，撑起了 Milvus 在分布式环境下的<strong>时序一致性</strong>——一个看似简单、却无处不在的基础设施。</p>
+
+<h2>一张表收尾：每个组件在一次请求里扮演什么角色</h2>
+<p>最后用一张表把"<strong>谁在一次请求里干什么</strong>"对齐，方便你随时回查：</p>
+
+<table class="t">
+  <tr><th>组件</th><th>在写入里</th><th>在查询里</th></tr>
+  <tr><td><strong>SDK / 客户端</strong></td><td>打包行、发起 insert</td><td>发起 search(向量, topK)、收最终结果</td></tr>
+  <tr><td><strong>Proxy</strong></td><td>校验、补主键、盖时间戳、按 PK 哈希分片、写 WAL</td><td>定保证时间戳、建计划、路由、<strong>跨分片归并</strong></td></tr>
+  <tr><td><strong>TSO</strong>（在 MixCoord）</td><td>发放写入时间戳</td><td>作为保证时间戳的参照时钟</td></tr>
+  <tr><td><strong>StreamingNode / DataNode</strong></td><td>消费日志、攒增长段、刷盘成 binlog</td><td>（写侧为主）</td></tr>
+  <tr><td><strong>DataCoord</strong>（在 MixCoord）</td><td>记账段元数据、触发刷盘/压缩</td><td>提供"有哪些段"的信息</td></tr>
+  <tr><td><strong>QueryNode · delegator</strong></td><td>（读侧为主）</td><td>圈定封存段+增长段、等数据够新、汇总本节点 topK</td></tr>
+  <tr><td><strong>segcore (C++)</strong></td><td>—</td><td>段内检索、算每段 topK</td></tr>
+</table>
+
+<p>这就是"一次请求的一生"的全貌：<strong>写</strong>是"盖时间戳 → 先写日志 → 异步落盘 → 协调器记账"，<strong>读</strong>是"定快照 → 扇出到分片与段 → C++ 算 topK → 层层归并"。
+两条链路看似不同，却共享同一套<strong>时间戳</strong>与同一张<strong>全景地图</strong>。带着这副"骨架"，后面每一部分都会回到这两条链路上的某一站，把它<strong>放大成一整课</strong>。</p>
+
+<p>最后留一个<strong>承前启后</strong>的提醒：本课所有名词——时间戳、vchannel、WAL、增长段、封存段、binlog、delegator、segcore、归并——你现在<strong>不必记牢每个细节</strong>，
+只要在脑子里建立起"它在哪条链路的哪一站"的<strong>位置感</strong>即可。把它们想象成地铁线路图上的站点：你暂时不知道每站附近有什么，但你知道<strong>坐这条线能到那里</strong>。
+后面的课，就是带你<strong>在每一站下车，逛透它周围的街区</strong>。下一部分起，我们正式钻进引擎内部——从"数据是怎么被组织成集合、分区、段"开始。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>写入链路</strong>：SDK → Proxy（校验、补主键、<strong>盖时间戳</strong>、按 PK 哈希分片）→ 追加 <strong>WAL</strong> → StreamingNode/DataNode 消费 → <strong>增长段</strong> → 刷盘成 <strong>binlog</strong> → DataCoord 记账。</li>
+    <li><strong>日志即数据</strong>：先写可重放的日志，写入即返回；段与索引是日志的物化视图，崩溃后重放即可恢复。</li>
+    <li><strong>查询链路</strong>：SDK → Proxy（<strong>定保证时间戳</strong>、建计划、路由）→ QueryNode <strong>delegator</strong> 圈定封存段+增长段 → <strong>segcore(C++)</strong> 段内 topK → 节点归并 → Proxy <strong>跨分片归并</strong> → 客户端。</li>
+    <li><strong>扇出—归约</strong>：每一层只上传"前 K 个"，所以海量向量下网络上只流动极少候选。</li>
+    <li><strong>时间戳是读写共用的钥匙</strong>：写盖 ts、读用保证 ts 取一致快照；一致性级别就是在"看得多新 vs 等得多久"之间权衡（细节见<strong>第 30 课</strong>）。</li>
+  </ul>
+</div>
+""",
+    "en": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+With last lesson's project map in hand, this lesson <strong>sets it in motion</strong>: we follow <strong>one insert</strong> and <strong>one search</strong>
+from the client out, through Proxy, the coordinator, the worker nodes, and the C++ kernel, watching <strong>which hands a request passes through and what
+happens at each stop</strong>. This is a "<strong>30,000-foot flight map</strong>" — naming each station and its job, leaving the details to the write path
+(<strong>Lesson 15</strong>+), the query path (<strong>Lesson 25</strong>+), and consistency (<strong>Lesson 30</strong>) to zoom into station by station.
+</p>
+
+<div class="card analogy">
+  <div class="tag">📮 Analogy</div>
+  Think of a <strong>write</strong> as <strong>mailing a letter at the post office</strong>: you don't stuff the letter directly into the recipient's door — you hand it to
+  the <strong>counter (Proxy)</strong>, which <strong>stamps a timestamp (received-at time)</strong>, sorts it by address, and <strong>logs it into a ledger (the WAL)</strong>.
+  Once it's in the ledger, the letter "<strong>counts as sent</strong>" — even if delivery is a bit slow, it won't be lost. A <strong>query</strong> is more like <strong>reading
+  the archive</strong>: you say "<strong>show me all records up to a certain moment</strong>", and the archivist fixes a <strong>time snapshot</strong> accordingly, guaranteeing you
+  see a <strong>self-consistent</strong> state rather than a half-finished one changing as you read. <strong>The timestamp is the shared key to both.</strong> In this lesson, holding that key, we'll walk both the read and write chains end to end.
+</div>
+
+<h2>The life of a write: the seven stops of an insert</h2>
+<p>Writes first. An <span class="inline">insert</span> leaves the SDK and travels this chain. Note <strong>two key actions</strong> in particular: <strong>stamping a timestamp</strong>
+at the Proxy, and "<strong>log first</strong>" — these two are the bedrock for later understanding consistency and crash recovery:</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Client / SDK</h4><p>pymilvus / Go <span class="mono">milvusclient</span> packs some rows (vectors + scalar fields) and sends them to the Proxy.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Proxy · validate + fill PK + stamp timestamp</h4><p>Validate the schema; if the primary key is auto-id, <strong>fill it in</strong>; request a global <strong>timestamp ts</strong> from the <strong>TSO</strong> and stamp it on this batch.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Proxy · hash by primary key into shards</h4><p>Use the PK to <strong>hash each row into a vchannel (virtual shard)</strong>, deciding which write stream it enters — so data is naturally spread across shards for parallelism.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Append to the WAL / streaming log</h4><p>The Proxy <strong>appends the batch to the WAL</strong> (a replayable write log). <strong>Once it's in the ledger, the write returns as a success.</strong></p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>StreamingNode / DataNode · consume the log</h4><p>Worker nodes <strong>read down the log</strong> and put the just-written rows into a "<strong>growing segment</strong>" — data still in memory and immediately queryable.</p></div></div>
+  <div class="step"><div class="num">6</div><div class="sc"><h4>Flush to binlog</h4><p>When a growing segment hits a <strong>size / time</strong> threshold, it <strong>flushes</strong> into a <strong>binlog</strong>, persisted to object storage; the segment becomes "<strong>sealed</strong>".</p></div></div>
+  <div class="step"><div class="num">7</div><div class="sc"><h4>DataCoord · track segment metadata</h4><p><strong>DataCoord</strong> (the Data role inside MixCoord) records "<strong>which segments, where, how big, flushed or not</strong>" as the basis for later queries and compaction.</p></div></div>
+</div>
+
+<p>Three ideas worth carving into your mind now. First, "<strong>log as data</strong>": Milvus turns a "write" into "<strong>append a record to the log</strong>" first; the log is
+the <strong>single source of truth</strong>, and segments and indexes are just its "materialized views". This makes crash recovery simple — replay the log. Second, "<strong>query while
+writing</strong>": new data enters a <strong>growing segment</strong> and is searchable <strong>without waiting for a flush, let alone an index build</strong> — the source of Milvus's
+"real-time freshness". Third, "<strong>a batch is atomically visible</strong>": one insert batch shares <strong>one timestamp</strong> — either all visible or none, never letting you read
+"half a batch".</p>
+
+<p>One spot worth pausing to think a layer deeper: <strong>why must a write "go through the log first" instead of writing straight into segments and object storage?</strong> It looks like a
+detour, but it's the core wisdom of distributed storage. Writing segments directly has three problems: it's <strong>slow</strong> — object storage favors "large, batched" writes, and row-by-row
+is slow and costly; it's <strong>hard to recover</strong> — if the process dies mid-write, the segment is "partial" and it's hard to tell which rows succeeded; and it's <strong>hard to
+concurrent</strong> — many writers mutating the same segment require heavy locking. "<strong>Write an append-only log first</strong>" solves all three at once: appends are <strong>sequential
+writes</strong>, blazing fast; the log is <strong>naturally ordered</strong>, so you know exactly where replay stopped and just resume after a crash; concurrent writers merely <strong>queue at the
+log's tail</strong>, needing no mutual locks. Segments and indexes are then materialized "<strong>after the fact</strong>" by consumers reading the log — the key move that <strong>decouples</strong>
+the tension between "<strong>writing fast</strong>" and "<strong>querying fast</strong>".</p>
+
+<h2>The life of a query: the six stops of a search</h2>
+<p>Now reads. A <span class="inline">search</span> differs from a write — it must <strong>ask many shards at once</strong>, then <strong>reduce layer by layer</strong> into the final topK.
+Again two key actions: fixing a "<strong>guarantee timestamp</strong>" at the Proxy (deciding how fresh the data you see is), and sinking the "<strong>in-segment similarity
+computation</strong>" down to the <strong>C++ kernel</strong>:</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">SDK / client</div><div class="nd">issue search(vector, topK)</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">Proxy</div><div class="nd">fix guarantee ts · build plan · route by shard</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">QueryNode · delegator</div><div class="nd">pick sealed + growing segments</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">segcore (C++)</div><div class="nd">in-segment search · per-segment topK</div></div>
+</div>
+
+<p>The same chain, stop by stop:</p>
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Proxy · fix the "guarantee timestamp"</h4><p>Derive a <strong>guarantee timestamp</strong> from your chosen <strong>consistency level</strong>: to "see the latest" (Strong) take the max time; to be "fast, tolerating a little lag" (Bounded) take a slightly earlier time. This ts decides how fresh the data you can see is.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Proxy · build plan + route</h4><p>Parse the query into a <strong>search plan</strong> (vector field, metric, topK, scalar filter), then <strong>dispatch to the relevant QueryNodes</strong> by <strong>shard</strong>.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>delegator · pick the segments to search</h4><p>Each shard has a <strong>delegator / shard leader</strong> that knows the shard's <strong>sealed + growing segments</strong>, and waits until data is "<strong>fresh enough</strong>" per the guarantee ts before letting the search proceed.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>segcore (C++) · in-segment search</h4><p>The real "distance-crunching" grunt work sinks into <strong>C++ segcore</strong>: walk the index within each segment to find neighbors and emit <strong>that segment's topK</strong>.</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>Reduce within the node</h4><p>A QueryNode may hold many segments; it first <strong>reduces each segment's topK</strong> into "this node's topK", cutting the data to send upward.</p></div></div>
+  <div class="step"><div class="num">6</div><div class="sc"><h4>Proxy · reduce across shards → client</h4><p>The Proxy collects <strong>each shard's topK</strong>, does <strong>one global reduce</strong>, and returns the final topK to the client. "<strong>Search in parallel, reduce in layers</strong>" is the standard pattern.</p></div></div>
+</div>
+
+<p>Note search's "<strong>scatter-gather</strong>" shape: the Proxy <strong>scatters</strong> a request to many shards, each shard fans out to many segments computed in parallel, then results
+are <strong>gathered back</strong> — segment topK → node topK → global topK. Each layer only passes up "the top K", so even with hundreds of millions of vectors underneath, only a
+<strong>tiny set of candidates</strong> flows over the network. That is the key to distributed search being both <strong>fast</strong> and <strong>cheap</strong>.</p>
+
+<p>While we're here, a common question: <strong>why do reads and writes take two different paths?</strong> Because their goals fundamentally differ. A <strong>write</strong> pursues "<strong>settle
+fast, never lose</strong>", so it takes the "log" — a <strong>sequential, one-way</strong> express lane, ever forward, never looking back; a <strong>read</strong> pursues "<strong>pick the few most
+similar out of a huge pile</strong>", so it must <strong>scatter</strong> to all relevant shards and segments, compute in parallel, then <strong>gather</strong> the results back. One is "<strong>pouring
+water into a pipe</strong>", the other is "<strong>scooping the sweetest few ladles from thousands of reservoirs</strong>" — the shapes naturally differ. But note that <strong>a read actually looks at two
+kinds of segments</strong>: the flushed <strong>sealed segments</strong> (historical data) and the in-memory <strong>growing segments</strong> (freshly written, not yet flushed). Precisely because the
+delegator <strong>includes both</strong> in the search scope, Milvus achieves "<strong>query while writing</strong>" — data you inserted a second ago is searchable in the growing segment the next.
+That's why "the growing segment of writes" and "the segment selection of queries" are two sides of one coin.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/proxy · derive guarantee ts from the consistency level</span><span class="ln">parseGuaranteeTsFromConsistency</span></div>
+  <pre><span class="cm">// consistency level → guarantee timestamp (decides how fresh this search sees)</span>
+<span class="kw">switch</span> consistencyLevel {
+<span class="kw">case</span> Strong:      guaranteeTs = tMax                 <span class="cm">// strong: see the very latest</span>
+<span class="kw">case</span> Bounded:     guaranteeTs = tMax - gracefulTime  <span class="cm">// bounded: tolerate a little lag for lower latency</span>
+<span class="kw">case</span> Eventually:  guaranteeTs = <span class="nb">1</span>                   <span class="cm">// eventual: fastest, may read an older snapshot</span>
+}
+<span class="cm">// the delegator waits until the shard's data catches up to guaranteeTs, giving a consistent snapshot</span></pre>
+</div>
+
+<h2>Timestamps: the key shared by reads and writes</h2>
+<p>Lay the two chains side by side and you'll see <strong>the timestamp</strong> is the <strong>same axis</strong> running through both: a <strong>write</strong> stamps each batch with a ts
+(deciding "when it happened"); a <strong>read</strong> uses a guarantee ts to fix a <strong>snapshot</strong> (deciding "up to when it sees"). Both use the <strong>same global clock (TSO)</strong>, so
+"order" has one unified definition across the whole cluster:</p>
+
+<div class="timeline">
+  <div class="lane"><span class="lane-label">Write stream</span><span class="tslot">ts=10 batch A</span><span class="tslot">ts=20 batch B</span><span class="tslot">ts=30 batch C</span><span class="tslot span">…keeps appending…</span></div>
+  <div class="lane"><span class="lane-label">Read (Strong)</span><span class="tslot">take ts=latest</span><span class="tslot now">sees A·B·C all</span></div>
+  <div class="lane"><span class="lane-label">Read (Bounded)</span><span class="tslot">take ts=earlier</span><span class="tslot now">sees A·B (tolerates C lag)</span></div>
+</div>
+
+<p>Here you only need the <strong>intuition</strong>: the "fresher" the guarantee ts, the more complete the data you see, but you may <strong>wait a bit longer</strong> (for the shard to catch up
+to that ts); the "older" it is, the faster, but you may miss the latest writes. That is exactly the trade-off <strong>consistency levels</strong> make behind the scenes. The full mechanism — how the
+TSO issues, how the delegator waits, how the snapshot is guaranteed — is saved for <strong>Lesson 30</strong>; we only touch it here.</p>
+
+<p>One more intuition about the <strong>TSO (Timestamp Oracle)</strong>: it is the cluster's "<strong>unified ticket dispenser</strong>", guaranteeing the timestamps it hands out are
+<strong>globally monotonically increasing</strong> — a later request always gets a larger number than an earlier one. With this "<strong>global clock</strong>", writes scattered across different
+machines gain an agreed-upon <strong>order</strong>, and reads can cleanly carve out an "<strong>up to this moment</strong>" snapshot with a single ts. Think of it as a bank's number dispenser: everyone
+tears off a ticket, the numbers only go up, so "who came first" is never in dispute. The TSO lives in MixCoord (the Root role), and the Proxy <strong>takes a number</strong> from it on every read or
+write. This humble dispenser is what underpins Milvus's <strong>temporal consistency</strong> in a distributed setting — a piece of infrastructure that looks simple yet is everywhere.</p>
+
+<h2>Closing with a table: each component's role in one request</h2>
+<p>Finally, a table aligning "<strong>who does what in one request</strong>", handy to revisit anytime:</p>
+
+<table class="t">
+  <tr><th>Component</th><th>In a write</th><th>In a query</th></tr>
+  <tr><td><strong>SDK / client</strong></td><td>pack rows, issue insert</td><td>issue search(vector, topK), receive final results</td></tr>
+  <tr><td><strong>Proxy</strong></td><td>validate, fill PK, stamp timestamp, hash by PK into shards, write WAL</td><td>fix guarantee ts, build plan, route, <strong>reduce across shards</strong></td></tr>
+  <tr><td><strong>TSO</strong> (in MixCoord)</td><td>issue the write timestamp</td><td>the reference clock for the guarantee ts</td></tr>
+  <tr><td><strong>StreamingNode / DataNode</strong></td><td>consume the log, build growing segments, flush to binlog</td><td>(mainly write-side)</td></tr>
+  <tr><td><strong>DataCoord</strong> (in MixCoord)</td><td>track segment metadata, trigger flush/compaction</td><td>provide "which segments exist"</td></tr>
+  <tr><td><strong>QueryNode · delegator</strong></td><td>(mainly read-side)</td><td>pick sealed+growing segments, wait for freshness, reduce node topK</td></tr>
+  <tr><td><strong>segcore (C++)</strong></td><td>—</td><td>in-segment search, compute per-segment topK</td></tr>
+</table>
+
+<p>That is the full picture of "the life of a request": a <strong>write</strong> is "stamp a timestamp → log first → flush asynchronously → coordinator bookkeeps"; a <strong>read</strong> is "fix a
+snapshot → scatter to shards and segments → C++ computes topK → reduce in layers". The two chains look different, yet share one set of <strong>timestamps</strong> and one <strong>project map</strong>. With
+this "skeleton", every later part returns to some stop on these two chains and <strong>zooms it into a whole lesson</strong>.</p>
+
+<p>One closing reminder that <strong>bridges past and future</strong>: every term in this lesson — timestamp, vchannel, WAL, growing segment, sealed segment, binlog, delegator, segcore, reduce — you
+<strong>need not memorize every detail</strong> now; just build a <strong>sense of place</strong> for "which stop on which chain it sits at". Picture them as stations on a metro map: you don't yet know
+what's around each station, but you know <strong>this line gets you there</strong>. The later lessons take you to <strong>get off at each station and explore its neighborhood</strong>. From the next part on,
+we formally dive into the engine — starting with "how data is organized into collections, partitions, and segments".</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Write path</strong>: SDK → Proxy (validate, fill PK, <strong>stamp timestamp</strong>, hash by PK into shards) → append <strong>WAL</strong> → StreamingNode/DataNode consume → <strong>growing segment</strong> → flush to <strong>binlog</strong> → DataCoord bookkeeps.</li>
+    <li><strong>Log as data</strong>: write a replayable log first, return on append; segments and indexes are materialized views of the log, recoverable by replay after a crash.</li>
+    <li><strong>Query path</strong>: SDK → Proxy (<strong>fix guarantee ts</strong>, build plan, route) → QueryNode <strong>delegator</strong> picks sealed+growing → <strong>segcore (C++)</strong> per-segment topK → node reduce → Proxy <strong>reduce across shards</strong> → client.</li>
+    <li><strong>Scatter-gather</strong>: each layer passes up only "the top K", so under huge data only a tiny candidate set flows over the network.</li>
+    <li><strong>Timestamp is the shared key</strong>: writes stamp a ts, reads use a guarantee ts for a consistent snapshot; the consistency level trades "how fresh you see vs how long you wait" (details in <strong>Lesson 30</strong>).</li>
+  </ul>
+</div>
+""",
+}

@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>02 · 项目全景地图 / The project map - Milvus 图解教程</title>
+<meta name="description" content="第一部分 · 宏观全景｜项目全景地图 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="02 · 项目全景地图 / The project map - Milvus 图解教程">
+<meta property="og:description" content="第一部分 · 宏观全景｜项目全景地图 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="02 · 项目全景地图 / The project map - Milvus 图解教程">
+<meta name="twitter:description" content="第一部分 · 宏观全景｜项目全景地图 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第一部分 · 宏观全景</span><span class="lang-en">Part 1 · The Big Picture</span></span>
+    <span class="pill">02 / 03</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:66%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第一部分 · 宏观全景</span><span class="lang-en">Part 1 · The Big Picture</span></div>
+    <h1><span class="lang-zh">项目全景地图</span><span class="lang-en">The project map</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+上一课我们站在山顶看清了"Milvus 是什么"。这一课要做的是一张<strong>全景地图</strong>：把代码仓库里几十个目录、三种编程语言、五六个运行时组件、三类外部依赖，
+一次性<strong>放到同一张图上</strong>。地图的价值不在记住每条街，而在于——之后无论我们钻进哪一课（写入、查询、索引、一致性……），
+你都能立刻指着这张图说"<strong>哦，它在这里</strong>"。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🗺️ 生活类比</div>
+  把 Milvus 想成一座<strong>分工明确的城市</strong>：<strong>市民服务大厅（Proxy）</strong>是唯一的对外窗口，所有请求先到这里登记、核验、分流；
+  <strong>市政府（MixCoord）</strong>不亲自搬砖，只管规划与调度——谁建在哪、谁负责哪一片；<strong>各施工队与仓库管理员（工作节点）</strong>才真正动手干活；
+  地底下还铺着<strong>水电管网（etcd / 对象存储 / 消息队列）</strong>。你不必记住每个人的名字，只要知道"<strong>办事去大厅、决策找市府、干活找工程队</strong>"，就永远不会迷路。
+</div>
+
+<h2>三种语言，三种活</h2>
+<p>Milvus 的源码乍看庞杂，但有一条最省力的切入线索：<strong>它用三种语言，各干一种最擅长的活</strong>。看懂这条分工，半张地图就已经在脑子里了：</p>
+
+<div class="cols">
+  <div class="col"><h4>Go · 分布式控制面</h4><p>占 <span class="inline">internal/</span> 的绝大多数。负责<strong>协调、调度、RPC、元数据、并发管理</strong>——也就是"<strong>把一群机器组织起来</strong>"这件事。Go 的并发模型与开发效率，正好适合写控制面。</p></div>
+  <div class="col"><h4>C++ · 计算内核</h4><p>集中在 <span class="inline">internal/core/</span>。负责<strong>段内检索、索引、距离计算、表达式求值</strong>这些<strong>计算密集</strong>的脏活累活，贴近硬件、追求极致性能（也能驱动 GPU）。</p></div>
+</div>
+
+<p>第三种语言是<strong>少量 Rust</strong>：它只负责一块很专的领域——<strong>全文倒排索引</strong>，藏在 <span class="inline">internal/core/thirdparty/tantivy</span> 里（tantivy 是一个 Rust 写的全文检索库）。
+所以一句话记牢分工：<strong>Go 管"把机器们协调好"，C++ 管"把一段数据搜得飞快"，Rust 管"全文检索那一小块"</strong>。
+C++ 内核里又细分成几个子模块——<span class="mono">segcore</span>（段内检索引擎）、<span class="mono">index</span>（索引构建与加载）、<span class="mono">query</span>（查询执行）、<span class="mono">exec</span>（执行算子）、<span class="mono">expr</span>（标量表达式）——
+这些名字会在后面的课里反复出现，现在混个脸熟即可。</p>
+
+<p>举个最直观的例子感受这套分工：当你发起<strong>一次 search</strong>，请求会<strong>同时穿过这三种语言</strong>——先由 <strong>Go</strong> 写的 Proxy 接住、校验、把请求路由到对的 QueryNode；
+QueryNode（也是 Go）找出该搜哪些段后，把"段内的相似度计算"这一步<strong>下沉给 C++ 的 segcore</strong> 去飞快地算；如果你的查询里还带了<strong>全文检索</strong>条件，
+那一小段就轮到 <strong>Rust 的 tantivy</strong> 出场。三种语言像接力赛一样把一次请求跑完——<strong>Go 负责"组织流程"，C++ 负责"算得快"，Rust 负责"全文那一棒"</strong>。
+看懂这一点，你就明白了为什么 Milvus 要"混血"：不是炫技，而是让每段代码都跑在它最擅长的语言上。</p>
+
+<h2>运行时有哪些组件：先纠正一个常见误解</h2>
+<p>很多旧资料会画出"<strong>三个独立的协调器</strong>"——RootCoord、DataCoord、QueryCoord 各是一个进程。<strong>这在今天的 Milvus 里已经不准确了。</strong>
+当前版本把这三个协调角色<strong>合并进了同一个进程 <span class="mono">MixCoord</span></strong>。也就是说：三个协调"角色"在代码里仍然存在（分别是 <span class="inline">internal/rootcoord</span>、
+<span class="inline">internal/datacoord</span>、<span class="inline">internal/querycoordv2</span> 三个模块），但它们<strong>被打包成一个 MixCoord 一起部署</strong>，不再是三个独立进程。</p>
+
+<p>这是一个<strong>"逻辑 vs 物理"</strong>的经典区分，务必分清：在<strong>逻辑上</strong>，元数据管理（Root）、写入与段管理（Data）、查询负载调度（Query）仍是三件不同的事；
+但在<strong>物理上</strong>，它们如今住在同一个进程里。证据就在代码里——<span class="inline">internal/types/types.go</span> 中的 <span class="mono">MixCoord</span> 接口，
+直接把 <span class="mono">RootCoordServer</span>、<span class="mono">QueryCoordServer</span>、<span class="mono">DataCoordServer</span> 三个服务接口<strong>嵌在了一起</strong>（本课末尾会贴出这段代码）。
+所以今天 Milvus 的<strong>运行时组件</strong>是这六个：</p>
+
+<table class="t">
+  <tr><th>组件</th><th>语言</th><th>职责（一句话）</th><th>internal 包</th></tr>
+  <tr><td><strong>Proxy</strong></td><td>Go</td><td>对外唯一入口：校验、鉴权、分配时间戳、路由、跨分片归并</td><td class="mono">proxy</td></tr>
+  <tr><td><strong>MixCoord</strong></td><td>Go</td><td>三合一协调器：元数据 + 段管理 + 查询调度（含 streamingcoord）</td><td class="mono">coordinator · rootcoord · datacoord · querycoordv2</td></tr>
+  <tr><td><strong>QueryNode</strong></td><td>Go + C++</td><td>加载段、执行检索；段内搜索下沉到 C++ segcore</td><td class="mono">querynodev2 · core</td></tr>
+  <tr><td><strong>DataNode</strong></td><td>Go</td><td>消费日志、攒"增长段"、刷盘成 binlog；也承担索引构建的执行</td><td class="mono">datanode · flushcommon</td></tr>
+  <tr><td><strong>StreamingNode</strong></td><td>Go</td><td>承载流式 WAL：写入先落到这条可重放的日志上</td><td class="mono">streamingnode · streamingcoord</td></tr>
+  <tr><td><strong>CDC</strong></td><td>Go</td><td>变更数据捕获：把写入变更复制到下游 / 做跨集群同步</td><td class="mono">cdc</td></tr>
+</table>
+
+<p>两个容易踩的坑顺便点破：①<strong>没有单独的 indexnode</strong>——索引构建是由 DataCoord 调度、交给一个 datanode 工作进程去跑的，并不存在一个叫"索引节点"的独立组件；
+②<strong>Standalone 与 Cluster 跑的是同一套组件</strong>，区别只在"住在几个进程里"。</p>
+
+<h2>逻辑一张图，物理两种形态</h2>
+<p>同样这六个组件，<strong>Standalone</strong>（单机）把它们<strong>塞进一个进程</strong>，省心、适合中小规模；<strong>Cluster</strong>（集群）则把每个组件<strong>拆成独立的 K8s Pod</strong>，
+各自按需扩缩容、互不拖累。注意：<strong>对你写的代码而言，两者毫无区别</strong>——同样的 <span class="inline">create_collection / insert / search</span>，底层从"一个进程"长成"一个集群"，API 与概念完全一致。</p>
+
+<div class="cols">
+  <div class="col"><h4>Standalone（单机）</h4><p>MixCoord + Proxy + 三种 Node + CDC <strong>全在一个进程</strong>里；依赖（etcd / 对象存储 / MQ）可内嵌或外接。<strong>部署简单</strong>，适合中小规模与单机生产。</p></div>
+  <div class="col"><h4>Cluster（集群）</h4><p>每个组件是<strong>独立的 Pod</strong>，QueryNode / DataNode 可各自扩到多副本。<strong>弹性、高可用</strong>，面向十亿级生产。逻辑角色不变，只是"分家"了。</p></div>
+</div>
+
+<h2>一条贯穿全书的主线：控制面 vs 数据面</h2>
+<p>如果说"三种语言"是横向的切法，那么<strong>"控制面 vs 数据面"</strong>就是纵向的切法——这是理解 Milvus 最重要的一根线，几乎每一课都会回到它。
+所谓<strong>控制面（control plane）</strong>，管的是"<strong>谁该做什么</strong>"：集合的结构、分片落在哪台机器、段该不该刷盘、查询该路由到哪个副本——
+这些<strong>决策与元数据</strong>都归 MixCoord 这个大脑。而<strong>数据面（data plane）</strong>管的是"<strong>真正把数据搬动、计算出来</strong>"：
+写入的字节、刷盘的 binlog、检索时一条条算出来的距离——这些<strong>重活</strong>全在工作节点和 C++ 内核里发生。</p>
+
+<p>为什么要这么分？因为<strong>这两件事的脾气完全不同</strong>。控制面要的是"<strong>正确、一致、别出错</strong>"——元数据错一点，整个集群就乱套，所以它宁可慢一点、走 etcd 做强一致；
+数据面要的是"<strong>快、能并行、能水平扩展</strong>"——它可以容忍"近似"、可以多副本并发，机器不够就加机器。<strong>把这两种诉求拆开</strong>，
+各自用最合适的技术去满足，正是分布式系统反复验证过的智慧。所以你会看到一句反复出现的口诀：<strong>"协调器管调度、节点管执行"</strong>——
+MixCoord 只发号施令、绝不亲手搬一个字节；DataNode / QueryNode 闷头干活、不操心全局怎么编排。</p>
+
+<p>这根主线还顺手解释了"<strong>为什么要存算分离</strong>"：当数据面的节点<strong>不自己保存长期状态</strong>（状态都托管给 etcd 和对象存储）时，它们就变成了"<strong>用完即弃</strong>"的算力——
+查询忙了就多拉几个 QueryNode、写入忙了就多拉几个 DataNode，闲了再缩回去，<strong>而数据一个字节都不会丢</strong>。计算与存储能各自独立伸缩，
+这正是 Milvus 敢承诺"<strong>弹性扩展到十亿级</strong>"的工程根基。记住这根线，后面的写入链路、查询链路、一致性，都只是它在不同场景下的展开。</p>
+
+<h2>仓库长什么样：顶层目录速记</h2>
+<p>把 git 仓库的顶层目录走一遍，你就有了"<strong>去哪找代码</strong>"的索引。它们大致按"<strong>入口 → 核心逻辑 → 共享库 → 周边</strong>"排列：</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4><span class="mono">cmd/</span> · 程序入口</h4><p>每个组件怎么启动都在这里：<span class="mono">cmd/components/</span>（mix_coord、proxy、query_node…）与 <span class="mono">cmd/roles/roles.go</span>（决定本进程跑哪些角色）。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4><span class="mono">internal/</span> · 核心逻辑</h4><p>系统的"<strong>主干</strong>"：proxy、rootcoord、datacoord、querycoordv2、querynodev2、datanode、streamingnode、coordinator(mixcoord)、core(C++)、storage、metastore、kv、distributed(gRPC 服务)、types(接口)、tso…</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4><span class="mono">pkg/</span> · 共享库</h4><p>跨组件复用的工具：日志、配置(paramtable)、proto、工具函数。注意它<strong>自带独立的 go.mod</strong>（模块名 <span class="mono">github.com/milvus-io/milvus/pkg/v3</span>）。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4><span class="mono">client/</span> · Go SDK</h4><p>官方 Go 客户端 <span class="mono">milvusclient</span>（也有独立 go.mod）。Python 的 pymilvus 在另一个仓库。</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>周边目录</h4><p><span class="mono">configs/</span>（<span class="mono">milvus.yaml</span> 配置）、<span class="mono">deployments/</span>（部署）、<span class="mono">scripts/</span>（脚本）、<span class="mono">tests/</span>（测试）、<span class="mono">docs/</span>（文档）。</p></div></div>
+</div>
+
+<h2>三块外部依赖：记账、存货、写日志</h2>
+<p>Milvus 自己不重复造轮子，而是把三件"基础设施级"的脏活外包给成熟系统。这也是<strong>存算分离</strong>能成立的前提：</p>
+<ul>
+  <li><strong>etcd · 记账</strong>：存<strong>元数据</strong>——有哪些集合、分片在哪台机器、谁是谁的副本。小而关键，是集群的"户口本"。</li>
+  <li><strong>对象存储（MinIO / S3）· 存货</strong>：存<strong>真正的数据与索引文件</strong>——刷盘后的 binlog、建好的索引。便宜、海量、持久。</li>
+  <li><strong>消息队列 / WAL（Pulsar / Kafka / 内置 woodpecker）· 写日志</strong>：承载<strong>写入日志</strong>，让"写"先落到一条<strong>可重放</strong>的日志上。这正是 Milvus "<strong>日志即数据（log as data）</strong>"的根基（第 15 课起细讲）。</li>
+</ul>
+
+<p>把这三块垫在底下，计算节点就变得"<strong>无状态</strong>"了——挂了重启、按需扩容都不丢数据，因为真正的状态都在 etcd 与对象存储里。<strong>这就是存算分离能弹性伸缩到十亿级的底气。</strong></p>
+
+<p>这里也顺手说清一个常被问到的点：<strong>这三块依赖不是"可有可无的配角"，而是 Milvus 架构的一部分</strong>。它们的选择是<strong>可插拔</strong>的——消息队列既可以用 Pulsar / Kafka 这类成熟中间件，
+也可以用 Milvus <strong>内置的 woodpecker</strong>（省去额外部署一套 MQ 的麻烦）；对象存储既可以是云上的 S3，也可以是本地自建的 MinIO。Milvus 通过一层抽象把这些差异挡在外面，
+让上层逻辑无需关心"日志到底落在哪、文件到底存在哪"。<strong>这种"把基础设施抽象掉"的设计，正是它能在云上、私有化、单机之间无缝切换的原因。</strong></p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/types/types.go</span><span class="ln">type MixCoord interface</span></div>
+  <pre><span class="cm">// MixCoord 把三个协调角色的服务接口"嵌"在一起 —— 这就是"三合一"的代码铁证</span>
+<span class="kw">type</span> MixCoord <span class="kw">interface</span> {
+    Component
+    rootcoordpb.RootCoordServer   <span class="cm">// 元数据 / DDL（Root）</span>
+    querypb.QueryCoordServer      <span class="cm">// 查询负载调度（Query）</span>
+    datapb.DataCoordServer        <span class="cm">// 段管理 / 写入协调（Data）</span>
+    <span class="cm">// …三者如今同住一个进程，对外仍是三套逻辑接口</span>
+}</pre>
+</div>
+
+<h2>四组导航模型：把任何一课都钉到地图上</h2>
+<p>最后，给你一张<strong>分四组</strong>的"导航坐标"。今后每学一课，先问自己"它属于哪一组"，再去对应的代码目录里找——这张分组图会一直陪着你：</p>
+
+<div class="layers">
+  <div class="layer l-app"><div class="lh"><span class="badge">顶层</span><span class="name">SDK / API</span></div><div class="ld">pymilvus / Go <span class="mono">milvusclient</span> —— 你写的 create / insert / search 从这里出发。</div></div>
+  <div class="layer l-app"><div class="lh"><span class="badge">① 接入层</span><span class="name">Proxy</span></div><div class="ld">唯一对外窗口：校验、鉴权、分配时间戳、路由、跨分片归并结果。</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">② 协调层</span><span class="name">MixCoord</span></div><div class="ld">三合一大脑：管元数据、管段、调度查询负载——只决策、不搬数据。</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">③ 工作节点</span><span class="name">Query / Data / Streaming Node</span></div><div class="ld">真正干活：QueryNode 搜、DataNode 写与刷盘、StreamingNode 承载 WAL。</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">内核</span><span class="name">C++ core (segcore / index / query)</span></div><div class="ld">垫在工作节点之下的计算内核：段内检索与索引的极速实现。</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">④ 存储与依赖</span><span class="name">etcd · 对象存储 · MQ/WAL</span></div><div class="ld">记账（元数据）、存货（数据与索引）、写日志（可重放的写入流）。</div></div>
+</div>
+
+<p>带着这张地图，下一课我们就<strong>让它动起来</strong>：跟着一条 insert 和一条 search，走一遍"<strong>一次请求的一生</strong>"，看请求是怎么在这四组之间流动的。</p>
+
+<h2>怎么用这张地图：给你的学习路线</h2>
+<p>地图画好了，最后教你<strong>怎么用</strong>它。本教程后面的每一部分，其实都是在<strong>放大地图上的某一块</strong>——你完全可以把它当作"导览路线"：</p>
+<ul>
+  <li><strong>遇到"写入"相关的话题</strong>（insert、WAL、刷盘、段、压缩）→ 看的是 ② 协调层的 <strong>DataCoord 角色</strong> + ③ 工作节点里的 <strong>DataNode / StreamingNode</strong>，对应 <span class="mono">internal/datanode</span>、<span class="mono">internal/streamingnode</span>、<span class="mono">internal/flushcommon</span>。这条线在<strong>第 15 课</strong>起的写入链路里展开。</li>
+  <li><strong>遇到"查询"相关的话题</strong>（search、过滤、归并、一致性）→ 看的是 ① 接入层 <strong>Proxy</strong> + ③ 工作节点里的 <strong>QueryNode</strong> + 内核 <strong>C++ segcore</strong>，对应 <span class="mono">internal/proxy</span>、<span class="mono">internal/querynodev2</span>、<span class="mono">internal/core/src/segcore</span>。这条线在<strong>第 25 课</strong>起展开。</li>
+  <li><strong>遇到"索引"相关的话题</strong>（HNSW、IVF、DiskANN、量化）→ 看的是内核 <strong>C++ index</strong> + ② 协调层 <strong>DataCoord 的索引调度</strong>，对应 <span class="mono">internal/core/src/index</span> 与 <span class="mono">internal/datacoord</span> 里的 index 相关文件。</li>
+  <li><strong>遇到"元数据 / 集合 / 权限"相关的话题</strong> → 看的是 ② 协调层的 <strong>RootCoord 角色</strong> 与 etcd，对应 <span class="mono">internal/rootcoord</span>、<span class="mono">internal/metastore</span>。</li>
+</ul>
+
+<p>换句话说：<strong>每当你不知道"这件事归谁管"，就回到这四组上对号入座</strong>。组件名、目录名、语言、职责，这四样信息你只要建立起对应关系，
+就拿到了在这套庞大代码库里<strong>自由导航</strong>的能力——而这，正是"全景地图"这一课最想留给你的东西。一张地图记不住每条街没关系，
+重要的是<strong>你永远知道自己站在哪、下一步该往哪走</strong>。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>三语言分工</strong>：Go（控制面，<span class="mono">internal/</span>）+ C++（计算内核，<span class="mono">internal/core/</span>：segcore/index/query/exec/expr）+ 少量 Rust（全文 tantivy）。</li>
+    <li><strong>MixCoord 是关键纠错点</strong>：Root/Data/Query 三个协调<strong>角色</strong>仍在，但已合并为<strong>一个 MixCoord 进程</strong>部署——逻辑三件事、物理一个进程。</li>
+    <li><strong>六个运行时组件</strong>：MixCoord、Proxy、QueryNode、DataNode、StreamingNode、CDC；<strong>没有单独 indexnode</strong>（索引由 DataCoord 调度、datanode 执行）。</li>
+    <li><strong>两种形态</strong>：Standalone 一个进程、Cluster 多个 Pod，<strong>同套组件、同套 API</strong>。</li>
+    <li><strong>仓库索引</strong>：<span class="mono">cmd/</span> 入口 · <span class="mono">internal/</span> 核心 · <span class="mono">pkg/</span> 共享库 · <span class="mono">client/</span> SDK；外部依赖 etcd / 对象存储 / MQ 支撑存算分离。</li>
+    <li><strong>四组导航</strong>：① 接入 Proxy ② 协调 MixCoord ③ 工作节点 ④ 存储与依赖，外加底层 C++ 内核与顶层 SDK。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. 关于当前 Milvus 的协调器（coordinator），下面哪种说法最准确？</div>
+  <ol class="opts">
+    <li>三个协调器已被彻底删除，功能移到了 Proxy 里</li>
+    <li>RootCoord、DataCoord、QueryCoord 必须各自作为独立进程部署</li>
+    <li>Root/Data/Query 三个协调角色在代码里仍存在，但已合并进同一个 MixCoord 进程一起部署——逻辑三件事、物理一个进程</li>
+    <li>MixCoord 只是 RootCoord 的新名字，另两个仍独立</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：C</strong>。代码铁证在 internal/types/types.go 的 MixCoord 接口：它把 RootCoordServer、QueryCoordServer、DataCoordServer 三个服务接口嵌在一起。三个“角色”仍在（internal/rootcoord、datacoord、querycoordv2），但作为一个 MixCoord 进程部署。这是“逻辑 vs 物理”的经典区分</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Milvus 用三种语言分工。下面哪一组“语言 → 职责”的对应是对的？</div>
+  <ol class="opts">
+    <li>Go = 分布式控制面（internal/）；C++ = 计算内核（internal/core/：segcore/index/query）；Rust = 全文倒排索引（tantivy）</li>
+    <li>Rust 负责绝大多数控制面逻辑</li>
+    <li>三种语言各写一份完全相同的实现以容错</li>
+    <li>Go 写索引内核，C++ 写 RPC，Rust 写调度</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：A</strong>。Go 擅长并发与开发效率，适合写协调/调度/RPC 的控制面；C++ 贴近硬件、追求极致性能，适合段内检索与索引这类计算内核；Rust 只负责很专的全文倒排索引（tantivy）。一次 search 会依次穿过这三种语言</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 关于“索引构建”由谁负责，下面哪种说法正确？</div>
+  <ol class="opts">
+    <li>由 Proxy 在写入时同步构建索引</li>
+    <li>没有单独的 indexnode；索引构建由 DataCoord 调度、交给一个 datanode 工作进程执行</li>
+    <li>由客户端 SDK 在本地构建后上传</li>
+    <li>由一个名为 indexnode 的独立组件专门负责</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。当前架构没有独立的 indexnode 组件。索引构建是异步的：DataCoord 负责调度，实际执行落在 datanode 工作进程上。把它记进“四组导航”里：索引话题属于“工作节点 + 协调层 DataCoord + C++ 内核 index”</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>用本课的“四组导航”（接入 Proxy / 协调 MixCoord / 工作节点 / 存储与依赖）给下面几件事各找一个“归属组”和大致的代码目录：①新建一个集合 ②一次向量检索的段内计算 ③把刚写入的数据刷盘成 binlog ④保存“某个分片在哪台机器”。</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Last lesson we stood on the summit and saw "what Milvus is". This lesson draws a <strong>map of the whole project</strong>:
+the dozens of directories, three programming languages, half a dozen runtime components, and three external dependencies —
+all placed on <strong>one picture</strong>. A map's value isn't memorizing every street; it's that whenever we later dive into a
+lesson (writes, queries, indexing, consistency…), you can point at this map and say "<strong>ah, it lives here</strong>".
+</p>
+
+<div class="card analogy">
+  <div class="tag">🗺️ Analogy</div>
+  Think of Milvus as a <strong>city with a clear division of labor</strong>: the <strong>citizen service hall (Proxy)</strong> is the one public
+  window — every request first checks in, gets validated, and is routed there; the <strong>city government (MixCoord)</strong> doesn't lay bricks,
+  it only plans and schedules — who is built where, who owns which district; the <strong>crews and warehouse keepers (worker nodes)</strong> do
+  the actual work; and underground run the <strong>utilities (etcd / object storage / message queue)</strong>. You needn't memorize every name —
+  just "<strong>errands go to the hall, decisions to the government, work to the crews</strong>" and you'll never get lost.
+</div>
+
+<h2>Three languages, three jobs</h2>
+<p>The source looks sprawling, but there's one effortless way in: <strong>Milvus uses three languages, each doing what it's best at</strong>.
+Grasp that split and half the map is already in your head:</p>
+
+<div class="cols">
+  <div class="col"><h4>Go · distributed control plane</h4><p>Most of <span class="inline">internal/</span>. Handles <strong>coordination, scheduling, RPC, metadata, concurrency</strong> — i.e. "<strong>organizing a fleet of machines</strong>". Go's concurrency model and developer velocity fit a control plane.</p></div>
+  <div class="col"><h4>C++ · compute kernels</h4><p>Concentrated in <span class="inline">internal/core/</span>. Handles the <strong>compute-heavy</strong> grunt work — in-segment search, indexing, distance math, expression eval — close to the hardware, chasing peak speed (and able to drive GPUs).</p></div>
+</div>
+
+<p>The third language is <strong>a little Rust</strong>: it owns one very specialized area — the <strong>full-text inverted index</strong> — tucked in
+<span class="inline">internal/core/thirdparty/tantivy</span> (tantivy is a Rust full-text search library). So, in one line: <strong>Go "coordinates the
+machines", C++ "searches one piece of data blazingly fast", Rust "owns the small full-text slice"</strong>. The C++ kernel further splits into a few
+submodules — <span class="mono">segcore</span> (in-segment search), <span class="mono">index</span> (build/load indexes), <span class="mono">query</span>
+(query execution), <span class="mono">exec</span> (execution operators), <span class="mono">expr</span> (scalar expressions) — names that recur in later
+lessons; just get acquainted for now.</p>
+
+<p>A vivid example of this division: when you issue <strong>one search</strong>, the request <strong>passes through all three languages at once</strong> — first the
+<strong>Go</strong>-written Proxy catches it, validates it, and routes it to the right QueryNode; the QueryNode (also Go), after figuring out which segments to hit,
+<strong>sinks the "in-segment similarity computation" down to C++ segcore</strong> to crunch blazingly fast; and if your query carries a <strong>full-text</strong> condition,
+that small slice goes to <strong>Rust's tantivy</strong>. The three languages run a request like a relay — <strong>Go "organizes the flow", C++ "computes fast", Rust "runs the
+full-text leg"</strong>. Grasp this and you see why Milvus is "multilingual": not for show, but so each piece of code runs in the language it's best at.</p>
+
+<h2>The runtime components: first, fix a common misconception</h2>
+<p>Lots of older material draws "<strong>three separate coordinators</strong>" — RootCoord, DataCoord, QueryCoord each a process. <strong>That is no longer
+accurate in today's Milvus.</strong> The current version <strong>merges these three coordinator roles into one process, <span class="mono">MixCoord</span></strong>.
+The three coordinator "roles" still exist in code (modules <span class="inline">internal/rootcoord</span>, <span class="inline">internal/datacoord</span>,
+<span class="inline">internal/querycoordv2</span>), but they are <strong>packaged into a single MixCoord and deployed together</strong> — no longer three
+independent processes.</p>
+
+<p>This is a classic <strong>"logical vs physical"</strong> distinction — keep them straight: <strong>logically</strong>, metadata management (Root), writes
+&amp; segment management (Data), and query-load scheduling (Query) are still three different things; but <strong>physically</strong> they now live in one
+process. The proof is in the code — the <span class="mono">MixCoord</span> interface in <span class="inline">internal/types/types.go</span> <strong>embeds</strong>
+the three service interfaces <span class="mono">RootCoordServer</span>, <span class="mono">QueryCoordServer</span>, <span class="mono">DataCoordServer</span> together
+(snippet at the end of this lesson). So today's <strong>runtime components</strong> are these six:</p>
+
+<table class="t">
+  <tr><th>Component</th><th>Language</th><th>Responsibility (one line)</th><th>internal package</th></tr>
+  <tr><td><strong>Proxy</strong></td><td>Go</td><td>The one public entry: validate, auth, assign timestamp, route, reduce across shards</td><td class="mono">proxy</td></tr>
+  <tr><td><strong>MixCoord</strong></td><td>Go</td><td>Three-in-one coordinator: metadata + segment mgmt + query scheduling (incl. streamingcoord)</td><td class="mono">coordinator · rootcoord · datacoord · querycoordv2</td></tr>
+  <tr><td><strong>QueryNode</strong></td><td>Go + C++</td><td>Loads segments, runs search; in-segment search sinks into C++ segcore</td><td class="mono">querynodev2 · core</td></tr>
+  <tr><td><strong>DataNode</strong></td><td>Go</td><td>Consumes the log, builds "growing segments", flushes to binlogs; also runs index builds</td><td class="mono">datanode · flushcommon</td></tr>
+  <tr><td><strong>StreamingNode</strong></td><td>Go</td><td>Carries the streaming WAL: a write first lands on this replayable log</td><td class="mono">streamingnode · streamingcoord</td></tr>
+  <tr><td><strong>CDC</strong></td><td>Go</td><td>Change Data Capture: replicate write changes downstream / cross-cluster sync</td><td class="mono">cdc</td></tr>
+</table>
+
+<p>Two easy traps, dispelled: (1) <strong>there is no separate indexnode</strong> — index building is scheduled by DataCoord and run by a datanode worker;
+no component called "index node" exists; (2) <strong>Standalone and Cluster run the same set of components</strong> — the only difference is "how many
+processes they live in".</p>
+
+<h2>One logical picture, two physical shapes</h2>
+<p>Those same six components: <strong>Standalone</strong> (single host) <strong>packs them into one process</strong> — simple, good for small/medium scale;
+<strong>Cluster</strong> <strong>splits each into its own K8s Pod</strong> that scales independently. Note: <strong>to your code, the two are identical</strong> — the same
+<span class="inline">create_collection / insert / search</span>; the underside just grows from "one process" to "one cluster", with the same API and concepts.</p>
+
+<div class="cols">
+  <div class="col"><h4>Standalone (single host)</h4><p>MixCoord + Proxy + the three Nodes + CDC <strong>all in one process</strong>; dependencies (etcd / object storage / MQ) can be embedded or external. <strong>Simple to deploy</strong>, fits small/medium and single-host production.</p></div>
+  <div class="col"><h4>Cluster</h4><p>Each component is an <strong>independent Pod</strong>; QueryNode / DataNode scale to many replicas. <strong>Elastic, highly available</strong>, for billion-scale production. The logical roles are unchanged — they've just "moved into separate houses".</p></div>
+</div>
+
+<h2>One thread that runs through the whole guide: control plane vs data plane</h2>
+<p>If "three languages" is a horizontal cut, then <strong>"control plane vs data plane"</strong> is the vertical one — the single most important thread for
+understanding Milvus, and nearly every lesson returns to it. The <strong>control plane</strong> governs "<strong>who should do what</strong>": a collection's schema,
+which shard sits on which machine, whether a segment should flush, which replica a query routes to — these <strong>decisions and metadata</strong> belong to the
+MixCoord brain. The <strong>data plane</strong> governs "<strong>actually moving and computing the data</strong>": the written bytes, the flushed binlogs, the distances
+computed one by one at search time — that <strong>heavy lifting</strong> all happens in the worker nodes and the C++ kernel.</p>
+
+<p>Why split this way? Because <strong>the two have completely different temperaments</strong>. The control plane wants "<strong>correct, consistent, never wrong</strong>" —
+one bad metadata write and the whole cluster goes haywire, so it would rather be a bit slow and go through etcd for strong consistency; the data plane wants
+"<strong>fast, parallel, horizontally scalable</strong>" — it can tolerate "approximate", run many replicas concurrently, and add machines when short. <strong>Separating these
+two demands</strong> and satisfying each with the most fitting technology is wisdom distributed systems have proven again and again. Hence the recurring motto:
+<strong>"coordinators schedule, nodes execute"</strong> — MixCoord only gives orders and never moves a byte itself; DataNode / QueryNode just do the work and don't fret
+about global orchestration.</p>
+
+<p>This thread also neatly explains "<strong>why storage-compute separation</strong>": when data-plane nodes <strong>don't keep long-term state themselves</strong> (state is
+entrusted to etcd and object storage), they become "<strong>disposable</strong>" compute — busy on queries? spin up more QueryNodes; busy on writes? spin up more DataNodes;
+scale back when idle — <strong>and not one byte of data is lost</strong>. Compute and storage scale independently, which is the engineering foundation behind Milvus's promise
+of "<strong>elastic scaling to billions</strong>". Hold onto this thread and the later write path, query path, and consistency are all just its unfolding in different settings.</p>
+
+<h2>What the repo looks like: top-level directories at a glance</h2>
+<p>Walk the git repo's top level once and you have an index of "<strong>where to find code</strong>". They roughly follow "<strong>entry → core logic → shared libs → periphery</strong>":</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4><span class="mono">cmd/</span> · entrypoints</h4><p>How each component starts: <span class="mono">cmd/components/</span> (mix_coord, proxy, query_node…) and <span class="mono">cmd/roles/roles.go</span> (which roles this process runs).</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4><span class="mono">internal/</span> · core logic</h4><p>The system's <strong>trunk</strong>: proxy, rootcoord, datacoord, querycoordv2, querynodev2, datanode, streamingnode, coordinator(mixcoord), core(C++), storage, metastore, kv, distributed(gRPC servers), types(interfaces), tso…</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4><span class="mono">pkg/</span> · shared libs</h4><p>Cross-component utilities: logging, config (paramtable), proto, helpers. Note it has its <strong>own go.mod</strong> (module <span class="mono">github.com/milvus-io/milvus/pkg/v3</span>).</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4><span class="mono">client/</span> · Go SDK</h4><p>The official Go client <span class="mono">milvusclient</span> (also its own go.mod). Python's pymilvus lives in a separate repo.</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>Periphery</h4><p><span class="mono">configs/</span> (<span class="mono">milvus.yaml</span>), <span class="mono">deployments/</span>, <span class="mono">scripts/</span>, <span class="mono">tests/</span>, <span class="mono">docs/</span>.</p></div></div>
+</div>
+
+<h2>Three external dependencies: bookkeeping, storage, logging</h2>
+<p>Milvus doesn't reinvent wheels — it outsources three "infrastructure-grade" chores to mature systems. This is also the prerequisite for <strong>storage-compute separation</strong>:</p>
+<ul>
+  <li><strong>etcd · bookkeeping</strong>: holds <strong>metadata</strong> — which collections exist, which shard sits on which machine, who replicates whom. Small but critical, the cluster's "registry".</li>
+  <li><strong>Object storage (MinIO / S3) · the warehouse</strong>: holds the <strong>actual data and index files</strong> — flushed binlogs, built indexes. Cheap, vast, durable.</li>
+  <li><strong>Message queue / WAL (Pulsar / Kafka / built-in woodpecker) · the log</strong>: carries the <strong>write log</strong>, so a "write" first lands on a <strong>replayable</strong> log. This is the root of Milvus's "<strong>log as data</strong>" (detailed from Lesson 15).</li>
+</ul>
+
+<p>With those three underneath, compute nodes become "<strong>stateless</strong>" — crash-restart or scale-on-demand without losing data, because the real state
+lives in etcd and object storage. <strong>That is why storage-compute separation can scale elastically to billions.</strong></p>
+
+<p>One frequently asked point, settled here: <strong>these three dependencies aren't optional bit players — they're part of the Milvus architecture</strong>. Their choice is
+<strong>pluggable</strong> — the message queue can be a mature middleware like Pulsar / Kafka, or Milvus's <strong>built-in woodpecker</strong> (sparing you from deploying a separate MQ);
+object storage can be cloud S3 or self-hosted MinIO. Milvus hides these differences behind an abstraction layer, so upper logic needn't care "where exactly the log lands, where
+exactly the file is stored". <strong>This "abstract the infrastructure away" design is precisely why it can switch seamlessly among cloud, on-prem, and single-host.</strong></p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/types/types.go</span><span class="ln">type MixCoord interface</span></div>
+  <pre><span class="cm">// MixCoord embeds the three coordinator service interfaces — the code proof of "three-in-one"</span>
+<span class="kw">type</span> MixCoord <span class="kw">interface</span> {
+    Component
+    rootcoordpb.RootCoordServer   <span class="cm">// metadata / DDL (Root)</span>
+    querypb.QueryCoordServer      <span class="cm">// query-load scheduling (Query)</span>
+    datapb.DataCoordServer        <span class="cm">// segment mgmt / write coordination (Data)</span>
+    <span class="cm">// …all three now share one process, still three logical interfaces outward</span>
+}</pre>
+</div>
+
+<h2>The four-group navigation model: pin any lesson to the map</h2>
+<p>Finally, a set of <strong>four-group</strong> "navigation coordinates". For every lesson ahead, first ask "which group does it belong to?", then go to the
+matching code directory — this grouping will stay with you:</p>
+
+<div class="layers">
+  <div class="layer l-app"><div class="lh"><span class="badge">Top</span><span class="name">SDK / API</span></div><div class="ld">pymilvus / Go <span class="mono">milvusclient</span> — your create / insert / search start here.</div></div>
+  <div class="layer l-app"><div class="lh"><span class="badge">① Access</span><span class="name">Proxy</span></div><div class="ld">The one public window: validate, auth, assign timestamp, route, reduce across shards.</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">② Coordination</span><span class="name">MixCoord</span></div><div class="ld">The three-in-one brain: metadata, segments, query-load scheduling — decides, never moves data.</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">③ Worker nodes</span><span class="name">Query / Data / Streaming Node</span></div><div class="ld">The real work: QueryNode searches, DataNode writes &amp; flushes, StreamingNode carries the WAL.</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">Kernel</span><span class="name">C++ core (segcore / index / query)</span></div><div class="ld">The compute kernel beneath the worker nodes: blazing in-segment search and indexing.</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">④ Storage &amp; deps</span><span class="name">etcd · object storage · MQ/WAL</span></div><div class="ld">Bookkeeping (metadata), warehouse (data &amp; indexes), the log (a replayable write stream).</div></div>
+</div>
+
+<p>With this map in hand, the next lesson <strong>sets it in motion</strong>: we follow one insert and one search through "<strong>the life of a request</strong>"
+and watch how a request flows among these four groups.</p>
+
+<h2>How to use this map: your learning route</h2>
+<p>The map is drawn — finally, how to <strong>use</strong> it. Every later part of this guide essentially <strong>zooms into one block of the map</strong> — treat it as a tour route:</p>
+<ul>
+  <li><strong>A "write" topic</strong> (insert, WAL, flush, segments, compaction) → look at the ② <strong>DataCoord role</strong> + ③ <strong>DataNode / StreamingNode</strong>, i.e. <span class="mono">internal/datanode</span>, <span class="mono">internal/streamingnode</span>, <span class="mono">internal/flushcommon</span>. This thread unfolds in the write path from <strong>Lesson 15</strong>.</li>
+  <li><strong>A "query" topic</strong> (search, filtering, reduce, consistency) → look at the ① <strong>Proxy</strong> + ③ <strong>QueryNode</strong> + kernel <strong>C++ segcore</strong>, i.e. <span class="mono">internal/proxy</span>, <span class="mono">internal/querynodev2</span>, <span class="mono">internal/core/src/segcore</span>. Unfolds from <strong>Lesson 25</strong>.</li>
+  <li><strong>An "index" topic</strong> (HNSW, IVF, DiskANN, quantization) → look at the kernel <strong>C++ index</strong> + ② <strong>DataCoord's index scheduling</strong>, i.e. <span class="mono">internal/core/src/index</span> and the index-related files in <span class="mono">internal/datacoord</span>.</li>
+  <li><strong>A "metadata / collection / access-control" topic</strong> → look at the ② <strong>RootCoord role</strong> and etcd, i.e. <span class="mono">internal/rootcoord</span>, <span class="mono">internal/metastore</span>.</li>
+</ul>
+
+<p>In other words: <strong>whenever you don't know "who owns this thing", come back to these four groups and place it</strong>. Component name, directory name, language,
+responsibility — once you build the mapping among those four facts, you've gained the ability to <strong>navigate freely</strong> in this huge codebase — which is exactly what the
+"project map" lesson most wants to leave you with. It's fine not to memorize every street; what matters is that <strong>you always know where you stand and where to go next</strong>.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Three-language split</strong>: Go (control plane, <span class="mono">internal/</span>) + C++ (compute kernels, <span class="mono">internal/core/</span>: segcore/index/query/exec/expr) + a little Rust (full-text tantivy).</li>
+    <li><strong>MixCoord is the key correction</strong>: the Root/Data/Query coordinator <strong>roles</strong> still exist, but are merged into <strong>one MixCoord process</strong> — three things logically, one process physically.</li>
+    <li><strong>Six runtime components</strong>: MixCoord, Proxy, QueryNode, DataNode, StreamingNode, CDC; <strong>no separate indexnode</strong> (index is scheduled by DataCoord, run by a datanode).</li>
+    <li><strong>Two shapes</strong>: Standalone = one process, Cluster = many Pods — <strong>same components, same API</strong>.</li>
+    <li><strong>Repo index</strong>: <span class="mono">cmd/</span> entry · <span class="mono">internal/</span> core · <span class="mono">pkg/</span> shared libs · <span class="mono">client/</span> SDK; external deps etcd / object storage / MQ enable storage-compute separation.</li>
+    <li><strong>Four-group nav</strong>: ① Access Proxy ② Coordination MixCoord ③ Worker nodes ④ Storage &amp; deps, plus the C++ kernel below and the SDK above.</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Regarding the coordinators in current Milvus, which statement is most accurate?</div>
+  <ol class="opts">
+    <li>The three coordinators were removed entirely and their work moved into the Proxy</li>
+    <li>RootCoord, DataCoord and QueryCoord must each be deployed as a separate process</li>
+    <li>The Root/Data/Query coordinator roles still exist in code but are merged into one MixCoord process deployed together - three things logically, one process physically</li>
+    <li>MixCoord is just a new name for RootCoord; the other two remain independent</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. The proof is the MixCoord interface in internal/types/types.go: it embeds RootCoordServer, QueryCoordServer and DataCoordServer. The three roles still exist (internal/rootcoord, datacoord, querycoordv2) but deploy as one MixCoord process - the classic logical-vs-physical split</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Milvus splits work across three languages. Which 'language → responsibility' mapping is correct?</div>
+  <ol class="opts">
+    <li>Go = distributed control plane (internal/); C++ = compute kernels (internal/core/: segcore/index/query); Rust = full-text inverted index (tantivy)</li>
+    <li>Rust handles most of the control-plane logic</li>
+    <li>The three languages each write an identical implementation for fault tolerance</li>
+    <li>Go writes the index kernel, C++ writes RPC, Rust writes scheduling</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. Go suits concurrency and velocity for the coordination/scheduling/RPC control plane; C++ is close to the hardware for compute kernels like in-segment search and indexing; Rust owns only the specialized full-text inverted index (tantivy). One search passes through all three</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Who is responsible for 'index building'? Which statement is correct?</div>
+  <ol class="opts">
+    <li>The Proxy builds the index synchronously at write time</li>
+    <li>There is no separate indexnode; index building is scheduled by DataCoord and run by a datanode worker</li>
+    <li>The client SDK builds it locally and uploads it</li>
+    <li>A dedicated standalone component called indexnode handles it</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. The current architecture has no standalone indexnode. Index building is asynchronous: DataCoord schedules it and a datanode worker runs it. In the four-group nav, an index topic maps to 'worker nodes + DataCoord + C++ kernel index'</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>Using this lesson's four-group nav (Access Proxy / Coordination MixCoord / Worker nodes / Storage & deps), assign each of these to a group and a rough code directory: (1) creating a collection, (2) the in-segment compute of one vector search, (3) flushing freshly written data into a binlog, (4) storing 'which shard is on which machine'.</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="01-what-is-milvus.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">Milvus 是什么</span><span class="lang-en">What is Milvus</span></div></a><a class="next" href="03-life-of-a-request.html"><div class="dir"><span class="lang-zh">下一课 →</span><span class="lang-en">Next →</span></div><div class="ttl"><span class="lang-zh">一次请求的一生</span><span class="lang-en">Life of a request</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>

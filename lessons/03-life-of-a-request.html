@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>03 · 一次请求的一生 / Life of a request - Milvus 图解教程</title>
+<meta name="description" content="第一部分 · 宏观全景｜一次请求的一生 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="03 · 一次请求的一生 / Life of a request - Milvus 图解教程">
+<meta property="og:description" content="第一部分 · 宏观全景｜一次请求的一生 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="03 · 一次请求的一生 / Life of a request - Milvus 图解教程">
+<meta name="twitter:description" content="第一部分 · 宏观全景｜一次请求的一生 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第一部分 · 宏观全景</span><span class="lang-en">Part 1 · The Big Picture</span></span>
+    <span class="pill">03 / 03</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:100%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第一部分 · 宏观全景</span><span class="lang-en">Part 1 · The Big Picture</span></div>
+    <h1><span class="lang-zh">一次请求的一生</span><span class="lang-en">Life of a request</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+有了上一课的全景地图，这一课我们<strong>让它动起来</strong>：跟着<strong>一条 insert</strong> 和<strong>一条 search</strong>，从客户端出发，
+走遍 Proxy、协调器、工作节点、C++ 内核，看一次请求<strong>到底经过哪些手、在每一站发生了什么</strong>。这是一条"<strong>万米高空的航线图</strong>"——
+只点出每个站点的名字与职责，细节留给后面的写入链路（<strong>第 15 课</strong>起）、查询链路（<strong>第 25 课</strong>起）、一致性（<strong>第 30 课</strong>）逐站放大。
+</p>
+
+<div class="card analogy">
+  <div class="tag">📮 生活类比</div>
+  把<strong>写入</strong>想成<strong>往邮局寄信</strong>：你不会把信直接塞进收件人家门，而是先交到<strong>邮局柜台（Proxy）</strong>，柜台<strong>盖一个时间戳（收件时间）</strong>、
+  按地址分拣，再把信<strong>登记进一本流水账（WAL 日志）</strong>。只要账记上了，这封信就"<strong>算寄出了</strong>"，哪怕后续的投递慢一点也丢不了。
+  而<strong>查询</strong>更像<strong>查档案</strong>：你说"<strong>给我看截至某个时刻为止的全部记录</strong>"，档案管理员据此圈定一个<strong>时间快照</strong>，
+  保证你看到的是一份<strong>前后一致</strong>的状态，而不是边查边变的半成品。<strong>时间戳，就是这两件事共同的钥匙。</strong>这一课，我们就握着这把钥匙，把读写两条链路彻底走通一遍。
+</div>
+
+<h2>写入的一生：insert 走过的七站</h2>
+<p>先看写。一条 <span class="inline">insert</span> 从 SDK 出发，要走过下面这条链路。请特别留意<strong>两个关键动作</strong>：在 Proxy <strong>盖时间戳</strong>、
+以及"<strong>先写日志</strong>"——这两点是后面理解一致性与崩溃恢复的地基：</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>客户端 / SDK</h4><p>pymilvus / Go <span class="mono">milvusclient</span> 把若干行（向量 + 标量字段）打包，发往 Proxy。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Proxy · 校验 + 补主键 + 盖时间戳</h4><p>校验 schema；若主键是 auto-id 就<strong>自动补上</strong>；向 <strong>TSO</strong> 申请一个全局<strong>时间戳 ts</strong>，盖在这批数据上。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Proxy · 按主键哈希分片</h4><p>用主键把每行<strong>哈希到不同的 vchannel（虚拟分片）</strong>，决定它该进哪条写入流——这样数据天然被打散到多个分片并行处理。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>追加到 WAL / 流式日志</h4><p>Proxy 把这批数据<strong>追加进 WAL</strong>（一条可重放的写入日志）。<strong>账一记上，这次写入就算成功返回了。</strong></p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>StreamingNode / DataNode · 消费日志</h4><p>工作节点<strong>顺着日志往下读</strong>，把刚写入的行<strong>放进一个"增长段（growing segment）"</strong>——一块还在内存里、可以被立即查询的数据。</p></div></div>
+  <div class="step"><div class="num">6</div><div class="sc"><h4>刷盘成 binlog</h4><p>当增长段攒到一定<strong>大小 / 时间</strong>阈值，就<strong>刷盘（flush）</strong>成<strong>binlog</strong>，持久化到对象存储，段从此"封存（sealed）"。</p></div></div>
+  <div class="step"><div class="num">7</div><div class="sc"><h4>DataCoord · 记账段元数据</h4><p><strong>DataCoord</strong>（MixCoord 里的 Data 角色）记录"<strong>哪些段、在哪、多大、刷没刷</strong>"，作为后续查询与压缩的依据。</p></div></div>
+</div>
+
+<p>这里有三个观念值得现在就刻进脑子。其一，"<strong>日志即数据（log as data）</strong>"：Milvus 把"写"先变成"<strong>往日志里追加一条记录</strong>"，
+日志才是<strong>唯一的真相来源</strong>，段、索引都只是日志的"物化视图"。这让崩溃恢复变得简单——重放日志即可。其二，"<strong>边写边查</strong>"：
+新数据进了<strong>增长段</strong>就能被搜到，<strong>不必等刷盘、更不必等建索引</strong>，这正是 Milvus 数据"实时新鲜"的来源。其三，"<strong>一批原子可见</strong>"：
+同一批 insert 共享<strong>同一个时间戳</strong>，要么一起可见、要么都不可见，不会让你查到"半批"数据。</p>
+
+<p>有一个地方值得停下来多想一层：<strong>为什么写入要"先过日志"，而不是直接写进段、写进对象存储？</strong>这看似绕了远路，实则是分布式存储的核心智慧。
+直接写段有三个麻烦：一是<strong>慢</strong>——对象存储适合"大块、批量"写，逐行写又慢又贵；二是<strong>难恢复</strong>——写到一半进程挂了，段处于"残缺"状态，很难判断哪些行成功了；
+三是<strong>难并发</strong>——多个写入者同时改同一个段，要费很大力气做锁。而"<strong>先写一条只追加（append-only）的日志</strong>"把这三件事一次解决：
+追加是<strong>顺序写</strong>，飞快；日志<strong>天然有序</strong>，重放到哪一条一清二楚，崩溃后接着重放即可；多个写入只是<strong>往同一条日志尾部排队</strong>，无需互相加锁。
+段和索引则在"<strong>事后</strong>"由消费者从日志慢慢物化出来——这就是把"<strong>写得快</strong>"和"<strong>查得快</strong>"这对矛盾<strong>解耦</strong>的关键招式。</p>
+
+<h2>查询的一生：search 走过的六站</h2>
+<p>再看读。一条 <span class="inline">search</span> 的链路和写不同——它要<strong>同时问很多个分片</strong>，再把结果<strong>层层归并</strong>成最终的 topK。
+关键动作同样有两个：在 Proxy <strong>定一个"保证时间戳"</strong>（决定你能看到多新的数据），以及把"<strong>段内的相似度计算</strong>"下沉给 <strong>C++ 内核</strong>：</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">SDK / 客户端</div><div class="nd">发起 search(向量, topK)</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">Proxy</div><div class="nd">定保证时间戳 · 建查询计划 · 按分片路由</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">QueryNode · delegator</div><div class="nd">圈定 封存段 + 增长段</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">segcore (C++)</div><div class="nd">段内检索 · 每段 topK</div></div>
+</div>
+
+<p>把这条链路一站站说清楚：</p>
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Proxy · 定"保证时间戳"</h4><p>根据你选的<strong>一致性级别</strong>推导一个 <strong>guarantee timestamp</strong>：要"看见最新"（Strong）就取最大时间，要"够快、容忍少量延迟"（Bounded）就取稍早一点的时间。这个 ts 决定了你这次能看到多新的数据。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Proxy · 建计划 + 路由</h4><p>把查询解析成一个<strong>搜索计划</strong>（向量字段、度量、topK、标量过滤条件），再按<strong>分片</strong>把请求<strong>分发到相关的 QueryNode</strong>。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>delegator · 圈定要搜的段</h4><p>每个分片有一个<strong>代理者 / 分片领导（delegator / shard leader）</strong>，它清楚本分片有哪些<strong>封存段 + 增长段</strong>，并据保证时间戳<strong>等数据"够新"了</strong>再放行搜索。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>segcore (C++) · 段内检索</h4><p>真正"算距离"的脏活下沉到 <strong>C++ 的 segcore</strong>：在每个段内沿索引找近邻，吐出<strong>这一段的 topK</strong>。</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>节点内归并</h4><p>一个 QueryNode 上可能有很多段，它先把<strong>各段的 topK 归并</strong>成"本节点的 topK"，减少要往上传的数据。</p></div></div>
+  <div class="step"><div class="num">6</div><div class="sc"><h4>Proxy · 跨分片归并 → 客户端</h4><p>Proxy 收齐<strong>各分片的 topK</strong>，再做<strong>一次全局归并</strong>，排出最终的 topK 返回客户端。<strong>"分头搜、层层并"</strong>是检索的标准套路。</p></div></div>
+</div>
+
+<p>注意搜索的"<strong>扇出—归约（scatter-gather）</strong>"形状：Proxy 把一个请求<strong>扇出</strong>给多个分片、每个分片再扇给多个段并行算，
+然后结果<strong>反向归约</strong>——段 topK → 节点 topK → 全局 topK。每一层都只往上传"前 K 个"，所以即便底下有上亿条向量，
+网络上流动的也只是<strong>很少量的候选</strong>。这就是分布式检索既<strong>快</strong>又<strong>省</strong>的关键。</p>
+
+<p>顺便回答一个常见疑问：<strong>为什么读和写要走两条不同的路？</strong>因为它们的目标根本不同。<strong>写</strong>追求"<strong>尽快落定、绝不丢失</strong>"，所以它走"日志"这条<strong>顺序、单向</strong>的快车道，
+一路向前、不回头；<strong>读</strong>追求"<strong>在海量数据里挑出最像的几条</strong>"，所以它必须<strong>扇出</strong>到所有相关分片和段、并行去算，再把结果<strong>归约</strong>回来。
+一个是"<strong>把水灌进管道</strong>"，一个是"<strong>从万千水库里舀出最甜的那几瓢</strong>"——形状自然不同。但请注意，<strong>读其实要同时看两种段</strong>：
+已经刷盘的<strong>封存段</strong>（历史数据）和还在内存里的<strong>增长段</strong>（刚写入、尚未落盘的新数据）。正因为 delegator 把这两者<strong>都纳入检索范围</strong>，
+Milvus 才能做到"<strong>边写边查</strong>"——你上一秒 insert 的数据，下一秒就能在增长段里被搜到。这也是为什么"写入的增长段"和"查询的段选择"是同一枚硬币的两面。</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/proxy · 读请求按一致性级别推导保证时间戳</span><span class="ln">parseGuaranteeTsFromConsistency</span></div>
+  <pre><span class="cm">// 一致性级别 → guarantee timestamp（决定这次 search 能看到多新的数据）</span>
+<span class="kw">switch</span> consistencyLevel {
+<span class="kw">case</span> Strong:      guaranteeTs = tMax                 <span class="cm">// 强一致：看见此刻最新</span>
+<span class="kw">case</span> Bounded:     guaranteeTs = tMax - gracefulTime  <span class="cm">// 有界：容忍少量延迟，换更低时延</span>
+<span class="kw">case</span> Eventually:  guaranteeTs = <span class="nb">1</span>                   <span class="cm">// 最终：最快，可能读到较旧快照</span>
+}
+<span class="cm">// delegator 会"等到本分片数据追上 guaranteeTs"再开始搜，从而给出一致快照</span></pre>
+</div>
+
+<h2>时间戳：读写共用的那把钥匙</h2>
+<p>把上面两条链路并排一看，你会发现<strong>时间戳（timestamp）</strong>是贯穿读写的<strong>同一根轴</strong>：<strong>写</strong>给每批数据盖一个 ts（决定它"何时发生"）；
+<strong>读</strong>用一个保证 ts 圈定一个<strong>快照</strong>（决定它"看见到何时为止")。两者用的是<strong>同一套全局时钟（TSO）</strong>，于是"先后顺序"在整个集群里有了统一的定义：</p>
+
+<div class="timeline">
+  <div class="lane"><span class="lane-label">写入流</span><span class="tslot">ts=10 批A</span><span class="tslot">ts=20 批B</span><span class="tslot">ts=30 批C</span><span class="tslot span">…持续追加…</span></div>
+  <div class="lane"><span class="lane-label">读 (Strong)</span><span class="tslot">取 ts=最新</span><span class="tslot now">看见 A·B·C 全部</span></div>
+  <div class="lane"><span class="lane-label">读 (Bounded)</span><span class="tslot">取 ts=稍早</span><span class="tslot now">看见 A·B（容忍 C 略迟）</span></div>
+</div>
+
+<p>这里只需建立<strong>直觉</strong>：保证时间戳越"新"，看到的数据越全，但可能要<strong>多等一会儿</strong>（等分片追上这个 ts）；越"旧"则越快、但可能漏掉最新写入。
+这正是<strong>一致性级别</strong>在背后做的权衡。它的完整机制——TSO 怎么发号、delegator 怎么等、快照怎么保证——留到<strong>第 30 课</strong>专门展开，这里点到为止。</p>
+
+<p>再补一句关于 <strong>TSO（Timestamp Oracle，时间戳分配器）</strong>的直觉：它是整个集群的"<strong>统一发号机</strong>"，保证发出去的时间戳<strong>全局单调递增</strong>——
+后申请的一定比先申请的大。有了这台"<strong>全局时钟</strong>"，分布在不同机器上的写入才有了公认的<strong>先后次序</strong>，读取也才能用一个 ts 干净地切出"<strong>截至此刻</strong>"的快照。
+你可以把它想成银行叫号机：每个人来都撕一张号，号码只增不减，于是"谁先谁后"再无争议。TSO 住在 MixCoord 里（Root 角色），Proxy 每次处理读写都先向它<strong>要一个号</strong>。
+正是这台朴素的发号机，撑起了 Milvus 在分布式环境下的<strong>时序一致性</strong>——一个看似简单、却无处不在的基础设施。</p>
+
+<h2>一张表收尾：每个组件在一次请求里扮演什么角色</h2>
+<p>最后用一张表把"<strong>谁在一次请求里干什么</strong>"对齐，方便你随时回查：</p>
+
+<table class="t">
+  <tr><th>组件</th><th>在写入里</th><th>在查询里</th></tr>
+  <tr><td><strong>SDK / 客户端</strong></td><td>打包行、发起 insert</td><td>发起 search(向量, topK)、收最终结果</td></tr>
+  <tr><td><strong>Proxy</strong></td><td>校验、补主键、盖时间戳、按 PK 哈希分片、写 WAL</td><td>定保证时间戳、建计划、路由、<strong>跨分片归并</strong></td></tr>
+  <tr><td><strong>TSO</strong>（在 MixCoord）</td><td>发放写入时间戳</td><td>作为保证时间戳的参照时钟</td></tr>
+  <tr><td><strong>StreamingNode / DataNode</strong></td><td>消费日志、攒增长段、刷盘成 binlog</td><td>（写侧为主）</td></tr>
+  <tr><td><strong>DataCoord</strong>（在 MixCoord）</td><td>记账段元数据、触发刷盘/压缩</td><td>提供"有哪些段"的信息</td></tr>
+  <tr><td><strong>QueryNode · delegator</strong></td><td>（读侧为主）</td><td>圈定封存段+增长段、等数据够新、汇总本节点 topK</td></tr>
+  <tr><td><strong>segcore (C++)</strong></td><td>—</td><td>段内检索、算每段 topK</td></tr>
+</table>
+
+<p>这就是"一次请求的一生"的全貌：<strong>写</strong>是"盖时间戳 → 先写日志 → 异步落盘 → 协调器记账"，<strong>读</strong>是"定快照 → 扇出到分片与段 → C++ 算 topK → 层层归并"。
+两条链路看似不同，却共享同一套<strong>时间戳</strong>与同一张<strong>全景地图</strong>。带着这副"骨架"，后面每一部分都会回到这两条链路上的某一站，把它<strong>放大成一整课</strong>。</p>
+
+<p>最后留一个<strong>承前启后</strong>的提醒：本课所有名词——时间戳、vchannel、WAL、增长段、封存段、binlog、delegator、segcore、归并——你现在<strong>不必记牢每个细节</strong>，
+只要在脑子里建立起"它在哪条链路的哪一站"的<strong>位置感</strong>即可。把它们想象成地铁线路图上的站点：你暂时不知道每站附近有什么，但你知道<strong>坐这条线能到那里</strong>。
+后面的课，就是带你<strong>在每一站下车，逛透它周围的街区</strong>。下一部分起，我们正式钻进引擎内部——从"数据是怎么被组织成集合、分区、段"开始。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>写入链路</strong>：SDK → Proxy（校验、补主键、<strong>盖时间戳</strong>、按 PK 哈希分片）→ 追加 <strong>WAL</strong> → StreamingNode/DataNode 消费 → <strong>增长段</strong> → 刷盘成 <strong>binlog</strong> → DataCoord 记账。</li>
+    <li><strong>日志即数据</strong>：先写可重放的日志，写入即返回；段与索引是日志的物化视图，崩溃后重放即可恢复。</li>
+    <li><strong>查询链路</strong>：SDK → Proxy（<strong>定保证时间戳</strong>、建计划、路由）→ QueryNode <strong>delegator</strong> 圈定封存段+增长段 → <strong>segcore(C++)</strong> 段内 topK → 节点归并 → Proxy <strong>跨分片归并</strong> → 客户端。</li>
+    <li><strong>扇出—归约</strong>：每一层只上传"前 K 个"，所以海量向量下网络上只流动极少候选。</li>
+    <li><strong>时间戳是读写共用的钥匙</strong>：写盖 ts、读用保证 ts 取一致快照；一致性级别就是在"看得多新 vs 等得多久"之间权衡（细节见<strong>第 30 课</strong>）。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. 一条 insert 在 Proxy 处会发生哪些关键动作？</div>
+  <ol class="opts">
+    <li>把数据发给 QueryNode 立即检索一遍再返回</li>
+    <li>直接把每一行逐条写入对象存储，并同步建好索引</li>
+    <li>只负责转发，不做任何校验或时间戳分配</li>
+    <li>校验 schema、必要时自动补主键、向 TSO 申请一个时间戳盖在这批数据上、按主键哈希到 vchannel/分片，再追加到 WAL</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。Proxy 是统一入口：校验、补主键、盖时间戳（来自 TSO）、按 PK 哈希分片，最后把这批数据追加到可重放的 WAL。一旦日志记上，写入即算成功返回；落盘成 binlog 是后续由工作节点异步完成的</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. 为什么 Milvus 的写入要“先写一条只追加的日志（WAL）”，而不是直接写进段/对象存储？</div>
+  <ol class="opts">
+    <li>因为对象存储不支持持久化，只能先放日志</li>
+    <li>日志只是调试用途，生产环境会关闭</li>
+    <li>为了让客户端能直接读取原始日志格式</li>
+    <li>顺序追加飞快、日志天然有序便于崩溃后重放恢复、并发写只需在日志尾排队无需加锁——把“写得快”和“查得快”解耦</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。这是“日志即数据（log as data）”的核心收益：append-only 是顺序写，极快；日志有序，重放到哪条一清二楚，崩溃后接着重放即可；多写者只在尾部排队，免去段级锁。段与索引是日志事后物化出来的视图</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 一次 search 的“扇出—归约（scatter-gather）”形状，下面哪种描述对？</div>
+  <ol class="opts">
+    <li>只查一个分片的一个段就直接返回</li>
+    <li>Proxy 把全部原始向量拉回本地，自己暴力算一遍 topK</li>
+    <li>由客户端 SDK 负责跨分片归并</li>
+    <li>Proxy 扇出到多个分片、每分片再到多个段并行算，结果反向归约：段 topK → 节点 topK → Proxy 跨分片全局 topK，每层只上传前 K 个</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。段内检索在 C++ segcore 算出每段 topK，QueryNode 先归并出本节点 topK，Proxy 再跨分片做全局归并。每层只往上传“前 K 个候选”，所以即便底下有上亿向量，网络上也只流动很少量数据——这是分布式检索又快又省的关键</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">4. 读请求的“保证时间戳（guarantee timestamp）”和一致性级别是什么关系？</div>
+  <ol class="opts">
+    <li>它由客户端随机生成</li>
+    <li>由一致性级别推导：Strong 取最新时间（看见最全、可能多等）、Bounded 取稍早时间（容忍少量延迟换更低时延）、Eventually 最快但可能读到较旧快照</li>
+    <li>保证时间戳是固定常量，和一致性级别无关</li>
+    <li>一致性级别只影响写入，不影响读取</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。Proxy 按一致性级别推导 guarantee ts，delegator 会“等到本分片数据追上这个 ts”再开始搜，从而给出一致快照。ts 越新看得越全但可能多等，越旧越快但可能漏掉最新写入——这就是“看得多新 vs 等得多久”的权衡（细节见第 30 课）</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>“边写边查”是 Milvus 的一个关键特性：你上一秒 insert 的数据，下一秒就能被搜到。结合本课的写入链路与查询链路，说说这是靠哪两个机制配合实现的？（提示：增长段、delegator 的段选择）</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+With last lesson's project map in hand, this lesson <strong>sets it in motion</strong>: we follow <strong>one insert</strong> and <strong>one search</strong>
+from the client out, through Proxy, the coordinator, the worker nodes, and the C++ kernel, watching <strong>which hands a request passes through and what
+happens at each stop</strong>. This is a "<strong>30,000-foot flight map</strong>" — naming each station and its job, leaving the details to the write path
+(<strong>Lesson 15</strong>+), the query path (<strong>Lesson 25</strong>+), and consistency (<strong>Lesson 30</strong>) to zoom into station by station.
+</p>
+
+<div class="card analogy">
+  <div class="tag">📮 Analogy</div>
+  Think of a <strong>write</strong> as <strong>mailing a letter at the post office</strong>: you don't stuff the letter directly into the recipient's door — you hand it to
+  the <strong>counter (Proxy)</strong>, which <strong>stamps a timestamp (received-at time)</strong>, sorts it by address, and <strong>logs it into a ledger (the WAL)</strong>.
+  Once it's in the ledger, the letter "<strong>counts as sent</strong>" — even if delivery is a bit slow, it won't be lost. A <strong>query</strong> is more like <strong>reading
+  the archive</strong>: you say "<strong>show me all records up to a certain moment</strong>", and the archivist fixes a <strong>time snapshot</strong> accordingly, guaranteeing you
+  see a <strong>self-consistent</strong> state rather than a half-finished one changing as you read. <strong>The timestamp is the shared key to both.</strong> In this lesson, holding that key, we'll walk both the read and write chains end to end.
+</div>
+
+<h2>The life of a write: the seven stops of an insert</h2>
+<p>Writes first. An <span class="inline">insert</span> leaves the SDK and travels this chain. Note <strong>two key actions</strong> in particular: <strong>stamping a timestamp</strong>
+at the Proxy, and "<strong>log first</strong>" — these two are the bedrock for later understanding consistency and crash recovery:</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Client / SDK</h4><p>pymilvus / Go <span class="mono">milvusclient</span> packs some rows (vectors + scalar fields) and sends them to the Proxy.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Proxy · validate + fill PK + stamp timestamp</h4><p>Validate the schema; if the primary key is auto-id, <strong>fill it in</strong>; request a global <strong>timestamp ts</strong> from the <strong>TSO</strong> and stamp it on this batch.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Proxy · hash by primary key into shards</h4><p>Use the PK to <strong>hash each row into a vchannel (virtual shard)</strong>, deciding which write stream it enters — so data is naturally spread across shards for parallelism.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Append to the WAL / streaming log</h4><p>The Proxy <strong>appends the batch to the WAL</strong> (a replayable write log). <strong>Once it's in the ledger, the write returns as a success.</strong></p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>StreamingNode / DataNode · consume the log</h4><p>Worker nodes <strong>read down the log</strong> and put the just-written rows into a "<strong>growing segment</strong>" — data still in memory and immediately queryable.</p></div></div>
+  <div class="step"><div class="num">6</div><div class="sc"><h4>Flush to binlog</h4><p>When a growing segment hits a <strong>size / time</strong> threshold, it <strong>flushes</strong> into a <strong>binlog</strong>, persisted to object storage; the segment becomes "<strong>sealed</strong>".</p></div></div>
+  <div class="step"><div class="num">7</div><div class="sc"><h4>DataCoord · track segment metadata</h4><p><strong>DataCoord</strong> (the Data role inside MixCoord) records "<strong>which segments, where, how big, flushed or not</strong>" as the basis for later queries and compaction.</p></div></div>
+</div>
+
+<p>Three ideas worth carving into your mind now. First, "<strong>log as data</strong>": Milvus turns a "write" into "<strong>append a record to the log</strong>" first; the log is
+the <strong>single source of truth</strong>, and segments and indexes are just its "materialized views". This makes crash recovery simple — replay the log. Second, "<strong>query while
+writing</strong>": new data enters a <strong>growing segment</strong> and is searchable <strong>without waiting for a flush, let alone an index build</strong> — the source of Milvus's
+"real-time freshness". Third, "<strong>a batch is atomically visible</strong>": one insert batch shares <strong>one timestamp</strong> — either all visible or none, never letting you read
+"half a batch".</p>
+
+<p>One spot worth pausing to think a layer deeper: <strong>why must a write "go through the log first" instead of writing straight into segments and object storage?</strong> It looks like a
+detour, but it's the core wisdom of distributed storage. Writing segments directly has three problems: it's <strong>slow</strong> — object storage favors "large, batched" writes, and row-by-row
+is slow and costly; it's <strong>hard to recover</strong> — if the process dies mid-write, the segment is "partial" and it's hard to tell which rows succeeded; and it's <strong>hard to
+concurrent</strong> — many writers mutating the same segment require heavy locking. "<strong>Write an append-only log first</strong>" solves all three at once: appends are <strong>sequential
+writes</strong>, blazing fast; the log is <strong>naturally ordered</strong>, so you know exactly where replay stopped and just resume after a crash; concurrent writers merely <strong>queue at the
+log's tail</strong>, needing no mutual locks. Segments and indexes are then materialized "<strong>after the fact</strong>" by consumers reading the log — the key move that <strong>decouples</strong>
+the tension between "<strong>writing fast</strong>" and "<strong>querying fast</strong>".</p>
+
+<h2>The life of a query: the six stops of a search</h2>
+<p>Now reads. A <span class="inline">search</span> differs from a write — it must <strong>ask many shards at once</strong>, then <strong>reduce layer by layer</strong> into the final topK.
+Again two key actions: fixing a "<strong>guarantee timestamp</strong>" at the Proxy (deciding how fresh the data you see is), and sinking the "<strong>in-segment similarity
+computation</strong>" down to the <strong>C++ kernel</strong>:</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">SDK / client</div><div class="nd">issue search(vector, topK)</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">Proxy</div><div class="nd">fix guarantee ts · build plan · route by shard</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">QueryNode · delegator</div><div class="nd">pick sealed + growing segments</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">segcore (C++)</div><div class="nd">in-segment search · per-segment topK</div></div>
+</div>
+
+<p>The same chain, stop by stop:</p>
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Proxy · fix the "guarantee timestamp"</h4><p>Derive a <strong>guarantee timestamp</strong> from your chosen <strong>consistency level</strong>: to "see the latest" (Strong) take the max time; to be "fast, tolerating a little lag" (Bounded) take a slightly earlier time. This ts decides how fresh the data you can see is.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Proxy · build plan + route</h4><p>Parse the query into a <strong>search plan</strong> (vector field, metric, topK, scalar filter), then <strong>dispatch to the relevant QueryNodes</strong> by <strong>shard</strong>.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>delegator · pick the segments to search</h4><p>Each shard has a <strong>delegator / shard leader</strong> that knows the shard's <strong>sealed + growing segments</strong>, and waits until data is "<strong>fresh enough</strong>" per the guarantee ts before letting the search proceed.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>segcore (C++) · in-segment search</h4><p>The real "distance-crunching" grunt work sinks into <strong>C++ segcore</strong>: walk the index within each segment to find neighbors and emit <strong>that segment's topK</strong>.</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>Reduce within the node</h4><p>A QueryNode may hold many segments; it first <strong>reduces each segment's topK</strong> into "this node's topK", cutting the data to send upward.</p></div></div>
+  <div class="step"><div class="num">6</div><div class="sc"><h4>Proxy · reduce across shards → client</h4><p>The Proxy collects <strong>each shard's topK</strong>, does <strong>one global reduce</strong>, and returns the final topK to the client. "<strong>Search in parallel, reduce in layers</strong>" is the standard pattern.</p></div></div>
+</div>
+
+<p>Note search's "<strong>scatter-gather</strong>" shape: the Proxy <strong>scatters</strong> a request to many shards, each shard fans out to many segments computed in parallel, then results
+are <strong>gathered back</strong> — segment topK → node topK → global topK. Each layer only passes up "the top K", so even with hundreds of millions of vectors underneath, only a
+<strong>tiny set of candidates</strong> flows over the network. That is the key to distributed search being both <strong>fast</strong> and <strong>cheap</strong>.</p>
+
+<p>While we're here, a common question: <strong>why do reads and writes take two different paths?</strong> Because their goals fundamentally differ. A <strong>write</strong> pursues "<strong>settle
+fast, never lose</strong>", so it takes the "log" — a <strong>sequential, one-way</strong> express lane, ever forward, never looking back; a <strong>read</strong> pursues "<strong>pick the few most
+similar out of a huge pile</strong>", so it must <strong>scatter</strong> to all relevant shards and segments, compute in parallel, then <strong>gather</strong> the results back. One is "<strong>pouring
+water into a pipe</strong>", the other is "<strong>scooping the sweetest few ladles from thousands of reservoirs</strong>" — the shapes naturally differ. But note that <strong>a read actually looks at two
+kinds of segments</strong>: the flushed <strong>sealed segments</strong> (historical data) and the in-memory <strong>growing segments</strong> (freshly written, not yet flushed). Precisely because the
+delegator <strong>includes both</strong> in the search scope, Milvus achieves "<strong>query while writing</strong>" — data you inserted a second ago is searchable in the growing segment the next.
+That's why "the growing segment of writes" and "the segment selection of queries" are two sides of one coin.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/proxy · derive guarantee ts from the consistency level</span><span class="ln">parseGuaranteeTsFromConsistency</span></div>
+  <pre><span class="cm">// consistency level → guarantee timestamp (decides how fresh this search sees)</span>
+<span class="kw">switch</span> consistencyLevel {
+<span class="kw">case</span> Strong:      guaranteeTs = tMax                 <span class="cm">// strong: see the very latest</span>
+<span class="kw">case</span> Bounded:     guaranteeTs = tMax - gracefulTime  <span class="cm">// bounded: tolerate a little lag for lower latency</span>
+<span class="kw">case</span> Eventually:  guaranteeTs = <span class="nb">1</span>                   <span class="cm">// eventual: fastest, may read an older snapshot</span>
+}
+<span class="cm">// the delegator waits until the shard's data catches up to guaranteeTs, giving a consistent snapshot</span></pre>
+</div>
+
+<h2>Timestamps: the key shared by reads and writes</h2>
+<p>Lay the two chains side by side and you'll see <strong>the timestamp</strong> is the <strong>same axis</strong> running through both: a <strong>write</strong> stamps each batch with a ts
+(deciding "when it happened"); a <strong>read</strong> uses a guarantee ts to fix a <strong>snapshot</strong> (deciding "up to when it sees"). Both use the <strong>same global clock (TSO)</strong>, so
+"order" has one unified definition across the whole cluster:</p>
+
+<div class="timeline">
+  <div class="lane"><span class="lane-label">Write stream</span><span class="tslot">ts=10 batch A</span><span class="tslot">ts=20 batch B</span><span class="tslot">ts=30 batch C</span><span class="tslot span">…keeps appending…</span></div>
+  <div class="lane"><span class="lane-label">Read (Strong)</span><span class="tslot">take ts=latest</span><span class="tslot now">sees A·B·C all</span></div>
+  <div class="lane"><span class="lane-label">Read (Bounded)</span><span class="tslot">take ts=earlier</span><span class="tslot now">sees A·B (tolerates C lag)</span></div>
+</div>
+
+<p>Here you only need the <strong>intuition</strong>: the "fresher" the guarantee ts, the more complete the data you see, but you may <strong>wait a bit longer</strong> (for the shard to catch up
+to that ts); the "older" it is, the faster, but you may miss the latest writes. That is exactly the trade-off <strong>consistency levels</strong> make behind the scenes. The full mechanism — how the
+TSO issues, how the delegator waits, how the snapshot is guaranteed — is saved for <strong>Lesson 30</strong>; we only touch it here.</p>
+
+<p>One more intuition about the <strong>TSO (Timestamp Oracle)</strong>: it is the cluster's "<strong>unified ticket dispenser</strong>", guaranteeing the timestamps it hands out are
+<strong>globally monotonically increasing</strong> — a later request always gets a larger number than an earlier one. With this "<strong>global clock</strong>", writes scattered across different
+machines gain an agreed-upon <strong>order</strong>, and reads can cleanly carve out an "<strong>up to this moment</strong>" snapshot with a single ts. Think of it as a bank's number dispenser: everyone
+tears off a ticket, the numbers only go up, so "who came first" is never in dispute. The TSO lives in MixCoord (the Root role), and the Proxy <strong>takes a number</strong> from it on every read or
+write. This humble dispenser is what underpins Milvus's <strong>temporal consistency</strong> in a distributed setting — a piece of infrastructure that looks simple yet is everywhere.</p>
+
+<h2>Closing with a table: each component's role in one request</h2>
+<p>Finally, a table aligning "<strong>who does what in one request</strong>", handy to revisit anytime:</p>
+
+<table class="t">
+  <tr><th>Component</th><th>In a write</th><th>In a query</th></tr>
+  <tr><td><strong>SDK / client</strong></td><td>pack rows, issue insert</td><td>issue search(vector, topK), receive final results</td></tr>
+  <tr><td><strong>Proxy</strong></td><td>validate, fill PK, stamp timestamp, hash by PK into shards, write WAL</td><td>fix guarantee ts, build plan, route, <strong>reduce across shards</strong></td></tr>
+  <tr><td><strong>TSO</strong> (in MixCoord)</td><td>issue the write timestamp</td><td>the reference clock for the guarantee ts</td></tr>
+  <tr><td><strong>StreamingNode / DataNode</strong></td><td>consume the log, build growing segments, flush to binlog</td><td>(mainly write-side)</td></tr>
+  <tr><td><strong>DataCoord</strong> (in MixCoord)</td><td>track segment metadata, trigger flush/compaction</td><td>provide "which segments exist"</td></tr>
+  <tr><td><strong>QueryNode · delegator</strong></td><td>(mainly read-side)</td><td>pick sealed+growing segments, wait for freshness, reduce node topK</td></tr>
+  <tr><td><strong>segcore (C++)</strong></td><td>—</td><td>in-segment search, compute per-segment topK</td></tr>
+</table>
+
+<p>That is the full picture of "the life of a request": a <strong>write</strong> is "stamp a timestamp → log first → flush asynchronously → coordinator bookkeeps"; a <strong>read</strong> is "fix a
+snapshot → scatter to shards and segments → C++ computes topK → reduce in layers". The two chains look different, yet share one set of <strong>timestamps</strong> and one <strong>project map</strong>. With
+this "skeleton", every later part returns to some stop on these two chains and <strong>zooms it into a whole lesson</strong>.</p>
+
+<p>One closing reminder that <strong>bridges past and future</strong>: every term in this lesson — timestamp, vchannel, WAL, growing segment, sealed segment, binlog, delegator, segcore, reduce — you
+<strong>need not memorize every detail</strong> now; just build a <strong>sense of place</strong> for "which stop on which chain it sits at". Picture them as stations on a metro map: you don't yet know
+what's around each station, but you know <strong>this line gets you there</strong>. The later lessons take you to <strong>get off at each station and explore its neighborhood</strong>. From the next part on,
+we formally dive into the engine — starting with "how data is organized into collections, partitions, and segments".</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Write path</strong>: SDK → Proxy (validate, fill PK, <strong>stamp timestamp</strong>, hash by PK into shards) → append <strong>WAL</strong> → StreamingNode/DataNode consume → <strong>growing segment</strong> → flush to <strong>binlog</strong> → DataCoord bookkeeps.</li>
+    <li><strong>Log as data</strong>: write a replayable log first, return on append; segments and indexes are materialized views of the log, recoverable by replay after a crash.</li>
+    <li><strong>Query path</strong>: SDK → Proxy (<strong>fix guarantee ts</strong>, build plan, route) → QueryNode <strong>delegator</strong> picks sealed+growing → <strong>segcore (C++)</strong> per-segment topK → node reduce → Proxy <strong>reduce across shards</strong> → client.</li>
+    <li><strong>Scatter-gather</strong>: each layer passes up only "the top K", so under huge data only a tiny candidate set flows over the network.</li>
+    <li><strong>Timestamp is the shared key</strong>: writes stamp a ts, reads use a guarantee ts for a consistent snapshot; the consistency level trades "how fresh you see vs how long you wait" (details in <strong>Lesson 30</strong>).</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. What key actions happen to an insert at the Proxy?</div>
+  <ol class="opts">
+    <li>Send the data to a QueryNode to search it once and return</li>
+    <li>Write each row directly into object storage one by one and build the index synchronously</li>
+    <li>Only forward the request, doing no validation or timestamp assignment</li>
+    <li>Validate the schema, auto-fill the primary key if needed, request a timestamp from the TSO and stamp the batch, hash by PK into vchannels/shards, then append to the WAL</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. The Proxy is the single entry: validate, fill PK, stamp a timestamp (from the TSO), hash by PK into shards, and finally append the batch to a replayable WAL. Once logged, the write returns as success; flushing to binlogs is done asynchronously by worker nodes later</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Why does a Milvus write 'append to a log (WAL) first' instead of writing straight into segments/object storage?</div>
+  <ol class="opts">
+    <li>Because object storage can't persist data, so it must go to a log first</li>
+    <li>The log is only for debugging and is disabled in production</li>
+    <li>So that clients can read the raw log format directly</li>
+    <li>Sequential appends are fast, the ordered log makes crash recovery a simple replay, and concurrent writers just queue at the tail without locks - decoupling 'write fast' from 'query fast'</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. This is the core payoff of 'log as data': append-only is sequential and very fast; the ordered log makes it clear where replay stopped, so recovery is just resuming replay; concurrent writers only queue at the tail, avoiding segment-level locks. Segments and indexes are views materialized from the log afterward</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Which describes the 'scatter-gather' shape of one search correctly?</div>
+  <ol class="opts">
+    <li>It searches only one segment of one shard and returns directly</li>
+    <li>The Proxy pulls all raw vectors back and brute-forces the topK itself</li>
+    <li>The client SDK does the cross-shard reduce</li>
+    <li>The Proxy scatters to many shards, each fans out to many segments computed in parallel; results gather back: segment topK → node topK → Proxy global topK, each layer passing up only the top K</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. In-segment search computes per-segment topK in C++ segcore, the QueryNode reduces to a node topK, and the Proxy reduces globally across shards. Each layer passes up only 'the top K', so even with hundreds of millions of vectors, only a tiny amount flows over the network - the key to fast, cheap distributed search</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">4. How does a read's 'guarantee timestamp' relate to the consistency level?</div>
+  <ol class="opts">
+    <li>It is randomly generated by the client</li>
+    <li>It's derived from the level: Strong takes the latest time (most complete, may wait longer), Bounded takes a slightly earlier time (tolerate a little lag for lower latency), Eventually is fastest but may read an older snapshot</li>
+    <li>The guarantee timestamp is a fixed constant, unrelated to the consistency level</li>
+    <li>The consistency level only affects writes, not reads</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. The Proxy derives the guarantee ts from the level, and the delegator waits until the shard's data catches up to that ts before searching, giving a consistent snapshot. A fresher ts sees more but may wait longer; an older one is faster but may miss the latest writes - the 'how fresh vs how long you wait' trade-off (details in Lesson 30)</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>'Query while writing' is a key Milvus feature: data you inserted a second ago is searchable the next. Combining this lesson's write and query paths, which two mechanisms cooperate to make this possible? (Hint: the growing segment, and the delegator's segment selection.)</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="02-project-map.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">项目全景地图</span><span class="lang-en">The project map</span></div></a><a class="next" href="../index.html"><div class="dir"><span class="lang-zh">完成 →</span><span class="lang-en">Done →</span></div><div class="ttl"><span class="lang-zh">返回目录</span><span class="lang-en">Back to index</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>

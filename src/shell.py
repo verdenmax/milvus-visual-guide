@@ -49,6 +49,10 @@ def head_meta(title, description, og_type="website"):
 PAGES = [
     ("01-what-is-milvus.html", "Milvus 是什么", "What is Milvus",
      "第一部分 · 宏观全景", "Part 1 · The Big Picture"),
+    ("02-project-map.html", "项目全景地图", "The project map",
+     "第一部分 · 宏观全景", "Part 1 · The Big Picture"),
+    ("03-life-of-a-request.html", "一次请求的一生", "Life of a request",
+     "第一部分 · 宏观全景", "Part 1 · The Big Picture"),
 ]
 
 
@@ -488,6 +492,10 @@ def page(filename, content, home_href="../index.html"):
 SUBTITLES = {
     "01-what-is-milvus.html": ("向量数据库 · ANN 检索 · 为何要分布式",
                                "vector DB; ANN search; why distributed"),
+    "02-project-map.html": ("三语言分工 · 运行时组件 · 仓库布局 · 四组导航",
+                            "three languages; runtime components; repo layout; four-group nav"),
+    "03-life-of-a-request.html": ("insert 与 search 全链路 · 时间戳的角色",
+                                  "the insert & search paths; the role of timestamps"),
 }
 
 
