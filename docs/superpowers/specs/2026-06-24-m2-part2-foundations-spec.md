@@ -83,7 +83,9 @@ review passed; committed.
   is incomplete.
 - Segment lifecycle names must match `SegmentState_*` in code.
 - Metric names exactly Milvus's (L2/IP/COSINE/HAMMING/JACCARD).
-- woodpecker is a real built-in WAL option; RocksMQ is the standalone default MQ — verify before stating
-  defaults.
+- woodpecker is a real built-in WAL option; **MQ defaults: standalone → RocksMQ (default) > Pulsar >
+  Kafka > Woodpecker; cluster → Pulsar (default) > Kafka > Woodpecker (RocksMQ unsupported in
+  cluster)**; `mq.type: default` picks per mode; Woodpecker is recommended for new instances
+  (`configs/milvus.yaml` mq/woodpecker sections). Verify before stating.
 - Don't fabricate file paths for Knowhere (it's an upstream lib); cite Milvus-side references only.
 - file+symbol citations; small snippets only.
