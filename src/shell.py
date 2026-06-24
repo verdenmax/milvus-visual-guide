@@ -53,6 +53,16 @@ PAGES = [
      "第一部分 · 宏观全景", "Part 1 · The Big Picture"),
     ("03-life-of-a-request.html", "一次请求的一生", "Life of a request",
      "第一部分 · 宏观全景", "Part 1 · The Big Picture"),
+    ("04-embeddings-and-similarity.html", "向量与相似度", "Embeddings & similarity",
+     "第二部分 · 前置基础", "Part 2 · Foundations"),
+    ("05-ann-algorithms.html", "ANN 算法直觉", "ANN algorithms, intuitively",
+     "第二部分 · 前置基础", "Part 2 · Foundations"),
+    ("06-data-model.html", "数据模型", "The data model",
+     "第二部分 · 前置基础", "Part 2 · Foundations"),
+    ("07-segments.html", "Segment 与日志即数据", "Segments & log-as-data",
+     "第二部分 · 前置基础", "Part 2 · Foundations"),
+    ("08-dependencies-and-deployment.html", "依赖与部署形态", "Dependencies & deployment",
+     "第二部分 · 前置基础", "Part 2 · Foundations"),
 ]
 
 
@@ -496,6 +506,16 @@ SUBTITLES = {
                             "three languages; runtime components; repo layout; four-group nav"),
     "03-life-of-a-request.html": ("insert 与 search 全链路 · 时间戳的角色",
                                   "the insert & search paths; the role of timestamps"),
+    "04-embeddings-and-similarity.html": ("向量 · L2/IP/COSINE · 归一化 · ANN 问题",
+                                          "embeddings; L2/IP/COSINE; normalization; the ANN problem"),
+    "05-ann-algorithms.html": ("FLAT/IVF/HNSW/PQ/DiskANN · 速度↔内存↔召回 · 关键参数",
+                               "FLAT/IVF/HNSW/PQ/DiskANN; speed↔memory↔recall; key params"),
+    "06-data-model.html": ("collection/schema/field · 主键/动态字段 · 分区键 · 数据类型",
+                           "collection/schema/field; primary key/dynamic field; partition key; data types"),
+    "07-segments.html": ("段的生命周期 · vchannel→pchannel · 日志即数据 · 列式布局",
+                         "segment lifecycle; vchannel→pchannel; log-as-data; columnar layout"),
+    "08-dependencies-and-deployment.html": ("etcd · 对象存储 · 消息队列 · Lite/Standalone/Cluster",
+                                            "etcd; object storage; message queue; Lite/Standalone/Cluster"),
 }
 
 

@@ -321,12 +321,17 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 3 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 8 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
   <li>The project map</li>
   <li>Life of a request</li>
+  <li>Embeddings & similarity</li>
+  <li>ANN algorithms, intuitively</li>
+  <li>The data model</li>
+  <li>Segments & log-as-data</li>
+  <li>Dependencies & deployment</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -1076,6 +1081,1290 @@ we formally dive into the engine — starting with "how data is organized into c
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
     <li>'Query while writing' is a key Milvus feature: data you inserted a second ago is searchable the next. Combining this lesson's write and query paths, which two mechanisms cooperate to make this possible? (Hint: the growing segment, and the delegator's segment selection.)</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Embeddings & similarity</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Part 1 said Milvus turns "find similar" into "find nearest neighbors in vector space". This lesson
+<strong>takes that sentence apart</strong>: what an <strong>embedding</strong> actually is, what the vector space looks like,
+which <strong>metrics</strong> measure "how alike", when to use each, and why <strong>exact nearest-neighbor is too slow</strong>
+so we must turn to ANN. Nail these foundations and every later lesson on indexing and querying has solid ground.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of each item as <strong>a point on a map</strong>: just two numbers (lat/long) locate a city; an embedding uses
+  <strong>hundreds or thousands of numbers</strong> to locate a sentence or an image. "How far apart are two cities" is
+  measured by straight-line distance; "how alike are two sentences" works the same way — only the ruler now lives in
+  hundreds of dimensions. A <strong>metric</strong> is the ruler in your hand: some measure straight-line distance (L2),
+  some measure whether directions align (cosine). Pick the wrong ruler and "near vs far" loses all meaning.
+</div>
+
+<h2>Embeddings: encoding everything into a point in space</h2>
+<p>An embedding is the output of a trained <strong>neural network</strong>: feed in text, an image, or audio and it emits a
+<strong>fixed-length list of floats</strong> — the vector. There is one property, but it is everything:
+<strong>semantically similar inputs land close together</strong> in that space. "cat" and "kitten" nearly overlap;
+"cat" and "interest rate" sit far apart. So "semantic similarity", once vague and unmeasurable, finally gets a
+<strong>computable ruler</strong>.</p>
+
+<p>Two iron rules: (1) <strong>the model decides the dimension</strong> (commonly 384 / 768 / 1024 / 1536), and all vectors in
+one collection must be the <strong>same dimension</strong>, else they can't be compared; (2) <strong>you must use the same model
+for ingest and for query</strong>, otherwise the two sides aren't "in the same space" and comparing distances is meaningless —
+like one person quoting height in meters and another in feet.</p>
+
+<p>One more intuition about whether an embedding is "good": a <strong>good</strong> embedding model is trained on huge data and learns not
+to "memorize each item" but to <strong>distill meaning into direction</strong> — related concepts point in nearby directions, unrelated
+ones become orthogonal (perpendicular). So "using the right model" matters almost as much as "building the right index": however
+fast your retrieval, built on a misaligned vector space it returns results that <strong>look similar but are actually unrelated</strong>.
+That's why this guide keeps stressing "same model for ingest and query" — it's a precondition for the <strong>correctness</strong> of all
+similarity search, not a performance knob.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Raw data</h4><p>Text, an image, audio… a computer can't directly tell whether they "look alike".</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Embedding model</h4><p class="mono">bge / BERT / CLIP …</p><p>A trained network mapping each item to a fixed-dimension vector.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Vector (e.g. 768-d)</h4><p>A point in space: similar meaning ⇒ near points; unrelated ⇒ far apart.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Measure "distance"</h4><p>Give the two points a ruler (L2 / IP / COSINE…) to get "near/far" = "alike or not".</p></div></div>
+</div>
+
+<h2>Metrics: the rulers that measure "how alike"</h2>
+<p>Vectors are points, so "are two items alike" becomes "how big is the <strong>distance</strong> or <strong>similarity</strong> between two
+points". Before diving in, one intuition about <strong>dimension</strong>: higher isn't always better. More dimensions let the model pack
+in more semantic detail, but storage and compute cost rise linearly, and overly high dimensions invite the "curse of
+dimensionality" discussed later. A common trade: use 768 / 1024 dims when retrieval quality matters, drop to 384 or lower to save
+memory and chase throughput, or <strong>quantize/compress</strong> the vectors (Lesson 5). All vectors in a collection share one dimension,
+and once chosen that number stays with the collection for life. Milvus's metric names are <strong>fixed, case-sensitive</strong> string
+constants; the three everyday rulers are <span class="inline">L2</span>, <span class="inline">IP</span>, and <span class="inline">COSINE</span>:</p>
+
+<ul>
+  <li><strong>L2 (Euclidean)</strong>: straight-line distance between two points, <strong>smaller is more alike</strong>. It cares about
+  "how far apart in absolute position" and is sensitive to vector length (magnitude).</li>
+  <li><strong>IP (Inner Product)</strong>: multiply matching elements and sum, <strong>larger is more alike</strong>. It is affected by both
+  direction alignment and magnitude.</li>
+  <li><strong>COSINE (cosine similarity)</strong>: looks only at the <strong>angle</strong> between two vectors, ignoring magnitude;
+  <strong>larger (closer to 1) is more alike</strong>. It is essentially "normalize first, then take the inner product".</li>
+</ul>
+
+<div class="cellgroup">
+  <div class="cg-cap"><b>One distance computation</b>: query <span class="mono">q</span> times in-store vector <span class="mono">v</span> element-by-element, summed = inner product (IP); L2 instead subtracts, squares, sums</div>
+  <div class="cells"><span class="lab">q</span><span class="cell hl">0.90</span><span class="cell hl">0.10</span><span class="cell hl">0.80</span></div>
+  <div class="cells"><span class="lab">v</span><span class="cell">0.88</span><span class="cell">0.12</span><span class="cell">0.79</span></div>
+  <div class="cells"><span class="lab">IP</span><span class="cell q">0.90·0.88</span><span class="sep">+</span><span class="cell q">0.10·0.12</span><span class="sep">+</span><span class="cell q">0.80·0.79</span><span class="sep">=</span><span class="cell scale">1.42 bigger = closer</span></div>
+  <div class="cells"><span class="lab">L2²</span><span class="cell q">0.02²</span><span class="sep">+</span><span class="cell q">0.02²</span><span class="sep">+</span><span class="cell q">0.01²</span><span class="sep">=</span><span class="cell scale">0.0009 smaller = closer</span></div>
+</div>
+
+<p>A common confusion hides here: <strong>"distance" and "similarity" point opposite ways</strong>. L2 is a distance, so
+<strong>smaller is better</strong>; IP / COSINE are similarities, so <strong>larger is better</strong>. Milvus normalizes the sort order
+internally, but when choosing a metric and reading scores, keep it straight: with L2, do not assume "higher score = more alike".</p>
+
+<h2>Normalization: why IP and COSINE often become equal</h2>
+<p>"Normalizing" a vector means <strong>scaling it to length 1</strong> (dividing by its magnitude), keeping direction and discarding
+length. This small act yields a neat result: <strong>for normalized vectors, the inner product (IP) equals cosine similarity
+(COSINE)</strong>. Cosine is already "normalize then inner-product"; if the vectors are already unit-length, that normalize step
+is free.</p>
+
+<div class="cols">
+  <div class="col"><h4>Not normalized</h4><p>Vectors have different lengths. With <span class="inline">IP</span>, <strong>longer vectors get an unfair edge</strong>
+  (bigger inner product); if what you really want to compare is direction/meaning, prefer <span class="inline">COSINE</span> or
+  <span class="inline">L2</span>.</p></div>
+  <div class="col"><h4>Normalized (length = 1)</h4><p>Length information is flattened away; only direction remains. Now
+  <span class="inline">IP == COSINE</span>, and <span class="inline">L2</span> maps monotonically to <span class="inline">COSINE</span> — any of
+  them ranks the same. Many embedding models already output normalized vectors.</p></div>
+</div>
+
+<p>Rule of thumb: if your model's docs say "outputs are normalized", then <span class="inline">IP</span> and
+<span class="inline">COSINE</span> are equivalent and IP is cheapest; if not normalized and you only care about semantic direction,
+<span class="inline">COSINE</span> is safest; only when absolute position matters (some numeric features) consider
+<span class="inline">L2</span>. The cardinal discipline: <strong>build the index and search with the same metric</strong>, or the
+definition of "near/far" won't line up and recall collapses.</p>
+
+<h2>Binary and sparse vectors: a few more specialized rulers</h2>
+<p>Beyond the everyday dense float vectors, two special kinds come with their own metrics:</p>
+<ul>
+  <li><strong>Binary vectors (BinaryVector)</strong>: every bit is 0 or 1 (e.g. fingerprints, molecular hashes). Use
+  <strong>HAMMING</strong> (how many bits differ) or <strong>JACCARD</strong> (set overlap).</li>
+  <li><strong>Sparse vectors (SparseFloatVector)</strong>: huge dimension but mostly zeros (e.g. BM25, SPLADE term weights). These are
+  naturally scored with <strong>IP (inner product)</strong>.</li>
+</ul>
+
+<table class="t">
+  <tr><th>Metric</th><th>Meaning</th><th>Direction</th><th>Typical use / vector type</th></tr>
+  <tr><td><strong>L2</strong></td><td class="mono">Euclidean distance</td><td>smaller = closer</td><td>dense floats; absolute position matters</td></tr>
+  <tr><td><strong>IP</strong></td><td class="mono">inner product</td><td>larger = closer</td><td>normalized dense; <strong>sparse vectors</strong></td></tr>
+  <tr><td><strong>COSINE</strong></td><td class="mono">angle cosine</td><td>larger = closer</td><td>dense, compare direction/meaning only</td></tr>
+  <tr><td><strong>HAMMING</strong></td><td class="mono">differing bits</td><td>smaller = closer</td><td>binary vectors</td></tr>
+  <tr><td><strong>JACCARD</strong></td><td class="mono">set overlap</td><td>smaller = closer</td><td>binary vectors</td></tr>
+</table>
+
+<p>These names aren't invented by the tutorial — they are <strong>literally defined constants</strong> in Milvus source. Below is their
+"birthplace"; remember the strings are <strong>case-sensitive</strong>, and the <span class="inline">metric_type</span> you pass when
+building an index or searching must match them exactly.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">pkg/util/metric/metric_type.go</span><span class="ln">MetricType constants</span></div>
+  <pre><span class="kw">type</span> MetricType = <span class="kw">string</span>
+
+<span class="kw">const</span> (
+    L2      MetricType = <span class="st">"L2"</span>       <span class="cm">// Euclidean distance, smaller = closer</span>
+    IP      MetricType = <span class="st">"IP"</span>       <span class="cm">// inner product, larger = closer</span>
+    COSINE  MetricType = <span class="st">"COSINE"</span>   <span class="cm">// cosine similarity (== IP once normalized)</span>
+    HAMMING MetricType = <span class="st">"HAMMING"</span>  <span class="cm">// binary vectors: number of differing bits</span>
+    JACCARD MetricType = <span class="st">"JACCARD"</span>  <span class="cm">// binary vectors: set overlap</span>
+    <span class="cm">// plus more specialized metrics: BM25, MHJACCARD, SUBSTRUCTURE, …</span>
+)</pre>
+</div>
+
+<h2>In practice: which metric should you actually pick</h2>
+<p>Let's distill the above into an actionable checklist. Choosing a metric ultimately depends on <strong>where your vectors come from
+and what you're comparing</strong>; three sentences settle it:</p>
+
+<div class="cols">
+  <div class="col"><h4>Read the model docs</h4><p>If it says "outputs are normalized / unit length", just use <span class="inline">IP</span> — equivalent to
+  <span class="inline">COSINE</span> but cheapest. Most mainstream text embeddings (e.g. the bge family) fall here.</p></div>
+  <div class="col"><h4>Compare direction/meaning only</h4><p>If vectors aren't normalized and you only care about "semantic direction", <span class="inline">COSINE</span>
+  is safest: it ignores magnitude automatically and won't be skewed by "long vectors".</p></div>
+</div>
+
+<p>The remaining cases: use <span class="inline">L2</span> only when <strong>absolute position / magnitude itself is meaningful</strong> (some
+engineering features, coordinate-like data); for <strong>binary or sparse</strong> vectors, follow the earlier table — HAMMING / JACCARD / IP.
+One trap, stated once more: <strong>within a collection, whatever metric you build the index with, you must search with</strong> — the two
+must match exactly. This isn't "advice", it's a "rule"; breaking it won't raise a friendly error, it <strong>silently returns wrong
+results</strong> that are painful to debug.</p>
+
+<p>A closing intuition: the metric decides "what counts as near", the model decides "how good the vectors are", and the index
+(next lesson) decides "how fast you find them". The three are <strong>orthogonal</strong>, yet all indispensable in one real search. Keep
+these three layers separate in your head and you'll instantly locate "which layer the problem is in" when reading any vector-search
+config, tuning, or incident.</p>
+
+<h2>topK and score thresholds: what one search returns</h2>
+<p>Putting metrics to work, one <strong>search</strong> is: given a <strong>query vector</strong>, compute "near/far" for each item by the metric,
+and return the nearest <strong>K</strong> — that is <strong>topK</strong>. Results are <strong>sorted by similarity</strong> — rank 1 most alike, then down.
+Apps often add a <strong>score threshold</strong> to keep out "ranked first but not actually close enough" results, avoiding a list of
+barely-qualifying neighbors. Mind the direction: with L2 it's "closer than some distance counts as alike"; with COSINE / IP it's
+"above some score counts as alike".</p>
+
+<div class="trace">
+  <div class="tcap"><b>One topK=2 search</b>: query <span class="mono">q</span> vs 4 stored vectors by distance (L2, smaller = closer), sort, keep nearest 2</div>
+  <div class="stations">
+    <div class="stn"><h5>① Distances</h5>
+      <div class="cellrow"><span class="vc">v1</span><span class="vc hot">0.03</span></div>
+      <div class="cellrow"><span class="vc">v2</span><span class="vc">1.42</span></div>
+      <div class="cellrow"><span class="vc">v3</span><span class="vc hot">0.07</span></div>
+      <div class="cellrow"><span class="vc">v4</span><span class="vc">0.96</span></div>
+      <div class="tlab">compare each to q</div>
+    </div>
+    <div class="op">sort→</div>
+    <div class="stn"><h5>② Ascending</h5>
+      <div class="cellrow"><span class="vc hot">v1 0.03</span></div>
+      <div class="cellrow"><span class="vc hot">v3 0.07</span></div>
+      <div class="cellrow"><span class="vc dim">v4 0.96</span></div>
+      <div class="cellrow"><span class="vc dim">v2 1.42</span></div>
+      <div class="tlab">distance small→large</div>
+    </div>
+    <div class="op">top2→</div>
+    <div class="stn"><h5>③ topK=2</h5>
+      <div class="cellrow"><span class="vc blue">v1 ✓</span></div>
+      <div class="cellrow"><span class="vc blue">v3 ✓</span></div>
+      <div class="tlab">return 2 most similar</div>
+    </div>
+  </div>
+</div>
+
+<p>This figure also reveals brute force's cost: step ① computes a distance against <strong>every</strong> item. Four items is fine; four
+hundred million is a disaster. That is exactly the pain ANN solves below.</p>
+
+<h2>Why high-dimensional space is counter-intuitive</h2>
+<p>Our intuition for "distance" comes from 2D and 3D, but embeddings have hundreds or thousands of dimensions where geometry
+<strong>differs sharply from everyday experience</strong>. A famous phenomenon is the <strong>"curse of dimensionality"</strong>: as dimension
+grows, <strong>almost all pairwise distances tend to converge</strong>, the gap between "nearest" and "second nearest" flattens, and exact
+comparison loses discriminating power; meanwhile, covering the space with grid cells to speed up exact search needs a number of
+cells that <strong>explodes exponentially</strong> with dimension. Together these mean: in high dimensions you <strong>cannot</strong> speed up
+exact search by simple partitioning, and brute force is too slow — so you settle for <strong>approximation</strong>.</p>
+
+<p>Seen this way, ANN isn't "cutting corners" — it is the <strong>only viable engineering path</strong> in a high-dimensional world. Since the
+cost of being exact explodes exponentially or linearly, trading a little recall for controllable, millisecond retrieval becomes
+inevitable. This is the shared starting point of every index ahead (IVF, HNSW, PQ, DiskANN) — they merely <strong>approach the same goal
+with different tricks</strong>.</p>
+
+<h2>The ANN problem: why we can't "compute exactly, one by one"</h2>
+<p>With vectors and a metric in hand, the most naive search is <strong>brute force (FLAT)</strong>: compute the distance from the
+query to <strong>every</strong> stored vector, then sort and keep the nearest K (topK). The result is <strong>perfectly exact</strong> and the
+logic is trivial. There is exactly one problem: it is <strong>slow</strong>.</p>
+
+<p>Do the math: 100M vectors of 768-d means one query does roughly <strong>100M × 768 ≈ 77 billion</strong> multiply-adds. A single
+query is already heavy; multiply by hundreds or thousands of concurrent queries and no single machine survives. That is the
+fatal flaw of <strong>exact kNN</strong> at scale — its O(N·D) cost grows <strong>linearly</strong> with data: 10× the data, 10× the latency.</p>
+
+<table class="t">
+  <tr><th>Approach</th><th>How it searches</th><th>Speed</th><th>Result</th></tr>
+  <tr><td><strong>Exact kNN (FLAT)</strong></td><td class="mono">distance to every item</td><td>slow O(N·D)</td><td>100% exact</td></tr>
+  <tr><td><strong>ANN index</strong></td><td class="mono">only a small candidate set</td><td>fast (milliseconds)</td><td>approximate (recall often 95%+)</td></tr>
+</table>
+
+<p>The fix is <strong>ANN (Approximate Nearest Neighbor)</strong>: organize the vectors ahead of time into a specialized
+<strong>index structure</strong> (buckets, graphs, compression…), and at query time <strong>inspect only a small set of most-likely
+candidates</strong> instead of scanning everything. The price is occasionally missing a true nearest neighbor — but in practice
+<strong>recall is usually 95%–99%+</strong> while speed jumps <strong>hundreds of times</strong>. For most applications it's an excellent
+trade: "spend a little accuracy to buy enormous speed".</p>
+
+<p>This lesson only frames the <strong>problem</strong>: why ANN is needed and what it trades for what. <strong>How</strong> ANN is actually
+implemented — bucketed IVF, graph-based HNSW, compressing PQ, disk-resident DiskANN — is the star of the next lesson (Lesson 5).
+Pack "metrics" and "why approximate" into your head and you hold the two keys to understanding every vector index ahead.
+A side note: FLAT (brute force) is also a <strong>real, selectable "index"</strong> in Milvus — when data is small and you want 100%
+exact recall, it's actually the best choice. So "exact vs approximate" isn't either/or; it's a <strong>scenario-driven knob</strong> Milvus
+leaves you, which is exactly what the next lesson unfolds.</p>
+
+<div class="card macro">
+  <div class="tag">🌍 The big picture</div>
+  Strung together in one line: <strong>embeddings turn data into points in space → a metric gives the ruler for "how alike two
+  points are" → exact nearest-neighbor is too slow → use an ANN index for approximate search</strong>. These four steps are the
+  bedrock of all of Milvus's retrieval. The metric names (L2 / IP / COSINE / HAMMING / JACCARD) and the "approximate-for-speed"
+  trade reappear in every later section.
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Embedding</strong>: a model encodes unstructured data into a fixed-length vector; similar meaning ⇒ near vectors.
+    The model fixes the dimension; ingest and query must use the same model and dimension.</li>
+    <li><strong>Metrics</strong>: L2 (distance, smaller = closer), IP (inner product, larger = closer), COSINE (angle, larger = closer);
+    index and search <strong>must use the same one</strong>.</li>
+    <li><strong>Normalization</strong>: after scaling to length 1, <strong>IP == COSINE</strong>; many embeddings are normalized by default.</li>
+    <li><strong>Specialized metrics</strong>: binary vectors use HAMMING / JACCARD; sparse vectors use IP. Names are case-sensitive
+    (see <span class="mono">metric_type.go</span>).</li>
+    <li><strong>The ANN problem</strong>: exact kNN is O(N·D) and collapses at scale; ANN trades a little recall for hundreds-fold speed.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. When all vectors are normalized (unit length), how do the topK rankings by IP (inner product) and by COSINE relate?</div>
+  <ol class="opts">
+    <li>Exactly equivalent: after normalization the inner product equals cosine, so the rankings match; many systems normalize and then use IP</li>
+    <li>The two always give exactly opposite results</li>
+    <li>COSINE degenerates into L2 Euclidean distance here</li>
+    <li>IP always judges all vectors as equally distant</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. Cosine = inner product / (product of norms). When both norms are 1 the denominator is 1, so cosine equals inner product and the rankings are identical. That justifies the common 'normalize then use IP' trick</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. For binary vectors, which set of metrics is appropriate?</div>
+  <ol class="opts">
+    <li>Only L2; treat binary vectors as ordinary floats</li>
+    <li>Must convert to sparse vectors first and use IP</li>
+    <li>Binary vectors support no similarity metric at all</li>
+    <li>HAMMING / JACCARD - they measure bit differences or set overlap, designed for binary vectors</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. metric_type.go provides HAMMING (differing bits) and JACCARD (set similarity) for binary vectors; sparse vectors use IP. Metric names are case-sensitive string constants, written exactly as in the code</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Why do we need ANN (approximate nearest neighbor) on high-dim vectors rather than exact brute force?</div>
+  <ol class="opts">
+    <li>Because exact search returns wrong results</li>
+    <li>Because distances cannot be computed in high dimensions</li>
+    <li>Because ANN is always more accurate than brute force</li>
+    <li>Exact one-by-one comparison is too slow at scale; ANN trades a little accuracy (recall) for millisecond speed</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. Brute force computes the distance against every vector; at hundreds of millions the latency is unacceptable. ANN inspects only a small candidate set via an index, trading a controllable recall loss for huge speedups - exactly the next lesson's topic</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>Suppose you build image-to-image search with vectors from some model. Would you normalize first? Would you pick L2, IP, or COSINE? Explain your reasoning, and consider how the metric should change for 'sparse keyword vectors'.</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>ANN algorithms, intuitively</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Last lesson argued that exact nearest-neighbor is too slow at scale, so we need <strong>ANN (Approximate Nearest Neighbor)</strong>.
+This lesson builds intuition for the mainstream ANN <strong>index families</strong> — <strong>FLAT, IVF, HNSW, PQ, DiskANN</strong> — what trick
+each uses to approach "the nearest neighbor", where each sits in the <strong>speed ↔ memory ↔ recall</strong> triangle, and what the key
+knobs (<span class="inline">nlist/nprobe</span>, <span class="inline">M/ef</span>) actually tune. By the end you can give a grounded answer to
+"which index should I pick".
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Finding the few books "most like this one" in a huge library. <strong>FLAT</strong> reads every book — most accurate, exhausting.
+  <strong>IVF</strong> partitions by topic and only digs into the few most relevant shelves (speed for the risk of missing other shelves).
+  <strong>HNSW</strong> hops along a "this book is like that book" reference chain, reaching the target's vicinity in a few jumps.
+  <strong>PQ</strong> compresses each book into a "summary card" — compact and fast, but the summary drops detail.
+  <strong>DiskANN</strong> moves the shelves into a warehouse (disk), keeping only an index at hand — affordable at huge scale, but each
+  lookup makes a trip to the warehouse.
+</div>
+
+<h2>First, the triangle: speed ↔ memory ↔ recall</h2>
+<p>Every ANN index trades off within one <strong>triangle</strong>: <strong>query speed</strong> (how fast it returns), <strong>memory footprint</strong>
+(how much RAM it eats), and <strong>recall</strong> (how close the returned topK is to the true nearest neighbors). The three
+<strong>cannot all be maxed</strong> — you almost always "spend one to buy the other two". Understanding any index, or tuning any
+parameter, is essentially <strong>moving your position within this triangle</strong>.</p>
+
+<div class="cols">
+  <div class="col"><h4>Want faster / less memory</h4><p>Accept <strong>lower recall</strong>: inspect fewer candidates (smaller IVF nprobe), compress
+  vectors (PQ), put data on disk (DiskANN). The price is occasionally missing a true nearest neighbor.</p></div>
+  <div class="col"><h4>Want higher recall</h4><p>Pay <strong>more time or memory</strong>: inspect more candidates (larger nprobe / ef), keep full
+  precision (no quantization), keep the whole index in RAM (HNSW). The extreme is falling back to FLAT — 100% recall, slowest.</p></div>
+</div>
+
+<p>Hold this triangle in mind and every index family below "snaps into place": which corner it turns the knob toward, and what it
+gives up for it. One more emphasis: the triangle hides an often-ignored fourth axis — <strong>index build time and cost</strong>. FLAT needs
+almost no building (just store); HNSW builds its graph slowly and CPU-heavily; IVF must first run clustering. A production system
+weighs not only "how fast it queries" but also "<strong>can we afford to build and rebuild it</strong>" — as data keeps arriving, the index
+must be incrementally updated or rebuilt. We'll unfold this in Part 5 (index building and scheduling); for now just reserve a slot
+for it.</p>
+
+<h2>Five index families: each one's trick</h2>
+<p>Milvus offers a full set of index types via its kernel library <strong>Knowhere</strong>; grouped by "idea" they fall into five families.
+First a table for the global picture, then one by one:</p>
+
+<table class="t">
+  <tr><th>Index</th><th>Core idea</th><th>Key params</th><th>Good for</th></tr>
+  <tr><td><strong>FLAT</strong></td><td class="mono">brute force, exact per item</td><td>none</td><td>small data, 100% exact recall</td></tr>
+  <tr><td><strong>IVF</strong></td><td class="mono">cluster into buckets, probe a few</td><td>nlist / nprobe</td><td>mid-large scale, tunable speed/recall</td></tr>
+  <tr><td><strong>HNSW</strong></td><td class="mono">multi-layer small-world graph, hop edges</td><td>M / efConstruction / ef</td><td>low latency, high recall (memory for speed)</td></tr>
+  <tr><td><strong>PQ / quantization</strong></td><td class="mono">compress vectors, save memory</td><td>m (subquantizers) / nbits</td><td>memory-tight, tolerate precision loss</td></tr>
+  <tr><td><strong>DiskANN</strong></td><td class="mono">disk-resident graph index</td><td>search_list, …</td><td>huge data that won't fit in RAM</td></tr>
+</table>
+
+<h3>FLAT: the non-approximate "baseline"</h3>
+<p><strong>FLAT</strong> does no approximation — it's last lesson's brute force: distance to every item, sort, take topK. Its value is
+twofold: (1) at small scale (tens to hundreds of thousands) it is <strong>accurate and fast enough</strong>, no need for a complex index;
+(2) it is the <strong>"ground truth" for recall</strong> — how close another index's results come to FLAT's is that index's recall. In other
+words, FLAT is both a usable index and a <strong>yardstick for grading other indexes</strong>. Many overlook its second identity, but it's
+invaluable when tuning: without "ground truth" you simply can't quantify "how much the approximate index actually missed".</p>
+
+<h3>IVF: partition first, then probe only a few partitions</h3>
+<p><strong>IVF (Inverted File)</strong> first uses clustering (k-means) to split all vectors into <span class="inline">nlist</span>
+<strong>buckets</strong> (each with a centroid). At query time it doesn't scan everything; it finds the <strong>nearest
+<span class="inline">nprobe</span> buckets</strong> to the query and compares exactly only within those. Two knobs, very direct:
+<span class="inline">nlist</span> is "how many buckets" (set at build time), <span class="inline">nprobe</span> is "how many buckets to probe at
+query" — <strong>larger nprobe means more candidates, higher recall but slower</strong>. An analogy: nlist is how many zones you split a
+warehouse into (decided once), nprobe is how many zones you're willing to walk this trip — walking more naturally misses less but
+costs more legwork. One knob governs "structure", the other "the effort per query"; together they place IVF precisely where you want
+it in the triangle.</p>
+
+<div class="trace">
+  <div class="tcap"><b>IVF search</b>: all vectors split into 6 buckets, the query probes only the nearest 2 (nprobe=2), skipping the other 4</div>
+  <div class="stations">
+    <div class="stn"><h5>① All buckets</h5>
+      <div class="cellrow"><span class="vc">b1</span><span class="vc">b2</span><span class="vc">b3</span></div>
+      <div class="cellrow"><span class="vc">b4</span><span class="vc">b5</span><span class="vc">b6</span></div>
+      <div class="tlab">nlist=6 centroids</div>
+    </div>
+    <div class="op">nearest 2→</div>
+    <div class="stn"><h5>② Hit buckets</h5>
+      <div class="cellrow"><span class="vc hot">b2</span><span class="vc hot">b5</span></div>
+      <div class="cellrow"><span class="vc dim">rest skipped</span></div>
+      <div class="tlab">nprobe=2</div>
+    </div>
+    <div class="op">exact in-bucket→</div>
+    <div class="stn"><h5>③ topK</h5>
+      <div class="cellrow"><span class="vc blue">neighbors ✓</span></div>
+      <div class="tlab">compare in 2 buckets only</div>
+    </div>
+  </div>
+</div>
+
+<p>IVF has common variants differing in "how vectors are stored in a bucket": <strong>IVF_FLAT</strong> keeps raw vectors (accurate);
+<strong>IVF_SQ8</strong> squeezes each dimension into 1 byte (saves memory); <strong>IVF_PQ</strong> compresses further via product quantization
+(smaller, but lower precision). They share the same <span class="inline">nlist/nprobe</span> intuition, only turning the "memory" corner of
+the triangle tighter or looser.</p>
+
+<p>An inherent IVF weakness worth knowing: it relies on <strong>cluster boundaries</strong>. If a true nearest neighbor happens to fall in
+"a bucket that wasn't probed", it's missed — which is exactly why raising nprobe lifts recall (probe more buckets, miss fewer). So
+IVF's recall is somewhat sensitive to data distribution: it does well when data spreads evenly, but needs a larger nprobe to
+guarantee recall when data clumps into a few huge clusters. Grasp this and tuning nprobe becomes deliberate — <strong>balancing "buckets
+probed" against "latency"</strong> — rather than blind.</p>
+
+<h3>HNSW: hopping on a "navigable small-world graph"</h3>
+<p><strong>HNSW (Hierarchical Navigable Small World)</strong> doesn't bucket; it connects all vectors into a <strong>multi-layer graph</strong>:
+each vector is a node linked to several "nearby" nodes. A query starts from an entry in the <strong>sparse top layer</strong> and, each step,
+hops to the neighbor "closer to the query" — like going from highway to arterial to side street, <strong>approaching the target in a few
+hops</strong>. Three knobs: <span class="inline">M</span> is edges per node (graph density, affects memory and recall),
+<span class="inline">efConstruction</span> is the candidate width at build time (how finely it's built), and <span class="inline">ef</span> is the
+candidate width at query time — <strong>larger ef searches wider, higher recall but slower</strong>.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Top-layer entry</h4><p>Pick an entry node on the sparsest layer and take big strides toward the query.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Descend layers</h4><p>At each layer, greedily hop along edges to closer neighbors, then descend to the denser next layer.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Refine at bottom</h4><p>On the densest bottom layer, search finely with a candidate set of width <span class="mono">ef</span>, converging to the nearest neighbors.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Return topK</h4><p>The whole path visits a tiny fraction of all nodes yet very likely hits the true nearest neighbors.</p></div></div>
+</div>
+
+<p>HNSW is today's <strong>most popular</strong> in-memory index: high recall, low latency, not too parameter-sensitive. The cost is
+<strong>large memory</strong> (graph structure + raw vectors all in RAM), so it stands in the "fast, high-recall, but memory-expensive"
+corner of the triangle. An intuition: larger <span class="inline">M</span> makes the graph denser, lifting recall but also memory and build
+time; <span class="inline">ef</span> is a knob that <strong>only takes effect at query time</strong> and can be tuned online — to temporarily raise
+recall, just increase ef, no rebuild needed. This "fix the structure at build, tune the width at query" design lets HNSW be
+prebuilt yet stay flexible at runtime. When data grows beyond what RAM holds, the next two take over.</p>
+
+<h3>PQ and DiskANN: when memory won't fit</h3>
+<p><strong>PQ (Product Quantization)</strong> is a <strong>compression</strong> technique rather than a standalone index: it cuts a high-dim
+vector into <strong>subvectors</strong>, approximating each by a "representative" from a small codebook, so one vector shrinks from
+kilobytes to tens of bytes. The upside is a steep drop in memory and fast distance estimation in the compressed domain; the cost is
+<strong>precision loss</strong> (representatives replace true values). PQ is often combined with IVF into <strong>IVF_PQ</strong>.</p>
+
+<p><strong>DiskANN</strong> saves memory along a different axis: it keeps the graph index and vectors <strong>mostly on SSD</strong>, retaining only
+essential navigation info in RAM. It's designed for <strong>datasets too large for one machine's memory</strong>, trading "disk capacity"
+for "memory pressure", at the cost of a <strong>few disk reads per query</strong> (relying on SSD random-read performance to keep latency
+acceptable). In one line: <strong>PQ compresses data, DiskANN moves it to disk</strong> — both to keep serving huge vector sets under limited
+memory. Note DiskANN strongly depends on <strong>SSDs</strong>, not spinning disks — its latency budget assumes "random reads are fast enough";
+on a HDD it would be unusably slow. This is a reminder that <strong>index choice isn't only a software question, it's deeply tied to
+hardware</strong> (RAM size, disk type) — exactly why we frame it inside the "speed ↔ memory ↔ recall" triangle.</p>
+
+<div class="layers">
+  <div class="layer l-app"><div class="lh"><span class="badge">most exact</span><span class="name">FLAT</span></div><div class="ld">no approximation, 100% recall; small-data baseline. Memory = all raw vectors, slowest.</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">tunable</span><span class="name">IVF family</span></div><div class="ld">cluster into buckets, nprobe tunes speed/recall; IVF_SQ8 / IVF_PQ save more memory.</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">low latency</span><span class="name">HNSW</span></div><div class="ld">graph index, high recall and low latency; memory the most expensive. Most popular in-memory index.</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">memory-saving</span><span class="name">PQ / DiskANN</span></div><div class="ld">compress (PQ) or sink to disk (DiskANN), to serve huge scale under limited memory.</div></div>
+</div>
+
+<h2>How to choose: reason backward from your scenario</h2>
+<p>Knowing the five families, the real question is "<strong>which one for my scenario</strong>". Don't memorize rules; reason backward from
+three questions: <strong>how big is the data? is memory enough? how strict is the recall requirement?</strong> Follow those three and most
+choices resolve themselves.</p>
+
+<div class="cols">
+  <div class="col"><h4>Small data, must be exact</h4><p>Tens to hundreds of thousands, or a debugging phase that needs "ground truth": just <strong>FLAT</strong>.
+  Fast enough, 100% recall, zero tuning hassle.</p></div>
+  <div class="col"><h4>Ample memory, want low latency</h4><p>Millions to tens of millions that fit in RAM: <strong>HNSW</strong> is almost the default. High recall,
+  low latency, forgiving params, at the cost of memory.</p></div>
+  <div class="col"><h4>Large scale, want a tunable trade</h4><p>Need to slide flexibly between speed and recall: the <strong>IVF</strong> family. With one knob,
+  <span class="inline">nprobe</span>, you can dial the balance point online.</p></div>
+  <div class="col"><h4>Huge, won't fit in memory</h4><p>Hundreds of millions or more, beyond a single machine's RAM: <strong>DiskANN</strong> or <strong>IVF_PQ</strong>.
+  Trade disk capacity or compression for "still being able to serve".</p></div>
+</div>
+
+<p>Dispel a common misconception: <strong>there is no "best index", only "the index best fit to the current triangle constraints"</strong>. The
+same data: on a memory-rich machine HNSW is optimal; moved to a memory-tight environment it may need to become IVF_PQ or DiskANN.
+So "choosing an index" isn't a one-time decision; it <strong>evolves with your data scale, hardware budget, and the business's recall
+tolerance</strong>. One of Milvus's values is letting you <strong>swap indexes without changing business code</strong> — the same create / insert /
+search, with the underlying index rebuilt and replaced.</p>
+
+<p>Another practical tip: many teams first run a <strong>"recall baseline" with FLAT or HNSW</strong>, then switch to a leaner index and
+<strong>compare recall</strong> to see how much was lost. Because FLAT gives the "ground truth", this "build a baseline first, then squeeze
+cost" methodology lets you <strong>move within the triangle with evidence</strong> instead of tuning by feel. Ultimately, index selection is
+an art of <strong>engineering trade-offs</strong>, not "finding the optimum": first decide how much recall loss the business tolerates, how
+much memory the machines have, and where the latency red line sits, then map back onto this triangle — and the answer usually
+surfaces on its own.</p>
+
+<h2>Where these names come from: Knowhere index types</h2>
+<p>These indexes aren't built in-house by Milvus; they come from its vector-search <strong>kernel library Knowhere</strong> (an upstream lib).
+On the Milvus side, the C++ code <strong>references</strong> these Knowhere index enum constants. Below is where the Milvus kernel enumerates
+index types (note: Knowhere is its own repository — we only show where Milvus references it, <strong>without fabricating Knowhere's file
+paths</strong>):</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/core/src/index/Utils.cpp</span><span class="ln">references knowhere::IndexEnum</span></div>
+  <pre><span class="cm">// Milvus kernel side references the index-type constants Knowhere provides</span>
+knowhere::IndexEnum::INDEX_FAISS_IVFFLAT      <span class="cm">// IVF_FLAT</span>
+knowhere::IndexEnum::INDEX_FAISS_BIN_IVFFLAT  <span class="cm">// IVF for binary vectors</span>
+knowhere::IndexEnum::INDEX_HNSW               <span class="cm">// HNSW graph index</span>
+knowhere::IndexEnum::INDEX_DISKANN            <span class="cm">// DiskANN (disk-resident)</span>
+knowhere::IndexEnum::INDEX_SPARSE_INVERTED_INDEX <span class="cm">// sparse-vector inverted index</span></pre>
+</div>
+
+<p>The <strong>actual build process, parameter details, and the engineering pipeline that schedules index building</strong> are the subject of
+<strong>Part 5</strong>, where we'll really dive into the C++ kernel. For this lesson you only need <strong>selection intuition</strong>: know these
+families exist, where each sits in the triangle, and what the key knobs tune. That's enough to make your first reasonable choice in
+practice. One sentence to tie the five together: <strong>FLAT plays it straight</strong> (baseline and small data), <strong>IVF buckets</strong>
+(tunable speed/recall), <strong>HNSW builds a graph</strong> (low latency, memory-hungry), <strong>PQ compresses and DiskANN sinks to disk</strong>
+(two ways out under memory limits). They aren't "which is better" substitutes; they cover <strong>different niches</strong> from "tens of
+thousands" to "billions", from "memory-rich" to "memory-tight". The further you go, the more you'll see that much of Milvus's
+design — segments, incremental indexing, storage-compute separation — exists to make "swap in a more suitable index" <strong>actually
+feasible</strong> in a continuously-writing production system.</p>
+
+<div class="card macro">
+  <div class="tag">🌍 The big picture</div>
+  In one line: <strong>every ANN index trades off within the "speed ↔ memory ↔ recall" triangle</strong>. FLAT is exact (the baseline);
+  IVF buckets and tunes speed/recall via nprobe; HNSW builds a graph for low latency and high recall but is memory-hungry; PQ
+  compresses data, DiskANN sinks to disk — both to serve huge scale under limited memory. They are index types Milvus offers via
+  Knowhere and <strong>you pick per collection</strong>.
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>The triangle</strong>: speed, memory, recall can't all be maxed; picking an index and tuning params both move within it.</li>
+    <li><strong>FLAT</strong>: exact, 100% recall, slowest; small-data baseline and the "ground truth" for others' recall.</li>
+    <li><strong>IVF</strong>: cluster into buckets; <span class="mono">nlist</span> sets bucket count, <span class="mono">nprobe</span> sets buckets probed
+    (larger = more accurate, slower). Variants SQ8/PQ save memory.</li>
+    <li><strong>HNSW</strong>: multi-layer small-world graph, <span class="mono">M / efConstruction / ef</span>; high recall, low latency, but the most
+    memory-hungry and most popular.</li>
+    <li><strong>PQ / DiskANN</strong>: compress / sink to disk, to serve huge scale that won't fit in memory.</li>
+    <li>These are <strong>Knowhere</strong> index types (referenced by Milvus, see <span class="mono">index/Utils.cpp</span>); build details are saved for Part 5.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. ANN index selection is often described as a 'speed↔memory↔recall' triangle. What does this triangle mean at its core?</div>
+  <ol class="opts">
+    <li>With enough memory, speed and recall are both automatically optimal</li>
+    <li>You can rarely max all three: improving one often sacrifices another, so selection means balancing the three for your workload</li>
+    <li>The three are fully independent and each can be maximized freely</li>
+    <li>The triangle shows FLAT is best on every dimension</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. FLAT gives 100% recall but is slow and memory-heavy; IVF trades pruning for speed; HNSW is fast and accurate but memory-hungry; PQ/DiskANN save memory via compression or disk at some recall/speed cost. No silver bullet - selection is a trade-off</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Regarding IVF's nlist and nprobe parameters, which understanding is correct?</div>
+  <ol class="opts">
+    <li>nlist controls query speed, nprobe sets the vector dimension</li>
+    <li>Larger nprobe is always faster</li>
+    <li>nlist is the number of cluster buckets; nprobe is how many buckets are actually scanned at query time. Larger nprobe means higher recall but slower</li>
+    <li>Both affect only index building, not querying</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. IVF clusters vectors into nlist buckets; a query searches only the nprobe buckets nearest the query. Small nprobe scans less - fast but may miss true neighbors (low recall); large nprobe is more complete but slower - another speed↔recall knob</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Compared with HNSW, what is DiskANN's main trade-off?</div>
+  <ol class="opts">
+    <li>DiskANN only handles binary vectors</li>
+    <li>DiskANN keeps most of the index on SSD, trading disk for memory, suited to huge datasets that don't fit in RAM</li>
+    <li>DiskANN is always faster and more memory-efficient than HNSW</li>
+    <li>DiskANN needs no storage at all</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. HNSW is an in-memory graph index, fast and accurate but memory-heavy; DiskANN targets ultra-large scale that won't fit in RAM, putting the index body on SSD and trading disk I/O for memory, at the cost of latency higher than pure in-memory indexes</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>For 100M items at 512-dim, requiring p99 < 50ms, recall ≥ 0.95, on a memory-limited server, which of FLAT/IVF/HNSW/PQ/DiskANN would you try first? Explain how you weigh the speed↔memory↔recall trade-off.</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>The data model</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+The last few lessons were about "how vectors are compared and searched". This one shifts angle: <strong>how is data actually
+organized inside Milvus</strong>? From <strong>collection</strong> to <strong>schema</strong> to <strong>field</strong>, then <strong>primary key, auto_id, dynamic
+field, partition, partition key</strong>, and all the <strong>data types</strong> Milvus supports today — especially the six vector types. Clear
+up this "data model" and you'll know what kind of structure your inserted data lands in.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of a <strong>collection</strong> as an <strong>Excel sheet</strong>: the <strong>schema</strong> is the header design (which columns, what type each),
+  a <strong>field</strong> is one column, and a <strong>row</strong> is one entity. The <strong>primary key</strong> is the "employee ID" column — unique across
+  the whole sheet, used to pinpoint a row. A <strong>partition</strong> is like splitting the big sheet into a few sheets by "department",
+  so querying one department only flips to the matching sheet. Only, a Milvus table can also have a special column — a
+  <strong>vector column</strong> — dedicated to similarity search.
+</div>
+
+<h2>From collection to field: a three-layer structure</h2>
+<p>The outermost layer of data organization in Milvus is the <strong>collection</strong>, roughly a <strong>table</strong> in a relational database. A
+collection is defined by a <strong>schema</strong>, which lists several <strong>fields</strong>, each specifying a name, data type, and some type
+parameters. Each item written into a collection is an <strong>entity</strong>, corresponding to a <strong>row</strong>. Memorize this mapping; every
+concept later hangs off it. Versus a relational DB there is one big difference: a Milvus "row" can hold a special "column" — the
+<strong>vector column</strong> — the one used for similarity search. The other scalar columns (numbers, text, boolean) behave exactly like a
+relational DB's, mainly used for <strong>filtering</strong> ("price below 500", "region equals East"). So an entity typically looks like:
+<strong>one primary key + one (or more) vectors + several scalar fields</strong>. A search finds similar by vector while also constraining by
+scalar fields — exactly what separates a "vector database" from a "pure algorithm library".</p>
+
+<p>One key difference from a relational DB to flag first: <strong>once the schema is set at collection creation, the structure is largely
+stable</strong>. Core metadata like dimension, primary key, and metric can't be changed at will — unlike the freewheeling
+<span class="mono">ALTER TABLE</span> add/drop column of a relational DB. The reason is that for top retrieval performance, Milvus plans the
+underlying <strong>columnar storage and index layout</strong> around the schema; the schema is the "foundation" of that layout. So designing a
+schema means <strong>thinking one step ahead</strong>: which fields will filter, which field suits the partition key, what vector dimension —
+these decisions live with the collection for a long time. Milvus does leave a "release valve" (the dynamic field below), but the
+stability of the core structure is the necessary price it pays for high performance.</p>
+
+<p>By the way, <strong>above the collection there is also a database layer</strong>: a Milvus instance can hold several databases, each holding
+several collections, for coarser-grained isolation (different business lines, different environments). This lesson focuses on the
+collection and its internals; just know the database layer exists.</p>
+
+<table class="t">
+  <tr><th>Milvus concept</th><th>≈ relational DB</th><th>Note</th></tr>
+  <tr><td><strong>collection</strong></td><td>table</td><td>outermost layer of data, has its own schema</td></tr>
+  <tr><td><strong>schema</strong></td><td>table definition</td><td>declares the fields, their types and constraints</td></tr>
+  <tr><td><strong>field</strong></td><td>column</td><td>one field: name + data type + params</td></tr>
+  <tr><td><strong>entity</strong></td><td>row</td><td>one written item (a row)</td></tr>
+  <tr><td><strong>partition</strong></td><td>partition</td><td>a logical split inside a collection</td></tr>
+</table>
+
+<p>Each field is described by a <strong>FieldSchema</strong>. In Milvus's developer docs, FieldSchema and CollectionSchema look roughly like
+this (a <strong>simplified conceptual structure</strong>; the real definition lives in proto and has more fields, e.g. nullable, default_value,
+is_partition_key). Note the <span class="inline">IsPrimaryKey</span> and <span class="inline">AutoID</span> booleans in FieldSchema — they are exactly
+the "primary key" and "auto increment" switches discussed next:</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">docs/developer_guides/chap02_schema.md</span><span class="ln">CollectionSchema / FieldSchema</span></div>
+  <pre><span class="kw">type</span> CollectionSchema <span class="kw">struct</span> {
+    Name        <span class="kw">string</span>
+    Description <span class="kw">string</span>
+    AutoId      <span class="kw">bool</span>
+    Fields      []*FieldSchema    <span class="cm">// a set of fields</span>
+}
+
+<span class="kw">type</span> FieldSchema <span class="kw">struct</span> {
+    Name         <span class="kw">string</span>
+    IsPrimaryKey <span class="kw">bool</span>          <span class="cm">// is it the primary key</span>
+    DataType     DataType         <span class="cm">// field type (see table below)</span>
+    TypeParams   []*KeyValuePair  <span class="cm">// type params: e.g. dim / max_length</span>
+    AutoID       <span class="kw">bool</span>          <span class="cm">// is the primary key auto-incrementing</span>
+}</pre>
+</div>
+
+<h2>Primary key, auto_id, and type_params</h2>
+<p>Every collection must have <strong>one primary key field</strong>, of type only <span class="inline">Int64</span> or <span class="inline">VarChar</span>. The
+primary key is <strong>unique across the collection</strong>, used to pinpoint, delete, and deduplicate an entity — exactly like a relational
+PK. Many Milvus internals (delete markers, dedup, sharding by PK) depend on the primary key, so it isn't optional decoration but
+the <strong>pivot</strong> of the whole data model: without a unique PK, "delete that one" / "update that one" make no sense.</p>
+
+<p>The primary key can <strong>auto-increment (auto_id)</strong>: with it on, you <strong>don't</strong> supply a PK value at insert; Milvus assigns a
+globally unique Int64. Handy for "I only care about the vector and content, not what the id is"; conversely, if your data carries a
+business id (a product code, a document UUID), turn auto_id off and supply your own PK, so you can delete/update a specific row by
+the externally-known id. Each mode has its place: <strong>auto_id is carefree, your-own-id is controllable</strong> — decide by whether you
+need to "look up by external id".</p>
+
+<p><strong>type_params</strong> are supplementary constraints on a field's type; the two most common: a vector field must give
+<span class="inline">dim</span> (dimension), a VarChar field must give <span class="inline">max_length</span>. They are metadata fixed at collection
+creation and bound to the field — e.g. "this is a 768-d FloatVector column". Why mandatory? Because Milvus uses them to
+<strong>pre-plan the memory layout of storage and index</strong>: knowing how many bytes each vector takes and how long each string can be
+lets it store columnarly and compute in batches efficiently. This also explains why <strong>dimension can't change once set</strong> — it has
+seeped into every corner of the underlying storage. In other words, <span class="inline">dim</span> and <span class="inline">max_length</span> aren't
+"soft constraints" but <strong>hard prerequisites</strong> Milvus uses to allocate memory, organize columnar storage, and build indexes; get
+them wrong and it won't "make do", it simply can't build the correct storage structure from the start.</p>
+
+<h2>Dynamic field: a release valve for the schema</h2>
+<p>A traditional relational table is <strong>strict-schema</strong>: columns not declared in the header simply can't be written. But real
+workloads often have <strong>temporary, irregular</strong> extra attributes that can't all be listed in advance — items from different sources
+carry different tag fields; today you add a "promo flag", tomorrow a "place of origin". If every new attribute required altering the
+schema and rebuilding the collection, iteration would be too heavy. Milvus's <strong>dynamic field</strong> is built for this: with
+<span class="inline">enable_dynamic_field</span> on, at insert you can <strong>carry key-value pairs not declared in the schema</strong>, which get
+collected into a hidden JSON field named <span class="inline">$meta</span> and can still be used in filter expressions later. It's like adding
+a "stuff-anything" pocket alongside the rigor of a strict schema.</p>
+
+<div class="cols">
+  <div class="col"><h4>Fixed fields (declared)</h4><p>Fields explicitly defined in the schema: strict type, indexable, efficient filtering. E.g.
+  <span class="mono">id / vector / price</span>.</p></div>
+  <div class="col"><h4>Dynamic fields (undeclared)</h4><p>Key-values carried ad hoc once <span class="mono">enable_dynamic_field</span> is on, landing in the
+  <span class="mono">$meta</span> JSON. Flexible, but less efficient than fixed fields. Good for <strong>temporary, sparse</strong> attributes.</p></div>
+</div>
+
+<p>The trade-off in one line: <strong>fixed fields buy "rigor and efficiency", dynamic fields buy "flexibility and no schema change"</strong>.
+Common practice: put high-frequency, filter-worthy attributes in fixed fields; toss scattered, temporary ones into dynamic fields.
+A caveat: convenient as it is, a dynamic field's value lives in JSON, so <strong>filtering parses JSON</strong> — less efficient than the
+structured storage of a fixed field. So it suits "occasionally used" attributes, not "filtered on every query" core fields — those
+are still better declared as fixed fields. The real value of dynamic fields is letting the schema <strong>not have to foresee every field
+on day one</strong>, leaving a breathing valve for fast-iterating workloads.</p>
+
+<h2>Partition and partition key: slicing a big collection small</h2>
+<p>When a collection is huge, querying it as one lump is slow and wasteful. A <strong>partition</strong> is a <strong>logical split</strong> inside a
+collection: you can route data into different partitions by some rule, and a query <strong>searches only the relevant partitions</strong>,
+pruning lots of irrelevant data. The classic use is partitioning by "tenant, region, time" — query one tenant and only scan its
+partition. Note a partition is a <strong>logical</strong> concept, on a different layer from the segment (physical storage unit) covered next:
+within one partition, data is still cut into many segments for storage and indexing. Think of a partition as a "logical drawer" and
+a segment as "the boxes that actually hold things inside the drawer" — the next lesson is all about segments.</p>
+
+<p>Managing partitions manually is tedious, so there's the <strong>partition key</strong>: designate a <strong>scalar field</strong> (e.g.
+<span class="inline">user_id</span>) as the partition key and Milvus <strong>automatically</strong> hashes entities into partitions by that field's value.
+At query time, just include that field in the filter and Milvus <strong>automatically searches only the matching partition</strong> — no manual
+partition creation or selection. This is superb for multi-tenancy: one collection holds many users' data, naturally isolated by the
+partition key without interfering with each other.</p>
+
+<p>Partitioning and last lesson's "index selection" are really the same idea applied twice: <strong>both find ways to "look at less
+data"</strong>. The index prunes at the vector level (only nearby candidates), the partition prunes at the data level (only the relevant
+chunk). Stacked, the effect is multiplicative: the partition key shrinks "hundreds of millions in the whole collection" down to "a
+few million for one tenant", then the ANN index quickly finds nearest neighbors among those few million. Grasp this and when
+designing a collection you'll consciously ask: <strong>"which filter will almost every query carry?"</strong> — that field is often the best
+partition-key candidate. A small reminder: the partition key, once specified at collection creation, is fixed — so this is another
+decision to settle at schema-design time, in the same "set once for life" category as dimension and primary key.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Define the schema</h4><p>Declare fields: primary key, vector field (with dim), some scalar fields; optionally enable dynamic field and set a partition key.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Create the collection</h4><p>The schema is fixed and the collection is born; dimension, primary key, metric and other metadata become fixed.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Insert entities</h4><p>Each row carries field values (PK can be omitted if auto); the partition key decides which partition it lands in.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Build index + search</h4><p>Build an ANN index on the vector field, then retrieve by similarity + scalar filtering.</p></div></div>
+</div>
+
+<h2>Data types: scalar and the six vectors</h2>
+<p>Each field's type in the schema comes from Milvus's <strong>DataType</strong> enum. <strong>Scalar fields</strong> carry structured info and power
+filtering; <strong>vector fields</strong> carry embeddings and power similarity search. Here is an <strong>extremely important correction</strong>: older
+developer docs listed only BinaryVector / FloatVector, and that list is <strong>long outdated</strong>. Going by current code
+(<span class="mono">client/entity/field.go</span>'s FieldType), Milvus today supports the following — one big scalar group, and a full
+<strong>six</strong> vector types:</p>
+
+<table class="t">
+  <tr><th>Category</th><th>Data type</th><th>Note</th></tr>
+  <tr><td rowspan="4"><strong>Scalar</strong></td><td class="mono">Bool</td><td>boolean</td></tr>
+  <tr><td class="mono">Int8 / Int16 / Int32 / Int64</td><td>integers of different widths; Int64 often the PK</td></tr>
+  <tr><td class="mono">Float / Double</td><td>single / double precision float</td></tr>
+  <tr><td class="mono">VarChar / JSON / Array</td><td>variable string (needs max_length) / JSON / array</td></tr>
+  <tr><td rowspan="6"><strong>Vector</strong></td><td class="mono">FloatVector</td><td>most common: 32-bit float dense vector</td></tr>
+  <tr><td class="mono">BinaryVector</td><td>binary (each bit 0/1), with HAMMING/JACCARD</td></tr>
+  <tr><td class="mono">Float16Vector</td><td>half-precision (16-bit) dense vector, memory-saving</td></tr>
+  <tr><td class="mono">BFloat16Vector</td><td>bfloat16 dense vector, memory-saving, large dynamic range</td></tr>
+  <tr><td class="mono">Int8Vector</td><td>8-bit integer dense vector, further memory-saving</td></tr>
+  <tr><td class="mono">SparseFloatVector</td><td>sparse float vector (high-dim, mostly zero), with IP</td></tr>
+</table>
+
+<p>A few scalar types deserve a sentence: <span class="inline">VarChar</span> is a variable string requiring <span class="inline">max_length</span>, often
+storing raw text, titles, URLs; <span class="inline">JSON</span> stores a whole nested structure, good for semi-structured metadata;
+<span class="inline">Array</span> is an array of same-type elements (e.g. multiple tags). These scalar fields aren't just "stored along"; they
+directly join <strong>filter expressions</strong> — exactly the basis for Milvus fusing "vector search + scalar filtering" into one query. With
+them you can write hybrid queries like "most similar by vector, and price &lt; 500, and tags contain 'new'".</p>
+
+<p>These six vector types aren't listed out of thin air; they are <strong>constants defined one by one</strong> in current code. Below is their
+source — note BinaryVector starts at 100, so vector types and scalar types are <strong>partitioned</strong> by number:</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">client/entity/field.go</span><span class="ln">FieldType constants (current DataType set)</span></div>
+  <pre><span class="kw">const</span> (
+    FieldTypeBool   FieldType = <span class="nb">1</span>
+    FieldTypeInt64  FieldType = <span class="nb">5</span>    <span class="cm">// often the PK</span>
+    FieldTypeVarChar FieldType = <span class="nb">21</span>
+    FieldTypeJSON   FieldType = <span class="nb">23</span>
+    FieldTypeArray  FieldType = <span class="nb">22</span>
+
+    FieldTypeBinaryVector    FieldType = <span class="nb">100</span>  <span class="cm">// vector types start at 100</span>
+    FieldTypeFloatVector     FieldType = <span class="nb">101</span>
+    FieldTypeFloat16Vector   FieldType = <span class="nb">102</span>
+    FieldTypeBFloat16Vector  FieldType = <span class="nb">103</span>
+    FieldTypeSparseVector    FieldType = <span class="nb">104</span>  <span class="cm">// SparseFloatVector</span>
+    FieldTypeInt8Vector      FieldType = <span class="nb">105</span>
+)</pre>
+</div>
+
+<p>All these vector types essentially make a <strong>precision-vs-memory</strong> trade in the triangle: FloatVector is most precise and most
+space-hungry; Float16 / BFloat16 / Int8 use fewer bits to <strong>trade for memory</strong> (halving per-vector footprint or more);
+SparseFloatVector serves "high-dim but mostly zero" cases (keyword weights), storing only non-zeros and saving a lot.
+There's also <span class="inline">BinaryVector</span>, using just 1 bit per dimension, which pairs with last lesson's HAMMING/JACCARD distances and suits binary features like fingerprints and dedup.
+<strong>Choosing a vector type, like choosing an index last lesson, is an engineering trade-off.</strong></p>
+
+<p>To close, a concrete example tying it together: suppose a "product image search" collection; the schema is roughly — primary key
+<span class="mono">item_id</span> (Int64, auto_id on), vector field <span class="mono">image_vec</span> (FloatVector, dim=512), scalar fields
+<span class="mono">price</span> (Float) and <span class="mono">category</span> (VarChar, as partition key), plus <span class="inline">enable_dynamic_field</span> for
+ad-hoc tags. Once built, a query "find most like this shoe image, price under 500, and in the shoes category" is
+<strong>vector search (image_vec) + scalar filter (price &lt; 500) + partition pruning (category=shoes)</strong> done in one shot. See — every
+concept here (primary key, vector field, scalar field, partition key, dynamic field) takes its place in one real query. Clear up
+the data model and, when reading the write and query paths later, you'll know the shape of the container your data lives in.</p>
+
+<div class="card macro">
+  <div class="tag">🌍 The big picture</div>
+  In one line: <strong>a collection (table) is defined by a schema, the schema lists fields (columns), each item is an entity (row)</strong>.
+  The primary key pinpoints uniquely and can auto-increment; the dynamic field is a release valve for the schema; partitions /
+  partition keys slice a big collection small and speed up queries — a boon for multi-tenancy. Field types come from DataType — one
+  big scalar group, and <strong>six</strong> vectors (always go by current code; don't use the outdated two-vector list). Picture the data model
+  as "a table with a vector column" and you've caught its essence.
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Three-layer structure</strong>: collection ≈ table, schema = table definition, field = column, entity = row; above collection there's also a database.</li>
+    <li><strong>Primary key</strong>: one per collection, Int64 or VarChar, globally unique; can enable <span class="mono">auto_id</span>. <span class="mono">type_params</span> give dim / max_length.</li>
+    <li><strong>Dynamic field</strong>: with <span class="mono">enable_dynamic_field</span> on, undeclared key-values go into the <span class="mono">$meta</span> JSON — flexible but less efficient than fixed fields.</li>
+    <li><strong>Partition / partition key</strong>: a partition is a logical split inside a collection; set a scalar field as the partition key and Milvus auto-hashes and prunes — a multi-tenancy gem.</li>
+    <li><strong>Data types</strong>: scalar (Bool, Int8~64, Float, Double, VarChar, JSON, Array) + <strong>six vectors</strong> (Float / Binary / Float16 / BFloat16 / Int8 / SparseFloat). See <span class="mono">client/entity/field.go</span>.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. What problem does Milvus's dynamic field solve?</div>
+  <ol class="opts">
+    <li>It lets you write fields not explicitly declared in the schema (stored in $meta), giving a fixed schema a flexible escape hatch</li>
+    <li>It removes all data-type checking</li>
+    <li>It allows duplicate primary keys</li>
+    <li>It turns every field into a vector</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. With enable_dynamic_field on, undeclared fields go into a hidden $meta (JSON), keeping the fixed schema's structure and efficiency while accommodating temporary/sparse extra attributes. The trade-off is it's less efficient than fixed fields</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Regarding the partition key, which statement is most accurate?</div>
+  <ol class="opts">
+    <li>The partition key and primary key must be the same field</li>
+    <li>The partition key must be a vector field</li>
+    <li>Designating a scalar field as partition key makes Milvus auto-route data into partitions by its value; queries with that condition can scan only relevant partitions (partition pruning)</li>
+    <li>The partition key forces every query to scan all partitions</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. The partition key auto-partitions by a field's value: you don't manage partitions manually, Milvus spreads data by the key's value; a query filtering on that field enables partition pruning, scanning only some partitions - great for multi-tenancy (e.g. isolating by user_id)</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Which group consists entirely of vector data types currently supported by Milvus?</div>
+  <ol class="opts">
+    <li>Only FloatVector and BinaryVector</li>
+    <li>Int64, Float, Double, Bool</li>
+    <li>FloatVector, BinaryVector, Float16Vector, BFloat16Vector, Int8Vector, SparseFloatVector</li>
+    <li>VarChar, JSON, Array, Bool</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. Per current code (client/entity/field.go) there are six vector types: FloatVector, BinaryVector, Float16Vector, BFloat16Vector, Int8Vector, SparseFloatVector. The old docs' 'only two vector types' is outdated - the code wins</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>Design a schema for an e-commerce 'product' collection: which field is the primary key, and do you enable auto_id? Which field is the partition key? Do you enable the dynamic field? Which scalar fields participate in filtering? Write your field list and reasoning.</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Segments & log-as-data</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Last lesson we said the data in a partition "is still chopped into many segments to store." This lesson explains the <strong>segment</strong>—Milvus's
+<strong>basic unit of data and index</strong>—in full: its <strong>lifecycle</strong> (Growing → Sealed → Flushing → Flushed → (Dropped)), how vector data flows in
+through a <strong>vchannel</strong> and maps to an underlying <strong>pchannel</strong>, and Milvus's most important design philosophy—<strong>"log as data."</strong>
+Understand segments and you finally understand how "search while writing" actually works.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of writes as a factory line. New goods first pile into the <strong>container currently being loaded</strong> (a Growing segment—you can still stuff more in);
+  once full it gets <strong>sealed</strong> (Sealed—no new goods); the sealed container is <strong>archived into the warehouse</strong> (Flushing → Flushed, landing in object storage);
+  someday when that batch expires, the whole container is <strong>scrapped</strong> (Dropped). But the real "ledger" isn't the containers—it's the
+  <strong>conveyor-belt log at the line's entrance that keeps recording "who, when, what goods arrived."</strong> As long as the log survives, you can rebuild everything by replaying it.
+  That log is Milvus's soul.
+</div>
+
+<h2>Segment: the basic unit of data and index</h2>
+<p>A collection may hold hundreds of millions of rows, and Milvus never manages it as "one giant blob"—it chops it into many <strong>segments</strong>.
+Each segment is a <strong>batch of entities</strong> (typically hundreds of thousands to a few million), and it is Milvus's basic unit of
+<strong>storage, flushing, indexing, loading, and search</strong>—nearly every data operation is segment-grained. Why chop? Because only by splitting "big data" into "many small blocks"
+can you <strong>process in parallel, index independently, load on demand, and update incrementally</strong>—the prerequisite for horizontal scaling.
+By analogy, rather than managing one cavernous warehouse, pack goods into many <strong>standard containers</strong>: each can be moved, shelved, and inventoried independently;
+all elasticity and parallelism comes from this "chunking." A Milvus segment is exactly such a standard container. Each segment also carries its own metadata (segment ID, owning collection/partition, row count, state…), registered and scheduled by DataCoord.</p>
+
+<p>Segments come in two kinds, matching "being written" and "already written": a <strong>Growing segment</strong> lives in memory and keeps receiving new writes via the streaming log;
+a <strong>Sealed segment</strong> is already full and has become <strong>immutable</strong>, flushed to object storage with an index built on top.
+This split of "mutable Growing + immutable Sealed" is the key to understanding "search while writing" and index construction later.</p>
+
+<p>Why stress "immutable"? Because <strong>immutability is a distributed system's best friend</strong>: once a segment is sealed it never changes, so it can be
+<strong>safely cached, replicated, and loaded in parallel onto many QueryNodes</strong> without worrying about read-while-write races. What about deletes and updates?
+Milvus doesn't modify the original segment—it <strong>writes a separate "delete log"</strong> and filters deleted primary keys at search time; the actual physical cleanup is left to background <strong>compaction</strong>.
+So "immutable segments + delete logs + compaction" is the clever design that lets Milvus support inserts/updates/deletes while keeping reads highly concurrent.</p>
+
+<div class="cols">
+  <div class="col"><h4>Growing</h4><p>In memory, <strong>mutable</strong>, continuously absorbing new data via vchannel. It is <strong>immediately searchable</strong> (freshness), but has no formal index yet—brute-force or temporary structures.</p></div>
+  <div class="col"><h4>Sealed</h4><p>Full and <strong>immutable</strong>, flushed to binlogs in object storage, with an ANN index built on top. Efficient to search—the home of most historical data.</p></div>
+</div>
+
+<h2>Lifecycle: from Growing to Dropped</h2>
+<p>A segment evolves along a <strong>fixed state chain</strong>. These names aren't invented by the tutorial—they are <strong>literally defined</strong> in Milvus's
+<span class="inline">SegmentState</span> enum: <strong>Growing → Sealed → Flushing → Flushed → (Dropped)</strong>. Each step has a clear trigger:</p>
+
+<div class="timeline">
+  <div class="lane"><span class="lane-label">Growing</span><span class="tslot">in memory · mutable</span><span class="tslot span">keeps absorbing new data from vchannel, searchable immediately</span></div>
+  <div class="lane"><span class="lane-label">Sealed</span><span class="tslot now">full / timeout triggers seal</span><span class="tslot">no more writes, becomes immutable</span></div>
+  <div class="lane"><span class="lane-label">Flushing</span><span class="tslot">landing to disk</span><span class="tslot">data written as binlog files</span></div>
+  <div class="lane"><span class="lane-label">Flushed</span><span class="tslot now">stored in object storage</span><span class="tslot">index can be built on top</span></div>
+  <div class="lane"><span class="lane-label">Dropped</span><span class="tslot">replaced by compaction/delete</span><span class="tslot">logically dropped, awaiting GC</span></div>
+</div>
+
+<p>Key transitions: <strong>Growing → Sealed</strong> is triggered when "the segment is full (size cap)" or "enough time has passed (timeout)"—once sealed it
+<strong>accepts no new writes</strong> and becomes a read-only snapshot. <strong>Sealed → Flushing → Flushed</strong> <strong>persists</strong> the in-memory data into
+<span class="inline">binlog</span> files in object storage; after Flushed the data <strong>survives process crashes</strong> and an ANN index can be built on it safely.
+<strong>Dropped</strong> usually follows <strong>compaction</strong>: several small segments merge into a big one, or deleted-marked data is cleaned up, and the old segment is marked Dropped awaiting GC.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Trigger seal</h4><p>Segment full (size cap) <strong>or</strong> timeout—DataCoord turns the Growing segment Sealed; read-only from now on.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Flush to binlog</h4><p><strong>Serialize column-organized in-memory data into binlog files</strong>, written field by field to object storage; once done it is Flushed—persisted, crash-proof.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Build index async</h4><p>IndexNode reads binlogs and <strong>builds the ANN index</strong> (IVF/HNSW…); index files also go to object storage.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Load & search</h4><p>QueryNode <strong>loads</strong> the sealed segment and its index into memory for efficient ANN search; Growing segments fill in the freshest data.</p></div></div>
+</div>
+
+<p>Note steps 3 and 4 happen <strong>asynchronously</strong>: flushing and indexing run in the background, blocking neither writes nor queries on Growing segments. This pipeline where
+<strong>writing, flushing, indexing, and loading</strong> are independent and non-blocking is exactly how Milvus achieves high throughput and low latency. Each stage scales independently—add DataNodes to write faster, IndexNodes to index faster, QueryNodes to serve more queries.</p>
+
+<p>A few related states are worth mentioning: the enum also has <span class="inline">Importing</span> (a temporary segment during bulk import) and <span class="inline">NotExist</span>, etc.
+But for the main flow, remembering <strong>Growing → Sealed → Flushing → Flushed → (Dropped)</strong> is enough—it traces a row of data's whole life "from mutable in memory, to immutable on disk, to finally reclaimed."</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">SegmentState enum (commonpb, referenced by datacoord)</span><span class="ln">commonpb.SegmentState_* in internal/datacoord</span></div>
+  <pre><span class="cm">// Segment lifecycle states (literal Milvus code, heavily used by datacoord)</span>
+SegmentState_Growing    <span class="cm">// in memory, mutable, continuous writes</span>
+SegmentState_Sealed     <span class="cm">// full, immutable, read-only</span>
+SegmentState_Flushing   <span class="cm">// landing to disk as binlog</span>
+SegmentState_Flushed    <span class="cm">// flushed to object storage, indexable</span>
+SegmentState_Dropped    <span class="cm">// replaced by compaction/delete, awaiting GC</span>
+SegmentState_Importing  <span class="cm">// temporary segment during bulk import</span></pre>
+</div>
+
+<h2>vchannel → pchannel: which pipe data flows in through</h2>
+<p>Newly written data isn't "stuffed" directly into a segment—it first passes through a <strong>streaming-log pipeline</strong>. Two concepts here: <strong>vchannel (virtual channel)</strong> and <strong>pchannel (physical channel)</strong>.
+At creation a collection is <strong>split into N vchannels (virtual shards)</strong>—the "shard count." Each write hashes by primary key onto some vchannel;
+data on the same vchannel is consumed by one DataNode/StreamingNode and accumulated into Growing segments. <strong>A vchannel is the logical "shard" concept.</strong></p>
+
+<p>Why shard? Because a collection's write volume can be huge and a single pipe can't keep up. Splitting it into N vchannels, each consumed and accumulated independently, lets you
+<strong>ingest writes in parallel</strong>—the key to write-side horizontal scaling. The shard count is fixed at table creation and bounds the maximum write parallelism, so it's a capacity parameter to plan ahead.</p>
+
+<p>A <strong>pchannel is the physical channel</strong>—it maps to a real <strong>topic</strong> in the message queue (WAL). Multiple vchannels can <strong>share</strong> one pchannel:
+a vchannel's name is simply the pchannel name with the collection ID and shard index appended. The code below reveals the mapping—strip the last segment off a vchannel name to recover its pchannel:</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">pkg/util/funcutil/func.go</span><span class="ln">ToPhysicalChannel / GetVirtualChannel</span></div>
+  <pre><span class="cm">// vchannel name = pchannel name + "_" + collectionID + "v" + shardIdx</span>
+<span class="kw">func</span> GetVirtualChannel(pchannel <span class="kw">string</span>, collectionID <span class="kw">int64</span>, idx <span class="kw">int</span>) <span class="kw">string</span> {
+    <span class="kw">return</span> fmt.Sprintf(<span class="st">"%s_%dv%d"</span>, pchannel, collectionID, idx)
+}
+
+<span class="cm">// reverse: strip the last segment off a vchannel name to get pchannel</span>
+<span class="kw">func</span> ToPhysicalChannel(vchannel <span class="kw">string</span>) <span class="kw">string</span> {
+    index := strings.LastIndex(vchannel, <span class="st">"_"</span>)
+    <span class="kw">return</span> vchannel[:index]   <span class="cm">// many vchannels can share one pchannel</span>
+}</pre>
+</div>
+
+<p>Why two layers? Because the <strong>logical shard count (vchannel)</strong> and the <strong>physical resource count (pchannel/topic)</strong> need to be <strong>decoupled</strong>: you can have many logical shards for parallelism,
+but the number of physical topics is bounded by MQ resources, so many vchannels reuse a few pchannels. This is the classic "decouple logical from physical" design—echoing last lesson's "partition is logical, segment is physical."</p>
+
+<h2>Log as data: Milvus's core philosophy</h2>
+<p>Now for Milvus's most important design idea—<strong>"log as data,"</strong> a.k.a. "log as the source of truth." It means:
+<strong>the "truth" of a write isn't the data in some table or segment, but that timestamp-ordered, append-only, replayable log.</strong></p>
+
+<p>In a traditional database the "log" (WAL) is just an aid for crash recovery, with the real data in tables. Milvus <strong>inverts</strong> this: the log itself is the authoritative source,
+and every other data form—the in-memory Growing segment, the binlogs in object storage, the index loaded by QueryNode—is a <strong>"materialized view"</strong> of that log,
+catching up by <strong>continuously consuming and replaying it</strong>. A write counts as "landed" the moment it is <strong>successfully written to the log</strong>, even if not yet flushed or indexed.</p>
+
+<p>There's a hidden detail: each log record carries a <strong>timestamp</strong>. Milvus uses a global timestamp mechanism to <strong>order</strong> all writes and queries, so "what the data looked like before a given point in time" is
+<strong>deterministically reproducible</strong>. This is the foundation for MVCC, consistency levels, and time-travel queries later—all stemming from "log as data."</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">insert</div><div class="nd">client write</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">write log (WAL)</div><div class="nd">append by ts · pchannel</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">Growing seg</div><div class="nd">consume log · searchable</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">Sealed + Flush</div><div class="nd">land binlog</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">build index</div><div class="nd">ANN index ready</div></div>
+</div>
+
+<p>This philosophy brings three huge benefits: ① <strong>search while writing</strong>—data is consumed by Growing segments the instant it hits the log and is immediately searchable, no waiting for flush/index;
+② <strong>simple crash recovery</strong>—if a process dies, replay the log to rebuild in-memory state, no data loss; ③ <strong>decoupling and scaling</strong>—reads, writes, and indexing each consume the same log independently,
+so a slow one doesn't drag the others and each scales on its own. This is what "log as data" from Part 1 truly meant, and the bedrock of Milvus's streaming architecture (the write path from Lesson 15 on).</p>
+
+<h2>Columnar layout: how a segment stores data inside</h2>
+<p>Finally, a glance at how a segment stores data <strong>internally</strong>. Milvus uses a <strong>columnar layout</strong>: all values of one field are <strong>stored contiguously together</strong>,
+rather than row by row as in relational databases. E.g., a segment with id, vector, and price fields stores all ids together, all vectors together, all prices together.
+After flushing, each field corresponds to one <span class="inline">binlog</span> file.</p>
+
+<p>Why columnar? Because vector search's access pattern is "<strong>pull a whole column (the vector column) out in bulk and compute distances</strong>," and columnar layout makes such <strong>bulk, contiguous</strong> access extremely efficient (cache-friendly, vectorizable);
+scalar filtering is similar—scan only the relevant columns, no need to read whole rows. <strong>Columnar + per-segment chunking + log-driven</strong>—these three together form the skeleton of Milvus's storage layer.</p>
+
+<p>This also explains why last lesson's <strong>data types</strong> are stored field by field: each field (be it an Int64 primary key, a FloatVector, or JSON) is an <strong>independent column with its own binlog</strong> in the segment.
+The vector field's column is accelerated by the ANN index; scalar columns get scalar indexes or brute-force filtering—together completing hybrid queries that "filter by scalar first, then recall vectors among candidates."
+Segment, column, log, and index now close the loop.</p>
+
+<h2>Tying it together: the life of one row</h2>
+<p>Now we can assemble everything into one complete picture of what a row goes through from write to search. The table below maps each <strong>stage</strong> to its <strong>segment state</strong>,
+<strong>where the data lives</strong>, and <strong>whether it's searchable</strong>—this is "search while writing" and "log as data" in real life:</p>
+
+<table class="t">
+  <thead><tr><th>Stage</th><th>Segment state</th><th>Where data lives</th><th>Searchable?</th><th>Note</th></tr></thead>
+  <tbody>
+    <tr><td>Just written</td><td>—</td><td>WAL log (pchannel)</td><td>—</td><td>Written to log = "landed", the only truth</td></tr>
+    <tr><td>Consumed</td><td>Growing</td><td>memory (growing seg)</td><td>✅ immediately</td><td>Freshness; brute/temporary search</td></tr>
+    <tr><td>Full, sealed</td><td>Sealed</td><td>memory → ready to flush</td><td>✅</td><td>Immutable read-only snapshot</td></tr>
+    <tr><td>Persisted</td><td>Flushing→Flushed</td><td>object storage (binlog)</td><td>✅</td><td>Crash-proof, indexable</td></tr>
+    <tr><td>Indexed</td><td>Flushed</td><td>object storage + index files</td><td>✅ efficient</td><td>Efficient ANN after QueryNode load</td></tr>
+    <tr><td>Compacted/GC</td><td>Dropped</td><td>awaiting GC</td><td>❌</td><td>Logically dropped after merge/delete</td></tr>
+  </tbody>
+</table>
+
+<p>Reading this table, note one thing in particular: <strong>no matter which stage the data is in, once it's in the log it is "landed"</strong>—at query time Milvus looks at <strong>both</strong> the sealed segments loaded on QueryNodes (historical data)
+and the still-growing Growing segments (newest data), merging both results. That's why Milvus can "search data the instant it's written," unlike traditional offline indexes that wait for a batch round.
+Understand this table and you understand the core mechanism of Milvus's storage-query collaboration.</p>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>a segment is the basic unit of data and index, evolving Growing → Sealed → Flushing → Flushed → (Dropped)</strong>.
+  Data flows in via vchannels (logical shards), mapped to pchannels (physical MQ topics); Milvus follows <strong>"log as data"</strong>—the log is the only truth and every other form is its materialized view,
+  which is what enables "search while writing" and simple crash recovery. Inside a segment, the columnar layout is friendly to bulk vector computation.
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Segment</strong>: the basic unit of data/index; Growing (in memory, mutable, searchable) vs Sealed (immutable, flushed, indexed).</li>
+    <li><strong>Lifecycle</strong>: Growing → Sealed → Flushing → Flushed → (Dropped); state names per <span class="mono">SegmentState_*</span>.</li>
+    <li><strong>vchannel → pchannel</strong>: a collection splits into N vchannels (logical shards); many vchannels share one pchannel (physical MQ topic).</li>
+    <li><strong>Log as data</strong>: an append-only, timestamped, replayable log is the only truth; other forms are its materialized views—enabling search-while-writing and crash recovery.</li>
+    <li><strong>Columnar layout</strong>: stored field by field within a segment (one binlog per field), efficient for bulk vector computation and scalar filtering.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Which chain is the lifecycle of a segment in Milvus?</div>
+  <ol class="opts">
+    <li>Growing → Sealed → Flushing → Flushed → (Dropped)</li>
+    <li>Sealed → Growing → Dropped → Flushed</li>
+    <li>Flushed → Growing → Sealed → Flushing</li>
+    <li>Dropped → Flushing → Growing → Sealed</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. These names come straight from the SegmentState enum: Growing (mutable in memory) → Sealed (full, immutable) → Flushing (landing) → Flushed (in object storage, indexable) → Dropped (after compaction/delete, awaiting GC)</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Which statement about vchannel and pchannel is correct?</div>
+  <ol class="opts">
+    <li>vchannel is a logical shard, pchannel is a physical MQ topic; many vchannels can share one pchannel (strip a vchannel name's last segment to get the pchannel)</li>
+    <li>pchannel is logical, vchannel is the physical topic</li>
+    <li>vchannel and pchannel must map one-to-one</li>
+    <li>Both exist only on the query path, unrelated to writes</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. In func.go, GetVirtualChannel appends collectionID and shard index to a pchannel name to form a vchannel; ToPhysicalChannel reverses it by stripping the last segment. Decoupling logical shards from physical topics lets many vchannels reuse few pchannels</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. What is the core of the 'log as data' design philosophy?</div>
+  <ol class="opts">
+    <li>The append-only, timestamped, replayable log is the only source of truth; other forms (memory segments, binlogs, indexes) are its materialized views</li>
+    <li>The log is only for crash recovery and otherwise useless</li>
+    <li>The log can be discarded the moment data enters a segment</li>
+    <li>Log and data are two unrelated copies</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. Milvus inverts the traditional 'table is truth, log is aid': the log is authoritative, and a write is 'landed' once in the log; the in-memory Growing segment, binlogs, and indexes all catch up by consuming/replaying it. This enables search-while-writing and simple crash recovery</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>'Search while writing' requires just-inserted data to be searchable immediately. Using this lesson's segment lifecycle, explain why the Growing segment is key, and why a query must look at both Growing and loaded Sealed segments.</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Dependencies & deployment</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+The previous lessons covered how Milvus organizes data "inside"; this one wraps up by looking at what Milvus depends on <strong>"outside"</strong> and the <strong>shapes it deploys in</strong>.
+Milvus <strong>outsources three jobs</strong>—"store metadata," "store bulk data," "record the write log"—to three kinds of external components: <strong>etcd</strong> (metadata + service discovery),
+<strong>object storage</strong> (MinIO/S3, holding binlogs and indexes), and a <strong>message queue / WAL</strong> (rocksmq / Pulsar / Kafka / Woodpecker).
+Combine these with three deployment shapes—<strong>Milvus Lite / Standalone / Cluster</strong>—and you understand the whole way from "it runs" to "it carries production."
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of Milvus as a <strong>large restaurant chain</strong>. It doesn't build its own generator or dig its own well—it taps into city <strong>infrastructure</strong>:
+  <strong>etcd</strong> is like the <strong>business registry and store directory</strong> (who's open, each branch's address, unified scheduling); <strong>object storage</strong> is like a <strong>central warehouse on the outskirts</strong> (vast ingredients stored long-term, cheap and durable);
+  the <strong>message queue</strong> is like the <strong>order conveyor in the kitchen</strong> (every order recorded in sequence, processed one by one, replayable even after a power cut).
+  And "a street stall (Lite)," "a single store (Standalone)," "a chain (Cluster)" are three scales of the same craft. Get these three infrastructures and three scales straight, and you grasp how Milvus actually "looks and lands" in the real world.
+</div>
+
+<h2>Why external dependencies</h2>
+<p>A seemingly simple question: why doesn't Milvus store metadata, data, and logs all by itself instead of depending on external components? The answer is <strong>"leave the professional jobs to the professional systems."</strong>
+Storing metadata needs <strong>strong consistency and change-watching</strong>—exactly etcd's forte; storing massive vectors and indexes needs <strong>cheap, near-infinite, highly available</strong> capacity—exactly object storage's (S3-class) strength;
+recording the write log needs <strong>ordered, durable, replayable</strong>—exactly a message queue's job. Milvus <strong>outsources</strong> these three "hard and generic" capabilities and focuses on its core: vector search.
+Building everything itself would mean reinventing many mature wheels and worrying about each wheel's reliability and scalability separately—clearly not worth it. Besides, systems like etcd, S3, and Kafka are battle-tested with mature ecosystems; reusing them directly is both easier and safer.</p>
+
+<p>This <strong>storage-compute separation</strong> architecture brings a huge benefit: Milvus's own nodes become <strong>stateless</strong> or nearly so—the real "state" all settles into these three external systems.
+So compute nodes can be <strong>added/removed at will, restarted after crashes, scaled elastically</strong> while the data stays intact. This is the standard cloud-native database practice and the foundation of Milvus's horizontal scaling.
+In other words, when query pressure rises, just add a few stateless QueryNodes—each pulls data from object storage, reads topology from etcd, consumes the log from MQ, and immediately shares the load;
+if a node dies, it holds no exclusive state, so just restart or reload on another machine, <strong>losing no data</strong>. This is the elasticity and reliability bought by "storage-compute separation + external dependencies."</p>
+
+<h2>The three external dependencies</h2>
+<p>The layered diagram below lays out the three dependencies, their roles, and typical implementations at once. Note: the upper layer is Milvus's own components (coordinators + nodes); the three blocks below are the <strong>external infrastructure it lives on</strong>:</p>
+
+<div class="layers">
+  <div class="layer l-app"><div class="lh"><span class="badge">App</span><span class="name">Milvus components</span></div><div class="ld">Coordinators (rootcoord/datacoord/querycoord) + nodes (proxy/querynode/datanode/streamingnode)—mostly stateless</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">Dep ①</span><span class="name">etcd · metadata + service discovery</span></div><div class="ld">collection/schema/segment metadata, node registration & health, global config. Strong consistency, watchable.</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">Dep ②</span><span class="name">object storage · MinIO / S3</span></div><div class="ld">binlogs (columnar data), index files, delta logs. Cheap, near-infinite, durable.</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">Dep ③</span><span class="name">message queue / WAL</span></div><div class="ld">rocksmq / Pulsar / Kafka / Woodpecker. An ordered, durable, replayable write log—the carrier of "log as data."</div></div>
+</div>
+
+<h3>① etcd — metadata and service discovery</h3>
+<p><strong>etcd</strong> is a <strong>strongly consistent distributed key-value store</strong>. Milvus uses it to hold all <strong>metadata</strong>: which collections exist, their schemas, each segment's state and location, index metadata, etc.;
+and for <strong>service discovery</strong>—nodes register themselves in etcd on startup, and coordinators learn "which nodes are alive and where" through etcd. Metadata is small but <strong>critically important</strong>, must be strongly consistent and never lost; if metadata is corrupted or lost, the whole cluster "loses its bearings,"
+which is exactly etcd's forte (Kubernetes uses it too). Small in size, it is the cluster's "household registry" and "address book." See the <span class="inline">etcd</span> section in <span class="inline">configs/milvus.yaml</span>.</p>
+
+<p>Why pull metadata out separately and insist on strong consistency? Imagine two coordinators changing the same segment's state at once, or two nodes each thinking they're the primary for some role—if the metadata store allowed "reading a stale value,"
+the whole cluster would fall into <strong>split-brain and state chaos</strong>. etcd uses the Raft protocol to guarantee "everyone reads the same latest value at any moment," and supports <strong>watch (change notifications)</strong>:
+the moment a key changes, components that care are notified instantly. This "strong consistency + watchable" combo is the bedrock for coordinators to schedule globally and nodes to sense topology changes. So although etcd stores little data, it is the <strong>brain of the whole cluster</strong>—once it's unavailable, the cluster can make no metadata changes.</p>
+
+<h3>② Object storage — the home of massive data</h3>
+<p>Last lesson's binlogs and index files all end up in <strong>object storage</strong>: <strong>MinIO</strong> for local dev, <strong>S3 / GCS / Aliyun OSS</strong> or any S3-API-compatible service in the cloud.
+Object storage is <strong>near-infinite in capacity, extremely low in unit cost, durable and reliable</strong>—perfect for vectors, which are "large in volume, write-few read-many, long-retention" data.
+Milvus pushes all "heavy data" here, caching only hot data in memory/local disk. See the <span class="inline">minio</span> section in <span class="inline">milvus.yaml</span> (address, bucket, AK/SK, etc.).</p>
+
+<p>Concretely, three kinds of things live in object storage: <strong>binlogs</strong> (columnar data flushed from sealed segments, one per field), <strong>index files</strong> (ANN indexes like IVF/HNSW built on binlogs),
+and <strong>delta logs</strong> (incremental files recording delete marks). All are <strong>immutable</strong>—written once, read many, never modified in place—matching object storage's "write-once read-many" nature perfectly.
+At search time QueryNode pulls the needed binlogs and indexes from object storage <strong>on demand into a local cache</strong> (that's <span class="inline">localStorage.path</span> in milvus.yaml), avoiding remote reads every time.
+So object storage "stores the full set cheaply" while local disk and memory "read hot spots fast"—a hot/cold tiering with clear division of labor. Worth stressing: precisely because these files are immutable, they can be <strong>safely read by arbitrarily many nodes at once</strong>
+and <strong>cached without worrying about invalidation</strong>—again confirming Lesson 7's point that "immutability is a distributed system's best friend." The storage layer's simplicity and reliability largely come from this immutability.</p>
+
+<h3>③ Message queue / WAL — the carrier of the write log</h3>
+<p>Lesson 7's "log as data"—that <strong>append-only, replayable log</strong>—is physically carried in a <strong>message queue (MQ)</strong>, i.e., the WAL (write-ahead log).
+Milvus supports four MQs: <strong>rocksmq</strong> (a built-in lightweight queue based on RocksDB), <strong>Pulsar</strong>, <strong>Kafka</strong>, and the next-gen built-in WAL <strong>Woodpecker</strong>.
+They all provide "ordered, durable, multi-consumer replayable" capability—the physical basis for Growing-segment consumption, crash recovery, and read-write decoupling. From another angle, MQ here isn't a "traditional message middleware" role but Milvus's <strong>write trunk road</strong>—
+every write enters MQ first, then is taken on demand by various consumers (segment accumulators, index builders, replica makers), each unaffected by the others' pace. This is exactly why the MQ choice matters so much.</p>
+
+<p>On "which is the default," the comments in <span class="inline">milvus.yaml</span> give the <strong>exact</strong> rules (don't rely on memory): when <span class="inline">mq.type</span> is set to <span class="inline">default</span>,
+it auto-selects by the current deployment mode, following the priority below—</p>
+
+<table class="t">
+  <thead><tr><th>Deployment mode</th><th>Default MQ</th><th>Priority order</th><th>Note</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Standalone (single/local)</strong></td><td><strong>RocksMQ</strong></td><td>rocksmq (default) &gt; Pulsar &gt; Kafka &gt; Woodpecker</td><td>Built-in, zero external deps, works out of the box</td></tr>
+    <tr><td><strong>Cluster</strong></td><td><strong>Pulsar</strong></td><td>Pulsar (default) &gt; Kafka &gt; Woodpecker</td><td>RocksMQ is <strong>unsupported</strong> in cluster mode</td></tr>
+  </tbody>
+</table>
+
+<p>Two facts you <strong>must remember</strong>: ① <strong>Standalone defaults to RocksMQ</strong>, because it's built into the process and needs no extra deployment—ideal for single-machine; ② <strong>Cluster defaults to Pulsar</strong>,
+and <strong>RocksMQ is unsupported in cluster mode</strong> (it's single-machine built-in and can't be shared across nodes). Also, the comments specifically recommend: <strong>new instances should explicitly use Woodpecker</strong>
+for better performance, operational simplicity, and cost efficiency—it's Milvus's flagship next-gen built-in WAL. Valid values for <span class="inline">mq.type</span> are <span class="inline">[default, pulsar, kafka, rocksmq, woodpecker]</span>.</p>
+
+<p>Why design this priority so carefully? Because it has to serve both <strong>"out-of-the-box" and "backward compatibility"</strong>: for single-machine users, the built-in RocksMQ requires deploying nothing extra—install and run;
+for cluster users, a single-machine built-in queue like RocksMQ simply can't be shared across nodes, so it must fall back to a true distributed MQ like Pulsar/Kafka. And the reason Woodpecker sits last in priority yet is "strongly recommended for new instances"
+is that the priority must keep <strong>existing instances' behavior unchanged on upgrade</strong> (you can't suddenly swap out someone's default queue), but for brand-new deployments the project wants you to actively pick Woodpecker—as the next-gen built-in WAL, it's superior in performance and operating cost.
+Understand the "stay compatible with the old, while steering toward the new" trade-off behind this rule, and you understand how a mature system evolves its defaults.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">configs/milvus.yaml</span><span class="ln">priority comments in the mq section</span></div>
+  <pre><span class="cm"># Milvus supports four MQs: rocksmq (RocksDB-based), Pulsar, Kafka, Woodpecker.</span>
+<span class="cm"># Switch via mq.type; if unset, the following priority applies (multiple MQs configured):</span>
+<span class="cm"># 1. standalone (local) mode: rocksmq (default) &gt; Pulsar &gt; Kafka &gt; Woodpecker</span>
+<span class="cm"># 2. cluster mode: Pulsar (default) &gt; Kafka (rocksmq unsupported in cluster) &gt; Woodpecker</span>
+<span class="cm"># For new instances, explicitly using Woodpecker is recommended for better perf/ops/cost.</span>
+mq:
+  <span class="cm"># Valid values: [default, pulsar, kafka, rocksmq, woodpecker]</span>
+  type: default</pre>
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  Milvus <strong>outsources</strong> the three hardest, most generic jobs: metadata/service-discovery to <strong>etcd</strong>, bulk-data persistence to <strong>object storage</strong>, the write log to a <strong>message queue/WAL</strong>.
+  This makes its own nodes nearly <strong>stateless</strong> and elastically scalable. Deployment comes in three tiers—<strong>Lite / Standalone / Cluster</strong>: from a one-line pip in-process library, to a single-process all-in-one, to a K8s cluster where each component scales independently.
+  Memorize the MQ defaults: Standalone → RocksMQ, Cluster → Pulsar, new instances → Woodpecker recommended.
+</div>
+
+<h2>Three deployment shapes</h2>
+<p>The same Milvus can land at three <strong>scales</strong>, matching different use cases. Understand their differences and you'll know when to use which:</p>
+
+<div class="cols">
+  <div class="col"><h4>Milvus Lite</h4><p>An <strong>in-process</strong> build installed with <strong>a single pip</strong>, data stored in <strong>local files</strong>, no external deps. Great for <strong>learning, prototyping, laptop experiments</strong>, unit tests. Runs the full API but not designed for large scale/high concurrency.</p></div>
+  <div class="col"><h4>Standalone</h4><p>A <strong>single process</strong> packing all components together, MQ defaults to built-in <strong>RocksMQ</strong>, metadata via embedded or local etcd, data via local MinIO. Suited for <strong>small-to-mid production, single-machine</strong>, simple to operate.</p></div>
+  <div class="col"><h4>Cluster</h4><p>Components (coordinators + various nodes) <strong>deployed and scaled independently</strong> on <strong>Kubernetes</strong>, MQ defaults to <strong>Pulsar</strong>, relying on external etcd / S3 / Pulsar clusters. For <strong>large-scale, high-concurrency, high-availability</strong> production.</p></div>
+</div>
+
+<p>The core difference among the three is a continuum of <strong>"component aggregation" and "dependency externalization"</strong>: Lite crams everything into one process with zero external deps; Standalone is still one process but starts using dependencies like object storage;
+Cluster splits every component apart and externalizes every dependency into an independent cluster, buying unbounded horizontal scaling. They share <strong>the same API and data model</strong>, so you can <strong>start with Lite and migrate smoothly to Cluster</strong> with almost no business-code changes.</p>
+
+<p>How to choose? A simple decision intuition: for <strong>learning on a laptop, running demos, writing unit tests</strong>, use <strong>Lite</strong>—one pip, data in local files, your first vector search in minutes;
+for <strong>data within tens of millions, single-machine memory/disk that can handle it, no HA needed</strong>, use <strong>Standalone</strong>—one process, lowest operating cost;
+for <strong>billions of rows, high concurrency, HA, per-component scaling</strong>, go <strong>Cluster</strong>—on K8s scale proxy, querynode, datanode etc. independently by their own load, with production-grade etcd/object-storage/Pulsar.
+Remember this through-line: <strong>the bigger the scale, the more you split components apart and externalize dependencies</strong>; yet at every tier the API and data model stay unchanged—this is what lets Milvus "start small, never sweat big."</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Lite: learning & prototyping</h4><p>pip install, in-process, local files. <strong>Zero external deps</strong>, your first vector search in minutes.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Standalone: small-mid production</h4><p>Single-process all-in-one, RocksMQ + local MinIO/etcd. Simplest ops, for single-machine-is-enough scenarios.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Cluster: large-scale production</h4><p>Components scale on their own on K8s, Pulsar + external etcd/S3. Built for high concurrency, HA, and massive data.</p></div></div>
+</div>
+
+<p>Finally, let's tie this whole "Foundations" part together: Lesson 4 covered <strong>embeddings & similarity</strong> (what the data looks like, how to compare), Lesson 5 covered <strong>ANN algorithms</strong> (how to compare fast),
+Lesson 6 covered the <strong>data model</strong> (how to organize fields and tables), Lesson 7 covered <strong>segments & log-as-data</strong> (how data is stored and flows internally), and this lesson covered <strong>external dependencies & deployment</strong> (what supports the whole system and in what shape it runs).
+With these five foundations, you have all the prerequisites to understand the upcoming Milvus subsystems (write path, query path, indexing, compaction…).</p>
+
+<p>Looking back, these five lessons answer five progressively deeper questions: <strong>"what is a vector and how to compare it" → "how to compare massive vectors fast" → "how to model business data" → "how data is stored and flows inside the engine" → "what external infrastructure the whole engine relies on and at what scale it runs."</strong>
+Starting from a numeric vector, all the way to a distributed system that scales elastically on K8s—this through-line is the <strong>map</strong> for understanding Milvus. The parts that follow will dive into each subsystem's internals along this map.
+If you've read this far, congratulations—you've laid all the foundations.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Three dependencies</strong>: etcd (metadata + service discovery), object storage (MinIO/S3, holds binlogs and indexes), message queue/WAL (the write log).</li>
+    <li><strong>Storage-compute separation</strong>: state settles into external systems; Milvus nodes are nearly stateless and elastically scalable.</li>
+    <li><strong>Four MQ options</strong>: rocksmq / Pulsar / Kafka / Woodpecker; Woodpecker is the flagship next-gen built-in WAL.</li>
+    <li><strong>MQ defaults</strong>: Standalone → RocksMQ (rocksmq&gt;Pulsar&gt;Kafka&gt;Woodpecker); Cluster → Pulsar (Pulsar&gt;Kafka&gt;Woodpecker; RocksMQ unsupported in cluster).</li>
+    <li><strong>Three deployments</strong>: Lite (pip, in-process, local files), Standalone (single process, RocksMQ), Cluster (K8s, Pulsar, components scale independently); same API, upgradeable smoothly.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. What role does each of Milvus's three external dependencies play?</div>
+  <ol class="opts">
+    <li>etcd stores vectors, object storage records logs, MQ stores metadata</li>
+    <li>All three are needed only in Cluster mode</li>
+    <li>etcd for metadata and service discovery; object storage (MinIO/S3) for binlogs and indexes; message queue/WAL carries the write log</li>
+    <li>All three store the vector index as backups of each other</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. Milvus outsources three hard, generic jobs: strongly-consistent metadata/service-discovery to etcd, cheap durable bulk data to object storage, ordered replayable write logs to the message queue/WAL. This makes its nodes nearly stateless and elastic</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Per milvus.yaml comments, with mq.type=default, which MQ do Standalone and Cluster modes default to?</div>
+  <ol class="opts">
+    <li>Standalone defaults to Pulsar; Cluster defaults to RocksMQ</li>
+    <li>Both default to Kafka</li>
+    <li>Both default to Woodpecker</li>
+    <li>Standalone defaults to RocksMQ; Cluster defaults to Pulsar (and Cluster doesn't support RocksMQ)</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. The yaml comments give the exact priority: standalone is rocksmq(default)>Pulsar>Kafka>Woodpecker; cluster is Pulsar(default)>Kafka>Woodpecker, with rocksmq unsupported. RocksMQ is in-process and can't be shared across nodes, so it's single-machine only</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. For a brand-new Milvus deployment, which MQ do the milvus.yaml comments recommend explicitly using, and why?</div>
+  <ol class="opts">
+    <li>Woodpecker - the next-gen built-in WAL with better performance, simpler ops, lower cost; it sits low in priority only to keep existing instances' behavior unchanged</li>
+    <li>Kafka, because it's the only one supporting clusters</li>
+    <li>Any will do; the comments make no recommendation</li>
+    <li>RocksMQ, because it's the oldest and most stable</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. The comments explicitly recommend new instances use Woodpecker for better performance, simpler ops, and lower cost. It ranks last in default priority to stay compatible with existing instances (no swapping their default on upgrade), but new deployments should pick it actively</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>You're taking a prototype to production: data grows from millions to billions, concurrency rises, HA is required. Describe how you'd evolve across Lite/Standalone/Cluster, which external dependencies (etcd, object storage, MQ) must move from 'built-in/local' to 'external production clusters' along the way, and why the API barely changes.</li>
   </ul>
 </div>
 </div>

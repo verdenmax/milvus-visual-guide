@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>04 · 向量与相似度 / Embeddings &amp; similarity - Milvus 图解教程</title>
+<meta name="description" content="第二部分 · 前置基础｜向量与相似度 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="04 · 向量与相似度 / Embeddings &amp; similarity - Milvus 图解教程">
+<meta property="og:description" content="第二部分 · 前置基础｜向量与相似度 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="04 · 向量与相似度 / Embeddings &amp; similarity - Milvus 图解教程">
+<meta name="twitter:description" content="第二部分 · 前置基础｜向量与相似度 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第二部分 · 前置基础</span><span class="lang-en">Part 2 · Foundations</span></span>
+    <span class="pill">04 / 08</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:50%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第二部分 · 前置基础</span><span class="lang-en">Part 2 · Foundations</span></div>
+    <h1><span class="lang-zh">向量与相似度</span><span class="lang-en">Embeddings &amp; similarity</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+第一部分我们说过，Milvus 把"找相似"变成"在向量空间里找最近邻"。这一课把这句话<strong>拆开揉碎</strong>：
+<strong>embedding（嵌入）</strong>到底是什么、向量空间长什么样、衡量"像不像"的<strong>度量（metric）</strong>有哪几种、
+什么时候该用哪一种，以及为什么<strong>精确最近邻太慢</strong>、不得不转向 ANN。把这些基础打牢，后面所有关于索引与查询的课才有地基。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 生活类比</div>
+  把每条数据想成<strong>地图上的一个点</strong>：经度纬度只有两个数，就能定位一座城市；而 embedding 是用<strong>几百上千个数</strong>给一段文字、一张图定位。
+  "两座城市远不远"用直线距离量；"两段话像不像"也一样——只不过尺子从二维换成了几百维。<strong>度量</strong>就是你手里那把尺子：
+  有人按"直线距离"量（L2），有人按"方向是否一致"量（余弦），选错尺子，"远近"的含义就全乱了。
+</div>
+
+<h2>embedding：把万物编码成空间里的一个点</h2>
+<p>embedding 是一个训练好的<strong>神经网络模型</strong>的输出：喂进一段文字、一张图、一段音频，它吐出一串<strong>固定长度的浮点数</strong>——这就是向量。
+关键性质只有一条，但极其重要：<strong>语义相近的输入，产出的向量在空间里也彼此靠近</strong>。"猫"和"小猫"几乎重叠，"猫"和"利率"则隔得很远。
+于是"语义相似"这件以前说不清、道不明的事，第一次有了一把<strong>可计算的尺子</strong>。</p>
+
+<p>两条铁律请记牢：①<strong>维度由模型决定</strong>（常见 384 / 768 / 1024 / 1536 维），同一个集合里的向量必须<strong>同维</strong>，否则没法比较；
+②<strong>灌库与查询必须用同一个模型</strong>，否则两边向量根本"不在同一个空间"，比距离毫无意义——好比一个人用米、一个人用英尺报身高，数字再接近也不能直接比。</p>
+
+<p>再补一句关于 embedding "好不好"的直觉：一个<strong>好的</strong>嵌入模型，是在海量数据上训练出来的，它学会的不是"记住每条数据"，而是<strong>把"语义"提炼成方向</strong>——
+相关的概念指向相近的方向，无关的概念彼此正交（垂直）。所以"用对模型"几乎和"建对索引"一样重要：再快的检索，建立在错位的向量空间上，找回来的也是一堆<strong>看似相似、实则无关</strong>的结果。
+这也是本教程反复强调"灌库与查询同模型"的原因——它是一切相似检索<strong>正确性</strong>的前提，而非性能问题。</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>原始数据</h4><p>一段文字、一张图、一段音频……计算机无法直接判断它们"像不像"。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>embedding 模型</h4><p class="mono">bge / BERT / CLIP …</p><p>训练好的网络，把每条数据映射成固定维度的向量。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>向量（如 768 维）</h4><p>空间里的一个点：语义相近 ⇒ 点相近；语义无关 ⇒ 点相距很远。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>用度量衡量"距离"</h4><p>给两点一把尺子（L2 / IP / COSINE…），算出"远近"，就得到"像不像"。</p></div></div>
+</div>
+
+<h2>度量：衡量"像不像"的几把尺子</h2>
+<p>向量是空间里的点，"两条数据像不像"就翻译成"两个点的<strong>距离</strong>或<strong>相似度</strong>有多少"。在动手之前，先补一句关于<strong>维度</strong>的直觉：
+维度不是越高越好。维度越高，模型能塞进去的"语义细节"越多，但存储和计算成本也线性上涨，且过高的维度还会带来后面要讲的"维度灾难"。
+工程上常见的取舍是：检索质量要求高就用 768 / 1024 维，要省内存、追求吞吐就用 384 维甚至更低，或者对向量做<strong>量化压缩</strong>（第 5 课展开）。
+同一个集合内维度必须一致，这个数字一旦定下来，就跟着这个集合走到底。Milvus 支持的度量名字是<strong>固定且大小写敏感</strong>的字符串常量，
+最常用的三把尺子是 <span class="inline">L2</span>、<span class="inline">IP</span>、<span class="inline">COSINE</span>：</p>
+
+<ul>
+  <li><strong>L2（欧氏距离）</strong>：两点之间的直线距离，<strong>越小越像</strong>。它关心"绝对位置差多少"，对向量的长度（模长）敏感。</li>
+  <li><strong>IP（内积，Inner Product）</strong>：对应元素相乘再相加，<strong>越大越像</strong>。它同时受"方向是否一致"和"模长大小"影响。</li>
+  <li><strong>COSINE（余弦相似度）</strong>：只看两个向量的<strong>夹角</strong>，完全忽略模长，<strong>越大（越接近 1）越像</strong>。本质是"先归一化再算内积"。</li>
+</ul>
+
+<div class="cellgroup">
+  <div class="cg-cap"><b>一次距离计算</b>：查询向量 <span class="mono">q</span> 与库内向量 <span class="mono">v</span> 逐维相乘再相加，得到内积（IP）；L2 则是逐维相减、平方、求和</div>
+  <div class="cells"><span class="lab">q</span><span class="cell hl">0.90</span><span class="cell hl">0.10</span><span class="cell hl">0.80</span></div>
+  <div class="cells"><span class="lab">v</span><span class="cell">0.88</span><span class="cell">0.12</span><span class="cell">0.79</span></div>
+  <div class="cells"><span class="lab">IP</span><span class="cell q">0.90·0.88</span><span class="sep">+</span><span class="cell q">0.10·0.12</span><span class="sep">+</span><span class="cell q">0.80·0.79</span><span class="sep">=</span><span class="cell scale">1.42 越大越像</span></div>
+  <div class="cells"><span class="lab">L2²</span><span class="cell q">0.02²</span><span class="sep">+</span><span class="cell q">0.02²</span><span class="sep">+</span><span class="cell q">0.01²</span><span class="sep">=</span><span class="cell scale">0.0009 越小越像</span></div>
+</div>
+
+<p>这里藏着一个常见困惑：<strong>"距离"和"相似度"方向相反</strong>。L2 是距离，<strong>越小越好</strong>；IP / COSINE 是相似度，<strong>越大越好</strong>。
+Milvus 在内部会统一处理这种排序方向，但你在选度量、看返回分数时要心里有数：看到 L2 别误以为"分数越高越像"。</p>
+
+<h2>归一化：为什么 IP 和 COSINE 常常画等号</h2>
+<p>"归一化（normalize）"指把向量<strong>缩放成长度为 1</strong>（除以它的模长），只保留方向、丢掉长度。这件小事会带来一个漂亮的结论：
+<strong>对归一化后的向量，内积（IP）就等于余弦相似度（COSINE）</strong>。因为余弦本来就是"先归一化再算内积"，当向量已经是单位长度时，这一步归一化就免了。</p>
+
+<div class="cols">
+  <div class="col"><h4>未归一化</h4><p>向量长度各不相同。用 <span class="inline">IP</span> 时，<strong>长向量天然占便宜</strong>（内积偏大）；
+  这时若你真正想比的是"方向/语义"，更应该用 <span class="inline">COSINE</span> 或 <span class="inline">L2</span>。</p></div>
+  <div class="col"><h4>已归一化（长度=1）</h4><p>长度信息被抹平，只剩方向。此时 <span class="inline">IP == COSINE</span>，
+  且 <span class="inline">L2</span> 与 <span class="inline">COSINE</span> 单调对应——用谁结果排序都一样。很多 embedding 模型默认输出就已归一化。</p></div>
+</div>
+
+<p>实战经验：如果你的模型文档说"输出已归一化"，那 <span class="inline">IP</span> 与 <span class="inline">COSINE</span> 等价、且最省事；
+如果没归一化、又只关心语义方向，用 <span class="inline">COSINE</span> 最稳妥；如果连绝对位置都有意义（比如某些数值特征），才考虑 <span class="inline">L2</span>。
+最重要的纪律是：<strong>建索引和搜索必须用同一种度量</strong>，否则"远近"的定义对不上，召回会一塌糊涂。</p>
+
+<h2>二值与稀疏向量：另外几把专用尺子</h2>
+<p>除了常见的浮点稠密向量，还有两类特殊向量，它们配专用的度量：</p>
+<ul>
+  <li><strong>二值向量（BinaryVector）</strong>：每一位非 0 即 1（比如指纹、分子结构哈希）。度量用 <strong>HAMMING</strong>（有多少位不同）或 <strong>JACCARD</strong>（两个集合的重叠程度）。</li>
+  <li><strong>稀疏向量（SparseFloatVector）</strong>：维度极高但绝大多数是 0（比如 BM25、SPLADE 这类词项权重）。这类向量天然适合用 <strong>IP（内积）</strong> 来打分。</li>
+</ul>
+
+<table class="t">
+  <tr><th>度量</th><th>含义</th><th>方向</th><th>典型用途 / 向量类型</th></tr>
+  <tr><td><strong>L2</strong></td><td class="mono">欧氏直线距离</td><td>越小越像</td><td>稠密浮点；关心绝对位置</td></tr>
+  <tr><td><strong>IP</strong></td><td class="mono">内积</td><td>越大越像</td><td>已归一化稠密向量；<strong>稀疏向量</strong></td></tr>
+  <tr><td><strong>COSINE</strong></td><td class="mono">夹角余弦</td><td>越大越像</td><td>稠密向量，只比方向/语义</td></tr>
+  <tr><td><strong>HAMMING</strong></td><td class="mono">不同位的个数</td><td>越小越像</td><td>二值向量</td></tr>
+  <tr><td><strong>JACCARD</strong></td><td class="mono">集合重叠度</td><td>越小越像</td><td>二值向量</td></tr>
+</table>
+
+<p>这些名字不是教程随手起的，而是 Milvus 源码里<strong>逐字定义的常量</strong>。下面这段就是它们的"出生地"——记住这些字符串是<strong>大小写敏感</strong>的，
+你在建索引、搜索时填的 <span class="inline">metric_type</span> 必须和它们一模一样。</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">pkg/util/metric/metric_type.go</span><span class="ln">MetricType 常量</span></div>
+  <pre><span class="kw">type</span> MetricType = <span class="kw">string</span>
+
+<span class="kw">const</span> (
+    L2      MetricType = <span class="st">"L2"</span>       <span class="cm">// 欧氏距离，越小越像</span>
+    IP      MetricType = <span class="st">"IP"</span>       <span class="cm">// 内积，越大越像</span>
+    COSINE  MetricType = <span class="st">"COSINE"</span>   <span class="cm">// 余弦相似度（归一化后 == IP）</span>
+    HAMMING MetricType = <span class="st">"HAMMING"</span>  <span class="cm">// 二值向量：不同位的个数</span>
+    JACCARD MetricType = <span class="st">"JACCARD"</span>  <span class="cm">// 二值向量：集合重叠度</span>
+    <span class="cm">// 还有 BM25、MHJACCARD、SUBSTRUCTURE 等更专门的度量</span>
+)</pre>
+</div>
+
+<h2>实战：到底该选哪一种度量</h2>
+<p>把上面的知识收成一份可操作的决策清单。选度量这件事，归根到底取决于<strong>你的向量从哪来、要比什么</strong>，三句话就能定：</p>
+
+<div class="cols">
+  <div class="col"><h4>看模型文档</h4><p>若写明"输出已归一化（normalized / unit length）"，直接用 <span class="inline">IP</span>——它和 <span class="inline">COSINE</span> 等价又最省算力。
+  绝大多数主流文本 embedding（如 bge 系列）都属于这一类。</p></div>
+  <div class="col"><h4>只比方向/语义</h4><p>向量没归一化、你又只在乎"语义方向像不像"，用 <span class="inline">COSINE</span> 最稳：它自动忽略模长，不会被"长向量"带偏。</p></div>
+</div>
+
+<p>剩下两种情况：当<strong>绝对位置/数值大小本身有意义</strong>（某些工程特征、坐标类数据）时，才用 <span class="inline">L2</span>；当向量是<strong>二值或稀疏</strong>时，
+按前面的表走 HAMMING / JACCARD / IP。一个最容易踩的坑再强调一次：<strong>同一个集合，建索引用什么度量，搜索就必须用什么度量</strong>，两者必须严格一致——
+这不是"建议"，而是"规则"，违反它不会报一个友好的错误，而是<strong>悄悄返回一堆错的结果</strong>，排查起来非常费劲。</p>
+
+<p>最后给一个收尾的直觉：度量决定"什么叫近"，模型决定"向量好不好"，而索引（下一课）决定"找得快不快"。三者是<strong>正交</strong>的三件事，
+但在一次真实检索里缺一不可。把这三层在脑子里分开，你以后看任何向量检索的配置、调参、排障，都能立刻定位到"问题出在哪一层"。</p>
+
+<h2>topK 与分数阈值：一次搜索返回什么</h2>
+<p>把"度量"用起来，一次<strong>搜索</strong>就是：给定一个<strong>查询向量</strong>，在集合里按度量算出每条的"远近"，取最接近的 <strong>K</strong> 条返回，这就是 <strong>topK</strong>。
+返回结果是<strong>按相似度排好序</strong>的——第 1 名最像，依次往下。业务里还常配一个<strong>分数阈值</strong>：把"虽然排在最前、但其实不够像"的结果挡在门外，
+避免给用户返回一堆勉强凑数的近邻。注意阈值的方向要跟着度量走：L2 是"小于某个距离才算像"，COSINE / IP 则是"大于某个分数才算像"。</p>
+
+<div class="trace">
+  <div class="tcap"><b>一次 topK=2 检索</b>：查询 <span class="mono">q</span> 对 4 条库内向量算距离（L2，越小越像），排序后取最近 2 条</div>
+  <div class="stations">
+    <div class="stn"><h5>① 算距离</h5>
+      <div class="cellrow"><span class="vc">v1</span><span class="vc hot">0.03</span></div>
+      <div class="cellrow"><span class="vc">v2</span><span class="vc">1.42</span></div>
+      <div class="cellrow"><span class="vc">v3</span><span class="vc hot">0.07</span></div>
+      <div class="cellrow"><span class="vc">v4</span><span class="vc">0.96</span></div>
+      <div class="tlab">逐条与 q 比对</div>
+    </div>
+    <div class="op">排序→</div>
+    <div class="stn"><h5>② 升序排</h5>
+      <div class="cellrow"><span class="vc hot">v1 0.03</span></div>
+      <div class="cellrow"><span class="vc hot">v3 0.07</span></div>
+      <div class="cellrow"><span class="vc dim">v4 0.96</span></div>
+      <div class="cellrow"><span class="vc dim">v2 1.42</span></div>
+      <div class="tlab">距离从小到大</div>
+    </div>
+    <div class="op">取前2→</div>
+    <div class="stn"><h5>③ topK=2</h5>
+      <div class="cellrow"><span class="vc blue">v1 ✓</span></div>
+      <div class="cellrow"><span class="vc blue">v3 ✓</span></div>
+      <div class="tlab">最相似的 2 条返回</div>
+    </div>
+  </div>
+</div>
+
+<p>这张图也顺手揭示了暴力检索的成本：第 ① 步要和<strong>每一条</strong>都算一次距离。库里 4 条没问题，4 亿条就是灾难。这正是下文 ANN 要解决的痛点。</p>
+
+<h2>高维空间为什么反直觉</h2>
+<p>我们对"距离"的直觉来自二维、三维世界，但 embedding 动辄几百上千维，那里的几何<strong>和日常经验大不相同</strong>。一个著名现象叫<strong>"维度灾难"</strong>：
+维度一高，<strong>几乎所有点之间的距离都趋于接近</strong>，"最近"和"次近"的差距被抹平，精确比较的区分度下降；同时，要在高维空间里"靠分块覆盖"做精确检索，
+所需的格子数随维度<strong>指数级爆炸</strong>。这两点合起来意味着：在高维下既<strong>没法</strong>靠简单切分加速精确检索，逐个暴力又太慢——只能退而求其次用<strong>近似</strong>。</p>
+
+<p>换个角度看，这恰恰解释了为什么 ANN 不是"偷懒"，而是高维世界里<strong>唯一可行的工程路线</strong>：既然精确的代价是指数或线性爆炸，那么用一点点召回损失，
+换来可控的、毫秒级的检索，就成了必然选择。这也是后面所有索引（IVF、HNSW、PQ、DiskANN）共同的出发点——它们只是<strong>用不同的招式逼近同一个目标</strong>。</p>
+
+<h2>ANN 问题：为什么不能"挨个精确算"</h2>
+<p>有了向量和度量，最朴素的搜索就是<strong>暴力检索（brute-force / FLAT）</strong>：把查询向量和库里<strong>每一条</strong>都算一次距离，再排序取最近的 K 条（topK）。
+结果<strong>绝对精确</strong>，逻辑也最简单。问题只有一个字：<strong>慢</strong>。</p>
+
+<p>算一笔账：1 亿条 768 维向量，一次查询要做约 <strong>1 亿 × 768 ≈ 768 亿次</strong>乘加运算。单条查询就如此沉重，再叠加成百上千的并发，
+任何单机都扛不住。这就是<strong>精确最近邻（exact kNN）</strong>在大规模下的死穴——复杂度 O(N·D) 随数据量<strong>线性增长</strong>，数据涨十倍，延迟也涨十倍。</p>
+
+<table class="t">
+  <tr><th>做法</th><th>怎么找</th><th>速度</th><th>结果</th></tr>
+  <tr><td><strong>精确 kNN（FLAT）</strong></td><td class="mono">和每条都算距离</td><td>慢 O(N·D)</td><td>100% 精确</td></tr>
+  <tr><td><strong>ANN 索引</strong></td><td class="mono">只看一小撮候选</td><td>快（毫秒级）</td><td>近似（召回常 95%+）</td></tr>
+</table>
+
+<p>解法是<strong>近似最近邻（ANN, Approximate Nearest Neighbor）</strong>：预先把向量组织成专门的<strong>索引结构</strong>（分桶、建图、压缩……），
+查询时<strong>只检查一小撮最可能的候选</strong>，而不是全库扫描。代价是偶尔会漏掉个别真正的最近邻——但实践中<strong>召回率常在 95%~99% 以上</strong>，
+而速度能快上<strong>几百倍</strong>。对绝大多数应用，这是一笔极其划算的买卖："用一点点精度，换巨大的速度"。</p>
+
+<p>这一课只把<strong>问题</strong>讲清楚：为什么需要 ANN、它在用什么换什么。至于 ANN <strong>具体怎么实现</strong>——分桶的 IVF、建图的 HNSW、压缩的 PQ、面向磁盘的 DiskANN——
+是下一课（第 5 课）的主角。把这一课的"度量"和"为什么近似"装进脑子，你就握住了理解所有向量索引的两把钥匙。
+顺带说一句：FLAT（暴力检索）在 Milvus 里也是一个<strong>真实可选的"索引"</strong>——当数据量不大、又要 100% 精确召回时，它反而是最合适的选择。
+所以"精确 vs 近似"不是非此即彼，而是 Milvus 留给你的一个<strong>按场景权衡</strong>的旋钮，这正是下一课要展开的主题。</p>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  一句话串起来：<strong>embedding 把数据变成空间里的点 → 度量给出"两点多像"的尺子 → 精确最近邻太慢 → 用 ANN 索引做近似检索</strong>。
+  这四步是 Milvus 一切检索能力的地基。度量名字（L2 / IP / COSINE / HAMMING / JACCARD）和"近似换速度"的取舍，会在后面每一节反复出现。
+</div>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>embedding</strong>：模型把非结构化数据编码成定长向量；语义相近 ⇒ 向量相近。维度由模型定，灌库与查询必须同模型、同维。</li>
+    <li><strong>度量</strong>：L2（距离，越小越像）、IP（内积，越大越像）、COSINE（夹角，越大越像）；建索引与搜索<strong>必须用同一种</strong>。</li>
+    <li><strong>归一化</strong>：缩放成长度 1 后，<strong>IP == COSINE</strong>；许多 embedding 默认已归一化。</li>
+    <li><strong>专用度量</strong>：二值向量用 HAMMING / JACCARD；稀疏向量用 IP。名字大小写敏感（见 <span class="mono">metric_type.go</span>）。</li>
+    <li><strong>ANN 问题</strong>：精确 kNN 是 O(N·D)，规模一大就崩；ANN 用一点点召回损失换几百倍提速。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. 当所有向量都已经归一化（模长为 1）时，用 IP（内积）和用 COSINE（余弦）排序 topK 的结果有什么关系？</div>
+  <ol class="opts">
+    <li>完全等价：归一化后内积就等于余弦，排序结果一致，所以很多系统直接归一化再用 IP</li>
+    <li>两者结果总是恰好相反</li>
+    <li>COSINE 此时会退化成 L2 欧氏距离</li>
+    <li>IP 永远把所有向量判为相同距离</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：A</strong>。余弦相似度 = 内积 /（两模长之积）。当模长都为 1 时分母为 1，于是余弦就等于内积，排序完全一致。这就是“先归一化再用 IP”这一常见做法的依据</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. 对二值（binary）向量做相似度，下面哪一组度量是合适的？</div>
+  <ol class="opts">
+    <li>只能用 L2，二值向量当成普通浮点处理</li>
+    <li>必须先转成稀疏向量再用 IP</li>
+    <li>二值向量不支持任何相似度度量</li>
+    <li>HAMMING / JACCARD —— 它们衡量比特位的差异或集合重叠，专为二值向量设计</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。metric_type.go 里为二值向量提供了 HAMMING（不同比特数）和 JACCARD（集合相似度）等度量；稀疏向量用 IP。度量名是大小写敏感的字符串常量，要按代码原样写</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 为什么在高维向量上需要 ANN（近似最近邻）而不是精确暴力搜索？</div>
+  <ol class="opts">
+    <li>因为精确搜索会返回错误结果</li>
+    <li>因为高维向量无法计算距离</li>
+    <li>因为 ANN 总是比暴力搜索更精确</li>
+    <li>海量高维向量下精确逐一比对太慢，ANN 用一点点精度（召回率）换取毫秒级速度</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。暴力搜索要把查询和每条向量都算一遍距离，数据上亿时延迟无法接受。ANN 通过索引结构只看一小部分候选，用可控的召回率损失换来巨大的速度提升——这正是下一课要展开的主题</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>假设你要做“以图搜图”，图片向量已用某模型生成。你会先归一化吗？会选 L2、IP 还是 COSINE？说说你的理由，并想想如果换成“稀疏关键词向量”度量该怎么变。</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Part 1 said Milvus turns "find similar" into "find nearest neighbors in vector space". This lesson
+<strong>takes that sentence apart</strong>: what an <strong>embedding</strong> actually is, what the vector space looks like,
+which <strong>metrics</strong> measure "how alike", when to use each, and why <strong>exact nearest-neighbor is too slow</strong>
+so we must turn to ANN. Nail these foundations and every later lesson on indexing and querying has solid ground.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of each item as <strong>a point on a map</strong>: just two numbers (lat/long) locate a city; an embedding uses
+  <strong>hundreds or thousands of numbers</strong> to locate a sentence or an image. "How far apart are two cities" is
+  measured by straight-line distance; "how alike are two sentences" works the same way — only the ruler now lives in
+  hundreds of dimensions. A <strong>metric</strong> is the ruler in your hand: some measure straight-line distance (L2),
+  some measure whether directions align (cosine). Pick the wrong ruler and "near vs far" loses all meaning.
+</div>
+
+<h2>Embeddings: encoding everything into a point in space</h2>
+<p>An embedding is the output of a trained <strong>neural network</strong>: feed in text, an image, or audio and it emits a
+<strong>fixed-length list of floats</strong> — the vector. There is one property, but it is everything:
+<strong>semantically similar inputs land close together</strong> in that space. "cat" and "kitten" nearly overlap;
+"cat" and "interest rate" sit far apart. So "semantic similarity", once vague and unmeasurable, finally gets a
+<strong>computable ruler</strong>.</p>
+
+<p>Two iron rules: (1) <strong>the model decides the dimension</strong> (commonly 384 / 768 / 1024 / 1536), and all vectors in
+one collection must be the <strong>same dimension</strong>, else they can't be compared; (2) <strong>you must use the same model
+for ingest and for query</strong>, otherwise the two sides aren't "in the same space" and comparing distances is meaningless —
+like one person quoting height in meters and another in feet.</p>
+
+<p>One more intuition about whether an embedding is "good": a <strong>good</strong> embedding model is trained on huge data and learns not
+to "memorize each item" but to <strong>distill meaning into direction</strong> — related concepts point in nearby directions, unrelated
+ones become orthogonal (perpendicular). So "using the right model" matters almost as much as "building the right index": however
+fast your retrieval, built on a misaligned vector space it returns results that <strong>look similar but are actually unrelated</strong>.
+That's why this guide keeps stressing "same model for ingest and query" — it's a precondition for the <strong>correctness</strong> of all
+similarity search, not a performance knob.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Raw data</h4><p>Text, an image, audio… a computer can't directly tell whether they "look alike".</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Embedding model</h4><p class="mono">bge / BERT / CLIP …</p><p>A trained network mapping each item to a fixed-dimension vector.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Vector (e.g. 768-d)</h4><p>A point in space: similar meaning ⇒ near points; unrelated ⇒ far apart.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Measure "distance"</h4><p>Give the two points a ruler (L2 / IP / COSINE…) to get "near/far" = "alike or not".</p></div></div>
+</div>
+
+<h2>Metrics: the rulers that measure "how alike"</h2>
+<p>Vectors are points, so "are two items alike" becomes "how big is the <strong>distance</strong> or <strong>similarity</strong> between two
+points". Before diving in, one intuition about <strong>dimension</strong>: higher isn't always better. More dimensions let the model pack
+in more semantic detail, but storage and compute cost rise linearly, and overly high dimensions invite the "curse of
+dimensionality" discussed later. A common trade: use 768 / 1024 dims when retrieval quality matters, drop to 384 or lower to save
+memory and chase throughput, or <strong>quantize/compress</strong> the vectors (Lesson 5). All vectors in a collection share one dimension,
+and once chosen that number stays with the collection for life. Milvus's metric names are <strong>fixed, case-sensitive</strong> string
+constants; the three everyday rulers are <span class="inline">L2</span>, <span class="inline">IP</span>, and <span class="inline">COSINE</span>:</p>
+
+<ul>
+  <li><strong>L2 (Euclidean)</strong>: straight-line distance between two points, <strong>smaller is more alike</strong>. It cares about
+  "how far apart in absolute position" and is sensitive to vector length (magnitude).</li>
+  <li><strong>IP (Inner Product)</strong>: multiply matching elements and sum, <strong>larger is more alike</strong>. It is affected by both
+  direction alignment and magnitude.</li>
+  <li><strong>COSINE (cosine similarity)</strong>: looks only at the <strong>angle</strong> between two vectors, ignoring magnitude;
+  <strong>larger (closer to 1) is more alike</strong>. It is essentially "normalize first, then take the inner product".</li>
+</ul>
+
+<div class="cellgroup">
+  <div class="cg-cap"><b>One distance computation</b>: query <span class="mono">q</span> times in-store vector <span class="mono">v</span> element-by-element, summed = inner product (IP); L2 instead subtracts, squares, sums</div>
+  <div class="cells"><span class="lab">q</span><span class="cell hl">0.90</span><span class="cell hl">0.10</span><span class="cell hl">0.80</span></div>
+  <div class="cells"><span class="lab">v</span><span class="cell">0.88</span><span class="cell">0.12</span><span class="cell">0.79</span></div>
+  <div class="cells"><span class="lab">IP</span><span class="cell q">0.90·0.88</span><span class="sep">+</span><span class="cell q">0.10·0.12</span><span class="sep">+</span><span class="cell q">0.80·0.79</span><span class="sep">=</span><span class="cell scale">1.42 bigger = closer</span></div>
+  <div class="cells"><span class="lab">L2²</span><span class="cell q">0.02²</span><span class="sep">+</span><span class="cell q">0.02²</span><span class="sep">+</span><span class="cell q">0.01²</span><span class="sep">=</span><span class="cell scale">0.0009 smaller = closer</span></div>
+</div>
+
+<p>A common confusion hides here: <strong>"distance" and "similarity" point opposite ways</strong>. L2 is a distance, so
+<strong>smaller is better</strong>; IP / COSINE are similarities, so <strong>larger is better</strong>. Milvus normalizes the sort order
+internally, but when choosing a metric and reading scores, keep it straight: with L2, do not assume "higher score = more alike".</p>
+
+<h2>Normalization: why IP and COSINE often become equal</h2>
+<p>"Normalizing" a vector means <strong>scaling it to length 1</strong> (dividing by its magnitude), keeping direction and discarding
+length. This small act yields a neat result: <strong>for normalized vectors, the inner product (IP) equals cosine similarity
+(COSINE)</strong>. Cosine is already "normalize then inner-product"; if the vectors are already unit-length, that normalize step
+is free.</p>
+
+<div class="cols">
+  <div class="col"><h4>Not normalized</h4><p>Vectors have different lengths. With <span class="inline">IP</span>, <strong>longer vectors get an unfair edge</strong>
+  (bigger inner product); if what you really want to compare is direction/meaning, prefer <span class="inline">COSINE</span> or
+  <span class="inline">L2</span>.</p></div>
+  <div class="col"><h4>Normalized (length = 1)</h4><p>Length information is flattened away; only direction remains. Now
+  <span class="inline">IP == COSINE</span>, and <span class="inline">L2</span> maps monotonically to <span class="inline">COSINE</span> — any of
+  them ranks the same. Many embedding models already output normalized vectors.</p></div>
+</div>
+
+<p>Rule of thumb: if your model's docs say "outputs are normalized", then <span class="inline">IP</span> and
+<span class="inline">COSINE</span> are equivalent and IP is cheapest; if not normalized and you only care about semantic direction,
+<span class="inline">COSINE</span> is safest; only when absolute position matters (some numeric features) consider
+<span class="inline">L2</span>. The cardinal discipline: <strong>build the index and search with the same metric</strong>, or the
+definition of "near/far" won't line up and recall collapses.</p>
+
+<h2>Binary and sparse vectors: a few more specialized rulers</h2>
+<p>Beyond the everyday dense float vectors, two special kinds come with their own metrics:</p>
+<ul>
+  <li><strong>Binary vectors (BinaryVector)</strong>: every bit is 0 or 1 (e.g. fingerprints, molecular hashes). Use
+  <strong>HAMMING</strong> (how many bits differ) or <strong>JACCARD</strong> (set overlap).</li>
+  <li><strong>Sparse vectors (SparseFloatVector)</strong>: huge dimension but mostly zeros (e.g. BM25, SPLADE term weights). These are
+  naturally scored with <strong>IP (inner product)</strong>.</li>
+</ul>
+
+<table class="t">
+  <tr><th>Metric</th><th>Meaning</th><th>Direction</th><th>Typical use / vector type</th></tr>
+  <tr><td><strong>L2</strong></td><td class="mono">Euclidean distance</td><td>smaller = closer</td><td>dense floats; absolute position matters</td></tr>
+  <tr><td><strong>IP</strong></td><td class="mono">inner product</td><td>larger = closer</td><td>normalized dense; <strong>sparse vectors</strong></td></tr>
+  <tr><td><strong>COSINE</strong></td><td class="mono">angle cosine</td><td>larger = closer</td><td>dense, compare direction/meaning only</td></tr>
+  <tr><td><strong>HAMMING</strong></td><td class="mono">differing bits</td><td>smaller = closer</td><td>binary vectors</td></tr>
+  <tr><td><strong>JACCARD</strong></td><td class="mono">set overlap</td><td>smaller = closer</td><td>binary vectors</td></tr>
+</table>
+
+<p>These names aren't invented by the tutorial — they are <strong>literally defined constants</strong> in Milvus source. Below is their
+"birthplace"; remember the strings are <strong>case-sensitive</strong>, and the <span class="inline">metric_type</span> you pass when
+building an index or searching must match them exactly.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">pkg/util/metric/metric_type.go</span><span class="ln">MetricType constants</span></div>
+  <pre><span class="kw">type</span> MetricType = <span class="kw">string</span>
+
+<span class="kw">const</span> (
+    L2      MetricType = <span class="st">"L2"</span>       <span class="cm">// Euclidean distance, smaller = closer</span>
+    IP      MetricType = <span class="st">"IP"</span>       <span class="cm">// inner product, larger = closer</span>
+    COSINE  MetricType = <span class="st">"COSINE"</span>   <span class="cm">// cosine similarity (== IP once normalized)</span>
+    HAMMING MetricType = <span class="st">"HAMMING"</span>  <span class="cm">// binary vectors: number of differing bits</span>
+    JACCARD MetricType = <span class="st">"JACCARD"</span>  <span class="cm">// binary vectors: set overlap</span>
+    <span class="cm">// plus more specialized metrics: BM25, MHJACCARD, SUBSTRUCTURE, …</span>
+)</pre>
+</div>
+
+<h2>In practice: which metric should you actually pick</h2>
+<p>Let's distill the above into an actionable checklist. Choosing a metric ultimately depends on <strong>where your vectors come from
+and what you're comparing</strong>; three sentences settle it:</p>
+
+<div class="cols">
+  <div class="col"><h4>Read the model docs</h4><p>If it says "outputs are normalized / unit length", just use <span class="inline">IP</span> — equivalent to
+  <span class="inline">COSINE</span> but cheapest. Most mainstream text embeddings (e.g. the bge family) fall here.</p></div>
+  <div class="col"><h4>Compare direction/meaning only</h4><p>If vectors aren't normalized and you only care about "semantic direction", <span class="inline">COSINE</span>
+  is safest: it ignores magnitude automatically and won't be skewed by "long vectors".</p></div>
+</div>
+
+<p>The remaining cases: use <span class="inline">L2</span> only when <strong>absolute position / magnitude itself is meaningful</strong> (some
+engineering features, coordinate-like data); for <strong>binary or sparse</strong> vectors, follow the earlier table — HAMMING / JACCARD / IP.
+One trap, stated once more: <strong>within a collection, whatever metric you build the index with, you must search with</strong> — the two
+must match exactly. This isn't "advice", it's a "rule"; breaking it won't raise a friendly error, it <strong>silently returns wrong
+results</strong> that are painful to debug.</p>
+
+<p>A closing intuition: the metric decides "what counts as near", the model decides "how good the vectors are", and the index
+(next lesson) decides "how fast you find them". The three are <strong>orthogonal</strong>, yet all indispensable in one real search. Keep
+these three layers separate in your head and you'll instantly locate "which layer the problem is in" when reading any vector-search
+config, tuning, or incident.</p>
+
+<h2>topK and score thresholds: what one search returns</h2>
+<p>Putting metrics to work, one <strong>search</strong> is: given a <strong>query vector</strong>, compute "near/far" for each item by the metric,
+and return the nearest <strong>K</strong> — that is <strong>topK</strong>. Results are <strong>sorted by similarity</strong> — rank 1 most alike, then down.
+Apps often add a <strong>score threshold</strong> to keep out "ranked first but not actually close enough" results, avoiding a list of
+barely-qualifying neighbors. Mind the direction: with L2 it's "closer than some distance counts as alike"; with COSINE / IP it's
+"above some score counts as alike".</p>
+
+<div class="trace">
+  <div class="tcap"><b>One topK=2 search</b>: query <span class="mono">q</span> vs 4 stored vectors by distance (L2, smaller = closer), sort, keep nearest 2</div>
+  <div class="stations">
+    <div class="stn"><h5>① Distances</h5>
+      <div class="cellrow"><span class="vc">v1</span><span class="vc hot">0.03</span></div>
+      <div class="cellrow"><span class="vc">v2</span><span class="vc">1.42</span></div>
+      <div class="cellrow"><span class="vc">v3</span><span class="vc hot">0.07</span></div>
+      <div class="cellrow"><span class="vc">v4</span><span class="vc">0.96</span></div>
+      <div class="tlab">compare each to q</div>
+    </div>
+    <div class="op">sort→</div>
+    <div class="stn"><h5>② Ascending</h5>
+      <div class="cellrow"><span class="vc hot">v1 0.03</span></div>
+      <div class="cellrow"><span class="vc hot">v3 0.07</span></div>
+      <div class="cellrow"><span class="vc dim">v4 0.96</span></div>
+      <div class="cellrow"><span class="vc dim">v2 1.42</span></div>
+      <div class="tlab">distance small→large</div>
+    </div>
+    <div class="op">top2→</div>
+    <div class="stn"><h5>③ topK=2</h5>
+      <div class="cellrow"><span class="vc blue">v1 ✓</span></div>
+      <div class="cellrow"><span class="vc blue">v3 ✓</span></div>
+      <div class="tlab">return 2 most similar</div>
+    </div>
+  </div>
+</div>
+
+<p>This figure also reveals brute force's cost: step ① computes a distance against <strong>every</strong> item. Four items is fine; four
+hundred million is a disaster. That is exactly the pain ANN solves below.</p>
+
+<h2>Why high-dimensional space is counter-intuitive</h2>
+<p>Our intuition for "distance" comes from 2D and 3D, but embeddings have hundreds or thousands of dimensions where geometry
+<strong>differs sharply from everyday experience</strong>. A famous phenomenon is the <strong>"curse of dimensionality"</strong>: as dimension
+grows, <strong>almost all pairwise distances tend to converge</strong>, the gap between "nearest" and "second nearest" flattens, and exact
+comparison loses discriminating power; meanwhile, covering the space with grid cells to speed up exact search needs a number of
+cells that <strong>explodes exponentially</strong> with dimension. Together these mean: in high dimensions you <strong>cannot</strong> speed up
+exact search by simple partitioning, and brute force is too slow — so you settle for <strong>approximation</strong>.</p>
+
+<p>Seen this way, ANN isn't "cutting corners" — it is the <strong>only viable engineering path</strong> in a high-dimensional world. Since the
+cost of being exact explodes exponentially or linearly, trading a little recall for controllable, millisecond retrieval becomes
+inevitable. This is the shared starting point of every index ahead (IVF, HNSW, PQ, DiskANN) — they merely <strong>approach the same goal
+with different tricks</strong>.</p>
+
+<h2>The ANN problem: why we can't "compute exactly, one by one"</h2>
+<p>With vectors and a metric in hand, the most naive search is <strong>brute force (FLAT)</strong>: compute the distance from the
+query to <strong>every</strong> stored vector, then sort and keep the nearest K (topK). The result is <strong>perfectly exact</strong> and the
+logic is trivial. There is exactly one problem: it is <strong>slow</strong>.</p>
+
+<p>Do the math: 100M vectors of 768-d means one query does roughly <strong>100M × 768 ≈ 77 billion</strong> multiply-adds. A single
+query is already heavy; multiply by hundreds or thousands of concurrent queries and no single machine survives. That is the
+fatal flaw of <strong>exact kNN</strong> at scale — its O(N·D) cost grows <strong>linearly</strong> with data: 10× the data, 10× the latency.</p>
+
+<table class="t">
+  <tr><th>Approach</th><th>How it searches</th><th>Speed</th><th>Result</th></tr>
+  <tr><td><strong>Exact kNN (FLAT)</strong></td><td class="mono">distance to every item</td><td>slow O(N·D)</td><td>100% exact</td></tr>
+  <tr><td><strong>ANN index</strong></td><td class="mono">only a small candidate set</td><td>fast (milliseconds)</td><td>approximate (recall often 95%+)</td></tr>
+</table>
+
+<p>The fix is <strong>ANN (Approximate Nearest Neighbor)</strong>: organize the vectors ahead of time into a specialized
+<strong>index structure</strong> (buckets, graphs, compression…), and at query time <strong>inspect only a small set of most-likely
+candidates</strong> instead of scanning everything. The price is occasionally missing a true nearest neighbor — but in practice
+<strong>recall is usually 95%–99%+</strong> while speed jumps <strong>hundreds of times</strong>. For most applications it's an excellent
+trade: "spend a little accuracy to buy enormous speed".</p>
+
+<p>This lesson only frames the <strong>problem</strong>: why ANN is needed and what it trades for what. <strong>How</strong> ANN is actually
+implemented — bucketed IVF, graph-based HNSW, compressing PQ, disk-resident DiskANN — is the star of the next lesson (Lesson 5).
+Pack "metrics" and "why approximate" into your head and you hold the two keys to understanding every vector index ahead.
+A side note: FLAT (brute force) is also a <strong>real, selectable "index"</strong> in Milvus — when data is small and you want 100%
+exact recall, it's actually the best choice. So "exact vs approximate" isn't either/or; it's a <strong>scenario-driven knob</strong> Milvus
+leaves you, which is exactly what the next lesson unfolds.</p>
+
+<div class="card macro">
+  <div class="tag">🌍 The big picture</div>
+  Strung together in one line: <strong>embeddings turn data into points in space → a metric gives the ruler for "how alike two
+  points are" → exact nearest-neighbor is too slow → use an ANN index for approximate search</strong>. These four steps are the
+  bedrock of all of Milvus's retrieval. The metric names (L2 / IP / COSINE / HAMMING / JACCARD) and the "approximate-for-speed"
+  trade reappear in every later section.
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Embedding</strong>: a model encodes unstructured data into a fixed-length vector; similar meaning ⇒ near vectors.
+    The model fixes the dimension; ingest and query must use the same model and dimension.</li>
+    <li><strong>Metrics</strong>: L2 (distance, smaller = closer), IP (inner product, larger = closer), COSINE (angle, larger = closer);
+    index and search <strong>must use the same one</strong>.</li>
+    <li><strong>Normalization</strong>: after scaling to length 1, <strong>IP == COSINE</strong>; many embeddings are normalized by default.</li>
+    <li><strong>Specialized metrics</strong>: binary vectors use HAMMING / JACCARD; sparse vectors use IP. Names are case-sensitive
+    (see <span class="mono">metric_type.go</span>).</li>
+    <li><strong>The ANN problem</strong>: exact kNN is O(N·D) and collapses at scale; ANN trades a little recall for hundreds-fold speed.</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. When all vectors are normalized (unit length), how do the topK rankings by IP (inner product) and by COSINE relate?</div>
+  <ol class="opts">
+    <li>Exactly equivalent: after normalization the inner product equals cosine, so the rankings match; many systems normalize and then use IP</li>
+    <li>The two always give exactly opposite results</li>
+    <li>COSINE degenerates into L2 Euclidean distance here</li>
+    <li>IP always judges all vectors as equally distant</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. Cosine = inner product / (product of norms). When both norms are 1 the denominator is 1, so cosine equals inner product and the rankings are identical. That justifies the common 'normalize then use IP' trick</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. For binary vectors, which set of metrics is appropriate?</div>
+  <ol class="opts">
+    <li>Only L2; treat binary vectors as ordinary floats</li>
+    <li>Must convert to sparse vectors first and use IP</li>
+    <li>Binary vectors support no similarity metric at all</li>
+    <li>HAMMING / JACCARD - they measure bit differences or set overlap, designed for binary vectors</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. metric_type.go provides HAMMING (differing bits) and JACCARD (set similarity) for binary vectors; sparse vectors use IP. Metric names are case-sensitive string constants, written exactly as in the code</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Why do we need ANN (approximate nearest neighbor) on high-dim vectors rather than exact brute force?</div>
+  <ol class="opts">
+    <li>Because exact search returns wrong results</li>
+    <li>Because distances cannot be computed in high dimensions</li>
+    <li>Because ANN is always more accurate than brute force</li>
+    <li>Exact one-by-one comparison is too slow at scale; ANN trades a little accuracy (recall) for millisecond speed</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. Brute force computes the distance against every vector; at hundreds of millions the latency is unacceptable. ANN inspects only a small candidate set via an index, trading a controllable recall loss for huge speedups - exactly the next lesson's topic</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>Suppose you build image-to-image search with vectors from some model. Would you normalize first? Would you pick L2, IP, or COSINE? Explain your reasoning, and consider how the metric should change for 'sparse keyword vectors'.</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="03-life-of-a-request.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">一次请求的一生</span><span class="lang-en">Life of a request</span></div></a><a class="next" href="05-ann-algorithms.html"><div class="dir"><span class="lang-zh">下一课 →</span><span class="lang-en">Next →</span></div><div class="ttl"><span class="lang-zh">ANN 算法直觉</span><span class="lang-en">ANN algorithms, intuitively</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>

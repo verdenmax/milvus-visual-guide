@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>07 · Segment 与日志即数据 / Segments &amp; log-as-data - Milvus 图解教程</title>
+<meta name="description" content="第二部分 · 前置基础｜Segment 与日志即数据 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="07 · Segment 与日志即数据 / Segments &amp; log-as-data - Milvus 图解教程">
+<meta property="og:description" content="第二部分 · 前置基础｜Segment 与日志即数据 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="07 · Segment 与日志即数据 / Segments &amp; log-as-data - Milvus 图解教程">
+<meta name="twitter:description" content="第二部分 · 前置基础｜Segment 与日志即数据 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第二部分 · 前置基础</span><span class="lang-en">Part 2 · Foundations</span></span>
+    <span class="pill">07 / 08</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:87%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第二部分 · 前置基础</span><span class="lang-en">Part 2 · Foundations</span></div>
+    <h1><span class="lang-zh">Segment 与日志即数据</span><span class="lang-en">Segments &amp; log-as-data</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+上一课我们说，一个分区里的数据"仍会被切成很多 segment 来存"。这一课就把 <strong>segment（段）</strong>——Milvus 里<strong>数据与索引的基本单位</strong>——讲透：
+它的<strong>生命周期</strong>（Growing → Sealed → Flushing → Flushed →（Dropped）），向量数据怎么从一条<strong>vchannel</strong> 流进来、又怎么映射到底层的 <strong>pchannel</strong>，
+以及 Milvus 最核心的一条设计哲学——<strong>"日志即数据（log as data）"</strong>。理解了 segment，你才真正看懂"边写边查"是怎么实现的。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 生活类比</div>
+  把写入想成一家工厂的流水线。新来的货先堆在<strong>正在装的集装箱</strong>里（Growing 段，还能继续往里塞）；
+  装满了就<strong>封箱</strong>（Sealed，不再接收新货）；封好的箱子被<strong>送进仓库归档</strong>（Flushing → Flushed，落到对象存储）；
+  哪天这批货过期了，整箱<strong>报废处理</strong>（Dropped）。而真正的"账本"不是集装箱本身，而是流水线入口那条<strong>不断记录"谁、什么时候、来了什么货"的传送带日志</strong>——
+  只要日志在，任何时候都能照着它把货重新堆一遍。这条日志，就是 Milvus 的灵魂。
+</div>
+
+<h2>segment：数据与索引的基本单位</h2>
+<p>在正式拆解之前先建立一个直觉：你在第一部分见过的"边写边查""分布式扩展""崩溃不丢数据"这些能力，<strong>追根溯源全都落在 segment 和它背后的日志上</strong>。
+所以这一课虽然在"前置基础"部分，却是后面所有写入链路、查询链路、压缩与索引章节的<strong>共同地基</strong>——值得多花点时间彻底吃透。</p>
+<p>一个 collection 可能有几亿条数据，Milvus 不会把它当成"一个巨大的整体"来管理，而是切成许多<strong>segment（段）</strong>。
+每个 segment 是一<strong>批 entity</strong> 的集合（通常几十万到上百万条），它是 Milvus 里<strong>存储、刷盘、建索引、加载、检索</strong>的基本单位——
+几乎所有数据操作都以 segment 为颗粒度。为什么要切段？因为只有把"大数据"拆成"许多小块"，才能<strong>并行处理、独立索引、按需加载、增量更新</strong>——
+这正是分布式系统横向扩展的前提。打个比方，与其管理一座没有隔间的巨型仓库，不如把货物装进许多<strong>标准集装箱</strong>：每个箱子可以单独搬运、单独上架、单独盘点，
+整体的弹性和并行度都来自这种"切块"。Milvus 的 segment 就是这样的标准集装箱。每个段还带着自己的元信息（段 ID、所属 collection/partition、行数、状态等），由 DataCoord 统一登记和调度。</p>
+
+
+<p>segment 分两大类，对应"正在写"和"已写完"两种状态：<strong>增长段（Growing）</strong>在内存里，正通过流式日志持续接收新写入；
+<strong>封存段（Sealed）</strong>已经写满、变成<strong>不可变（immutable）</strong>，会被刷到对象存储、并在其上构建索引。
+这个"可变的增长段 + 不可变的封存段"的二分，是后面理解"边写边查"和"索引构建"的关键。</p>
+
+<p>为什么要强调"不可变"？因为<strong>不可变是分布式系统的好朋友</strong>：一个段一旦封存就永不更改，那么它就可以被<strong>安全地缓存、复制、并行加载到多个 QueryNode</strong>，
+不用担心一边读一边被改的并发问题。删除和更新怎么办？Milvus 不在原段上改，而是<strong>另写一份"删除标记（delete log）"</strong>，检索时把被删的主键过滤掉；
+真正的物理清理留给后台的<strong>压缩（compaction）</strong>。所以"不可变段 + 删除日志 + 压缩"这套组合，是 Milvus 在保证高并发读取的同时，又能支持增删改的巧妙设计。</p>
+
+
+<div class="cols">
+  <div class="col"><h4>增长段 Growing</h4><p>在内存里，<strong>可变</strong>，正在通过 vchannel 持续吸收新数据。它<strong>立即可查</strong>（保证新数据的新鲜度），但还没建正式索引，靠暴力或临时结构检索。</p></div>
+  <div class="col"><h4>封存段 Sealed</h4><p>已写满、<strong>不可变</strong>，刷盘成 binlog 存进对象存储，并在其上构建 ANN 索引。检索高效，是大部分历史数据的归宿。</p></div>
+</div>
+
+<h2>生命周期：从 Growing 到 Dropped</h2>
+<p>一个 segment 会沿着一条<strong>固定的状态链</strong>演化。这些状态名不是教程瞎编的，而是 Milvus 代码里 <span class="inline">SegmentState</span> 枚举里<strong>逐字定义</strong>的：
+<strong>Growing（增长）→ Sealed（封存）→ Flushing（刷盘中）→ Flushed（已刷盘）→（Dropped 丢弃）</strong>。每一步都有明确的触发条件：</p>
+
+<div class="timeline">
+  <div class="lane"><span class="lane-label">Growing</span><span class="tslot">内存中 · 可变</span><span class="tslot span">持续吸收 vchannel 来的新数据，立即可查</span></div>
+  <div class="lane"><span class="lane-label">Sealed</span><span class="tslot now">写满 / 超时触发封存</span><span class="tslot">不再接收新写入，变不可变</span></div>
+  <div class="lane"><span class="lane-label">Flushing</span><span class="tslot">正在落盘</span><span class="tslot">把内存数据写成 binlog 文件</span></div>
+  <div class="lane"><span class="lane-label">Flushed</span><span class="tslot now">已存入对象存储</span><span class="tslot">可在其上建索引</span></div>
+  <div class="lane"><span class="lane-label">Dropped</span><span class="tslot">被压缩/删除替代</span><span class="tslot">逻辑丢弃，等待 GC 回收</span></div>
+</div>
+
+<p>解释几个关键转换：<strong>Growing → Sealed（封存）</strong>由"段写满了（达到大小上限）"或"攒够时间了（超时）"触发——一旦封存，这个段就<strong>不再接收任何新写入</strong>，变成只读快照。
+<strong>Sealed → Flushing → Flushed（刷盘）</strong>是把内存里的数据<strong>持久化</strong>成 <span class="inline">binlog</span> 文件、写进对象存储的过程；Flushed 之后数据就<strong>不怕进程崩溃</strong>了，
+而且可以在它上面安心建 ANN 索引。<strong>Dropped（丢弃）</strong>通常发生在<strong>压缩（compaction）</strong>之后：多个小段被合并成一个大段，或带删除标记的数据被清理，旧段就被标记 Dropped、等待垃圾回收。</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>触发封存</h4><p>段写满（达到大小上限）<strong>或</strong>超时——DataCoord 下令把 Growing 段转 Sealed，从此只读。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>刷盘成 binlog</h4><p>把内存里按列组织的数据<strong>序列化成 binlog 文件</strong>，逐字段写入对象存储；写完即 Flushed，数据持久化、不怕崩溃。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>异步建索引</h4><p>IndexNode 读取 binlog，在其上<strong>构建 ANN 索引</strong>（IVF/HNSW…），索引文件也存进对象存储。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>加载检索</h4><p>QueryNode <strong>加载</strong>封存段及其索引到内存，对外提供高效 ANN 检索；同时 Growing 段补上最新数据。</p></div></div>
+</div>
+
+<p>注意第 3、4 步是<strong>异步</strong>发生的：刷盘和建索引在后台进行，不阻塞写入，也不阻塞对 Growing 段的查询。这种"<strong>写入、刷盘、建索引、加载</strong>各自独立、互不阻塞"的流水线，
+正是 Milvus 把吞吐做高、把延迟做低的关键。每一环都能独立扩展——写得快了就加 DataNode，建索引慢了就加 IndexNode，查得多了就加 QueryNode。</p>
+
+<p>另外还有几个相关状态值得一提：枚举里还有 <span class="inline">Importing</span>（批量导入时的临时段）和 <span class="inline">NotExist</span> 等。
+但对理解主流程，记住 <strong>Growing → Sealed → Flushing → Flushed →（Dropped）</strong>这条主线就够了——它贯穿了一条数据"从内存可变、到落盘不可变、到最终被回收"的一生。</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">SegmentState 枚举（commonpb，被 datacoord 引用）</span><span class="ln">internal/datacoord 中的 commonpb.SegmentState_*</span></div>
+  <pre><span class="cm">// 段的生命周期状态（Milvus 代码逐字定义，datacoord 大量引用）</span>
+SegmentState_Growing    <span class="cm">// 增长：内存中、可变、持续写入</span>
+SegmentState_Sealed     <span class="cm">// 封存：写满、不可变、只读</span>
+SegmentState_Flushing   <span class="cm">// 刷盘中：正写成 binlog</span>
+SegmentState_Flushed    <span class="cm">// 已刷盘：落到对象存储，可建索引</span>
+SegmentState_Dropped    <span class="cm">// 丢弃：被压缩/删除替代，等待 GC</span>
+SegmentState_Importing  <span class="cm">// 导入：批量导入时的临时段</span></pre>
+</div>
+
+<h2>vchannel → pchannel：数据从哪条管子流进来</h2>
+<p>新写入的数据不是直接"塞进" segment 的，而是先经过一条<strong>流式日志的管道</strong>。这里有两个概念：<strong>vchannel（虚拟通道）</strong>和 <strong>pchannel（物理通道）</strong>。
+一个 collection 在创建时会被<strong>分成 N 个 vchannel（虚拟分片，shard）</strong>——这就是"分片数"。每条写入按主键哈希落到某个 vchannel 上，
+同一个 vchannel 的数据由一个 DataNode/StreamingNode 负责消费、攒成 Growing 段。<strong>vchannel 是逻辑上的"分片"概念</strong>。</p>
+
+<p>为什么要分片？因为一个 collection 的写入量可能很大，单条管道扛不住。把它拆成 N 条 vchannel，每条独立消费、独立攒段，就能<strong>并行吃下写入</strong>——
+这是写入侧横向扩展的关键。分片数在建表时定下，决定了写入的最大并行度，所以是个需要提前规划的容量参数。</p>
+
+
+<p>而 <strong>pchannel 是物理通道</strong>——它对应消息队列（WAL）里一个真实的 <strong>topic</strong>。多个 vchannel 可以<strong>共享</strong>同一个 pchannel：
+vchannel 的名字其实就是在 pchannel 名字后面拼上 collection ID 和分片序号。下面这段代码就揭示了二者的映射关系——从一个 vchannel 名字里<strong>截掉最后一段</strong>，就还原出它所在的 pchannel：</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">pkg/util/funcutil/func.go</span><span class="ln">ToPhysicalChannel / GetVirtualChannel</span></div>
+  <pre><span class="cm">// vchannel 名 = pchannel 名 + "_" + collectionID + "v" + 分片号</span>
+<span class="kw">func</span> GetVirtualChannel(pchannel <span class="kw">string</span>, collectionID <span class="kw">int64</span>, idx <span class="kw">int</span>) <span class="kw">string</span> {
+    <span class="kw">return</span> fmt.Sprintf(<span class="st">"%s_%dv%d"</span>, pchannel, collectionID, idx)
+}
+
+<span class="cm">// 反过来：从 vchannel 名截掉最后一段，就得到 pchannel</span>
+<span class="kw">func</span> ToPhysicalChannel(vchannel <span class="kw">string</span>) <span class="kw">string</span> {
+    index := strings.LastIndex(vchannel, <span class="st">"_"</span>)
+    <span class="kw">return</span> vchannel[:index]   <span class="cm">// 多个 vchannel 可共享一个 pchannel</span>
+}</pre>
+</div>
+
+<p>为什么要分这两层？因为<strong>逻辑分片数（vchannel）</strong>和<strong>物理资源数（pchannel/topic）</strong>需要<strong>解耦</strong>：你可以有很多逻辑分片来并行处理，
+但底层物理 topic 的数量受 MQ 资源限制，于是让多个 vchannel 复用少量 pchannel。这是"逻辑与物理解耦"的经典设计——和上一课"分区是逻辑、segment 是物理"异曲同工。</p>
+
+<h2>日志即数据：Milvus 的核心哲学</h2>
+<p>现在来讲 Milvus 最重要的一条设计思想——<strong>"日志即数据（log as data）"</strong>，也叫"log as a source of truth"。它的意思是：
+<strong>写入这件事的"真相"，不是某个表、某个段里的数据，而是那条按时间戳排好序、只追加（append-only）、可重放（replayable）的日志</strong>。</p>
+
+<p>传统数据库里，"日志"（WAL）只是为了崩溃恢复的辅助，真正的数据在表里。Milvus 把这个关系<strong>倒了过来</strong>：日志本身就是权威数据源，
+其他一切数据形态——内存里的 Growing 段、对象存储里的 binlog、QueryNode 加载的索引——都是<strong>对这条日志的"物化（materialized）视图"</strong>，
+它们靠<strong>不断消费、重放这条日志</strong>来追上最新状态。一条写入只要<strong>成功写进了日志</strong>，就算"落地"了，哪怕此刻还没刷盘、还没建索引。</p>
+
+<p>这里还藏着一个细节：日志里的每条记录都带一个<strong>时间戳（timestamp）</strong>。Milvus 用一套全局时间戳机制给所有写入和查询<strong>排序</strong>，
+于是"在某个时间点之前的数据是什么样"这件事是<strong>确定可重现</strong>的。这就是后面 MVCC、一致性级别、时间旅行查询的根基——而它们全都源自"日志即数据"这一条。</p>
+
+
+<div class="flow">
+  <div class="node hl"><div class="nt">insert</div><div class="nd">客户端写入</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">写入日志(WAL)</div><div class="nd">按 ts 追加 · pchannel</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">Growing 段</div><div class="nd">消费日志 · 内存可查</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">Sealed + Flush</div><div class="nd">落盘 binlog</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">建索引</div><div class="nd">ANN 索引就绪</div></div>
+</div>
+
+<p>这条哲学带来三个巨大好处：①<strong>边写边查</strong>——数据一进日志就被 Growing 段消费、立即可查，不必等刷盘和建索引；
+②<strong>崩溃恢复简单</strong>——进程挂了，重放日志即可重建内存状态，不丢数据；③<strong>解耦与扩展</strong>——读、写、索引各自独立地消费同一条日志，
+谁慢了不拖累别人，也能各自独立扩展。这正是第一部分埋下的那句"日志即数据"的真正含义，也是 Milvus 流式架构（第十五课起的写入链路）的地基。</p>
+
+<h2>列式布局：段内部怎么存</h2>
+<p>最后看一眼 segment <strong>内部</strong>是怎么存数据的。Milvus 用<strong>列式（columnar）布局</strong>：同一个字段的所有值<strong>连续存在一起</strong>，
+而不是像关系库那样一行行存。比如一个段里有 id、vector、price 三个字段，它会把所有 id 存一块、所有 vector 存一块、所有 price 存一块。
+落盘后，每个字段对应一份 <span class="inline">binlog</span> 文件。</p>
+
+<p>为什么用列式？因为向量检索的访问模式是"<strong>把某一列（向量列）整批拿出来算距离</strong>"，列式布局让这种<strong>批量、连续</strong>的访问极其高效（缓存友好、可向量化计算）；
+标量过滤也类似——只需扫描相关的那几列，不必把整行读出来。<strong>列式 + 按段切分 + 日志驱动</strong>，这三件事合起来，就构成了 Milvus 存储层的骨架。</p>
+
+<p>这也解释了为什么上一课讲的那些<strong>数据类型</strong>会按字段分开存：每个字段（无论是 Int64 主键、FloatVector、还是 JSON）在段里都是<strong>独立的一列、独立的一份 binlog</strong>。
+向量字段那一列交给 ANN 索引去加速，标量字段那几列交给标量索引或暴力过滤——两者在检索时配合完成"先按标量过滤、再在候选里做向量召回"的混合查询。
+段、列、日志、索引这几个概念到这里就彻底闭环了。</p>
+
+
+<h2>把几件事串起来：一条数据的一生</h2>
+<p>到这里，我们可以把前面所有概念拼成一张完整的图，看一条数据从写入到被检索经历了什么。下面这张表把<strong>各个阶段</strong>、它所在的<strong>段状态</strong>、
+<strong>存放位置</strong>和<strong>能否被查到</strong>对照起来——这正是"边写边查"和"日志即数据"在现实中的样子：</p>
+
+<table class="t">
+  <thead><tr><th>阶段</th><th>段状态</th><th>数据在哪</th><th>是否可查</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>刚写入</td><td>—</td><td>WAL 日志（pchannel）</td><td>—</td><td>写进日志即"落地"，这是唯一真相</td></tr>
+    <tr><td>被消费</td><td>Growing</td><td>内存（增长段）</td><td>✅ 立即可查</td><td>保证新数据新鲜度，暴力/临时检索</td></tr>
+    <tr><td>写满封存</td><td>Sealed</td><td>内存 → 准备刷盘</td><td>✅</td><td>不可变只读快照</td></tr>
+    <tr><td>持久化</td><td>Flushing→Flushed</td><td>对象存储（binlog）</td><td>✅</td><td>不怕崩溃，可建索引</td></tr>
+    <tr><td>建好索引</td><td>Flushed</td><td>对象存储 + 索引文件</td><td>✅ 高效</td><td>QueryNode 加载后高效 ANN 检索</td></tr>
+    <tr><td>压缩回收</td><td>Dropped</td><td>等待 GC</td><td>❌</td><td>被合并/删除替代后逻辑丢弃</td></tr>
+  </tbody>
+</table>
+
+<p>读这张表时请特别注意一件事：<strong>无论数据处在哪个阶段，只要它已经进了日志，就是"已落地"的</strong>——查询时 Milvus 会<strong>同时</strong>看 QueryNode 上加载的封存段（历史数据）
+和正在增长的 Growing 段（最新数据），把两边的结果合并返回。这就是为什么 Milvus 能做到"刚写进去的数据立刻就能搜到"，而不像传统离线索引那样要等一轮批处理。
+理解了这张表，你就理解了 Milvus 存储与查询协同的核心机制。</p>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  一句话：<strong>segment 是数据与索引的基本单位，沿 Growing → Sealed → Flushing → Flushed →（Dropped）演化</strong>。
+  数据经 vchannel（逻辑分片）流入、映射到 pchannel（物理 MQ topic）；Milvus 奉行<strong>"日志即数据"</strong>——日志是唯一真相，其余形态都是它的物化视图，
+  这才有了"边写边查"和简单的崩溃恢复。段内用列式布局，对向量批量计算友好。
+</div>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>segment</strong>：数据/索引的基本单位；Growing（内存、可变、可查）vs Sealed（不可变、刷盘、建索引）。</li>
+    <li><strong>生命周期</strong>：Growing → Sealed → Flushing → Flushed →（Dropped），状态名见 <span class="mono">SegmentState_*</span>。</li>
+    <li><strong>vchannel → pchannel</strong>：collection 分成 N 个 vchannel（逻辑分片），多个 vchannel 共享一个 pchannel（物理 MQ topic）。</li>
+    <li><strong>日志即数据</strong>：append-only、带时间戳、可重放的日志是唯一真相；其他数据形态是它的物化视图——支撑边写边查与崩溃恢复。</li>
+    <li><strong>列式布局</strong>：段内按字段连续存（每字段一份 binlog），对向量批量计算和标量过滤都高效。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. Milvus 中一个 segment 的生命周期状态链是下面哪一条？</div>
+  <ol class="opts">
+    <li>Growing → Sealed → Flushing → Flushed →（Dropped）</li>
+    <li>Sealed → Growing → Dropped → Flushed</li>
+    <li>Flushed → Growing → Sealed → Flushing</li>
+    <li>Dropped → Flushing → Growing → Sealed</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：A</strong>。这些状态名直接来自代码里的 SegmentState 枚举：Growing（内存可变）→ Sealed（写满不可变）→ Flushing（落盘中）→ Flushed（已存对象存储、可建索引）→ Dropped（压缩/删除后等待 GC）</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. 关于 vchannel 与 pchannel 的关系，下面哪种说法正确？</div>
+  <ol class="opts">
+    <li>vchannel 是逻辑分片，pchannel 是物理 MQ topic；多个 vchannel 可共享一个 pchannel（vchannel 名截掉最后一段即得 pchannel）</li>
+    <li>pchannel 是逻辑概念，vchannel 是物理 topic</li>
+    <li>vchannel 和 pchannel 必须一一对应</li>
+    <li>二者都只存在于查询路径，与写入无关</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：A</strong>。func.go 里 GetVirtualChannel 把 pchannel 名拼上 collectionID 和分片号得到 vchannel；ToPhysicalChannel 反过来截掉最后一段还原 pchannel。逻辑分片数与物理 topic 数解耦，让多个 vchannel 复用少量 pchannel</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. “日志即数据（log as data）”这一设计哲学的核心是什么？</div>
+  <ol class="opts">
+    <li>append-only、带时间戳、可重放的日志才是唯一真相，其它数据形态（内存段、binlog、索引）都是它的物化视图</li>
+    <li>日志只用于崩溃恢复，平时没有用</li>
+    <li>数据写进段后日志就可以立刻丢弃</li>
+    <li>日志和数据是两份互不相关的副本</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：A</strong>。Milvus 把传统“表是真相、日志是辅助”反了过来：日志是权威源，写入只要进了日志就算落地；内存 Growing 段、对象存储 binlog、索引都靠消费/重放这条日志来追上状态。这支撑了边写边查和简单的崩溃恢复</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>“边写边查”要求刚 insert 的数据立刻能被搜到。结合本课的段生命周期，说说为什么 Growing 段是这件事的关键，以及查询时为什么要同时看 Growing 段和已加载的 Sealed 段。</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Last lesson we said the data in a partition "is still chopped into many segments to store." This lesson explains the <strong>segment</strong>—Milvus's
+<strong>basic unit of data and index</strong>—in full: its <strong>lifecycle</strong> (Growing → Sealed → Flushing → Flushed → (Dropped)), how vector data flows in
+through a <strong>vchannel</strong> and maps to an underlying <strong>pchannel</strong>, and Milvus's most important design philosophy—<strong>"log as data."</strong>
+Understand segments and you finally understand how "search while writing" actually works.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of writes as a factory line. New goods first pile into the <strong>container currently being loaded</strong> (a Growing segment—you can still stuff more in);
+  once full it gets <strong>sealed</strong> (Sealed—no new goods); the sealed container is <strong>archived into the warehouse</strong> (Flushing → Flushed, landing in object storage);
+  someday when that batch expires, the whole container is <strong>scrapped</strong> (Dropped). But the real "ledger" isn't the containers—it's the
+  <strong>conveyor-belt log at the line's entrance that keeps recording "who, when, what goods arrived."</strong> As long as the log survives, you can rebuild everything by replaying it.
+  That log is Milvus's soul.
+</div>
+
+<h2>Segment: the basic unit of data and index</h2>
+<p>A collection may hold hundreds of millions of rows, and Milvus never manages it as "one giant blob"—it chops it into many <strong>segments</strong>.
+Each segment is a <strong>batch of entities</strong> (typically hundreds of thousands to a few million), and it is Milvus's basic unit of
+<strong>storage, flushing, indexing, loading, and search</strong>—nearly every data operation is segment-grained. Why chop? Because only by splitting "big data" into "many small blocks"
+can you <strong>process in parallel, index independently, load on demand, and update incrementally</strong>—the prerequisite for horizontal scaling.
+By analogy, rather than managing one cavernous warehouse, pack goods into many <strong>standard containers</strong>: each can be moved, shelved, and inventoried independently;
+all elasticity and parallelism comes from this "chunking." A Milvus segment is exactly such a standard container. Each segment also carries its own metadata (segment ID, owning collection/partition, row count, state…), registered and scheduled by DataCoord.</p>
+
+<p>Segments come in two kinds, matching "being written" and "already written": a <strong>Growing segment</strong> lives in memory and keeps receiving new writes via the streaming log;
+a <strong>Sealed segment</strong> is already full and has become <strong>immutable</strong>, flushed to object storage with an index built on top.
+This split of "mutable Growing + immutable Sealed" is the key to understanding "search while writing" and index construction later.</p>
+
+<p>Why stress "immutable"? Because <strong>immutability is a distributed system's best friend</strong>: once a segment is sealed it never changes, so it can be
+<strong>safely cached, replicated, and loaded in parallel onto many QueryNodes</strong> without worrying about read-while-write races. What about deletes and updates?
+Milvus doesn't modify the original segment—it <strong>writes a separate "delete log"</strong> and filters deleted primary keys at search time; the actual physical cleanup is left to background <strong>compaction</strong>.
+So "immutable segments + delete logs + compaction" is the clever design that lets Milvus support inserts/updates/deletes while keeping reads highly concurrent.</p>
+
+<div class="cols">
+  <div class="col"><h4>Growing</h4><p>In memory, <strong>mutable</strong>, continuously absorbing new data via vchannel. It is <strong>immediately searchable</strong> (freshness), but has no formal index yet—brute-force or temporary structures.</p></div>
+  <div class="col"><h4>Sealed</h4><p>Full and <strong>immutable</strong>, flushed to binlogs in object storage, with an ANN index built on top. Efficient to search—the home of most historical data.</p></div>
+</div>
+
+<h2>Lifecycle: from Growing to Dropped</h2>
+<p>A segment evolves along a <strong>fixed state chain</strong>. These names aren't invented by the tutorial—they are <strong>literally defined</strong> in Milvus's
+<span class="inline">SegmentState</span> enum: <strong>Growing → Sealed → Flushing → Flushed → (Dropped)</strong>. Each step has a clear trigger:</p>
+
+<div class="timeline">
+  <div class="lane"><span class="lane-label">Growing</span><span class="tslot">in memory · mutable</span><span class="tslot span">keeps absorbing new data from vchannel, searchable immediately</span></div>
+  <div class="lane"><span class="lane-label">Sealed</span><span class="tslot now">full / timeout triggers seal</span><span class="tslot">no more writes, becomes immutable</span></div>
+  <div class="lane"><span class="lane-label">Flushing</span><span class="tslot">landing to disk</span><span class="tslot">data written as binlog files</span></div>
+  <div class="lane"><span class="lane-label">Flushed</span><span class="tslot now">stored in object storage</span><span class="tslot">index can be built on top</span></div>
+  <div class="lane"><span class="lane-label">Dropped</span><span class="tslot">replaced by compaction/delete</span><span class="tslot">logically dropped, awaiting GC</span></div>
+</div>
+
+<p>Key transitions: <strong>Growing → Sealed</strong> is triggered when "the segment is full (size cap)" or "enough time has passed (timeout)"—once sealed it
+<strong>accepts no new writes</strong> and becomes a read-only snapshot. <strong>Sealed → Flushing → Flushed</strong> <strong>persists</strong> the in-memory data into
+<span class="inline">binlog</span> files in object storage; after Flushed the data <strong>survives process crashes</strong> and an ANN index can be built on it safely.
+<strong>Dropped</strong> usually follows <strong>compaction</strong>: several small segments merge into a big one, or deleted-marked data is cleaned up, and the old segment is marked Dropped awaiting GC.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Trigger seal</h4><p>Segment full (size cap) <strong>or</strong> timeout—DataCoord turns the Growing segment Sealed; read-only from now on.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Flush to binlog</h4><p><strong>Serialize column-organized in-memory data into binlog files</strong>, written field by field to object storage; once done it is Flushed—persisted, crash-proof.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Build index async</h4><p>IndexNode reads binlogs and <strong>builds the ANN index</strong> (IVF/HNSW…); index files also go to object storage.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Load & search</h4><p>QueryNode <strong>loads</strong> the sealed segment and its index into memory for efficient ANN search; Growing segments fill in the freshest data.</p></div></div>
+</div>
+
+<p>Note steps 3 and 4 happen <strong>asynchronously</strong>: flushing and indexing run in the background, blocking neither writes nor queries on Growing segments. This pipeline where
+<strong>writing, flushing, indexing, and loading</strong> are independent and non-blocking is exactly how Milvus achieves high throughput and low latency. Each stage scales independently—add DataNodes to write faster, IndexNodes to index faster, QueryNodes to serve more queries.</p>
+
+<p>A few related states are worth mentioning: the enum also has <span class="inline">Importing</span> (a temporary segment during bulk import) and <span class="inline">NotExist</span>, etc.
+But for the main flow, remembering <strong>Growing → Sealed → Flushing → Flushed → (Dropped)</strong> is enough—it traces a row of data's whole life "from mutable in memory, to immutable on disk, to finally reclaimed."</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">SegmentState enum (commonpb, referenced by datacoord)</span><span class="ln">commonpb.SegmentState_* in internal/datacoord</span></div>
+  <pre><span class="cm">// Segment lifecycle states (literal Milvus code, heavily used by datacoord)</span>
+SegmentState_Growing    <span class="cm">// in memory, mutable, continuous writes</span>
+SegmentState_Sealed     <span class="cm">// full, immutable, read-only</span>
+SegmentState_Flushing   <span class="cm">// landing to disk as binlog</span>
+SegmentState_Flushed    <span class="cm">// flushed to object storage, indexable</span>
+SegmentState_Dropped    <span class="cm">// replaced by compaction/delete, awaiting GC</span>
+SegmentState_Importing  <span class="cm">// temporary segment during bulk import</span></pre>
+</div>
+
+<h2>vchannel → pchannel: which pipe data flows in through</h2>
+<p>Newly written data isn't "stuffed" directly into a segment—it first passes through a <strong>streaming-log pipeline</strong>. Two concepts here: <strong>vchannel (virtual channel)</strong> and <strong>pchannel (physical channel)</strong>.
+At creation a collection is <strong>split into N vchannels (virtual shards)</strong>—the "shard count." Each write hashes by primary key onto some vchannel;
+data on the same vchannel is consumed by one DataNode/StreamingNode and accumulated into Growing segments. <strong>A vchannel is the logical "shard" concept.</strong></p>
+
+<p>Why shard? Because a collection's write volume can be huge and a single pipe can't keep up. Splitting it into N vchannels, each consumed and accumulated independently, lets you
+<strong>ingest writes in parallel</strong>—the key to write-side horizontal scaling. The shard count is fixed at table creation and bounds the maximum write parallelism, so it's a capacity parameter to plan ahead.</p>
+
+<p>A <strong>pchannel is the physical channel</strong>—it maps to a real <strong>topic</strong> in the message queue (WAL). Multiple vchannels can <strong>share</strong> one pchannel:
+a vchannel's name is simply the pchannel name with the collection ID and shard index appended. The code below reveals the mapping—strip the last segment off a vchannel name to recover its pchannel:</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">pkg/util/funcutil/func.go</span><span class="ln">ToPhysicalChannel / GetVirtualChannel</span></div>
+  <pre><span class="cm">// vchannel name = pchannel name + "_" + collectionID + "v" + shardIdx</span>
+<span class="kw">func</span> GetVirtualChannel(pchannel <span class="kw">string</span>, collectionID <span class="kw">int64</span>, idx <span class="kw">int</span>) <span class="kw">string</span> {
+    <span class="kw">return</span> fmt.Sprintf(<span class="st">"%s_%dv%d"</span>, pchannel, collectionID, idx)
+}
+
+<span class="cm">// reverse: strip the last segment off a vchannel name to get pchannel</span>
+<span class="kw">func</span> ToPhysicalChannel(vchannel <span class="kw">string</span>) <span class="kw">string</span> {
+    index := strings.LastIndex(vchannel, <span class="st">"_"</span>)
+    <span class="kw">return</span> vchannel[:index]   <span class="cm">// many vchannels can share one pchannel</span>
+}</pre>
+</div>
+
+<p>Why two layers? Because the <strong>logical shard count (vchannel)</strong> and the <strong>physical resource count (pchannel/topic)</strong> need to be <strong>decoupled</strong>: you can have many logical shards for parallelism,
+but the number of physical topics is bounded by MQ resources, so many vchannels reuse a few pchannels. This is the classic "decouple logical from physical" design—echoing last lesson's "partition is logical, segment is physical."</p>
+
+<h2>Log as data: Milvus's core philosophy</h2>
+<p>Now for Milvus's most important design idea—<strong>"log as data,"</strong> a.k.a. "log as the source of truth." It means:
+<strong>the "truth" of a write isn't the data in some table or segment, but that timestamp-ordered, append-only, replayable log.</strong></p>
+
+<p>In a traditional database the "log" (WAL) is just an aid for crash recovery, with the real data in tables. Milvus <strong>inverts</strong> this: the log itself is the authoritative source,
+and every other data form—the in-memory Growing segment, the binlogs in object storage, the index loaded by QueryNode—is a <strong>"materialized view"</strong> of that log,
+catching up by <strong>continuously consuming and replaying it</strong>. A write counts as "landed" the moment it is <strong>successfully written to the log</strong>, even if not yet flushed or indexed.</p>
+
+<p>There's a hidden detail: each log record carries a <strong>timestamp</strong>. Milvus uses a global timestamp mechanism to <strong>order</strong> all writes and queries, so "what the data looked like before a given point in time" is
+<strong>deterministically reproducible</strong>. This is the foundation for MVCC, consistency levels, and time-travel queries later—all stemming from "log as data."</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">insert</div><div class="nd">client write</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">write log (WAL)</div><div class="nd">append by ts · pchannel</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">Growing seg</div><div class="nd">consume log · searchable</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">Sealed + Flush</div><div class="nd">land binlog</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">build index</div><div class="nd">ANN index ready</div></div>
+</div>
+
+<p>This philosophy brings three huge benefits: ① <strong>search while writing</strong>—data is consumed by Growing segments the instant it hits the log and is immediately searchable, no waiting for flush/index;
+② <strong>simple crash recovery</strong>—if a process dies, replay the log to rebuild in-memory state, no data loss; ③ <strong>decoupling and scaling</strong>—reads, writes, and indexing each consume the same log independently,
+so a slow one doesn't drag the others and each scales on its own. This is what "log as data" from Part 1 truly meant, and the bedrock of Milvus's streaming architecture (the write path from Lesson 15 on).</p>
+
+<h2>Columnar layout: how a segment stores data inside</h2>
+<p>Finally, a glance at how a segment stores data <strong>internally</strong>. Milvus uses a <strong>columnar layout</strong>: all values of one field are <strong>stored contiguously together</strong>,
+rather than row by row as in relational databases. E.g., a segment with id, vector, and price fields stores all ids together, all vectors together, all prices together.
+After flushing, each field corresponds to one <span class="inline">binlog</span> file.</p>
+
+<p>Why columnar? Because vector search's access pattern is "<strong>pull a whole column (the vector column) out in bulk and compute distances</strong>," and columnar layout makes such <strong>bulk, contiguous</strong> access extremely efficient (cache-friendly, vectorizable);
+scalar filtering is similar—scan only the relevant columns, no need to read whole rows. <strong>Columnar + per-segment chunking + log-driven</strong>—these three together form the skeleton of Milvus's storage layer.</p>
+
+<p>This also explains why last lesson's <strong>data types</strong> are stored field by field: each field (be it an Int64 primary key, a FloatVector, or JSON) is an <strong>independent column with its own binlog</strong> in the segment.
+The vector field's column is accelerated by the ANN index; scalar columns get scalar indexes or brute-force filtering—together completing hybrid queries that "filter by scalar first, then recall vectors among candidates."
+Segment, column, log, and index now close the loop.</p>
+
+<h2>Tying it together: the life of one row</h2>
+<p>Now we can assemble everything into one complete picture of what a row goes through from write to search. The table below maps each <strong>stage</strong> to its <strong>segment state</strong>,
+<strong>where the data lives</strong>, and <strong>whether it's searchable</strong>—this is "search while writing" and "log as data" in real life:</p>
+
+<table class="t">
+  <thead><tr><th>Stage</th><th>Segment state</th><th>Where data lives</th><th>Searchable?</th><th>Note</th></tr></thead>
+  <tbody>
+    <tr><td>Just written</td><td>—</td><td>WAL log (pchannel)</td><td>—</td><td>Written to log = "landed", the only truth</td></tr>
+    <tr><td>Consumed</td><td>Growing</td><td>memory (growing seg)</td><td>✅ immediately</td><td>Freshness; brute/temporary search</td></tr>
+    <tr><td>Full, sealed</td><td>Sealed</td><td>memory → ready to flush</td><td>✅</td><td>Immutable read-only snapshot</td></tr>
+    <tr><td>Persisted</td><td>Flushing→Flushed</td><td>object storage (binlog)</td><td>✅</td><td>Crash-proof, indexable</td></tr>
+    <tr><td>Indexed</td><td>Flushed</td><td>object storage + index files</td><td>✅ efficient</td><td>Efficient ANN after QueryNode load</td></tr>
+    <tr><td>Compacted/GC</td><td>Dropped</td><td>awaiting GC</td><td>❌</td><td>Logically dropped after merge/delete</td></tr>
+  </tbody>
+</table>
+
+<p>Reading this table, note one thing in particular: <strong>no matter which stage the data is in, once it's in the log it is "landed"</strong>—at query time Milvus looks at <strong>both</strong> the sealed segments loaded on QueryNodes (historical data)
+and the still-growing Growing segments (newest data), merging both results. That's why Milvus can "search data the instant it's written," unlike traditional offline indexes that wait for a batch round.
+Understand this table and you understand the core mechanism of Milvus's storage-query collaboration.</p>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>a segment is the basic unit of data and index, evolving Growing → Sealed → Flushing → Flushed → (Dropped)</strong>.
+  Data flows in via vchannels (logical shards), mapped to pchannels (physical MQ topics); Milvus follows <strong>"log as data"</strong>—the log is the only truth and every other form is its materialized view,
+  which is what enables "search while writing" and simple crash recovery. Inside a segment, the columnar layout is friendly to bulk vector computation.
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Segment</strong>: the basic unit of data/index; Growing (in memory, mutable, searchable) vs Sealed (immutable, flushed, indexed).</li>
+    <li><strong>Lifecycle</strong>: Growing → Sealed → Flushing → Flushed → (Dropped); state names per <span class="mono">SegmentState_*</span>.</li>
+    <li><strong>vchannel → pchannel</strong>: a collection splits into N vchannels (logical shards); many vchannels share one pchannel (physical MQ topic).</li>
+    <li><strong>Log as data</strong>: an append-only, timestamped, replayable log is the only truth; other forms are its materialized views—enabling search-while-writing and crash recovery.</li>
+    <li><strong>Columnar layout</strong>: stored field by field within a segment (one binlog per field), efficient for bulk vector computation and scalar filtering.</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Which chain is the lifecycle of a segment in Milvus?</div>
+  <ol class="opts">
+    <li>Growing → Sealed → Flushing → Flushed → (Dropped)</li>
+    <li>Sealed → Growing → Dropped → Flushed</li>
+    <li>Flushed → Growing → Sealed → Flushing</li>
+    <li>Dropped → Flushing → Growing → Sealed</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. These names come straight from the SegmentState enum: Growing (mutable in memory) → Sealed (full, immutable) → Flushing (landing) → Flushed (in object storage, indexable) → Dropped (after compaction/delete, awaiting GC)</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Which statement about vchannel and pchannel is correct?</div>
+  <ol class="opts">
+    <li>vchannel is a logical shard, pchannel is a physical MQ topic; many vchannels can share one pchannel (strip a vchannel name's last segment to get the pchannel)</li>
+    <li>pchannel is logical, vchannel is the physical topic</li>
+    <li>vchannel and pchannel must map one-to-one</li>
+    <li>Both exist only on the query path, unrelated to writes</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. In func.go, GetVirtualChannel appends collectionID and shard index to a pchannel name to form a vchannel; ToPhysicalChannel reverses it by stripping the last segment. Decoupling logical shards from physical topics lets many vchannels reuse few pchannels</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. What is the core of the 'log as data' design philosophy?</div>
+  <ol class="opts">
+    <li>The append-only, timestamped, replayable log is the only source of truth; other forms (memory segments, binlogs, indexes) are its materialized views</li>
+    <li>The log is only for crash recovery and otherwise useless</li>
+    <li>The log can be discarded the moment data enters a segment</li>
+    <li>Log and data are two unrelated copies</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. Milvus inverts the traditional 'table is truth, log is aid': the log is authoritative, and a write is 'landed' once in the log; the in-memory Growing segment, binlogs, and indexes all catch up by consuming/replaying it. This enables search-while-writing and simple crash recovery</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>'Search while writing' requires just-inserted data to be searchable immediately. Using this lesson's segment lifecycle, explain why the Growing segment is key, and why a query must look at both Growing and loaded Sealed segments.</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="06-data-model.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">数据模型</span><span class="lang-en">The data model</span></div></a><a class="next" href="08-dependencies-and-deployment.html"><div class="dir"><span class="lang-zh">下一课 →</span><span class="lang-en">Next →</span></div><div class="ttl"><span class="lang-zh">依赖与部署形态</span><span class="lang-en">Dependencies &amp; deployment</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>

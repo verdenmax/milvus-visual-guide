@@ -275,6 +275,356 @@ QUIZZES = {
             },
         ],
     },
+    "04-embeddings-and-similarity.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "当所有向量都已经归一化（模长为 1）时，用 IP（内积）和用 COSINE（余弦）排序 topK 的结果有什么关系？",
+                    "en": "When all vectors are normalized (unit length), how do the topK rankings by IP (inner product) and by COSINE relate?",
+                },
+                "opts": [
+                    {
+                        "zh": "完全等价：归一化后内积就等于余弦，排序结果一致，所以很多系统直接归一化再用 IP",
+                        "en": "Exactly equivalent: after normalization the inner product equals cosine, so the rankings match; many systems normalize and then use IP",
+                    },
+                    {"zh": "IP 永远把所有向量判为相同距离", "en": "IP always judges all vectors as equally distant"},
+                    {"zh": "COSINE 此时会退化成 L2 欧氏距离", "en": "COSINE degenerates into L2 Euclidean distance here"},
+                    {"zh": "两者结果总是恰好相反", "en": "The two always give exactly opposite results"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "余弦相似度 = 内积 /（两模长之积）。当模长都为 1 时分母为 1，于是余弦就等于内积，排序完全一致。这就是“先归一化再用 IP”这一常见做法的依据",
+                    "en": "Cosine = inner product / (product of norms). When both norms are 1 the denominator is 1, so cosine equals inner product and the rankings are identical. That justifies the common 'normalize then use IP' trick",
+                },
+            },
+            {
+                "q": {
+                    "zh": "对二值（binary）向量做相似度，下面哪一组度量是合适的？",
+                    "en": "For binary vectors, which set of metrics is appropriate?",
+                },
+                "opts": [
+                    {
+                        "zh": "HAMMING / JACCARD —— 它们衡量比特位的差异或集合重叠，专为二值向量设计",
+                        "en": "HAMMING / JACCARD - they measure bit differences or set overlap, designed for binary vectors",
+                    },
+                    {"zh": "只能用 L2，二值向量当成普通浮点处理", "en": "Only L2; treat binary vectors as ordinary floats"},
+                    {"zh": "必须先转成稀疏向量再用 IP", "en": "Must convert to sparse vectors first and use IP"},
+                    {"zh": "二值向量不支持任何相似度度量", "en": "Binary vectors support no similarity metric at all"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "metric_type.go 里为二值向量提供了 HAMMING（不同比特数）和 JACCARD（集合相似度）等度量；稀疏向量用 IP。度量名是大小写敏感的字符串常量，要按代码原样写",
+                    "en": "metric_type.go provides HAMMING (differing bits) and JACCARD (set similarity) for binary vectors; sparse vectors use IP. Metric names are case-sensitive string constants, written exactly as in the code",
+                },
+            },
+            {
+                "q": {
+                    "zh": "为什么在高维向量上需要 ANN（近似最近邻）而不是精确暴力搜索？",
+                    "en": "Why do we need ANN (approximate nearest neighbor) on high-dim vectors rather than exact brute force?",
+                },
+                "opts": [
+                    {
+                        "zh": "海量高维向量下精确逐一比对太慢，ANN 用一点点精度（召回率）换取毫秒级速度",
+                        "en": "Exact one-by-one comparison is too slow at scale; ANN trades a little accuracy (recall) for millisecond speed",
+                    },
+                    {"zh": "因为精确搜索会返回错误结果", "en": "Because exact search returns wrong results"},
+                    {"zh": "因为高维向量无法计算距离", "en": "Because distances cannot be computed in high dimensions"},
+                    {"zh": "因为 ANN 总是比暴力搜索更精确", "en": "Because ANN is always more accurate than brute force"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "暴力搜索要把查询和每条向量都算一遍距离，数据上亿时延迟无法接受。ANN 通过索引结构只看一小部分候选，用可控的召回率损失换来巨大的速度提升——这正是下一课要展开的主题",
+                    "en": "Brute force computes the distance against every vector; at hundreds of millions the latency is unacceptable. ANN inspects only a small candidate set via an index, trading a controllable recall loss for huge speedups - exactly the next lesson's topic",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "假设你要做“以图搜图”，图片向量已用某模型生成。你会先归一化吗？会选 L2、IP 还是 COSINE？说说你的理由，并想想如果换成“稀疏关键词向量”度量该怎么变。",
+                "en": "Suppose you build image-to-image search with vectors from some model. Would you normalize first? Would you pick L2, IP, or COSINE? Explain your reasoning, and consider how the metric should change for 'sparse keyword vectors'.",
+            },
+        ],
+    },
+    "05-ann-algorithms.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "ANN 索引选型常被描述为“速度↔内存↔召回”的三角权衡。这个三角的核心含义是什么？",
+                    "en": "ANN index selection is often described as a 'speed↔memory↔recall' triangle. What does this triangle mean at its core?",
+                },
+                "opts": [
+                    {
+                        "zh": "三者很难同时拉满：提升一个常要牺牲另一个，选型就是按业务在三者间找平衡点",
+                        "en": "You can rarely max all three: improving one often sacrifices another, so selection means balancing the three for your workload",
+                    },
+                    {"zh": "三者完全独立，可以各自任意最大化", "en": "The three are fully independent and each can be maximized freely"},
+                    {"zh": "只要内存够大，速度和召回就一定都最优", "en": "With enough memory, speed and recall are both automatically optimal"},
+                    {"zh": "三角说明 FLAT 在所有维度都最好", "en": "The triangle shows FLAT is best on every dimension"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "FLAT 召回 100% 但慢且占内存；IVF 用聚类剪枝换速度；HNSW 又快又准但更吃内存；PQ/DiskANN 用压缩或落盘省内存但牺牲一点召回或速度。没有银弹，选型是工程权衡",
+                    "en": "FLAT gives 100% recall but is slow and memory-heavy; IVF trades pruning for speed; HNSW is fast and accurate but memory-hungry; PQ/DiskANN save memory via compression or disk at some recall/speed cost. No silver bullet - selection is a trade-off",
+                },
+            },
+            {
+                "q": {
+                    "zh": "关于 IVF 的参数 nlist 和 nprobe，下面哪种理解是对的？",
+                    "en": "Regarding IVF's nlist and nprobe parameters, which understanding is correct?",
+                },
+                "opts": [
+                    {
+                        "zh": "nlist 是聚类桶的数量；nprobe 是查询时实际扫描的桶数。nprobe 越大召回越高但越慢",
+                        "en": "nlist is the number of cluster buckets; nprobe is how many buckets are actually scanned at query time. Larger nprobe means higher recall but slower",
+                    },
+                    {"zh": "nlist 控制查询速度，nprobe 决定向量维度", "en": "nlist controls query speed, nprobe sets the vector dimension"},
+                    {"zh": "两者都只影响建索引、不影响查询", "en": "Both affect only index building, not querying"},
+                    {"zh": "nprobe 越大一定越快", "en": "Larger nprobe is always faster"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "IVF 把向量聚成 nlist 个桶；查询时只在离查询最近的 nprobe 个桶里找。nprobe 小则扫得少、快但可能漏掉真正近邻（召回低），nprobe 大则更全但更慢——又是一个速度↔召回的旋钮",
+                    "en": "IVF clusters vectors into nlist buckets; a query searches only the nprobe buckets nearest the query. Small nprobe scans less - fast but may miss true neighbors (low recall); large nprobe is more complete but slower - another speed↔recall knob",
+                },
+            },
+            {
+                "q": {
+                    "zh": "DiskANN 与 HNSW 相比，最主要的取舍点在哪里？",
+                    "en": "Compared with HNSW, what is DiskANN's main trade-off?",
+                },
+                "opts": [
+                    {
+                        "zh": "DiskANN 把大部分索引放在 SSD 上，用磁盘换内存，适合内存放不下的超大数据集",
+                        "en": "DiskANN keeps most of the index on SSD, trading disk for memory, suited to huge datasets that don't fit in RAM",
+                    },
+                    {"zh": "DiskANN 完全不需要任何存储", "en": "DiskANN needs no storage at all"},
+                    {"zh": "DiskANN 只能处理二值向量", "en": "DiskANN only handles binary vectors"},
+                    {"zh": "DiskANN 总是比 HNSW 快且更省内存", "en": "DiskANN is always faster and more memory-efficient than HNSW"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "HNSW 是纯内存图索引，又快又准但内存开销大；DiskANN 专为“内存装不下”的超大规模设计，把索引主体放 SSD，用磁盘 I/O 换内存占用，代价是延迟通常高于纯内存索引",
+                    "en": "HNSW is an in-memory graph index, fast and accurate but memory-heavy; DiskANN targets ultra-large scale that won't fit in RAM, putting the index body on SSD and trading disk I/O for memory, at the cost of latency higher than pure in-memory indexes",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "给定一个 1 亿条、512 维、要求 p99 延迟 < 50ms、召回 ≥ 0.95、且服务器内存有限的场景，你会从 FLAT/IVF/HNSW/PQ/DiskANN 里先试哪个？说说你权衡“速度↔内存↔召回”的思路。",
+                "en": "For 100M items at 512-dim, requiring p99 < 50ms, recall ≥ 0.95, on a memory-limited server, which of FLAT/IVF/HNSW/PQ/DiskANN would you try first? Explain how you weigh the speed↔memory↔recall trade-off.",
+            },
+        ],
+    },
+    "06-data-model.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "Milvus 的动态字段（dynamic field）解决了什么问题？",
+                    "en": "What problem does Milvus's dynamic field solve?",
+                },
+                "opts": [
+                    {
+                        "zh": "允许写入 schema 里没显式声明的字段（存进 $meta），给固定 schema 留一个灵活的活口",
+                        "en": "It lets you write fields not explicitly declared in the schema (stored in $meta), giving a fixed schema a flexible escape hatch",
+                    },
+                    {"zh": "它让主键可以重复", "en": "It allows duplicate primary keys"},
+                    {"zh": "它把所有字段都变成向量", "en": "It turns every field into a vector"},
+                    {"zh": "它取消了对数据类型的检查", "en": "It removes all data-type checking"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "开启 enable_dynamic_field 后，未声明的字段会被收进一个隐藏的 $meta（JSON）里，既保持了固定 schema 的结构与效率，又能容纳临时/稀疏的额外属性。代价是它不如固定字段高效",
+                    "en": "With enable_dynamic_field on, undeclared fields go into a hidden $meta (JSON), keeping the fixed schema's structure and efficiency while accommodating temporary/sparse extra attributes. The trade-off is it's less efficient than fixed fields",
+                },
+            },
+            {
+                "q": {
+                    "zh": "关于分区键（partition key），下面哪种说法最准确？",
+                    "en": "Regarding the partition key, which statement is most accurate?",
+                },
+                "opts": [
+                    {
+                        "zh": "指定某个标量字段为分区键后，Milvus 按其值自动把数据路由到不同分区，查询带该条件时可只扫相关分区（分区剪枝）",
+                        "en": "Designating a scalar field as partition key makes Milvus auto-route data into partitions by its value; queries with that condition can scan only relevant partitions (partition pruning)",
+                    },
+                    {"zh": "分区键必须是向量字段", "en": "The partition key must be a vector field"},
+                    {"zh": "分区键会让查询必须扫描所有分区", "en": "The partition key forces every query to scan all partitions"},
+                    {"zh": "分区键和主键必须是同一个字段", "en": "The partition key and primary key must be the same field"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "分区键是一种“按字段值自动分区”的机制：你不用手动管理分区，Milvus 依分区键的值把数据分散；查询带上该字段过滤时能做分区剪枝、只扫部分分区，是多租户（如按 user_id 隔离）的利器",
+                    "en": "The partition key auto-partitions by a field's value: you don't manage partitions manually, Milvus spreads data by the key's value; a query filtering on that field enables partition pruning, scanning only some partitions - great for multi-tenancy (e.g. isolating by user_id)",
+                },
+            },
+            {
+                "q": {
+                    "zh": "下面哪一组全部是当前 Milvus 支持的向量数据类型？",
+                    "en": "Which group consists entirely of vector data types currently supported by Milvus?",
+                },
+                "opts": [
+                    {
+                        "zh": "FloatVector、BinaryVector、Float16Vector、BFloat16Vector、Int8Vector、SparseFloatVector",
+                        "en": "FloatVector, BinaryVector, Float16Vector, BFloat16Vector, Int8Vector, SparseFloatVector",
+                    },
+                    {"zh": "只有 FloatVector 和 BinaryVector 两种", "en": "Only FloatVector and BinaryVector"},
+                    {"zh": "VarChar、JSON、Array、Bool", "en": "VarChar, JSON, Array, Bool"},
+                    {"zh": "Int64、Float、Double、Bool", "en": "Int64, Float, Double, Bool"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "以当前代码（client/entity/field.go）为准，向量类型有六种：FloatVector、BinaryVector、Float16Vector、BFloat16Vector、Int8Vector、SparseFloatVector。旧文档里“只有两种向量”的说法已过时——代码为准",
+                    "en": "Per current code (client/entity/field.go) there are six vector types: FloatVector, BinaryVector, Float16Vector, BFloat16Vector, Int8Vector, SparseFloatVector. The old docs' 'only two vector types' is outdated - the code wins",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "为一个“电商商品”集合设计 schema：你会把哪个字段设为主键、是否开 auto_id？把哪个字段作分区键？要不要开动态字段？哪些标量字段会参与过滤？写出你的字段清单与理由。",
+                "en": "Design a schema for an e-commerce 'product' collection: which field is the primary key, and do you enable auto_id? Which field is the partition key? Do you enable the dynamic field? Which scalar fields participate in filtering? Write your field list and reasoning.",
+            },
+        ],
+    },
+    "07-segments.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "Milvus 中一个 segment 的生命周期状态链是下面哪一条？",
+                    "en": "Which chain is the lifecycle of a segment in Milvus?",
+                },
+                "opts": [
+                    {
+                        "zh": "Growing → Sealed → Flushing → Flushed →（Dropped）",
+                        "en": "Growing → Sealed → Flushing → Flushed → (Dropped)",
+                    },
+                    {"zh": "Sealed → Growing → Dropped → Flushed", "en": "Sealed → Growing → Dropped → Flushed"},
+                    {"zh": "Flushed → Growing → Sealed → Flushing", "en": "Flushed → Growing → Sealed → Flushing"},
+                    {"zh": "Dropped → Flushing → Growing → Sealed", "en": "Dropped → Flushing → Growing → Sealed"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "这些状态名直接来自代码里的 SegmentState 枚举：Growing（内存可变）→ Sealed（写满不可变）→ Flushing（落盘中）→ Flushed（已存对象存储、可建索引）→ Dropped（压缩/删除后等待 GC）",
+                    "en": "These names come straight from the SegmentState enum: Growing (mutable in memory) → Sealed (full, immutable) → Flushing (landing) → Flushed (in object storage, indexable) → Dropped (after compaction/delete, awaiting GC)",
+                },
+            },
+            {
+                "q": {
+                    "zh": "关于 vchannel 与 pchannel 的关系，下面哪种说法正确？",
+                    "en": "Which statement about vchannel and pchannel is correct?",
+                },
+                "opts": [
+                    {
+                        "zh": "vchannel 是逻辑分片，pchannel 是物理 MQ topic；多个 vchannel 可共享一个 pchannel（vchannel 名截掉最后一段即得 pchannel）",
+                        "en": "vchannel is a logical shard, pchannel is a physical MQ topic; many vchannels can share one pchannel (strip a vchannel name's last segment to get the pchannel)",
+                    },
+                    {"zh": "vchannel 和 pchannel 必须一一对应", "en": "vchannel and pchannel must map one-to-one"},
+                    {"zh": "pchannel 是逻辑概念，vchannel 是物理 topic", "en": "pchannel is logical, vchannel is the physical topic"},
+                    {"zh": "二者都只存在于查询路径，与写入无关", "en": "Both exist only on the query path, unrelated to writes"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "func.go 里 GetVirtualChannel 把 pchannel 名拼上 collectionID 和分片号得到 vchannel；ToPhysicalChannel 反过来截掉最后一段还原 pchannel。逻辑分片数与物理 topic 数解耦，让多个 vchannel 复用少量 pchannel",
+                    "en": "In func.go, GetVirtualChannel appends collectionID and shard index to a pchannel name to form a vchannel; ToPhysicalChannel reverses it by stripping the last segment. Decoupling logical shards from physical topics lets many vchannels reuse few pchannels",
+                },
+            },
+            {
+                "q": {
+                    "zh": "“日志即数据（log as data）”这一设计哲学的核心是什么？",
+                    "en": "What is the core of the 'log as data' design philosophy?",
+                },
+                "opts": [
+                    {
+                        "zh": "append-only、带时间戳、可重放的日志才是唯一真相，其它数据形态（内存段、binlog、索引）都是它的物化视图",
+                        "en": "The append-only, timestamped, replayable log is the only source of truth; other forms (memory segments, binlogs, indexes) are its materialized views",
+                    },
+                    {"zh": "日志只用于崩溃恢复，平时没有用", "en": "The log is only for crash recovery and otherwise useless"},
+                    {"zh": "数据写进段后日志就可以立刻丢弃", "en": "The log can be discarded the moment data enters a segment"},
+                    {"zh": "日志和数据是两份互不相关的副本", "en": "Log and data are two unrelated copies"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "Milvus 把传统“表是真相、日志是辅助”反了过来：日志是权威源，写入只要进了日志就算落地；内存 Growing 段、对象存储 binlog、索引都靠消费/重放这条日志来追上状态。这支撑了边写边查和简单的崩溃恢复",
+                    "en": "Milvus inverts the traditional 'table is truth, log is aid': the log is authoritative, and a write is 'landed' once in the log; the in-memory Growing segment, binlogs, and indexes all catch up by consuming/replaying it. This enables search-while-writing and simple crash recovery",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "“边写边查”要求刚 insert 的数据立刻能被搜到。结合本课的段生命周期，说说为什么 Growing 段是这件事的关键，以及查询时为什么要同时看 Growing 段和已加载的 Sealed 段。",
+                "en": "'Search while writing' requires just-inserted data to be searchable immediately. Using this lesson's segment lifecycle, explain why the Growing segment is key, and why a query must look at both Growing and loaded Sealed segments.",
+            },
+        ],
+    },
+    "08-dependencies-and-deployment.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "Milvus 的三大外部依赖各自承担什么角色？",
+                    "en": "What role does each of Milvus's three external dependencies play?",
+                },
+                "opts": [
+                    {
+                        "zh": "etcd 存元数据与服务发现；对象存储（MinIO/S3）存 binlog 与索引；消息队列/WAL 承载写入日志",
+                        "en": "etcd for metadata and service discovery; object storage (MinIO/S3) for binlogs and indexes; message queue/WAL carries the write log",
+                    },
+                    {"zh": "三者都用来存向量索引，互为备份", "en": "All three store the vector index as backups of each other"},
+                    {"zh": "etcd 存向量、对象存储记日志、MQ 存元数据", "en": "etcd stores vectors, object storage records logs, MQ stores metadata"},
+                    {"zh": "三者都只在 Cluster 模式下才需要", "en": "All three are needed only in Cluster mode"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "Milvus 把三件难且通用的事外包：强一致的元数据/服务发现给 etcd，海量廉价持久的数据给对象存储，有序可重放的写入日志给消息队列/WAL。由此自身节点近乎无状态、可弹性伸缩",
+                    "en": "Milvus outsources three hard, generic jobs: strongly-consistent metadata/service-discovery to etcd, cheap durable bulk data to object storage, ordered replayable write logs to the message queue/WAL. This makes its nodes nearly stateless and elastic",
+                },
+            },
+            {
+                "q": {
+                    "zh": "根据 milvus.yaml 的注释，当 mq.type=default 时，Standalone 和 Cluster 模式分别默认用哪种消息队列？",
+                    "en": "Per milvus.yaml comments, with mq.type=default, which MQ do Standalone and Cluster modes default to?",
+                },
+                "opts": [
+                    {
+                        "zh": "Standalone 默认 RocksMQ；Cluster 默认 Pulsar（且 Cluster 不支持 RocksMQ）",
+                        "en": "Standalone defaults to RocksMQ; Cluster defaults to Pulsar (and Cluster doesn't support RocksMQ)",
+                    },
+                    {"zh": "两者都默认 Kafka", "en": "Both default to Kafka"},
+                    {"zh": "Standalone 默认 Pulsar；Cluster 默认 RocksMQ", "en": "Standalone defaults to Pulsar; Cluster defaults to RocksMQ"},
+                    {"zh": "两者都默认 Woodpecker", "en": "Both default to Woodpecker"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "yaml 注释给了精确优先级：standalone 为 rocksmq(默认)>Pulsar>Kafka>Woodpecker；cluster 为 Pulsar(默认)>Kafka>Woodpecker，rocksmq 在集群不支持。RocksMQ 内置于进程、无法跨节点共享，故只用于单机",
+                    "en": "The yaml comments give the exact priority: standalone is rocksmq(default)>Pulsar>Kafka>Woodpecker; cluster is Pulsar(default)>Kafka>Woodpecker, with rocksmq unsupported. RocksMQ is in-process and can't be shared across nodes, so it's single-machine only",
+                },
+            },
+            {
+                "q": {
+                    "zh": "对于一个全新的 Milvus 部署，官方在 milvus.yaml 注释里推荐显式使用哪种 MQ，为什么？",
+                    "en": "For a brand-new Milvus deployment, which MQ do the milvus.yaml comments recommend explicitly using, and why?",
+                },
+                "opts": [
+                    {
+                        "zh": "Woodpecker —— 新一代内置 WAL，性能更好、运维更简单、成本更低；优先级靠后只是为了不改变老实例的行为",
+                        "en": "Woodpecker - the next-gen built-in WAL with better performance, simpler ops, lower cost; it sits low in priority only to keep existing instances' behavior unchanged",
+                    },
+                    {"zh": "RocksMQ，因为它最古老最稳定", "en": "RocksMQ, because it's the oldest and most stable"},
+                    {"zh": "Kafka，因为它是唯一支持集群的", "en": "Kafka, because it's the only one supporting clusters"},
+                    {"zh": "随便哪个都行，注释没有推荐", "en": "Any will do; the comments make no recommendation"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "注释明确建议新实例显式用 Woodpecker，以获得更好性能、更简运维、更低成本。它在默认优先级里排最后，是为了兼容老实例（升级不改默认队列），但对新部署应主动选它",
+                    "en": "The comments explicitly recommend new instances use Woodpecker for better performance, simpler ops, and lower cost. It ranks last in default priority to stay compatible with existing instances (no swapping their default on upgrade), but new deployments should pick it actively",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "你要把一个原型推上生产：数据将从百万级涨到十亿级、并发上升、需要高可用。说说你会从 Lite/Standalone/Cluster 中怎么演进，沿途哪些外部依赖（etcd、对象存储、MQ）需要从“内置/本地”换成“外部生产级集群”，以及为什么 API 几乎不用改。",
+                "en": "You're taking a prototype to production: data grows from millions to billions, concurrency rises, HA is required. Describe how you'd evolve across Lite/Standalone/Cluster, which external dependencies (etcd, object storage, MQ) must move from 'built-in/local' to 'external production clusters' along the way, and why the API barely changes.",
+            },
+        ],
+    },
 }
 
 

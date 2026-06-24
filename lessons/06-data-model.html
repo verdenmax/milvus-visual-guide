@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>06 · 数据模型 / The data model - Milvus 图解教程</title>
+<meta name="description" content="第二部分 · 前置基础｜数据模型 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="06 · 数据模型 / The data model - Milvus 图解教程">
+<meta property="og:description" content="第二部分 · 前置基础｜数据模型 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="06 · 数据模型 / The data model - Milvus 图解教程">
+<meta name="twitter:description" content="第二部分 · 前置基础｜数据模型 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第二部分 · 前置基础</span><span class="lang-en">Part 2 · Foundations</span></span>
+    <span class="pill">06 / 08</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:75%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第二部分 · 前置基础</span><span class="lang-en">Part 2 · Foundations</span></div>
+    <h1><span class="lang-zh">数据模型</span><span class="lang-en">The data model</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+前几课都在讲"向量怎么比、怎么搜"。这一课换个角度：<strong>数据在 Milvus 里到底是怎么组织的</strong>？
+从 <strong>collection（集合）</strong> 到 <strong>schema（模式）</strong> 到 <strong>field（字段）</strong>，再到<strong>主键、自增、动态字段、分区、分区键</strong>，
+以及 Milvus 现在支持的全部<strong>数据类型</strong>——尤其是六种向量类型。把这套"数据模型"理清，你才知道 insert 进去的东西被装进了什么样的结构里。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 生活类比</div>
+  把 <strong>collection</strong> 想成一张<strong>Excel 表</strong>：<strong>schema</strong> 是表头的设计（有哪些列、每列什么类型），<strong>field</strong> 是一列，<strong>一行</strong>就是一条实体（entity）。
+  <strong>主键</strong>是那一列"工号"，全表唯一、用来精确定位某一行。<strong>分区</strong>像是把这张大表按"部门"拆成几个 sheet，查某部门时只翻对应 sheet。
+  只不过 Milvus 的表里，除了普通的数字、文本列，还能有一种特殊的列——<strong>向量列</strong>，专门用来做相似检索。
+</div>
+
+<h2>从 collection 到 field：三层结构</h2>
+<p>Milvus 里数据组织的最外层是 <strong>collection</strong>，约等于关系数据库里的<strong>表（table）</strong>。一个 collection 由一份 <strong>schema</strong> 定义，
+schema 里列出若干 <strong>field（字段）</strong>，每个 field 规定了名字、数据类型、以及一些类型参数。往 collection 里写入的每一条数据叫一个 <strong>entity（实体）</strong>，
+对应关系库里的一<strong>行</strong>。这套对应关系记牢，后面所有概念都挂在它上面。和关系库相比，最大的不同只有一处：Milvus 的"行"里可以有一种特殊的"列"——<strong>向量列</strong>，
+它就是做相似检索的那一列。其余的标量列（数字、文本、布尔），作用和关系库一模一样，主要用来做<strong>过滤</strong>（"价格小于 500""地区等于华东"）。
+也就是说，一条 entity 通常长这样：<strong>一个主键 + 一个（或多个）向量 + 若干标量字段</strong>。检索时既按向量找相似，又能用标量字段加条件，这正是"向量数据库"区别于"纯算法库"的地方。</p>
+
+<p>这里有一个和关系库的关键差异要先点明：<strong>schema 在建集合时定下来后，结构基本是稳定的</strong>。维度、主键、度量这些核心元信息一旦确定，
+就不能随意更改——这和关系库里随手 <span class="mono">ALTER TABLE</span> 加列删列的灵活度不同。原因在于 Milvus 为了极致的检索性能，会围绕 schema 预先规划好底层的<strong>列式存储和索引布局</strong>，
+schema 是这套布局的"地基"。所以设计 schema 时要<strong>多想一步</strong>：哪些字段要参与过滤、哪个字段适合做分区键、向量维度选多少——这些决定会跟着集合走很久。
+当然，Milvus 也留了"活口"（下文的动态字段），但核心结构的稳定性，是它换取高性能的必要代价。</p>
+
+<p>顺带一提，<strong>collection 之上还有 database（数据库）</strong>这一层：一个 Milvus 实例里可以有多个 database，
+每个 database 下再放多个 collection，用来做更粗粒度的隔离（不同业务线、不同环境）。本课聚焦 collection 及其内部结构，database 这一层知道它存在即可。</p>
+
+<table class="t">
+  <tr><th>Milvus 概念</th><th>≈ 关系数据库</th><th>说明</th></tr>
+  <tr><td><strong>collection</strong></td><td>表 table</td><td>数据组织的最外层，有自己的 schema</td></tr>
+  <tr><td><strong>schema</strong></td><td>表结构定义</td><td>规定有哪些 field、各自类型与约束</td></tr>
+  <tr><td><strong>field</strong></td><td>列 column</td><td>一个字段：名字 + 数据类型 + 参数</td></tr>
+  <tr><td><strong>entity</strong></td><td>行 row</td><td>写入的一条数据（一行）</td></tr>
+  <tr><td><strong>partition</strong></td><td>分区</td><td>collection 内部的逻辑切分</td></tr>
+</table>
+
+<p>每个 field 由一份 <strong>FieldSchema</strong> 描述。在 Milvus 的开发者文档里，FieldSchema 与 CollectionSchema 的结构大致如下（这是<strong>简化的概念结构</strong>，
+真实定义在 proto 里、字段更多，比如还有 nullable、default_value、is_partition_key 等）。注意 FieldSchema 里的 <span class="inline">IsPrimaryKey</span> 和 <span class="inline">AutoID</span> 两个布尔位，
+它们正是下面要讲的"主键"和"自增"的开关：</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">docs/developer_guides/chap02_schema.md</span><span class="ln">CollectionSchema / FieldSchema</span></div>
+  <pre><span class="kw">type</span> CollectionSchema <span class="kw">struct</span> {
+    Name        <span class="kw">string</span>
+    Description <span class="kw">string</span>
+    AutoId      <span class="kw">bool</span>
+    Fields      []*FieldSchema    <span class="cm">// 一组字段</span>
+}
+
+<span class="kw">type</span> FieldSchema <span class="kw">struct</span> {
+    Name         <span class="kw">string</span>
+    IsPrimaryKey <span class="kw">bool</span>          <span class="cm">// 是不是主键</span>
+    DataType     DataType         <span class="cm">// 字段类型（见下表）</span>
+    TypeParams   []*KeyValuePair  <span class="cm">// 类型参数：如 dim / max_length</span>
+    AutoID       <span class="kw">bool</span>          <span class="cm">// 主键是否自增</span>
+}</pre>
+</div>
+
+<h2>主键、自增与 type_params</h2>
+<p>每个 collection 必须有<strong>一个主键字段（primary key）</strong>，类型只能是 <span class="inline">Int64</span> 或 <span class="inline">VarChar</span>。主键<strong>全集合唯一</strong>，
+用来精确定位、删除、去重一条 entity——这一点和关系库的主键完全一致。Milvus 内部很多机制（删除标记、去重、按主键路由分片）都依赖主键，
+所以它不是可有可无的装饰，而是整个数据模型的<strong>支点</strong>：没有唯一主键，"删掉那一条""更新那一条"就无从谈起。</p>
+
+<p>主键可以<strong>自增（auto_id）</strong>：开启后，你 insert 时<strong>不用</strong>自己提供主键值，Milvus 会自动分配一个全局唯一的 Int64。
+这对"我只关心向量和内容、不在乎 id 是几"的场景很方便；反之，若你的数据本身带业务 id（比如商品编号、文档 UUID），就关掉 auto_id、自己提供主键，
+这样你才能用业务侧已知的 id 去精确删改某一条。两种模式各有适用：<strong>auto_id 省心，自带 id 可控</strong>，按你是否需要"用外部 id 反查"来决定。</p>
+
+<p><strong>type_params（类型参数）</strong>是字段类型的补充约束，最常见的两个：向量字段必须给 <span class="inline">dim</span>（维度），
+VarChar 字段必须给 <span class="inline">max_length</span>（最大长度）。它们是建集合时就定死、跟着字段走的元信息——比如"这是一个 768 维的 FloatVector 列"。
+为什么非给不可？因为 Milvus 要据此<strong>预先规划存储与索引的内存布局</strong>：知道每条向量占多少字节、每条字符串最长多少，才能高效地按列存放、批量计算。
+这也解释了为什么<strong>维度一旦定下就不能改</strong>——它早已渗进底层存储的每一个角落。换句话说，<span class="inline">dim</span> 和 <span class="inline">max_length</span> 不是"软约束"，
+而是 Milvus 据以分配内存、组织列存、构建索引的<strong>硬性前提</strong>；填错了不会"凑合能用"，而是从一开始就建不出正确的存储结构。</p>
+
+<h2>动态字段：给 schema 留一道活口</h2>
+<p>传统关系库的表是<strong>强 schema</strong>：没在表头声明的列，根本写不进去。但真实业务里，常常有一些<strong>临时的、不固定的</strong>附加属性，事先没法都列全——
+比如不同来源的商品带着各不相同的标签字段，今天加一个"促销标记"，明天加一个"产地"。如果每加一个属性都要改 schema、重建集合，迭代就太重了。
+Milvus 的 <strong>动态字段（dynamic field）</strong>就是为此设计的：开启 <span class="inline">enable_dynamic_field</span> 后，你 insert 时可以<strong>夹带 schema 里没声明的键值对</strong>，
+它们会被统一收进一个名为 <span class="inline">$meta</span> 的隐藏 JSON 字段里，事后还能在过滤表达式里使用。这相当于在强 schema 的严谨之外，额外开了一个"什么都能塞"的口袋。</p>
+
+<div class="cols">
+  <div class="col"><h4>固定字段（声明过的）</h4><p>schema 里明确定义的 field：类型严格、可建索引、过滤高效。比如 <span class="mono">id / vector / price</span>。</p></div>
+  <div class="col"><h4>动态字段（没声明的）</h4><p>开启 <span class="mono">enable_dynamic_field</span> 后随手夹带的键值，落进 <span class="mono">$meta</span> JSON。灵活，但不如固定字段高效。适合放<strong>临时、稀疏</strong>的属性。</p></div>
+</div>
+
+<p>一句话权衡：<strong>固定字段图的是"严谨与高效"，动态字段图的是"灵活与免改表"</strong>。把高频、要过滤的属性放进固定字段；把零散、临时的属性丢给动态字段，是常见的实践。
+要提醒的是，动态字段虽然方便，但它的值存在 JSON 里，<strong>过滤时要解析 JSON</strong>，效率不如直接对固定字段建立的结构化存储。所以它适合"偶尔用一下"的属性，
+而不是"每次查询都要过滤"的核心字段——后者还是老老实实声明成固定 field 更划算。动态字段的真正价值，是让 schema <strong>不必在第一天就想全所有字段</strong>，
+给快速迭代的业务留了一道喘息的活口。</p>
+
+<h2>分区与分区键：把大集合切小</h2>
+<p>当一个 collection 很大时，把它整体当一坨来查既慢又浪费。<strong>分区（partition）</strong>是 collection 内部的<strong>逻辑切分</strong>：你可以按某种规则把数据分到不同分区，
+查询时<strong>只在相关分区里找</strong>，从而剪掉大量无关数据。最典型的用法是按"租户、地区、时间"分区——查某个租户的数据，就只扫它那个分区。
+要注意分区是<strong>逻辑</strong>概念，它和后面要讲的 segment（物理存储单元）是两个层次：一个分区内部，数据仍然会被切成很多个 segment 来存储和索引。
+你可以把分区理解成"逻辑上的抽屉"，segment 是"抽屉里实际装东西的盒子"——下一课会专门讲 segment。</p>
+
+<p>手动管理分区很繁琐，于是有了<strong>分区键（partition key）</strong>：你把某个<strong>标量字段</strong>（比如 <span class="inline">user_id</span>）指定为分区键，
+Milvus 就会<strong>自动</strong>根据这个字段的值把 entity 散列到不同分区里。查询时只要在过滤条件里带上这个字段，Milvus 就能<strong>自动只搜对应分区</strong>，
+你完全不用手动建分区、选分区。这在多租户场景里极其好用：一个 collection 装很多用户的数据，靠分区键天然隔离、又互不打扰。</p>
+
+<p>分区和上一课的"索引选型"其实是同一种思想的两次应用：<strong>都在想办法"少看一点数据"</strong>。索引是在向量层面剪枝（只看近的候选），分区是在数据层面剪枝（只看相关的那一块）。
+两者叠加，效果是乘法级的：先用分区键把"几亿条全集合"缩到"几百万条某租户的数据"，再让 ANN 索引在这几百万条里快速找最近邻。理解了这一点，你设计 collection 时就会有意识地问自己：
+<strong>"我的查询几乎总会带哪个过滤条件？"</strong>——那个字段，往往就是最好的分区键候选。一个小提醒：分区键一旦在建集合时指定就固定下来，
+所以这又是一个需要在 schema 设计阶段就想清楚的决定，和前面说的"维度、主键"一样，属于"开局定终身"的那类选择。</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>定义 schema</h4><p>声明字段：主键、向量字段（带 dim）、若干标量字段；可选开启动态字段、指定分区键。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>创建 collection</h4><p>schema 落定，collection 诞生；维度、主键、度量等元信息从此固定。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>insert 实体</h4><p>每行带上各字段的值（主键自增则可省）；分区键决定它落进哪个分区。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>建索引 + 检索</h4><p>给向量字段建 ANN 索引，之后即可按相似度 + 标量过滤检索。</p></div></div>
+</div>
+
+<h2>数据类型：标量与六种向量</h2>
+<p>schema 里每个字段的类型，来自 Milvus 的 <strong>DataType</strong> 枚举。<strong>标量字段</strong>负责承载结构化信息、支撑过滤；<strong>向量字段</strong>承载 embedding、支撑相似检索。
+这里有一个<strong>极其重要的纠错点</strong>：早年的开发者文档里只列了 BinaryVector / FloatVector 两种向量，那份清单<strong>早已过时</strong>。
+以当前代码为准（<span class="mono">client/entity/field.go</span> 的 FieldType），Milvus 现在支持的类型如下——标量一大类，向量<strong>足足六种</strong>：</p>
+
+<table class="t">
+  <tr><th>类别</th><th>数据类型</th><th>说明</th></tr>
+  <tr><td rowspan="4"><strong>标量</strong></td><td class="mono">Bool</td><td>布尔</td></tr>
+  <tr><td class="mono">Int8 / Int16 / Int32 / Int64</td><td>不同宽度的整数；Int64 常作主键</td></tr>
+  <tr><td class="mono">Float / Double</td><td>单精度 / 双精度浮点</td></tr>
+  <tr><td class="mono">VarChar / JSON / Array</td><td>变长字符串（需 max_length）/ JSON / 数组</td></tr>
+  <tr><td rowspan="6"><strong>向量</strong></td><td class="mono">FloatVector</td><td>最常见：32 位浮点稠密向量</td></tr>
+  <tr><td class="mono">BinaryVector</td><td>二值向量（每位 0/1），配 HAMMING/JACCARD</td></tr>
+  <tr><td class="mono">Float16Vector</td><td>半精度（16 位）稠密向量，省内存</td></tr>
+  <tr><td class="mono">BFloat16Vector</td><td>bfloat16 稠密向量，省内存、动态范围大</td></tr>
+  <tr><td class="mono">Int8Vector</td><td>8 位整数稠密向量，进一步省内存</td></tr>
+  <tr><td class="mono">SparseFloatVector</td><td>稀疏浮点向量（高维多零），配 IP</td></tr>
+</table>
+
+<p>这六种向量类型不是凭空列举，而是当前代码里<strong>逐个定义的常量</strong>。下面这段就是它们的出处——注意 BinaryVector=100 起跳，向量类型和标量类型在编号上是<strong>分段</strong>的：</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">client/entity/field.go</span><span class="ln">FieldType 常量（当前 DataType 集）</span></div>
+  <pre><span class="kw">const</span> (
+    FieldTypeBool   FieldType = <span class="nb">1</span>
+    FieldTypeInt64  FieldType = <span class="nb">5</span>    <span class="cm">// 常作主键</span>
+    FieldTypeVarChar FieldType = <span class="nb">21</span>
+    FieldTypeJSON   FieldType = <span class="nb">23</span>
+    FieldTypeArray  FieldType = <span class="nb">22</span>
+
+    FieldTypeBinaryVector    FieldType = <span class="nb">100</span>  <span class="cm">// 向量类型从 100 起</span>
+    FieldTypeFloatVector     FieldType = <span class="nb">101</span>
+    FieldTypeFloat16Vector   FieldType = <span class="nb">102</span>
+    FieldTypeBFloat16Vector  FieldType = <span class="nb">103</span>
+    FieldTypeSparseVector    FieldType = <span class="nb">104</span>  <span class="cm">// SparseFloatVector</span>
+    FieldTypeInt8Vector      FieldType = <span class="nb">105</span>
+)</pre>
+</div>
+
+<p>标量类型里有几个值得单独点一句：<span class="inline">VarChar</span> 是变长字符串，必须给 <span class="inline">max_length</span>，常用来存原文、标题、URL；
+<span class="inline">JSON</span> 能存一整块嵌套结构，适合放半结构化的元信息；<span class="inline">Array</span> 是同类型元素的数组（如多个标签）。
+这些标量字段不只是"附带存着"，它们能直接参与<strong>过滤表达式</strong>——这正是 Milvus 把"向量检索 + 标量过滤"揉在一次查询里的基础。
+有了它们，你才能写出"向量最像、且 price &lt; 500、且 tags 包含'新品'"这种混合查询。</p>
+
+<p>这么多向量类型，本质都在三角里做<strong>精度 vs 内存</strong>的取舍：FloatVector 最精确也最占空间；Float16 / BFloat16 / Int8 是用更少的位数<strong>换内存</strong>（每条向量占用减半甚至更多）；
+SparseFloatVector 则专为"高维但绝大多数是 0"的场景（如关键词权重）服务，只存非零项，省得多。还有 <span class="inline">BinaryVector</span>，每一维只用 1 个比特表示，配合上一课的 HAMMING/JACCARD 距离，特别适合指纹、去重这类二值特征。<strong>选哪种向量类型，和上一课选哪种索引一样，是一道工程权衡题。</strong></p>
+
+<p>把这一课串成一个具体例子收尾：假设要做一个"商品图片检索"的集合，schema 大概是——主键 <span class="mono">item_id</span>（Int64，开 auto_id）、
+向量字段 <span class="mono">image_vec</span>（FloatVector，dim=512）、标量字段 <span class="mono">price</span>（Float）、<span class="mono">category</span>（VarChar，作分区键）、
+再开 <span class="inline">enable_dynamic_field</span> 以备临时打标签。建好后，一条"找和这张鞋子图最像、价格小于 500、且属于鞋类"的查询，
+就是<strong>向量检索（image_vec）+ 标量过滤（price &lt; 500）+ 分区剪枝（category=鞋）</strong>三件事一次做完。
+你看，这一课讲的每个概念——主键、向量字段、标量字段、分区键、动态字段——都在这一条真实查询里各就各位。把数据模型理清，后面看写入与查询链路时，你才知道数据被装进了什么形状的容器里。</p>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  一句话：<strong>collection（表）由 schema 定义，schema 列出 field（列），每条数据是 entity（行）</strong>。
+  主键唯一定位、可自增；动态字段给 schema 留活口；分区/分区键把大集合切小、加速查询，是多租户场景的利器。
+  字段类型来自 DataType——标量一大类、向量<strong>六种</strong>（务必以当前代码为准，别用过时的两种向量清单）。
+  把数据模型想成"带向量列的表"，你就抓住了它的精髓。</div>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>三层结构</strong>：collection ≈ 表，schema = 表结构，field = 列，entity = 行；collection 之上还有 database。</li>
+    <li><strong>主键</strong>：每集合一个，Int64 或 VarChar，全局唯一；可开 <span class="mono">auto_id</span> 自增。<span class="mono">type_params</span> 给 dim / max_length。</li>
+    <li><strong>动态字段</strong>：开 <span class="mono">enable_dynamic_field</span> 后，未声明的键值进 <span class="mono">$meta</span> JSON，灵活但不如固定字段高效。</li>
+    <li><strong>分区 / 分区键</strong>：分区是集合内逻辑切分；把标量字段设为分区键后，Milvus 自动散列与剪枝，多租户神器。</li>
+    <li><strong>数据类型</strong>：标量（Bool、Int8~64、Float、Double、VarChar、JSON、Array）+ <strong>六种向量</strong>（Float / Binary / Float16 / BFloat16 / Int8 / SparseFloat）。见 <span class="mono">client/entity/field.go</span>。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. Milvus 的动态字段（dynamic field）解决了什么问题？</div>
+  <ol class="opts">
+    <li>允许写入 schema 里没显式声明的字段（存进 $meta），给固定 schema 留一个灵活的活口</li>
+    <li>它取消了对数据类型的检查</li>
+    <li>它让主键可以重复</li>
+    <li>它把所有字段都变成向量</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：A</strong>。开启 enable_dynamic_field 后，未声明的字段会被收进一个隐藏的 $meta（JSON）里，既保持了固定 schema 的结构与效率，又能容纳临时/稀疏的额外属性。代价是它不如固定字段高效</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. 关于分区键（partition key），下面哪种说法最准确？</div>
+  <ol class="opts">
+    <li>分区键和主键必须是同一个字段</li>
+    <li>分区键必须是向量字段</li>
+    <li>指定某个标量字段为分区键后，Milvus 按其值自动把数据路由到不同分区，查询带该条件时可只扫相关分区（分区剪枝）</li>
+    <li>分区键会让查询必须扫描所有分区</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：C</strong>。分区键是一种“按字段值自动分区”的机制：你不用手动管理分区，Milvus 依分区键的值把数据分散；查询带上该字段过滤时能做分区剪枝、只扫部分分区，是多租户（如按 user_id 隔离）的利器</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 下面哪一组全部是当前 Milvus 支持的向量数据类型？</div>
+  <ol class="opts">
+    <li>只有 FloatVector 和 BinaryVector 两种</li>
+    <li>Int64、Float、Double、Bool</li>
+    <li>FloatVector、BinaryVector、Float16Vector、BFloat16Vector、Int8Vector、SparseFloatVector</li>
+    <li>VarChar、JSON、Array、Bool</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：C</strong>。以当前代码（client/entity/field.go）为准，向量类型有六种：FloatVector、BinaryVector、Float16Vector、BFloat16Vector、Int8Vector、SparseFloatVector。旧文档里“只有两种向量”的说法已过时——代码为准</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>为一个“电商商品”集合设计 schema：你会把哪个字段设为主键、是否开 auto_id？把哪个字段作分区键？要不要开动态字段？哪些标量字段会参与过滤？写出你的字段清单与理由。</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+The last few lessons were about "how vectors are compared and searched". This one shifts angle: <strong>how is data actually
+organized inside Milvus</strong>? From <strong>collection</strong> to <strong>schema</strong> to <strong>field</strong>, then <strong>primary key, auto_id, dynamic
+field, partition, partition key</strong>, and all the <strong>data types</strong> Milvus supports today — especially the six vector types. Clear
+up this "data model" and you'll know what kind of structure your inserted data lands in.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of a <strong>collection</strong> as an <strong>Excel sheet</strong>: the <strong>schema</strong> is the header design (which columns, what type each),
+  a <strong>field</strong> is one column, and a <strong>row</strong> is one entity. The <strong>primary key</strong> is the "employee ID" column — unique across
+  the whole sheet, used to pinpoint a row. A <strong>partition</strong> is like splitting the big sheet into a few sheets by "department",
+  so querying one department only flips to the matching sheet. Only, a Milvus table can also have a special column — a
+  <strong>vector column</strong> — dedicated to similarity search.
+</div>
+
+<h2>From collection to field: a three-layer structure</h2>
+<p>The outermost layer of data organization in Milvus is the <strong>collection</strong>, roughly a <strong>table</strong> in a relational database. A
+collection is defined by a <strong>schema</strong>, which lists several <strong>fields</strong>, each specifying a name, data type, and some type
+parameters. Each item written into a collection is an <strong>entity</strong>, corresponding to a <strong>row</strong>. Memorize this mapping; every
+concept later hangs off it. Versus a relational DB there is one big difference: a Milvus "row" can hold a special "column" — the
+<strong>vector column</strong> — the one used for similarity search. The other scalar columns (numbers, text, boolean) behave exactly like a
+relational DB's, mainly used for <strong>filtering</strong> ("price below 500", "region equals East"). So an entity typically looks like:
+<strong>one primary key + one (or more) vectors + several scalar fields</strong>. A search finds similar by vector while also constraining by
+scalar fields — exactly what separates a "vector database" from a "pure algorithm library".</p>
+
+<p>One key difference from a relational DB to flag first: <strong>once the schema is set at collection creation, the structure is largely
+stable</strong>. Core metadata like dimension, primary key, and metric can't be changed at will — unlike the freewheeling
+<span class="mono">ALTER TABLE</span> add/drop column of a relational DB. The reason is that for top retrieval performance, Milvus plans the
+underlying <strong>columnar storage and index layout</strong> around the schema; the schema is the "foundation" of that layout. So designing a
+schema means <strong>thinking one step ahead</strong>: which fields will filter, which field suits the partition key, what vector dimension —
+these decisions live with the collection for a long time. Milvus does leave a "release valve" (the dynamic field below), but the
+stability of the core structure is the necessary price it pays for high performance.</p>
+
+<p>By the way, <strong>above the collection there is also a database layer</strong>: a Milvus instance can hold several databases, each holding
+several collections, for coarser-grained isolation (different business lines, different environments). This lesson focuses on the
+collection and its internals; just know the database layer exists.</p>
+
+<table class="t">
+  <tr><th>Milvus concept</th><th>≈ relational DB</th><th>Note</th></tr>
+  <tr><td><strong>collection</strong></td><td>table</td><td>outermost layer of data, has its own schema</td></tr>
+  <tr><td><strong>schema</strong></td><td>table definition</td><td>declares the fields, their types and constraints</td></tr>
+  <tr><td><strong>field</strong></td><td>column</td><td>one field: name + data type + params</td></tr>
+  <tr><td><strong>entity</strong></td><td>row</td><td>one written item (a row)</td></tr>
+  <tr><td><strong>partition</strong></td><td>partition</td><td>a logical split inside a collection</td></tr>
+</table>
+
+<p>Each field is described by a <strong>FieldSchema</strong>. In Milvus's developer docs, FieldSchema and CollectionSchema look roughly like
+this (a <strong>simplified conceptual structure</strong>; the real definition lives in proto and has more fields, e.g. nullable, default_value,
+is_partition_key). Note the <span class="inline">IsPrimaryKey</span> and <span class="inline">AutoID</span> booleans in FieldSchema — they are exactly
+the "primary key" and "auto increment" switches discussed next:</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">docs/developer_guides/chap02_schema.md</span><span class="ln">CollectionSchema / FieldSchema</span></div>
+  <pre><span class="kw">type</span> CollectionSchema <span class="kw">struct</span> {
+    Name        <span class="kw">string</span>
+    Description <span class="kw">string</span>
+    AutoId      <span class="kw">bool</span>
+    Fields      []*FieldSchema    <span class="cm">// a set of fields</span>
+}
+
+<span class="kw">type</span> FieldSchema <span class="kw">struct</span> {
+    Name         <span class="kw">string</span>
+    IsPrimaryKey <span class="kw">bool</span>          <span class="cm">// is it the primary key</span>
+    DataType     DataType         <span class="cm">// field type (see table below)</span>
+    TypeParams   []*KeyValuePair  <span class="cm">// type params: e.g. dim / max_length</span>
+    AutoID       <span class="kw">bool</span>          <span class="cm">// is the primary key auto-incrementing</span>
+}</pre>
+</div>
+
+<h2>Primary key, auto_id, and type_params</h2>
+<p>Every collection must have <strong>one primary key field</strong>, of type only <span class="inline">Int64</span> or <span class="inline">VarChar</span>. The
+primary key is <strong>unique across the collection</strong>, used to pinpoint, delete, and deduplicate an entity — exactly like a relational
+PK. Many Milvus internals (delete markers, dedup, sharding by PK) depend on the primary key, so it isn't optional decoration but
+the <strong>pivot</strong> of the whole data model: without a unique PK, "delete that one" / "update that one" make no sense.</p>
+
+<p>The primary key can <strong>auto-increment (auto_id)</strong>: with it on, you <strong>don't</strong> supply a PK value at insert; Milvus assigns a
+globally unique Int64. Handy for "I only care about the vector and content, not what the id is"; conversely, if your data carries a
+business id (a product code, a document UUID), turn auto_id off and supply your own PK, so you can delete/update a specific row by
+the externally-known id. Each mode has its place: <strong>auto_id is carefree, your-own-id is controllable</strong> — decide by whether you
+need to "look up by external id".</p>
+
+<p><strong>type_params</strong> are supplementary constraints on a field's type; the two most common: a vector field must give
+<span class="inline">dim</span> (dimension), a VarChar field must give <span class="inline">max_length</span>. They are metadata fixed at collection
+creation and bound to the field — e.g. "this is a 768-d FloatVector column". Why mandatory? Because Milvus uses them to
+<strong>pre-plan the memory layout of storage and index</strong>: knowing how many bytes each vector takes and how long each string can be
+lets it store columnarly and compute in batches efficiently. This also explains why <strong>dimension can't change once set</strong> — it has
+seeped into every corner of the underlying storage. In other words, <span class="inline">dim</span> and <span class="inline">max_length</span> aren't
+"soft constraints" but <strong>hard prerequisites</strong> Milvus uses to allocate memory, organize columnar storage, and build indexes; get
+them wrong and it won't "make do", it simply can't build the correct storage structure from the start.</p>
+
+<h2>Dynamic field: a release valve for the schema</h2>
+<p>A traditional relational table is <strong>strict-schema</strong>: columns not declared in the header simply can't be written. But real
+workloads often have <strong>temporary, irregular</strong> extra attributes that can't all be listed in advance — items from different sources
+carry different tag fields; today you add a "promo flag", tomorrow a "place of origin". If every new attribute required altering the
+schema and rebuilding the collection, iteration would be too heavy. Milvus's <strong>dynamic field</strong> is built for this: with
+<span class="inline">enable_dynamic_field</span> on, at insert you can <strong>carry key-value pairs not declared in the schema</strong>, which get
+collected into a hidden JSON field named <span class="inline">$meta</span> and can still be used in filter expressions later. It's like adding
+a "stuff-anything" pocket alongside the rigor of a strict schema.</p>
+
+<div class="cols">
+  <div class="col"><h4>Fixed fields (declared)</h4><p>Fields explicitly defined in the schema: strict type, indexable, efficient filtering. E.g.
+  <span class="mono">id / vector / price</span>.</p></div>
+  <div class="col"><h4>Dynamic fields (undeclared)</h4><p>Key-values carried ad hoc once <span class="mono">enable_dynamic_field</span> is on, landing in the
+  <span class="mono">$meta</span> JSON. Flexible, but less efficient than fixed fields. Good for <strong>temporary, sparse</strong> attributes.</p></div>
+</div>
+
+<p>The trade-off in one line: <strong>fixed fields buy "rigor and efficiency", dynamic fields buy "flexibility and no schema change"</strong>.
+Common practice: put high-frequency, filter-worthy attributes in fixed fields; toss scattered, temporary ones into dynamic fields.
+A caveat: convenient as it is, a dynamic field's value lives in JSON, so <strong>filtering parses JSON</strong> — less efficient than the
+structured storage of a fixed field. So it suits "occasionally used" attributes, not "filtered on every query" core fields — those
+are still better declared as fixed fields. The real value of dynamic fields is letting the schema <strong>not have to foresee every field
+on day one</strong>, leaving a breathing valve for fast-iterating workloads.</p>
+
+<h2>Partition and partition key: slicing a big collection small</h2>
+<p>When a collection is huge, querying it as one lump is slow and wasteful. A <strong>partition</strong> is a <strong>logical split</strong> inside a
+collection: you can route data into different partitions by some rule, and a query <strong>searches only the relevant partitions</strong>,
+pruning lots of irrelevant data. The classic use is partitioning by "tenant, region, time" — query one tenant and only scan its
+partition. Note a partition is a <strong>logical</strong> concept, on a different layer from the segment (physical storage unit) covered next:
+within one partition, data is still cut into many segments for storage and indexing. Think of a partition as a "logical drawer" and
+a segment as "the boxes that actually hold things inside the drawer" — the next lesson is all about segments.</p>
+
+<p>Managing partitions manually is tedious, so there's the <strong>partition key</strong>: designate a <strong>scalar field</strong> (e.g.
+<span class="inline">user_id</span>) as the partition key and Milvus <strong>automatically</strong> hashes entities into partitions by that field's value.
+At query time, just include that field in the filter and Milvus <strong>automatically searches only the matching partition</strong> — no manual
+partition creation or selection. This is superb for multi-tenancy: one collection holds many users' data, naturally isolated by the
+partition key without interfering with each other.</p>
+
+<p>Partitioning and last lesson's "index selection" are really the same idea applied twice: <strong>both find ways to "look at less
+data"</strong>. The index prunes at the vector level (only nearby candidates), the partition prunes at the data level (only the relevant
+chunk). Stacked, the effect is multiplicative: the partition key shrinks "hundreds of millions in the whole collection" down to "a
+few million for one tenant", then the ANN index quickly finds nearest neighbors among those few million. Grasp this and when
+designing a collection you'll consciously ask: <strong>"which filter will almost every query carry?"</strong> — that field is often the best
+partition-key candidate. A small reminder: the partition key, once specified at collection creation, is fixed — so this is another
+decision to settle at schema-design time, in the same "set once for life" category as dimension and primary key.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Define the schema</h4><p>Declare fields: primary key, vector field (with dim), some scalar fields; optionally enable dynamic field and set a partition key.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Create the collection</h4><p>The schema is fixed and the collection is born; dimension, primary key, metric and other metadata become fixed.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Insert entities</h4><p>Each row carries field values (PK can be omitted if auto); the partition key decides which partition it lands in.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Build index + search</h4><p>Build an ANN index on the vector field, then retrieve by similarity + scalar filtering.</p></div></div>
+</div>
+
+<h2>Data types: scalar and the six vectors</h2>
+<p>Each field's type in the schema comes from Milvus's <strong>DataType</strong> enum. <strong>Scalar fields</strong> carry structured info and power
+filtering; <strong>vector fields</strong> carry embeddings and power similarity search. Here is an <strong>extremely important correction</strong>: older
+developer docs listed only BinaryVector / FloatVector, and that list is <strong>long outdated</strong>. Going by current code
+(<span class="mono">client/entity/field.go</span>'s FieldType), Milvus today supports the following — one big scalar group, and a full
+<strong>six</strong> vector types:</p>
+
+<table class="t">
+  <tr><th>Category</th><th>Data type</th><th>Note</th></tr>
+  <tr><td rowspan="4"><strong>Scalar</strong></td><td class="mono">Bool</td><td>boolean</td></tr>
+  <tr><td class="mono">Int8 / Int16 / Int32 / Int64</td><td>integers of different widths; Int64 often the PK</td></tr>
+  <tr><td class="mono">Float / Double</td><td>single / double precision float</td></tr>
+  <tr><td class="mono">VarChar / JSON / Array</td><td>variable string (needs max_length) / JSON / array</td></tr>
+  <tr><td rowspan="6"><strong>Vector</strong></td><td class="mono">FloatVector</td><td>most common: 32-bit float dense vector</td></tr>
+  <tr><td class="mono">BinaryVector</td><td>binary (each bit 0/1), with HAMMING/JACCARD</td></tr>
+  <tr><td class="mono">Float16Vector</td><td>half-precision (16-bit) dense vector, memory-saving</td></tr>
+  <tr><td class="mono">BFloat16Vector</td><td>bfloat16 dense vector, memory-saving, large dynamic range</td></tr>
+  <tr><td class="mono">Int8Vector</td><td>8-bit integer dense vector, further memory-saving</td></tr>
+  <tr><td class="mono">SparseFloatVector</td><td>sparse float vector (high-dim, mostly zero), with IP</td></tr>
+</table>
+
+<p>A few scalar types deserve a sentence: <span class="inline">VarChar</span> is a variable string requiring <span class="inline">max_length</span>, often
+storing raw text, titles, URLs; <span class="inline">JSON</span> stores a whole nested structure, good for semi-structured metadata;
+<span class="inline">Array</span> is an array of same-type elements (e.g. multiple tags). These scalar fields aren't just "stored along"; they
+directly join <strong>filter expressions</strong> — exactly the basis for Milvus fusing "vector search + scalar filtering" into one query. With
+them you can write hybrid queries like "most similar by vector, and price &lt; 500, and tags contain 'new'".</p>
+
+<p>These six vector types aren't listed out of thin air; they are <strong>constants defined one by one</strong> in current code. Below is their
+source — note BinaryVector starts at 100, so vector types and scalar types are <strong>partitioned</strong> by number:</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">client/entity/field.go</span><span class="ln">FieldType constants (current DataType set)</span></div>
+  <pre><span class="kw">const</span> (
+    FieldTypeBool   FieldType = <span class="nb">1</span>
+    FieldTypeInt64  FieldType = <span class="nb">5</span>    <span class="cm">// often the PK</span>
+    FieldTypeVarChar FieldType = <span class="nb">21</span>
+    FieldTypeJSON   FieldType = <span class="nb">23</span>
+    FieldTypeArray  FieldType = <span class="nb">22</span>
+
+    FieldTypeBinaryVector    FieldType = <span class="nb">100</span>  <span class="cm">// vector types start at 100</span>
+    FieldTypeFloatVector     FieldType = <span class="nb">101</span>
+    FieldTypeFloat16Vector   FieldType = <span class="nb">102</span>
+    FieldTypeBFloat16Vector  FieldType = <span class="nb">103</span>
+    FieldTypeSparseVector    FieldType = <span class="nb">104</span>  <span class="cm">// SparseFloatVector</span>
+    FieldTypeInt8Vector      FieldType = <span class="nb">105</span>
+)</pre>
+</div>
+
+<p>All these vector types essentially make a <strong>precision-vs-memory</strong> trade in the triangle: FloatVector is most precise and most
+space-hungry; Float16 / BFloat16 / Int8 use fewer bits to <strong>trade for memory</strong> (halving per-vector footprint or more);
+SparseFloatVector serves "high-dim but mostly zero" cases (keyword weights), storing only non-zeros and saving a lot.
+There's also <span class="inline">BinaryVector</span>, using just 1 bit per dimension, which pairs with last lesson's HAMMING/JACCARD distances and suits binary features like fingerprints and dedup.
+<strong>Choosing a vector type, like choosing an index last lesson, is an engineering trade-off.</strong></p>
+
+<p>To close, a concrete example tying it together: suppose a "product image search" collection; the schema is roughly — primary key
+<span class="mono">item_id</span> (Int64, auto_id on), vector field <span class="mono">image_vec</span> (FloatVector, dim=512), scalar fields
+<span class="mono">price</span> (Float) and <span class="mono">category</span> (VarChar, as partition key), plus <span class="inline">enable_dynamic_field</span> for
+ad-hoc tags. Once built, a query "find most like this shoe image, price under 500, and in the shoes category" is
+<strong>vector search (image_vec) + scalar filter (price &lt; 500) + partition pruning (category=shoes)</strong> done in one shot. See — every
+concept here (primary key, vector field, scalar field, partition key, dynamic field) takes its place in one real query. Clear up
+the data model and, when reading the write and query paths later, you'll know the shape of the container your data lives in.</p>
+
+<div class="card macro">
+  <div class="tag">🌍 The big picture</div>
+  In one line: <strong>a collection (table) is defined by a schema, the schema lists fields (columns), each item is an entity (row)</strong>.
+  The primary key pinpoints uniquely and can auto-increment; the dynamic field is a release valve for the schema; partitions /
+  partition keys slice a big collection small and speed up queries — a boon for multi-tenancy. Field types come from DataType — one
+  big scalar group, and <strong>six</strong> vectors (always go by current code; don't use the outdated two-vector list). Picture the data model
+  as "a table with a vector column" and you've caught its essence.
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Three-layer structure</strong>: collection ≈ table, schema = table definition, field = column, entity = row; above collection there's also a database.</li>
+    <li><strong>Primary key</strong>: one per collection, Int64 or VarChar, globally unique; can enable <span class="mono">auto_id</span>. <span class="mono">type_params</span> give dim / max_length.</li>
+    <li><strong>Dynamic field</strong>: with <span class="mono">enable_dynamic_field</span> on, undeclared key-values go into the <span class="mono">$meta</span> JSON — flexible but less efficient than fixed fields.</li>
+    <li><strong>Partition / partition key</strong>: a partition is a logical split inside a collection; set a scalar field as the partition key and Milvus auto-hashes and prunes — a multi-tenancy gem.</li>
+    <li><strong>Data types</strong>: scalar (Bool, Int8~64, Float, Double, VarChar, JSON, Array) + <strong>six vectors</strong> (Float / Binary / Float16 / BFloat16 / Int8 / SparseFloat). See <span class="mono">client/entity/field.go</span>.</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. What problem does Milvus's dynamic field solve?</div>
+  <ol class="opts">
+    <li>It lets you write fields not explicitly declared in the schema (stored in $meta), giving a fixed schema a flexible escape hatch</li>
+    <li>It removes all data-type checking</li>
+    <li>It allows duplicate primary keys</li>
+    <li>It turns every field into a vector</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. With enable_dynamic_field on, undeclared fields go into a hidden $meta (JSON), keeping the fixed schema's structure and efficiency while accommodating temporary/sparse extra attributes. The trade-off is it's less efficient than fixed fields</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Regarding the partition key, which statement is most accurate?</div>
+  <ol class="opts">
+    <li>The partition key and primary key must be the same field</li>
+    <li>The partition key must be a vector field</li>
+    <li>Designating a scalar field as partition key makes Milvus auto-route data into partitions by its value; queries with that condition can scan only relevant partitions (partition pruning)</li>
+    <li>The partition key forces every query to scan all partitions</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. The partition key auto-partitions by a field's value: you don't manage partitions manually, Milvus spreads data by the key's value; a query filtering on that field enables partition pruning, scanning only some partitions - great for multi-tenancy (e.g. isolating by user_id)</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Which group consists entirely of vector data types currently supported by Milvus?</div>
+  <ol class="opts">
+    <li>Only FloatVector and BinaryVector</li>
+    <li>Int64, Float, Double, Bool</li>
+    <li>FloatVector, BinaryVector, Float16Vector, BFloat16Vector, Int8Vector, SparseFloatVector</li>
+    <li>VarChar, JSON, Array, Bool</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. Per current code (client/entity/field.go) there are six vector types: FloatVector, BinaryVector, Float16Vector, BFloat16Vector, Int8Vector, SparseFloatVector. The old docs' 'only two vector types' is outdated - the code wins</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>Design a schema for an e-commerce 'product' collection: which field is the primary key, and do you enable auto_id? Which field is the partition key? Do you enable the dynamic field? Which scalar fields participate in filtering? Write your field list and reasoning.</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="05-ann-algorithms.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">ANN 算法直觉</span><span class="lang-en">ANN algorithms, intuitively</span></div></a><a class="next" href="07-segments.html"><div class="dir"><span class="lang-zh">下一课 →</span><span class="lang-en">Next →</span></div><div class="ttl"><span class="lang-zh">Segment 与日志即数据</span><span class="lang-en">Segments &amp; log-as-data</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>
