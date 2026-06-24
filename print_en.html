@@ -624,6 +624,11 @@ lesson (writes, queries, indexing, consistency…), you can point at this map an
   just "<strong>errands go to the hall, decisions to the government, work to the crews</strong>" and you'll never get lost.
 </div>
 
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  Milvus is a distributed vector store built on <strong>three-language division of labor and storage-compute separation</strong>: logically there are Root/Data/Query roles, physically the coordinators fuse into one <strong>MixCoord</strong>; remember "<strong>coordinators schedule, nodes execute</strong>" and you hold the system's global map.
+</div>
+
 <h2>Three languages, three jobs</h2>
 <p>The source looks sprawling, but there's one effortless way in: <strong>Milvus uses three languages, each doing what it's best at</strong>.
 Grasp that split and half the map is already in your head:</p>
@@ -645,6 +650,23 @@ lessons; just get acquainted for now.</p>
 <strong>sinks the "in-segment similarity computation" down to C++ segcore</strong> to crunch blazingly fast; and if your query carries a <strong>full-text</strong> condition,
 that small slice goes to <strong>Rust's tantivy</strong>. The three languages run a request like a relay — <strong>Go "organizes the flow", C++ "computes fast", Rust "runs the
 full-text leg"</strong>. Grasp this and you see why Milvus is "multilingual": not for show, but so each piece of code runs in the language it's best at.</p>
+
+<h2>Zooming in: how a search hands off between Go and C++</h2>
+<p>We said the three languages run a relay, but <strong>which line of code actually passes the baton</strong>? Take search and zoom in one more notch: when a QueryNode reaches the step "<strong>actually compute distances inside a segment</strong>", it calls <span class="mono">LocalSegment.Search</span> in <span class="mono">internal/querynodev2/segments/segment.go</span> on the Go side. That method <strong>doesn't compute distances itself</strong> — it hands the request <strong>across cgo (Go's bridge to C) into C++</strong>. The timer named <span class="mono">cgoSearch</span> in the code measures "<strong>how long this trip spent inside C++</strong>", and its very existence marks where the language boundary sits.</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">QueryNode (Go)</div><div class="nd">LocalSegment.Search · pick segments</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">cgo boundary</div><div class="nd">cgoSearch timer</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">segcore (C++)</div><div class="nd">AsyncSearch · per-segment topK</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">back to Go</div><div class="nd">QueryNode reduces per-segment topK</div></div>
+</div>
+
+<p>Cross the cgo door and you're on C++ turf: <span class="mono">AsyncSearch</span> in <span class="mono">internal/core/src/segcore/segment_c.cpp</span> catches the request, drops it onto a dedicated search thread pool (<span class="mono">getSearchCPUExecutor</span>) to run <strong>asynchronously</strong>, and opens a trace span named <span class="mono">SegCoreSearch</span>. The real neighbor computation happens here; once done, <strong>each segment's topK travels back to Go the same way</strong> and the QueryNode reduces it. This round trip makes one thing clear: <strong>the Go/C++ boundary is not an abstract slogan but a concrete cgo call</strong> — Go decides "which segments to search and how to collect/reduce results", C++ "searches one piece of data blazingly fast", and cgo is the sturdy baton between them. Later query-path lessons follow that baton deep into segcore; for now just remember "<strong>the baton is handed off at <span class="mono">LocalSegment.Search</span></strong>".</p>
+
+<p>A worthwhile engineering note: crossing the cgo door <strong>has a cost of its own</strong> — it switches back and forth between Go's goroutine scheduler and C++'s threads. So Milvus doesn't "call once per row"; it <strong>crosses in batches at the granularity of "one segment, one search"</strong>, piling as much computation as possible onto the C++ side to do in one go. That also explains why segcore runs the search <strong>asynchronously on its own thread pool</strong>: let C++ saturate the CPU on dense computation while Go's goroutines don't idle and can go serve other requests. <strong>Where the boundary is drawn and how it's crossed</strong> often decides whether a "multilingual" system runs smoothly — the deep reason Milvus would rather sink "the whole heavy-compute slice" into C++ in chunks.</p>
 
 <h2>The runtime components: first, fix a common misconception</h2>
 <p>Lots of older material draws "<strong>three separate coordinators</strong>" — RootCoord, DataCoord, QueryCoord each a process. <strong>That is no longer
@@ -850,6 +872,11 @@ happens at each stop</strong>. This is a "<strong>30,000-foot flight map</strong
   see a <strong>self-consistent</strong> state rather than a half-finished one changing as you read. <strong>The timestamp is the shared key to both.</strong> In this lesson, holding that key, we'll walk both the read and write chains end to end.
 </div>
 
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  A request has just two main lines: a <strong>write</strong> follows the log (Proxy→WAL→growing segment→flush), a <strong>read</strong> relies on scatter-gather (Proxy→QueryNode shards→segcore→reduce); the key threading both lines is the <strong>timestamp</strong>.
+</div>
+
 <h2>The life of a write: the seven stops of an insert</h2>
 <p>Writes first. An <span class="inline">insert</span> leaves the SDK and travels this chain. Note <strong>two key actions</strong> in particular: <strong>stamping a timestamp</strong>
 at the Proxy, and "<strong>log first</strong>" — these two are the bedrock for later understanding consistency and crash recovery:</p>
@@ -877,6 +904,15 @@ concurrent</strong> — many writers mutating the same segment require heavy loc
 writes</strong>, blazing fast; the log is <strong>naturally ordered</strong>, so you know exactly where replay stopped and just resume after a crash; concurrent writers merely <strong>queue at the
 log's tail</strong>, needing no mutual locks. Segments and indexes are then materialized "<strong>after the fact</strong>" by consumers reading the log — the key move that <strong>decouples</strong>
 the tension between "<strong>writing fast</strong>" and "<strong>querying fast</strong>".</p>
+
+<h2>Crash &amp; replay: the practical payoff of "log as data"</h2>
+<p>"Log as data" sounds like a slogan, but its most concrete payoff only cashes out at <strong>crash recovery</strong>. Picture the worker node that consumes the log and builds growing segments <strong>suddenly dying</strong>: the not-yet-flushed growing segments in memory vanish in an instant. In a system that "writes segments directly", that often means <strong>data loss</strong>; but in Milvus, what's lost is merely the "<strong>intermediate result materialized from the log</strong>", while the <strong>single source of truth</strong> — the WAL — sits safely in the message queue / object storage, <strong>not a byte missing</strong>.</p>
+
+<p>So recovery becomes mechanical: after the node restarts, it <strong>need not replay the whole log from the start</strong>; it resumes from the <strong>checkpoint (its consume position / seek position)</strong> it last recorded, <strong>replays</strong> the slice of log "<strong>after that checkpoint</strong>", and the growing segment is <strong>rebuilt exactly as before</strong>, as if nothing happened. A checkpoint is like a bookmark: you don't reread from page one, you flip to the bookmark and continue. Precisely because the log is <strong>naturally ordered and replayable</strong>, "where did I get to" is always a definite position, and after a crash you just keep reading — that is the biggest assurance bought by designing a "write" as a "<strong>timestamped, append-only log</strong>".</p>
+
+<p>One layer up, this also explains why Milvus's worker nodes can be "<strong>stateless, disposable</strong>": since any node's in-memory state can be rebuilt by replaying the log, a dead node is simply replaced and a busy load simply gets more nodes — <strong>data safety never depends on one machine staying alive</strong>. "Log as data" and last lesson's "storage-compute separation" are, in essence, <strong>two sides of one design philosophy</strong>: entrust the single source of truth to a replayable log and object storage, and compute nodes gain the freedom to scale and rebuild at will.</p>
+
+<p>One often-overlooked detail worth a line: <strong>a checkpoint doesn't advance out of thin air — it follows the flush</strong>. Only once a growing segment is flushed into a binlog and safely landed in object storage is "this slice of log has been safely materialized" confirmed, and only then may the consume position <strong>safely move forward</strong> — so the log to replay after a crash keeps shrinking and recovery keeps getting faster. In other words, <strong>flush exists both to persist historical data and to "lighten" the log</strong>. This loop — "<strong>write log → consume → flush → advance checkpoint</strong>" — is the flywheel quietly turning behind the write path, which we'll dismantle turn by turn from Lesson 15 on. Worth noting: a checkpoint needn't be recorded "for every record" — recording too often is itself overhead, recording too sparsely lengthens the post-crash replay window, so <strong>how often to advance it</strong> is yet another engineering trade-off between throughput and recovery speed. You'll find this "calibrating between fast and steady" tension is almost a recurring motif across Milvus's whole design.</p>
 
 <h2>The life of a query: the six stops of a search</h2>
 <p>Now reads. A <span class="inline">search</span> differs from a write — it must <strong>ask many shards at once</strong>, then <strong>reduce layer by layer</strong> into the final topK.
@@ -916,14 +952,15 @@ delegator <strong>includes both</strong> in the search scope, Milvus achieves "<
 That's why "the growing segment of writes" and "the segment selection of queries" are two sides of one coin.</p>
 
 <div class="codefile">
-  <div class="cf-head"><span class="dot"></span><span class="path">internal/proxy · derive guarantee ts from the consistency level</span><span class="ln">parseGuaranteeTsFromConsistency</span></div>
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/proxy/util.go · derive guarantee ts from the consistency level</span><span class="ln">parseGuaranteeTsFromConsistency · illustrative, simplified</span></div>
   <pre><span class="cm">// consistency level → guarantee timestamp (decides how fresh this search sees)</span>
 <span class="kw">switch</span> consistencyLevel {
 <span class="kw">case</span> Strong:      guaranteeTs = tMax                 <span class="cm">// strong: see the very latest</span>
 <span class="kw">case</span> Bounded:     guaranteeTs = tMax - gracefulTime  <span class="cm">// bounded: tolerate a little lag for lower latency</span>
 <span class="kw">case</span> Eventually:  guaranteeTs = <span class="nb">1</span>                   <span class="cm">// eventual: fastest, may read an older snapshot</span>
 }
-<span class="cm">// the delegator waits until the shard's data catches up to guaranteeTs, giving a consistent snapshot</span></pre>
+<span class="cm">// the delegator waits until the shard's data catches up to guaranteeTs, giving a consistent snapshot</span>
+<span class="cm">// illustrative, simplified: real code uses commonpb.ConsistencyLevel_Strong / tsoutil.AddPhysicalDurationOnTs</span></pre>
 </div>
 
 <h2>Timestamps: the key shared by reads and writes</h2>

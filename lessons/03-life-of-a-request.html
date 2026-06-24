@@ -345,6 +345,11 @@ html[data-lang="zh"] .lang-en { display: none !important; }
   保证你看到的是一份<strong>前后一致</strong>的状态，而不是边查边变的半成品。<strong>时间戳，就是这两件事共同的钥匙。</strong>这一课，我们就握着这把钥匙，把读写两条链路彻底走通一遍。
 </div>
 
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  一次请求的主线只有两条：<strong>写</strong>沿着日志走（Proxy→WAL→growing 段→flush），<strong>读</strong>靠扇出归约（Proxy→QueryNode 分片→segcore→reduce）；贯穿这两条线的钥匙，是<strong>时间戳</strong>。
+</div>
+
 <h2>写入的一生：insert 走过的七站</h2>
 <p>先看写。一条 <span class="inline">insert</span> 从 SDK 出发，要走过下面这条链路。请特别留意<strong>两个关键动作</strong>：在 Proxy <strong>盖时间戳</strong>、
 以及"<strong>先写日志</strong>"——这两点是后面理解一致性与崩溃恢复的地基：</p>
@@ -369,6 +374,15 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 三是<strong>难并发</strong>——多个写入者同时改同一个段，要费很大力气做锁。而"<strong>先写一条只追加（append-only）的日志</strong>"把这三件事一次解决：
 追加是<strong>顺序写</strong>，飞快；日志<strong>天然有序</strong>，重放到哪一条一清二楚，崩溃后接着重放即可；多个写入只是<strong>往同一条日志尾部排队</strong>，无需互相加锁。
 段和索引则在"<strong>事后</strong>"由消费者从日志慢慢物化出来——这就是把"<strong>写得快</strong>"和"<strong>查得快</strong>"这对矛盾<strong>解耦</strong>的关键招式。</p>
+
+<h2>崩溃与重放：日志即数据的实战红利</h2>
+<p>前面说"日志即数据"听起来像口号，它最实在的红利要等到<strong>崩溃恢复</strong>时才兑现。设想消费日志、攒增长段的那个工作节点<strong>突然宕机</strong>：内存里还没刷盘的增长段一瞬间全没了。换作"直接写段"的系统，这往往意味着<strong>数据丢失</strong>；但在 Milvus 里，丢掉的只是"<strong>从日志物化出来的中间结果</strong>"，而<strong>唯一真相</strong>——那条 WAL 日志——好端端地躺在消息队列／对象存储里，<strong>一个字节都没少</strong>。</p>
+
+<p>于是恢复就变成一件机械的事：节点重启后，<strong>不必从头重放整条日志</strong>，而是从它上次记下的<strong>检查点（checkpoint，即消费位点 / seek position）</strong>开始，把"<strong>检查点之后</strong>"的那段日志<strong>重新消费一遍（replay）</strong>，增长段就被<strong>原样重建</strong>出来，仿佛什么都没发生过。检查点的作用就像看书夹的书签：你不必每次从第一页读起，翻到书签那页接着读即可。正因为日志<strong>天然有序、可重放</strong>，"读到哪了"永远是一个明确的位置，崩溃后接着读就行——这就是把"写"设计成"<strong>带时间戳的、只追加的日志</strong>"换来的最大底气。</p>
+
+<p>再往上看一层，这也解释了为什么 Milvus 的工作节点能做到"<strong>无状态、用完即弃</strong>"：既然任何节点的内存状态都能靠重放日志重建，那么节点挂了就换一个、负载高了就多拉几个，<strong>数据安全完全不依赖某一台机器还活着</strong>。"日志即数据"与上一课的"存算分离"，本质上是<strong>同一个设计哲学的一体两面</strong>——把唯一真相托管给可重放的日志与对象存储，计算节点便获得了随意伸缩、随时重建的自由。</p>
+
+<p>还有一个常被忽略的细节值得点一句：<strong>检查点不是凭空前进的，而是跟着"刷盘"走</strong>。当增长段刷成 binlog、稳稳落进对象存储后，"这段日志已被安全物化"才算坐实，消费位点便可以<strong>安全地往前挪</strong>——这样崩溃后要重放的日志就越来越短，恢复也越来越快。换句话说，<strong>flush 既是为了让历史数据落盘，也是为了给日志"减负"</strong>。这条"<strong>写日志 → 消费 → 刷盘 → 推进检查点</strong>"的循环，正是写入链路在背后悄悄转动的飞轮，第 15 课起我们会逐圈拆解它。值得一提的是，检查点也不必"每条都记"——记得太频繁本身是种开销，记得太稀疏又会拉长崩溃后的重放窗口，<strong>多久推进一次</strong>是吞吐与恢复速度之间的又一处工程权衡。你会发现，这种"快与稳之间拿捏分寸"的取舍，几乎是贯穿整个 Milvus 设计的母题。</p>
 
 <h2>查询的一生：search 走过的六站</h2>
 <p>再看读。一条 <span class="inline">search</span> 的链路和写不同——它要<strong>同时问很多个分片</strong>，再把结果<strong>层层归并</strong>成最终的 topK。
@@ -405,14 +419,15 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 Milvus 才能做到"<strong>边写边查</strong>"——你上一秒 insert 的数据，下一秒就能在增长段里被搜到。这也是为什么"写入的增长段"和"查询的段选择"是同一枚硬币的两面。</p>
 
 <div class="codefile">
-  <div class="cf-head"><span class="dot"></span><span class="path">internal/proxy · 读请求按一致性级别推导保证时间戳</span><span class="ln">parseGuaranteeTsFromConsistency</span></div>
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/proxy/util.go · 读请求按一致性级别推导保证时间戳</span><span class="ln">parseGuaranteeTsFromConsistency · 示意，已简化</span></div>
   <pre><span class="cm">// 一致性级别 → guarantee timestamp（决定这次 search 能看到多新的数据）</span>
 <span class="kw">switch</span> consistencyLevel {
 <span class="kw">case</span> Strong:      guaranteeTs = tMax                 <span class="cm">// 强一致：看见此刻最新</span>
 <span class="kw">case</span> Bounded:     guaranteeTs = tMax - gracefulTime  <span class="cm">// 有界：容忍少量延迟，换更低时延</span>
 <span class="kw">case</span> Eventually:  guaranteeTs = <span class="nb">1</span>                   <span class="cm">// 最终：最快，可能读到较旧快照</span>
 }
-<span class="cm">// delegator 会"等到本分片数据追上 guaranteeTs"再开始搜，从而给出一致快照</span></pre>
+<span class="cm">// delegator 会"等到本分片数据追上 guaranteeTs"再开始搜，从而给出一致快照</span>
+<span class="cm">// 示意，已简化：真实代码用 commonpb.ConsistencyLevel_Strong / tsoutil.AddPhysicalDurationOnTs</span></pre>
 </div>
 
 <h2>时间戳：读写共用的那把钥匙</h2>
@@ -542,6 +557,11 @@ happens at each stop</strong>. This is a "<strong>30,000-foot flight map</strong
   see a <strong>self-consistent</strong> state rather than a half-finished one changing as you read. <strong>The timestamp is the shared key to both.</strong> In this lesson, holding that key, we'll walk both the read and write chains end to end.
 </div>
 
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  A request has just two main lines: a <strong>write</strong> follows the log (Proxy→WAL→growing segment→flush), a <strong>read</strong> relies on scatter-gather (Proxy→QueryNode shards→segcore→reduce); the key threading both lines is the <strong>timestamp</strong>.
+</div>
+
 <h2>The life of a write: the seven stops of an insert</h2>
 <p>Writes first. An <span class="inline">insert</span> leaves the SDK and travels this chain. Note <strong>two key actions</strong> in particular: <strong>stamping a timestamp</strong>
 at the Proxy, and "<strong>log first</strong>" — these two are the bedrock for later understanding consistency and crash recovery:</p>
@@ -569,6 +589,15 @@ concurrent</strong> — many writers mutating the same segment require heavy loc
 writes</strong>, blazing fast; the log is <strong>naturally ordered</strong>, so you know exactly where replay stopped and just resume after a crash; concurrent writers merely <strong>queue at the
 log's tail</strong>, needing no mutual locks. Segments and indexes are then materialized "<strong>after the fact</strong>" by consumers reading the log — the key move that <strong>decouples</strong>
 the tension between "<strong>writing fast</strong>" and "<strong>querying fast</strong>".</p>
+
+<h2>Crash &amp; replay: the practical payoff of "log as data"</h2>
+<p>"Log as data" sounds like a slogan, but its most concrete payoff only cashes out at <strong>crash recovery</strong>. Picture the worker node that consumes the log and builds growing segments <strong>suddenly dying</strong>: the not-yet-flushed growing segments in memory vanish in an instant. In a system that "writes segments directly", that often means <strong>data loss</strong>; but in Milvus, what's lost is merely the "<strong>intermediate result materialized from the log</strong>", while the <strong>single source of truth</strong> — the WAL — sits safely in the message queue / object storage, <strong>not a byte missing</strong>.</p>
+
+<p>So recovery becomes mechanical: after the node restarts, it <strong>need not replay the whole log from the start</strong>; it resumes from the <strong>checkpoint (its consume position / seek position)</strong> it last recorded, <strong>replays</strong> the slice of log "<strong>after that checkpoint</strong>", and the growing segment is <strong>rebuilt exactly as before</strong>, as if nothing happened. A checkpoint is like a bookmark: you don't reread from page one, you flip to the bookmark and continue. Precisely because the log is <strong>naturally ordered and replayable</strong>, "where did I get to" is always a definite position, and after a crash you just keep reading — that is the biggest assurance bought by designing a "write" as a "<strong>timestamped, append-only log</strong>".</p>
+
+<p>One layer up, this also explains why Milvus's worker nodes can be "<strong>stateless, disposable</strong>": since any node's in-memory state can be rebuilt by replaying the log, a dead node is simply replaced and a busy load simply gets more nodes — <strong>data safety never depends on one machine staying alive</strong>. "Log as data" and last lesson's "storage-compute separation" are, in essence, <strong>two sides of one design philosophy</strong>: entrust the single source of truth to a replayable log and object storage, and compute nodes gain the freedom to scale and rebuild at will.</p>
+
+<p>One often-overlooked detail worth a line: <strong>a checkpoint doesn't advance out of thin air — it follows the flush</strong>. Only once a growing segment is flushed into a binlog and safely landed in object storage is "this slice of log has been safely materialized" confirmed, and only then may the consume position <strong>safely move forward</strong> — so the log to replay after a crash keeps shrinking and recovery keeps getting faster. In other words, <strong>flush exists both to persist historical data and to "lighten" the log</strong>. This loop — "<strong>write log → consume → flush → advance checkpoint</strong>" — is the flywheel quietly turning behind the write path, which we'll dismantle turn by turn from Lesson 15 on. Worth noting: a checkpoint needn't be recorded "for every record" — recording too often is itself overhead, recording too sparsely lengthens the post-crash replay window, so <strong>how often to advance it</strong> is yet another engineering trade-off between throughput and recovery speed. You'll find this "calibrating between fast and steady" tension is almost a recurring motif across Milvus's whole design.</p>
 
 <h2>The life of a query: the six stops of a search</h2>
 <p>Now reads. A <span class="inline">search</span> differs from a write — it must <strong>ask many shards at once</strong>, then <strong>reduce layer by layer</strong> into the final topK.
@@ -608,14 +637,15 @@ delegator <strong>includes both</strong> in the search scope, Milvus achieves "<
 That's why "the growing segment of writes" and "the segment selection of queries" are two sides of one coin.</p>
 
 <div class="codefile">
-  <div class="cf-head"><span class="dot"></span><span class="path">internal/proxy · derive guarantee ts from the consistency level</span><span class="ln">parseGuaranteeTsFromConsistency</span></div>
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/proxy/util.go · derive guarantee ts from the consistency level</span><span class="ln">parseGuaranteeTsFromConsistency · illustrative, simplified</span></div>
   <pre><span class="cm">// consistency level → guarantee timestamp (decides how fresh this search sees)</span>
 <span class="kw">switch</span> consistencyLevel {
 <span class="kw">case</span> Strong:      guaranteeTs = tMax                 <span class="cm">// strong: see the very latest</span>
 <span class="kw">case</span> Bounded:     guaranteeTs = tMax - gracefulTime  <span class="cm">// bounded: tolerate a little lag for lower latency</span>
 <span class="kw">case</span> Eventually:  guaranteeTs = <span class="nb">1</span>                   <span class="cm">// eventual: fastest, may read an older snapshot</span>
 }
-<span class="cm">// the delegator waits until the shard's data catches up to guaranteeTs, giving a consistent snapshot</span></pre>
+<span class="cm">// the delegator waits until the shard's data catches up to guaranteeTs, giving a consistent snapshot</span>
+<span class="cm">// illustrative, simplified: real code uses commonpb.ConsistencyLevel_Strong / tsoutil.AddPhysicalDurationOnTs</span></pre>
 </div>
 
 <h2>Timestamps: the key shared by reads and writes</h2>
