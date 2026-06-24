@@ -75,6 +75,12 @@ PAGES = [
      "第三部分 · 分布式架构", "Part 3 · Distributed architecture"),
     ("14-metadata-and-coordination.html", "元数据与协调", "Metadata & coordination",
      "第三部分 · 分布式架构", "Part 3 · Distributed architecture"),
+    ("15-insert-via-proxy.html", "经 Proxy 的插入", "Insert via Proxy",
+     "第四部分 · 写入链路", "Part 4 · The write path"),
+    ("16-streaming-and-wal.html", "流式系统与 WAL", "Streaming &amp; WAL",
+     "第四部分 · 写入链路", "Part 4 · The write path"),
+    ("17-datanode-and-flush.html", "DataNode 与 flush", "DataNode &amp; flush",
+     "第四部分 · 写入链路", "Part 4 · The write path"),
 ]
 
 
@@ -544,6 +550,12 @@ SUBTITLES = {
                            "load/release; segment & shard assignment; balance; replicas; distribution↔target"),
     "14-metadata-and-coordination.html": ("etcd · session 服务发现 · Catalog · kv 层 · watch 派活",
                                           "etcd; session discovery; Catalog; kv layer; watch-driven assignment"),
+    "15-insert-via-proxy.html": ("校验定主键 · 按主键哈希到 vchannel · 打包消息 · Append 进 WAL · 原子批",
+                                 "validate & settle PK; hash by PK to vchannels; pack messages; Append to WAL; atomic batch"),
+    "16-streaming-and-wal.html": ("WAL 单一事实来源 · 消息与 TimeTick · PChannel/VChannel/CChannel · StreamingClient · 日志即数据",
+                                  "WAL single source of truth; message & TimeTick; PChannel/VChannel/CChannel; StreamingClient; log as data"),
+    "17-datanode-and-flush.html": ("growing 段 · flush 触发 · binlog 落对象存储 · StreamingNode vs DataNode · growing/sealed 相变",
+                                   "growing segment; flush triggers; binlogs to object storage; StreamingNode vs DataNode; growing/sealed transition"),
 }
 
 

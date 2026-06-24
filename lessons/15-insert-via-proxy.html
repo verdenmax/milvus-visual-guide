@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>15 · 经 Proxy 的插入 / Insert via Proxy - Milvus 图解教程</title>
+<meta name="description" content="第四部分 · 写入链路｜经 Proxy 的插入 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="15 · 经 Proxy 的插入 / Insert via Proxy - Milvus 图解教程">
+<meta property="og:description" content="第四部分 · 写入链路｜经 Proxy 的插入 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="15 · 经 Proxy 的插入 / Insert via Proxy - Milvus 图解教程">
+<meta name="twitter:description" content="第四部分 · 写入链路｜经 Proxy 的插入 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.timeline .tl-row { display: flex; align-items: flex-start; gap: .6rem; padding: .12rem 0; }
+.timeline .tl-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: .45rem; }
+.timeline .tl-t { font-family: ui-monospace, monospace; font-weight: 700; color: var(--accent-ink); min-width: 2.4rem; font-size: .82rem; flex-shrink: 0; margin-top: .18rem; }
+.timeline .tl-c { font-size: .9rem; color: var(--muted); }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第四部分 · 写入链路</span><span class="lang-en">Part 4 · The write path</span></span>
+    <span class="pill">15 / 17</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:88%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第四部分 · 写入链路</span><span class="lang-en">Part 4 · The write path</span></div>
+    <h1><span class="lang-zh">经 Proxy 的插入</span><span class="lang-en">Insert via Proxy</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+前三部分我们把整座集群、每个协调者都看了一遍。从这一课起，我们沿着<strong>一行数据</strong>走一趟——它如何从客户端的 <span class="mono">insert</span> 调用，
+一路变成对象存储里可被检索的段。第一站仍是老朋友 <strong>Proxy</strong>：但这次我们不看它怎么把关、怎么调度，而是聚焦它在<strong>写入</strong>这条路上到底做了哪些"加工"。
+读完你会发现，Proxy 在写入路上的角色，更像一个<strong>把原料预处理成半成品</strong>的车间：进来的是杂乱的一批行，出去的是分好片、贴好时间戳、可直接投入 WAL 的有序消息。
+</p>
+
+<div class="card analogy">
+  <div class="tag">📮 生活类比</div>
+  把一次 insert 想象成往全国寄一批包裹。你把成箱的包裹（一批行）交到<strong>邮局柜台</strong>（Proxy）：柜员先<strong>核对面单</strong>（schema 校验：字段对不对、类型符不符）、
+  给没贴单号的包裹<strong>补一个单号</strong>（主键自动填充），再按收件地址的<strong>邮编把包裹分到不同的分拣道</strong>（按主键哈希到 vchannel）。
+  分好后盖上<strong>统一的收寄时间戳</strong>，整批一起投入传送带（写进 WAL）。柜台自己<strong>不送货、不入库</strong>，但这一批要么全部受理、要么整批退回——这就是写入的"原子批"。
+  这一整套"核单—贴号—分拣—盖戳—上传送带"，就是 Proxy 在写入路上的全部活计；它快、轻、可多开，真正的"送货入库"留给后面的角色。
+</div>
+
+<h2>第一关：schema 校验与主键</h2>
+<p>insert 请求进入 Proxy 后，被包装成 <span class="mono">insertTask</span>，先在 <span class="mono">PreExecute</span> 阶段做<strong>数据正确性</strong>检查。最核心的一步是
+<span class="inline">checkPrimaryFieldData</span>：它要确认这批数据里的<strong>主键列</strong>是否合法、是否与 schema 声明一致。如果集合开了<strong>主键自增（autoID）</strong>，
+客户端根本不会传主键，这一步就负责<strong>为每一行分配一个全局唯一的主键</strong>并回填；如果是用户自带主键，则校验其非空、不重复、类型匹配。校验完成后，这批行的主键 <span class="mono">IDs</span> 才算确定下来。</p>
+
+<p>为什么主键要在<strong>这么靠前</strong>的位置敲定？因为接下来"把哪一行发到哪个分片"完全依赖主键。主键不仅是身份证，更是<strong>路由依据</strong>——
+没有确定的主键，后面一步都没法走。所以你可以把这一步理解成"先给每个包裹贴好唯一单号，才能按单号分拣"。它同时也是 Proxy 对客户端数据做的<strong>最后一道语义校验</strong>：
+一旦放行进入写入流水线，后端就默认这批数据"格式正确、主键齐全"，不再重复校验，把宝贵的算力留给真正的落盘。</p>
+
+<p>这里还藏着一个值得展开的设计取舍：<strong>主键到底由谁来生成</strong>。开了 autoID 的集合，主键由 Milvus 在 Proxy 这一层统一分配——它向协调者要一段全局唯一的 ID 区间，
+再切给这一批行。好处是客户端完全不用操心唯一性，坏处是你无法用业务含义（比如订单号）当主键。反过来，自带主键把生成权交给业务方，灵活但要你自己保证不重复。
+无论哪种，<strong>校验都必须在写入之前完成</strong>：一旦数据进了 WAL，主键就成了这条记录"洗不掉的身份"，后续的更新、删除、去重全靠它对齐。
+正因如此，Milvus 宁可在最前端多花一点校验成本，也绝不把一个"主键可能非法"的批次放进日志——这是用<strong>前置校验换取后端简单</strong>的典型分层思路。</p>
+
+<p>还要留意一个常被忽略的细节：这一步顺带把<strong>客户端传来的字段</strong>与 schema 做了对齐。客户端可能少传了某个有默认值的字段、可能把列的顺序写反、
+也可能携带了 schema 里没有的动态字段（第 6 课）。<span class="mono">checkPrimaryFieldData</span> 及其周边校验会把这些情况一一规整：补默认值、按 schema 顺序对齐、
+合法的动态字段并入 <span class="mono">$meta</span>。等这一关走完，进入写入流水线的就是一批"<strong>干净、规整、主键齐全</strong>"的数据，后端再也不必为格式问题分心。</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/proxy/task_insert.go</span><span class="ln">PreExecute 里敲定主键</span></div>
+  <pre><span class="cm">// 校验/补全主键，返回这批行的 IDs；autoID 时在此分配</span>
+it.result.IDs, err = checkPrimaryFieldData(ctx, allFields, it.schema, it.insertMsg)
+<span class="kw">if</span> err != <span class="kw">nil</span> {
+    mlog.Warn(ctx, <span class="st">"check primary field data error"</span>, mlog.Err(err))
+    <span class="kw">return</span> err
+}</pre>
+</div>
+
+<h2>第二关：按主键哈希到 vchannel</h2>
+<p>校验过关后进入 <span class="mono">Execute</span>。Proxy 先向缓存要这个集合的<strong>虚拟通道列表</strong>（<span class="inline">chMgr.getVChannels(collID)</span>）——
+回忆第 7 课：一个集合被切成若干<strong>分片（shard）</strong>，每个分片对应一个 <strong>vchannel</strong>。现在的关键动作是 <span class="inline">assignChannelsByPK</span>：
+它<strong>逐行</strong>取出主键，做一次哈希，按哈希值把行号分到对应的 vchannel 上，得到一张"<span class="mono">channel → 行偏移列表</span>"的映射。</p>
+
+<p>这一步决定了<strong>数据的物理分布</strong>。同一个主键永远哈希到同一个 vchannel，于是同一行的所有版本（包括后续的更新、删除）都落在同一个分片里——
+这对后面"按主键删除""判断某行属于哪个段"至关重要（第 17、20 课会用到）。哈希分片还带来<strong>负载均衡</strong>：海量行被均匀摊到各个 vchannel，
+没有哪个分片会成为热点。理解这一点，你就明白了 Milvus "<strong>水平扩展靠分片、分片靠主键哈希</strong>"的底层逻辑。</p>
+
+<p>这里要分清两个容易混淆的概念：<strong>vchannel（虚拟通道）</strong>与<strong>pchannel（物理通道）</strong>。Proxy 哈希得到的是 vchannel——它是"集合的某个分片"这一<strong>逻辑</strong>概念，
+随集合创建而生、随集合删除而灭。而真正承载 WAL 的是 pchannel——它是一条<strong>物理</strong>的日志分区，数量固定、由集群预先开好（对应一个消息队列 topic）。
+多个集合的多个 vchannel 会<strong>复用</strong>同一条 pchannel。这层映射（vchannel → pchannel）下一课会细讲，这里你只需记住：Proxy 关心的是逻辑分片 vchannel，
+而 vchannel 名字里就编码了它属于哪条 pchannel，写入时据此找到对应的 WAL。</p>
+
+<p>还有一个微妙之处：如果集合设了<strong>分区键（partition key，第 6 课）</strong>，分片逻辑会走另一条分支
+<span class="inline">repackInsertDataWithPartitionKeyForStreamingService</span>——它在哈希分片之外，还要按分区键把行归入正确的逻辑分区。
+但骨架不变：<strong>仍然是"按某个键算出归属、再分组打包"</strong>。无论有没有分区键，Proxy 这一层的使命都一样：把一批无序的行，<strong>确定性地</strong>切成"每个 vchannel 一组"。
+确定性很关键——同样的输入永远得到同样的分片结果，这样重试、回放才不会把数据弄乱。</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">一批行</div><div class="nd">含主键列 IDs</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">assignChannelsByPK</div><div class="nd">逐行哈希主键</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">vchannel A</div><div class="nd">行 0,3,7…</div></div>
+  <div class="arrow">＋</div>
+  <div class="node"><div class="nt">vchannel B</div><div class="nd">行 1,2,5…</div></div>
+</div>
+
+<h2>第三关：打包成消息、Append 进 WAL</h2>
+<p>段好片，Proxy 把每个 vchannel 上的那些行<strong>重新打包</strong>成一条条<strong>插入消息（InsertMessage）</strong>（见 <span class="inline">repackInsertDataForStreamingService</span>），
+每条消息带上它的 vchannel、集合 ID、分区信息与 schema 版本。<strong>注意一个关键变化</strong>：段 ID（segmentID）在这里<strong>留空（填 0）</strong>——
+"这批行该进哪个段"不再由 Proxy 决定，而是<strong>推迟到 StreamingNode</strong>在写 WAL 时分配（第 17 课详述）。Proxy 只负责"分片 + 打包"，不再操心"分段"。</p>
+
+<p>这里出现的 <span class="mono">streaming.WAL()</span> 拿到的是一个 <strong>StreamingClient</strong>（WAL 访问器）。它是一个<strong>进程内</strong>的客户端，封装了 Append / Read / Broadcast 三类能力，
+还内置了<strong>服务发现与自动重连</strong>：Proxy 不需要知道"负责某条 pchannel 的 StreamingNode 此刻在哪台机器上"，StreamingClient 会替它找路、断了会重连。
+于是 Proxy 这一侧的代码出奇地简单——一句 <span class="mono">AppendMessages</span>，背后的寻址、网络、重试全被这层客户端吞掉了。这正是好接口的样子：<strong>把复杂留给自己，把简单交给调用方</strong>。</p>
+
+<p>最后一步，也是这条路的核心：Proxy 调用 <span class="inline">streaming.WAL().AppendMessages(ctx, msgs...)</span>，把这批消息<strong>追加写入 WAL</strong>。
+这正是新写入路径的精髓——<strong>客户端 → Proxy → StreamingClient.Append → StreamingNode → WAL 后端</strong>，而不是旧的"Proxy 直接发消息队列、DataNode 来消费"那套模型。
+写成功后，Proxy 把返回的 <span class="mono">MaxTimeTick</span> 作为本次写入的时间戳回填给客户端，用于会话级一致性（你刚写的，下一刻一定读得到）。</p>
+
+<p>为什么"分段"这件事要从 Proxy 手里拿走、推迟到 StreamingNode？因为段是<strong>有状态</strong>的：一个 growing 段能装多少行、何时该封口，取决于这个分片<strong>当前</strong>的写入进度，
+而这份进度只有<strong>独占</strong>该 pchannel 的 StreamingNode 才掌握得最准。Proxy 是无状态、可多开的（第 10 课），如果让每个 Proxy 各自决定段 ID，
+多个 Proxy 并发写同一分片就会打架。把分段权<strong>收归到单一的 StreamingNode</strong>，既保证了段分配的一致性，也让 Proxy 保持轻量。这正是"<strong>无状态的归无状态、有状态的归有状态</strong>"这条分层原则在写入路上的又一次体现。</p>
+
+<table class="t">
+  <tr><th>Proxy 这一步</th><th>它在做什么</th><th>关键符号</th></tr>
+  <tr><td><strong>校验主键</strong></td><td>校验/补全主键，autoID 时分配</td><td class="mono">checkPrimaryFieldData</td></tr>
+  <tr><td><strong>取分片</strong></td><td>拿到集合的 vchannel 列表</td><td class="mono">chMgr.getVChannels</td></tr>
+  <tr><td><strong>哈希分片</strong></td><td>按主键把行分到各 vchannel</td><td class="mono">assignChannelsByPK</td></tr>
+  <tr><td><strong>打包消息</strong></td><td>每 vchannel 一组 InsertMessage，段 ID 留空</td><td class="mono">repackInsertData…</td></tr>
+  <tr><td><strong>写 WAL</strong></td><td>整批原子追加，拿回 TimeTick</td><td class="mono">WAL().AppendMessages</td></tr>
+</table>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/proxy/task_insert_streaming.go</span><span class="ln">insertTask.Execute：分片→打包→Append</span></div>
+  <pre><span class="cm">// 1) 取集合的 vchannel 列表</span>
+channelNames, err := it.chMgr.getVChannels(collID)
+<span class="cm">// 2) 按主键哈希分片，再打包成插入消息（segmentID 此处留 0）</span>
+msgs, err := repackInsertDataForStreamingService(
+    it.TraceCtx(), channelNames, it.insertMsg, it.result, ez, it.schemaVersion)
+<span class="cm">// 3) 整批追加写入 WAL</span>
+resp := streaming.WAL().AppendMessages(ctx, msgs...)
+<span class="cm">// 4) 用返回的最大 TimeTick 作为本次写入时间戳</span>
+it.result.Timestamp = resp.MaxTimeTick()</pre>
+</div>
+
+<h2>把流水线连起来</h2>
+<p>把 Proxy 在写入路上的动作串成一条线，你会看到一个清晰的"加工"链条：校验 → 定主键 → 哈希分片 → 打包 → 追加 WAL。每一步都在为下一步铺路，
+最终把"一批杂乱的行"变成"分好片、贴好时间戳、躺在 WAL 里等着被消费的有序消息"。</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>接收 insert</h4><p>包装成 <span class="mono">insertTask</span> 进 dmQueue（第 10 课）。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>校验 + 定主键</h4><p class="mono">checkPrimaryFieldData</p><p>autoID 时为每行分配全局唯一主键。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>哈希到 vchannel</h4><p class="mono">assignChannelsByPK</p><p>同一主键恒定落同一分片。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>打包成消息</h4><p>每个 vchannel 一组 InsertMessage，segmentID 留空。</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>Append 进 WAL</h4><p class="mono">WAL().AppendMessages</p><p>整批原子追加，拿回 TimeTick。</p></div></div>
+  <div class="step"><div class="num">6</div><div class="sc"><h4>返回客户端</h4><p>写成功即返回，落盘在后台异步进行。</p></div></div>
+</div>
+
+<h2>时间戳：写入如何在全局定序</h2>
+<p>贯穿这一课、却一直没正面讲的，是<strong>时间戳</strong>。还记得第 3 课、第 10 课反复强调的"每个写入都要一个时间戳"吗？在写入路上，它的作用比读取时更隐蔽却更关键。
+每条 insert 消息进 WAL 时，都会被打上一个<strong>单调递增</strong>的时间戳（TimeTick）。它不是墙上时钟，而是 WAL 这条日志的<strong>逻辑序号</strong>：谁先进日志，谁的时间戳就小。
+正是这把"逻辑尺子"，让分散在多个分片、来自多个客户端的写入，能被排进<strong>一条全局有序</strong>的时间线。</p>
+
+<p>这件事的回报，要到读取时才完全兑现。回忆第 10 课讲的<strong>保证时间戳（guarantee timestamp）</strong>：一次 search 会带上"请至少消费到这个时间点"的要求，
+而判断"消费到没到"，靠的正是写入时打的这些 TimeTick。换句话说，<strong>写入侧老老实实地给每条记录定序，读取侧才能精确地控制可见性</strong>——
+强一致就读到最新时间戳，有界过期就容忍一点点旧。写与读，被同一把时间戳的尺子悄悄缝在了一起。这也是为什么 Proxy 要把 <span class="mono">AppendMessages</span> 返回的
+<span class="mono">MaxTimeTick</span> 回填给客户端：它是这次写入在全局时间线上的"坐标"，客户端拿着它，下一次查询就能要求"读到至少这个坐标"，从而读到自己刚写的数据。</p>
+
+<div class="trace">
+  <div class="tcap">WAL 日志：按 TimeTick 单调递增排好序</div>
+  <div class="stations">
+    <div class="stn">t₁<div class="op">insert A</div></div>
+    <div class="stn">t₂<div class="op">insert B</div></div>
+    <div class="stn blue">t₃<div class="op">insert C</div></div>
+    <div class="stn hot">t₄<div class="op">本次写入</div></div>
+    <div class="stn dim">t₅<div class="op">…后续</div></div>
+  </div>
+  <div class="tlab">读取带 guarantee ts = t₄：消费到 t₄ 即可回答，保证读到 A/B/C 与本次写入</div>
+</div>
+
+<p>把这条时间线记在脑子里，你就握住了整条写入路的<strong>骨架</strong>：Proxy 校验、分片、打包，最终把消息<strong>按时间戳顺序</strong>追加进 WAL；
+后端按这个顺序消费、分段、落盘；读取再按时间戳控制能看到哪些。一行数据的旅程，本质上就是它在这条全局时间线上<strong>找到自己位置</strong>的过程。</p>
+
+<h2>原子批与"写成功"的含义</h2>
+<p>最后厘清一个常被误解的点：insert 返回成功，<strong>到底意味着什么</strong>？它<strong>不</strong>意味着数据已经落进对象存储的段文件——那是后台异步做的（第 17 课）。
+它意味着这批消息已经<strong>可靠地追加进了 WAL</strong>，而 WAL 是 Milvus 的<strong>单一事实来源</strong>。只要进了 WAL，就算 StreamingNode 立刻宕机，
+重启后也能从 WAL 回放、不丢数据。所以"写成功"= "已持久化进日志"，而非"已落盘成段"。</p>
+
+<p>这也是"<strong>原子批</strong>"的由来：同一批 insert 要么整批进 WAL、整批可见，要么整批失败。Proxy 用 <span class="mono">AppendMessages</span> 的返回值统一判定——
+<span class="mono">UnwrapFirstError()</span> 只要有一条失败就整批报错。这种"全有或全无"的语义，让客户端永远看不到"一半行进了、一半没进"的中间状态。
+把这一课记牢：<strong>Proxy 是写入的加工车间，WAL 是写入的终点线</strong>。下一课，我们就走进 WAL 本身。</p>
+
+<p>不过这里要诚实地补一句边界：当一批行被分到<strong>多个 vchannel</strong> 时，<span class="mono">AppendMessages</span> 是按 vchannel 分别追加的，跨 vchannel 之间并不保证严格的原子性——
+它的承诺是"属于同一 vchannel 的消息作为一个事务一起写"。真正需要跨多个物理通道<strong>原子生效</strong>的场景（比如某些 DDL/DCL），走的是另一条 <span class="mono">Broadcast</span> 路径（下一课会提到）。
+对绝大多数 insert 而言，一批行常常落在同一个或少数几个 vchannel，配合主键哈希的确定性，已经足以给客户端"这批写入整体成功"的体感。理解这条边界，
+你才不会把"insert 的原子批"误读成"任意跨分片的分布式事务"——Milvus 在这里做的是<strong>务实的取舍</strong>，而非昂贵的两阶段提交。</p>
+
+<p>最后再把镜头拉回主线。这一课你看到的，是 Proxy 如何把一次 insert <strong>翻译成 WAL 能理解的语言</strong>：校验定主键、哈希定分片、打包定格式、追加定时序。
+它做完这一切，数据就安全地躺进了日志，等待被消费、被分段、被落盘——而这正是接下来两课的主题。记住这条流水线的形状，后面每一步都会与它严丝合缝地对上。</p>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  一句话串起来：<strong>insert 进 Proxy → 校验并敲定主键（checkPrimaryFieldData，autoID 时分配）→ 按主键哈希到各 vchannel（assignChannelsByPK）→ 打包成 InsertMessage（segmentID 留给 StreamingNode）→ streaming.WAL().AppendMessages 整批追加进 WAL → 用 MaxTimeTick 回填时间戳返回</strong>。
+  写成功 = 已进 WAL（单一事实来源），不等于已落盘成段。把这条流水线的形状刻在脑子里，后面"消费、分段、落盘、压实"每一步都会与它对上。
+</div>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>主键先行</strong>：<span class="mono">checkPrimaryFieldData</span> 校验/补全主键；autoID 时为每行分配全局唯一 ID，主键是后续路由的依据。</li>
+    <li><strong>哈希分片</strong>：<span class="mono">assignChannelsByPK</span> 按主键把行分到各 vchannel，同一主键恒定落同一分片。</li>
+    <li><strong>段 ID 后移</strong>：Proxy 打包时 segmentID 留空，分段交给 StreamingNode（第 17 课）。</li>
+    <li><strong>写入路径</strong>：<span class="mono">streaming.WAL().AppendMessages</span> 把整批追加进 WAL，即"客户端 → Proxy → StreamingClient.Append → StreamingNode → WAL 后端"。</li>
+    <li><strong>原子批</strong>：整批要么全进 WAL、全可见，要么整批失败；写成功 = 已持久化进日志，而非已落盘成段。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. Proxy 处理 insert 时为什么要先用 <code>checkPrimaryFieldData</code> 敲定主键，再做分片？</div>
+  <ol class="opts">
+    <li>因为主键决定向量用哪种距离度量</li>
+    <li>因为“把哪一行发到哪个 vchannel”靠的是对主键哈希（assignChannelsByPK），没有确定的主键就无法路由；autoID 时还要在此为每行分配全局唯一主键</li>
+    <li>因为段 ID 必须等于主键</li>
+    <li>因为不先定主键就无法压缩向量</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。主键既是身份也是路由依据：分片用它哈希，删除/更新用它对齐同一行。所以必须在写入前敲定，autoID 时在此分配，之后整条流水线都默认主键齐全</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Proxy 打包插入消息时把 segmentID 留空（填 0），把“分段”推迟到 StreamingNode。这样设计最主要的好处是？</div>
+  <ol class="opts">
+    <li>段是有状态的：能装多少、何时封口取决于该分片当前进度，只有独占该 pchannel 的 StreamingNode 最清楚。Proxy 无状态可多开，让它定段会导致并发冲突</li>
+    <li>因为段 ID 由客户端 SDK 生成</li>
+    <li>这样可以省掉时间戳</li>
+    <li>因为 Proxy 不知道集合有几个分片</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：A</strong>。“无状态归无状态、有状态归有状态”：把段分配收归到单一、独占该通道的 StreamingNode，既保证一致性，又让可横向扩展的 Proxy 保持轻量</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 一次 insert 返回成功，准确含义是什么？</div>
+  <ol class="opts">
+    <li>数据已经在所有副本上落盘</li>
+    <li>数据已经写进对象存储的 binlog 文件</li>
+    <li>这批消息已可靠追加进 WAL（单一事实来源）；即使 StreamingNode 立刻宕机，重启也能从 WAL 回放不丢数据。它不等于已落盘成段文件——那是后台异步做的</li>
+    <li>数据已经构建好索引可被检索</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：C</strong>。WAL 是单一事实来源：进了日志就持久、可回放，所以“写成功 = 已记日志”而非“已落盘成段”。落盘、建索引都在后台沿 WAL 异步推进</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>本课说 insert 的“原子批”只保证“同一 vchannel 的消息作为一个事务一起写”，跨 vchannel 并不保证严格原子。请想一想：为什么 Milvus 在这里选择务实取舍而不是上两阶段提交？这种取舍在什么场景下可能让用户观察到“部分可见”，又为什么对绝大多数 insert 影响很小？</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+The first three parts toured the whole cluster and every coordinator. From here we follow <strong>one row of data</strong> on its journey — from a client's
+<span class="mono">insert</span> call all the way to a searchable segment in object storage. The first stop is our old friend the <strong>Proxy</strong>, but this time we don't
+watch it gate or schedule; we focus on what "processing" it does on the <strong>write</strong> path. By the end you'll see the Proxy's write-path role is more like a <strong>workshop turning raw material into a semi-finished part</strong>: in comes a messy batch of rows, out go sharded, timestamped, ordered messages ready to drop straight into the WAL.
+</p>
+
+<div class="card analogy">
+  <div class="tag">📮 Analogy</div>
+  Picture an insert as mailing a batch of parcels nationwide. You hand boxes of parcels (a batch of rows) to the <strong>post-office counter</strong> (the Proxy): the clerk first
+  <strong>checks the labels</strong> (schema validation: right fields, right types), <strong>assigns a tracking number</strong> to any parcel missing one (primary-key auto-fill), then
+  <strong>sorts parcels into chutes by postcode</strong> (hashing rows by primary key to vchannels). Once sorted, the whole batch gets <strong>one common postmark timestamp</strong> and rides
+  the conveyor together (appended to the WAL). The counter <strong>delivers nothing and warehouses nothing</strong>, yet the batch is all-or-nothing — that is the write's "atomic batch."
+  This whole routine — check label, assign number, sort, postmark, onto the conveyor — is the Proxy's entire job on the write path; it is fast, light, and replicable, leaving the real "delivery and warehousing" to later roles.
+</div>
+
+<h2>Gate one: schema validation and the primary key</h2>
+<p>Once an insert reaches the Proxy it is wrapped as an <span class="mono">insertTask</span> and first runs <strong>data-correctness</strong> checks in <span class="mono">PreExecute</span>. The core step is
+<span class="inline">checkPrimaryFieldData</span>: it confirms the batch's <strong>primary-key column</strong> is valid and consistent with the schema. If the collection uses <strong>auto-ID</strong>,
+the client never sends a primary key, so this step <strong>assigns a globally unique key to every row</strong> and fills it in; with a user-supplied key it checks non-null, uniqueness, and type. Only
+after this does the batch's primary-key <span class="mono">IDs</span> become settled.</p>
+
+<p>Why settle the primary key <strong>so early</strong>? Because the next step — "which row goes to which shard" — depends entirely on it. The key is not just an identity card, it is the
+<strong>routing basis</strong>; without a settled key, no later step can proceed. Think of it as "stamp a unique tracking number on every parcel before you can sort by it." It is also the
+Proxy's <strong>last semantic validation</strong> of client data: once a batch is admitted into the write pipeline, the backend trusts it is "well-formed with complete keys" and never re-validates,
+saving precious compute for the actual persistence.</p>
+
+<p>A design trade-off worth unpacking hides here: <strong>who generates the primary key</strong>. With auto-ID, Milvus assigns the key uniformly at the Proxy layer — it asks the coordinator for a range of
+globally unique IDs and slices it across this batch. The upside: clients never worry about uniqueness; the downside: you cannot use a business-meaningful value (say, an order number) as the key. Conversely,
+a user-supplied key hands generation to the application — flexible, but you must guarantee no duplicates. Either way, <strong>validation must finish before the write</strong>: once data enters the WAL, the key becomes
+that record's "indelible identity," and all later updates, deletes, and dedup align by it. That is why Milvus would rather spend a little extra validation up front than let a batch with a "possibly-illegal key" into the log —
+a textbook case of <strong>front-loading validation to keep the backend simple</strong>.</p>
+
+<p>Note one easily-missed detail too: this step also aligns the <strong>client-supplied fields</strong> with the schema. The client may have omitted a field with a default, written columns out of order,
+or carried a dynamic field not in the schema (Lesson 6). <span class="mono">checkPrimaryFieldData</span> and its surrounding checks normalize all of this: fill defaults, reorder by schema, fold legal dynamic fields into
+<span class="mono">$meta</span>. Once this gate is passed, what flows into the write pipeline is a "<strong>clean, normalized, fully-keyed</strong>" batch, and the backend never has to fuss over format again.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/proxy/task_insert.go</span><span class="ln">settling the primary key in PreExecute</span></div>
+  <pre><span class="cm">// validate/fill primary key, return the batch IDs; auto-ID allocates here</span>
+it.result.IDs, err = checkPrimaryFieldData(ctx, allFields, it.schema, it.insertMsg)
+<span class="kw">if</span> err != <span class="kw">nil</span> {
+    mlog.Warn(ctx, <span class="st">"check primary field data error"</span>, mlog.Err(err))
+    <span class="kw">return</span> err
+}</pre>
+</div>
+
+<h2>Gate two: hash rows by primary key to vchannels</h2>
+<p>After validation comes <span class="mono">Execute</span>. The Proxy first asks its cache for the collection's <strong>virtual-channel list</strong> (<span class="inline">chMgr.getVChannels(collID)</span>) —
+recall Lesson 7: a collection is cut into several <strong>shards</strong>, each backed by a <strong>vchannel</strong>. The key action now is <span class="inline">assignChannelsByPK</span>:
+it takes each row's primary key, hashes it, and routes the row index to a vchannel by hash value, producing a "<span class="mono">channel → row-offset list</span>" map.</p>
+
+<p>This step decides the <strong>physical distribution</strong> of data. The same primary key always hashes to the same vchannel, so every version of a row (including later updates and deletes)
+lands in the same shard — crucial for "delete by primary key" and "which segment does this row belong to" later (Lessons 17 and 20). Hash sharding also gives <strong>load balance</strong>:
+huge batches spread evenly across vchannels with no hot shard. Grasp this and you understand Milvus's bedrock logic: <strong>scale out by sharding, shard by primary-key hash</strong>.</p>
+
+<p>Distinguish two easily-confused concepts here: <strong>vchannel (virtual channel)</strong> versus <strong>pchannel (physical channel)</strong>. What the Proxy hashes to is a vchannel — a <strong>logical</strong> notion of "a shard of a collection,"
+born when the collection is created and gone when it is dropped. What actually carries the WAL is a pchannel — a <strong>physical</strong> log partition, fixed in number, pre-opened by the cluster (one per message-queue topic).
+Many vchannels from many collections <strong>multiplex</strong> the same pchannel. That mapping (vchannel → pchannel) is detailed next lesson; here just remember: the Proxy cares about the logical shard, the vchannel,
+and the vchannel name itself encodes which pchannel it belongs to, so the write finds the right WAL.</p>
+
+<p>One subtlety more: if the collection sets a <strong>partition key (Lesson 6)</strong>, the sharding logic takes another branch,
+<span class="inline">repackInsertDataWithPartitionKeyForStreamingService</span> — beyond hash sharding it also routes rows into the correct logical partition by partition key.
+But the skeleton is unchanged: <strong>still "compute membership by some key, then group and pack."</strong> With or without a partition key, the Proxy's mission at this layer is the same: deterministically cut an unordered
+batch of rows into "one group per vchannel." Determinism matters — the same input always yields the same sharding, so retries and replays never scramble the data.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">a batch of rows</div><div class="nd">with primary-key IDs</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">assignChannelsByPK</div><div class="nd">hash each PK</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">vchannel A</div><div class="nd">rows 0,3,7…</div></div>
+  <div class="arrow">＋</div>
+  <div class="node"><div class="nt">vchannel B</div><div class="nd">rows 1,2,5…</div></div>
+</div>
+
+<h2>Gate three: pack into messages, Append to the WAL</h2>
+<p>With rows sharded, the Proxy <strong>repacks</strong> the rows on each vchannel into individual <strong>insert messages</strong> (see <span class="inline">repackInsertDataForStreamingService</span>),
+each carrying its vchannel, collection ID, partition info, and schema version. <strong>Note one key change</strong>: the segment ID is <strong>left empty (set to 0)</strong> here —
+"which segment these rows go to" is no longer decided by the Proxy but <strong>deferred to the StreamingNode</strong> when it writes the WAL (detailed in Lesson 17). The Proxy only "shards + packs," never "segments."</p>
+
+<p>The <span class="mono">streaming.WAL()</span> here returns a <strong>StreamingClient</strong> (WAL accessor). It is an <strong>in-process</strong> client wrapping three capabilities — Append / Read / Broadcast —
+with built-in <strong>service discovery and auto-reconnect</strong>: the Proxy need not know "which machine the StreamingNode responsible for a given pchannel is on right now"; the StreamingClient finds the route and reconnects on drops.
+So the Proxy-side code is strikingly simple — one <span class="mono">AppendMessages</span>, with all the addressing, networking, and retries swallowed by this client layer. That is what a good interface looks like: <strong>keep complexity to yourself, hand simplicity to the caller</strong>.</p>
+
+<p>The final, central step: the Proxy calls <span class="inline">streaming.WAL().AppendMessages(ctx, msgs...)</span> to <strong>append</strong> the batch to the WAL.
+This is the essence of the new write path — <strong>Client → Proxy → StreamingClient.Append → StreamingNode → WAL backend</strong> — not the old "Proxy publishes to a message queue, DataNode consumes" model.
+<p>On success the Proxy fills the returned <span class="mono">MaxTimeTick</span> back as this write's timestamp, used for session consistency (what you just wrote is readable next moment).</p>
+
+<p>Why take "segmenting" out of the Proxy's hands and defer it to the StreamingNode? Because a segment is <strong>stateful</strong>: how many rows a growing segment can hold and when to seal it depend on this shard's
+<strong>current</strong> write progress, and only the StreamingNode that <strong>exclusively owns</strong> that pchannel knows it most accurately. The Proxy is stateless and replicable (Lesson 10); if each Proxy decided segment IDs
+on its own, several Proxies writing the same shard concurrently would clash. <strong>Centralizing segmenting in the single StreamingNode</strong> guarantees consistent assignment and keeps the Proxy lightweight. This is the
+"<strong>stateless to the stateless, stateful to the stateful</strong>" layering principle showing up once more on the write path.</p>
+
+<table class="t">
+  <tr><th>Proxy step</th><th>what it does</th><th>key symbol</th></tr>
+  <tr><td><strong>validate PK</strong></td><td>validate/fill the key, allocate on auto-ID</td><td class="mono">checkPrimaryFieldData</td></tr>
+  <tr><td><strong>get shards</strong></td><td>fetch the collection's vchannel list</td><td class="mono">chMgr.getVChannels</td></tr>
+  <tr><td><strong>hash-shard</strong></td><td>route rows to vchannels by PK</td><td class="mono">assignChannelsByPK</td></tr>
+  <tr><td><strong>pack</strong></td><td>one group of InsertMessages per vchannel, segmentID empty</td><td class="mono">repackInsertData…</td></tr>
+  <tr><td><strong>append WAL</strong></td><td>atomic batch append, get back a TimeTick</td><td class="mono">WAL().AppendMessages</td></tr>
+</table>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/proxy/task_insert_streaming.go</span><span class="ln">insertTask.Execute: shard → pack → Append</span></div>
+  <pre><span class="cm">// 1) get the collection's vchannel list</span>
+channelNames, err := it.chMgr.getVChannels(collID)
+<span class="cm">// 2) hash-shard by PK, repack into insert messages (segmentID left 0)</span>
+msgs, err := repackInsertDataForStreamingService(
+    it.TraceCtx(), channelNames, it.insertMsg, it.result, ez, it.schemaVersion)
+<span class="cm">// 3) append the whole batch to the WAL</span>
+resp := streaming.WAL().AppendMessages(ctx, msgs...)
+<span class="cm">// 4) use the returned max TimeTick as this write's timestamp</span>
+it.result.Timestamp = resp.MaxTimeTick()</pre>
+</div>
+
+<h2>Wiring the pipeline together</h2>
+<p>String the Proxy's write-path actions into one line and a clean "processing" chain appears: validate → settle PK → hash-shard → pack → append to WAL. Each step paves the way for the next,
+turning "a messy batch of rows" into "sharded, timestamped, ordered messages sitting in the WAL waiting to be consumed."</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>receive insert</h4><p>wrapped as <span class="mono">insertTask</span> into dmQueue (Lesson 10).</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>validate + settle PK</h4><p class="mono">checkPrimaryFieldData</p><p>auto-ID assigns a globally unique key per row.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>hash to vchannel</h4><p class="mono">assignChannelsByPK</p><p>same PK always lands on the same shard.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>pack into messages</h4><p>one group of InsertMessages per vchannel; segmentID left empty.</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>Append to WAL</h4><p class="mono">WAL().AppendMessages</p><p>whole batch appended atomically; get back a TimeTick.</p></div></div>
+  <div class="step"><div class="num">6</div><div class="sc"><h4>return to client</h4><p>success returns at once; persistence happens asynchronously in the background.</p></div></div>
+</div>
+
+<h2>Timestamps: how a write is ordered globally</h2>
+<p>Running through this whole lesson, yet never addressed head-on, is the <strong>timestamp</strong>. Remember Lessons 3 and 10 stressing "every write needs a timestamp"? On the write path its role is subtler
+but more crucial than on reads. As each insert message enters the WAL it is stamped with a <strong>monotonically increasing</strong> timestamp (TimeTick). It is not a wall clock but the WAL's <strong>logical sequence number</strong>:
+whoever enters the log first gets the smaller timestamp. This "logical ruler" is exactly what lets writes scattered across shards and arriving from many clients be ordered into <strong>one globally ordered</strong> timeline.</p>
+
+<p>The payoff only fully materializes on reads. Recall the <strong>guarantee timestamp</strong> from Lesson 10: a search carries "please consume at least up to this point," and judging "have we reached it?" relies precisely on these
+write-time TimeTicks. In other words, <strong>the write side faithfully orders every record so the read side can precisely control visibility</strong> — strong consistency reads the latest timestamp, bounded staleness tolerates a slightly older one.
+Write and read are quietly stitched together by the same timestamp ruler. That is why the Proxy fills the <span class="mono">MaxTimeTick</span> from <span class="mono">AppendMessages</span> back to the client: it is this write's "coordinate" on the global timeline;
+holding it, the client's next query can demand "read at least up to this coordinate" and thus read its own just-written data.</p>
+
+<div class="trace">
+  <div class="tcap">WAL log: ordered by monotonically increasing TimeTick</div>
+  <div class="stations">
+    <div class="stn">t₁<div class="op">insert A</div></div>
+    <div class="stn">t₂<div class="op">insert B</div></div>
+    <div class="stn blue">t₃<div class="op">insert C</div></div>
+    <div class="stn hot">t₄<div class="op">this write</div></div>
+    <div class="stn dim">t₅<div class="op">…later</div></div>
+  </div>
+  <div class="tlab">read with guarantee ts = t₄: consuming up to t₄ suffices to answer, guaranteeing A/B/C and this write are seen</div>
+</div>
+
+<p>Keep this timeline in mind and you hold the <strong>skeleton</strong> of the whole write path: the Proxy validates, shards, packs, and finally appends messages <strong>in timestamp order</strong> to the WAL;
+the backend consumes, segments, and persists in that order; reads then use timestamps to control what is visible. A row's journey is essentially the process of it <strong>finding its place</strong> on this global timeline.</p>
+
+<h2>Atomic batches and what "write succeeded" means</h2>
+<p>One last commonly-misread point: what does an insert returning success <strong>actually mean</strong>? It does <strong>not</strong> mean the data has landed in segment files in object storage — that is done
+asynchronously in the background (Lesson 17). It means the batch of messages was <strong>reliably appended to the WAL</strong>, and the WAL is Milvus's <strong>single source of truth</strong>. Once in the WAL,
+even if the StreamingNode crashes immediately, it can replay from the WAL on restart and lose nothing. So "write succeeded" = "durably logged," not "flushed to a segment."</p>
+
+<p>That is also the origin of the <strong>atomic batch</strong>: a batch of inserts either all enter the WAL and become visible together, or the whole batch fails. The Proxy decides this uniformly from
+<span class="mono">AppendMessages</span>'s return — <span class="mono">UnwrapFirstError()</span> fails the whole batch if any one message failed. This all-or-nothing semantics means the client never sees a
+half-applied state. Remember this lesson: <strong>the Proxy is the write's processing workshop; the WAL is the write's finish line</strong>. Next lesson we step into the WAL itself.</p>
+
+<p>Honesty about a boundary, though: when a batch is split across <strong>multiple vchannels</strong>, <span class="mono">AppendMessages</span> appends per vchannel, and strict atomicity is not guaranteed across vchannels —
+its promise is "messages belonging to the same vchannel are written together as one transaction." Scenarios that truly need <strong>atomic effect across multiple physical channels</strong> (certain DDL/DCL) take another path,
+<span class="mono">Broadcast</span> (mentioned next lesson). For the vast majority of inserts a batch often lands on one or a few vchannels, and combined with the determinism of PK hashing that is already enough to give the client the
+sense that "this write succeeded as a whole." Understand this boundary and you won't misread "an insert's atomic batch" as "an arbitrary cross-shard distributed transaction" — what Milvus does here is a <strong>pragmatic trade-off</strong>,
+not an expensive two-phase commit.</p>
+
+<p>Finally, pull the camera back to the throughline. What you saw this lesson is how the Proxy <strong>translates an insert into a language the WAL understands</strong>: validate-and-settle the key, hash-and-settle the shard,
+pack-and-settle the format, append-and-settle the order. Having done all this, the data rests safely in the log, waiting to be consumed, segmented, and persisted — which is exactly the subject of the next two lessons.
+Remember the shape of this pipeline; every later step will line up against it precisely.</p>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>insert enters the Proxy → validate and settle the primary key (checkPrimaryFieldData, auto-ID allocates) → hash by PK to vchannels (assignChannelsByPK) → pack into InsertMessages (segmentID left for the StreamingNode) → streaming.WAL().AppendMessages appends the whole batch to the WAL → fill MaxTimeTick back as the timestamp and return</strong>.
+  Write success = in the WAL (single source of truth), which is not the same as flushed to a segment. Carve the shape of this pipeline into memory; every later step — consume, segment, persist, compact — will line up against it.
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Primary key first</strong>: <span class="mono">checkPrimaryFieldData</span> validates/fills the key; auto-ID assigns a globally unique ID per row, and the key is the basis for later routing.</li>
+    <li><strong>Hash sharding</strong>: <span class="mono">assignChannelsByPK</span> routes rows to vchannels by PK; the same key always lands on the same shard.</li>
+    <li><strong>Segment ID deferred</strong>: the Proxy leaves segmentID empty when packing; segmenting is the StreamingNode's job (Lesson 17).</li>
+    <li><strong>Write path</strong>: <span class="mono">streaming.WAL().AppendMessages</span> appends the batch to the WAL — i.e. "Client → Proxy → StreamingClient.Append → StreamingNode → WAL backend."</li>
+    <li><strong>Atomic batch</strong>: the whole batch enters the WAL and becomes visible, or fails together; write success = durably logged, not flushed to a segment.</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Why does the Proxy settle the primary key with <code>checkPrimaryFieldData</code> first, before sharding the insert?</div>
+  <ol class="opts">
+    <li>Because the primary key decides which distance metric the vectors use</li>
+    <li>Because routing 'which row to which vchannel' hashes the primary key (assignChannelsByPK); without a settled key there is no routing, and with auto-ID this step also assigns a globally unique key per row</li>
+    <li>Because the segment ID must equal the primary key</li>
+    <li>Because vectors can't be compressed without a key first</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. The key is both identity and routing basis: sharding hashes it, deletes/updates align the same row by it. So it must be settled before the write (auto-ID allocates here); the whole pipeline then trusts keys are complete</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. The Proxy leaves segmentID empty (0) when packing, deferring segmenting to the StreamingNode. What is the main benefit?</div>
+  <ol class="opts">
+    <li>A segment is stateful: capacity and seal timing depend on the shard's current progress, known best by the StreamingNode that exclusively owns that pchannel. The Proxy is stateless and replicable, so letting it decide segments would cause concurrent clashes</li>
+    <li>Because segment IDs are generated by the client SDK</li>
+    <li>It lets the system skip timestamps</li>
+    <li>Because the Proxy doesn't know how many shards a collection has</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. 'Stateless to the stateless, stateful to the stateful': centralizing segment assignment in the single StreamingNode that owns the channel keeps assignment consistent and the horizontally-scalable Proxy lightweight</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. When an insert returns success, what does it precisely mean?</div>
+  <ol class="opts">
+    <li>The data is persisted on all replicas</li>
+    <li>The data is already in binlog files in object storage</li>
+    <li>The batch was reliably appended to the WAL (single source of truth); even if the StreamingNode crashes at once, it replays from the WAL on restart with no loss. It does NOT mean flushed into segment files — that is done asynchronously in the background</li>
+    <li>An index is already built and the data is searchable</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. The WAL is the single source of truth: once logged, data is durable and replayable, so 'write success = logged' not 'flushed to a segment'. Persisting and indexing proceed asynchronously off the WAL</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson notes an insert's 'atomic batch' only guarantees 'messages of the same vchannel are written together as one transaction'; strict atomicity is not guaranteed across vchannels. Think: why does Milvus pick this pragmatic trade-off over a two-phase commit? In what scenario might a user observe 'partial visibility', and why is the impact tiny for the vast majority of inserts?</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="14-metadata-and-coordination.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">元数据与协调</span><span class="lang-en">Metadata &amp; coordination</span></div></a><a class="next" href="16-streaming-and-wal.html"><div class="dir"><span class="lang-zh">下一课 →</span><span class="lang-en">Next →</span></div><div class="ttl"><span class="lang-zh">流式系统与 WAL</span><span class="lang-en">Streaming &amp;amp; WAL</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>

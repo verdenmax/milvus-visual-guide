@@ -8,6 +8,7 @@ Grows one Part module per milestone (part1 .. part10).
 import part1
 import part2
 import part3
+import part4
 
 # Filename -> {"zh": ..., "en": ...}. Keep keys in sync with shell.PAGES.
 CONTENT = {
@@ -25,4 +26,7 @@ CONTENT = {
     "12-datacoord.html": part3.LESSON_12,
     "13-querycoord.html": part3.LESSON_13,
     "14-metadata-and-coordination.html": part3.LESSON_14,
+    "15-insert-via-proxy.html": part4.LESSON_15,
+    "16-streaming-and-wal.html": part4.LESSON_16,
+    "17-datanode-and-flush.html": part4.LESSON_17,
 }

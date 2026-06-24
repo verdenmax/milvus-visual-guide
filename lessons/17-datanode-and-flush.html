@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>17 · DataNode 与 flush / DataNode &amp;amp; flush - Milvus 图解教程</title>
+<meta name="description" content="第四部分 · 写入链路｜DataNode 与 flush - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="17 · DataNode 与 flush / DataNode &amp;amp; flush - Milvus 图解教程">
+<meta property="og:description" content="第四部分 · 写入链路｜DataNode 与 flush - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="17 · DataNode 与 flush / DataNode &amp;amp; flush - Milvus 图解教程">
+<meta name="twitter:description" content="第四部分 · 写入链路｜DataNode 与 flush - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.timeline .tl-row { display: flex; align-items: flex-start; gap: .6rem; padding: .12rem 0; }
+.timeline .tl-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: .45rem; }
+.timeline .tl-t { font-family: ui-monospace, monospace; font-weight: 700; color: var(--accent-ink); min-width: 2.4rem; font-size: .82rem; flex-shrink: 0; margin-top: .18rem; }
+.timeline .tl-c { font-size: .9rem; color: var(--muted); }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第四部分 · 写入链路</span><span class="lang-en">Part 4 · The write path</span></span>
+    <span class="pill">17 / 17</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:100%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第四部分 · 写入链路</span><span class="lang-en">Part 4 · The write path</span></div>
+    <h1><span class="lang-zh">DataNode 与 flush</span><span class="lang-en">DataNode &amp;amp; flush</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+上一课我们认清了 WAL 是单一事实来源，也埋了个钩子：段、索引这些"可检索的数据"，都是<strong>消费 WAL、回放日志</strong>得到的派生形态。
+这一课就来看"<strong>日志变成数据</strong>"的第一步——WAL 里的 insert 消息，如何先在内存里攒成一个 <strong>growing 段（增长中的段）</strong>，
+再在合适的时机 <strong>flush（封口落盘）</strong>成对象存储里的 <strong>binlog</strong> 文件。顺带，我们把一个常被搞混的问题讲清楚：<strong>这件事到底是谁干的——StreamingNode 还是 DataNode？</strong>
+答案会颠覆一些旧教程给你的印象——所以这一课的另一条暗线，就是<strong>纠正"DataNode 负责落盘"这个过时的认知</strong>。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🏭 生活类比</div>
+  把这条路想成一个<strong>装箱发货</strong>的流水线。WAL 是源源不断送来零件的传送带；工位上摆着一个<strong>正在装的箱子</strong>（growing 段），零件（insert 行）来一个就往里码一个。
+  箱子不会无限装下去——<strong>装满了</strong>（达到大小阈值）、或者<strong>等得太久了</strong>（达到时间阈值），就该<strong>封箱</strong>（seal）。封好的箱子贴上清单、送进<strong>仓库</strong>（对象存储），从此<strong>只读不再改</strong>，这就是一个 binlog。
+  注意分工：<strong>"零件该进哪个箱子"由调度台统一指派</strong>（段分配，StreamingNode 来做），而<strong>"把箱子封好、搬进仓库"是打包工的活</strong>（flush，落盘机制来做）。
+  整条线最妙的一点是：传送带（WAL）上的零件清单<strong>永远留底</strong>——就算某个还没封的箱子被碰翻了，照着传送带的记录重新码一遍就行，一个零件都不会少。
+</div>
+
+<h2>growing 段：从 WAL 攒出来的内存缓冲</h2>
+<p>回忆第 7 课：一个段（segment）是 Milvus 数据组织的基本单位。段有两种状态——<strong>growing（增长中）</strong>和 <strong>sealed（已封口）</strong>。一行数据落盘的旅程，正是从 growing 开始的。
+当消费者沿着 WAL 往前读，遇到一条 InsertMessage，就把它的行<strong>追加进内存里对应的 growing 段</strong>。这个内存缓冲，在代码里由 <span class="inline">writebuffer</span> 维护（<span class="mono">internal/flushcommon/writebuffer</span>），
+它按 vchannel 把消费到的行攒起来，等着够多了再一次性落盘。</p>
+
+<p>"growing（增长中）"这个名字起得很传神：它<strong>正在长大</strong>，行数在涨、占的内存在涨，但还没定型。和它相对的 sealed 段则像一块"<strong>已经定型的化石</strong>"——内容固定、再不改动。
+一个集合在某一时刻，往往同时存在<strong>少量 growing 段</strong>（每个活跃分片一个，正在接新数据）和<strong>大量 sealed 段</strong>（历史数据，已落盘）。
+这个比例本身就揭示了向量数据库的负载形态：<strong>绝大多数数据是"写过就稳定下来"的历史，只有最前沿的一小撮还在变动</strong>。把"在变的"和"不变的"分成两类段、给两种待遇，正是 Milvus 高效的起点。</p>
+
+<p>这里要回收上一课、上上一课埋的两个钩子。第一：<strong>段 ID 是谁分配的？</strong>上一课讲过，Proxy 打包时把段 ID 留空（填 0），真正的分配推迟到了 <strong>StreamingNode</strong>。
+具体说，StreamingNode 的 WAL 写入链路里有一个<strong>分片管理（Shard Management）拦截器</strong>（<span class="mono">internal/streamingnode/server/wal/interceptors/shard</span>），
+它在消息写进 WAL 时，决定"这批行该归属哪个段"——段满了就开一个新的。所以<strong>段分配是写入侧、在 StreamingNode 上完成的</strong>，这保证了同一分片的段编号有唯一、一致的来源。
+第二：为什么要先在内存里攒、而不是来一行写一行？因为对象存储<strong>擅长大文件、怕小文件</strong>——把成千上万行攒成一个大 binlog 再落盘，远比一行一个小文件高效。这就是 growing 段存在的根本理由：<strong>用内存缓冲把"碎写"聚合成"批写"</strong>。</p>
+
+<p>再往深想一层，growing 段其实是一个精妙的"<strong>缓冲带</strong>"，它吸收了写入侧与落盘侧之间的<strong>速率差</strong>。WAL 的写入可以很快、很突发——一秒钟灌进几十万行毫不稀奇；
+而对象存储的落盘有固定的开销，喜欢"少而大"的文件。如果没有 growing 段这层缓冲，每来一行就落一个文件，对象存储会被海量小文件活活拖垮（元数据爆炸、吞吐崩塌）。
+growing 段把这股<strong>湍急的写入流</strong>蓄成一个个"水池"，蓄满了再一次性泄洪到对象存储——既保护了后端，又摊薄了每行的落盘成本。这是几乎所有 LSM-Tree 类存储引擎共有的智慧：
+<strong>先在内存里攒（memtable），再批量落盘（SSTable）</strong>。Milvus 的 growing→sealed，本质上就是这套思路在向量数据上的实现。</p>
+
+<h2>flush：何时封口、落成 binlog</h2>
+<p>growing 段不会无限长大。当它满足某个<strong>触发条件</strong>，就会被<strong>封口（seal）</strong>，随后<strong>flush</strong> 到对象存储。常见的触发条件有两类：</p>
+
+<ul>
+  <li><strong>按大小</strong>：段攒到了配置的容量上限（行数或字节数），说明"箱子装满了"，该封。</li>
+  <li><strong>按时间</strong>：段虽然没满，但已经存在了足够久（或收到了显式的 flush 请求），为了让数据尽快可持久、可被后续处理，也会封。</li>
+</ul>
+
+<p>为什么要同时有这两个触发条件，而不是只看大小？因为它们各自堵住了一种"<strong>坏情况</strong>"。只看大小，会出现这样的尴尬：某个冷门分片写得很慢，一个 growing 段半天攒不满，
+那这批数据就迟迟落不了盘——既占着内存，又迟迟不能被建索引、不能被高效检索。<strong>按时间封口</strong>正是为了兜住这种慢分片：哪怕没满，攒够一段时间也强制落盘，保证数据"可见性"和"持久性"的延迟有上界。
+反过来，只看时间也不行：一个热门分片瞬间灌进海量行，要是非等到固定时间才封，单个段会膨胀到内存扛不住。<strong>按大小封口</strong>正是为了兜住这种快分片。两个条件<strong>取先到者</strong>——
+谁先满足就按谁封——既不让快的撑爆内存，也不让慢的饿着不落盘。这是一种典型的"<strong>用两个维度的阈值，夹出一个健康的工作区间</strong>"的工程手法，你在限流、批处理、缓存刷新里会反复见到它。
+此外还有一类<strong>显式 flush</strong>：用户主动调用 flush、或系统在某些操作（如建索引、释放集合）前需要确保数据已落盘，会直接请求封口——这给了上层一个"<strong>把当前写入强制定格</strong>"的手段。</p>
+
+<p>封口之后的落盘动作，由<strong>同步管理器（SyncManager）</strong>负责（<span class="mono">internal/flushcommon/syncmgr</span>）。它把这个段在内存里攒的数据，序列化成一个个 <strong>binlog 文件</strong>写进对象存储。
+一次落盘被封装成一个 <span class="inline">SyncTask</span>，里面清清楚楚记着：这是哪个集合、哪个分区、哪个段，时间戳范围是多少，以及生成了哪些 binlog——
+<strong>插入数据的 insertBinlogs、统计信息的 statsBinlogs、删除标记的 deltaBinlog</strong>（下一课第 18 课会专门拆解这些 binlog 的格式）。SyncTask 跑完，这个段就从"内存里的 growing"变成了"对象存储里的 sealed"，数据第一次真正<strong>落到了磁盘</strong>。</p>
+
+<p>这里有个值得点破的细节：flush <strong>不是</strong>"把整个 growing 段一次性原子替换掉"，而更像"<strong>把当前攒的这一批数据切下来、打包成 binlog 写出去</strong>"。
+一个逻辑段在它的生命周期里，可能经历<strong>多次 flush</strong>——每次把新攒的增量写成一批新的 binlog，所以一个段在对象存储里往往对应<strong>一组（而非一个）binlog 文件</strong>。
+这也解释了为什么后面需要 <strong>compaction</strong>（第 19 课）：随着不断 flush，小 binlog 会越积越多，必须定期合并，否则检索时要打开的文件碎片就太多了。
+另外，flush 完成后还有关键一步——<strong>回写元数据</strong>：通过 metaWriter 把"这个段新增了哪些 binlog、路径在哪、行数多少"登记到元数据里（最终落到 DataCoord 管理的段元信息中，回忆第 12 课）。
+只有元数据登记成功，这批 binlog 才算"被系统认可、可被后续查询和 compaction 看见"。<strong>数据落对象存储 + 元数据登记，两件事都成了，一次 flush 才算真正完成。</strong></p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/flushcommon/syncmgr/task.go</span><span class="ln">SyncTask：一次 flush 的全部账目（节选）</span></div>
+  <pre><span class="kw">type</span> SyncTask <span class="kw">struct</span> {
+    collectionID int64
+    partitionID  int64
+    segmentID    int64        <span class="cm">// 由 StreamingNode 分配的段 ID</span>
+    channelName  string
+    tsFrom, tsTo typeutil.Timestamp  <span class="cm">// 这批数据的时间戳范围</span>
+
+    <span class="cm">// 落盘生成的三类 binlog（字段 ID -&gt; binlog）</span>
+    insertBinlogs map[int64]*datapb.FieldBinlog  <span class="cm">// 插入数据</span>
+    statsBinlogs  map[int64]*datapb.FieldBinlog  <span class="cm">// 统计信息</span>
+    deltaBinlog   *datapb.FieldBinlog            <span class="cm">// 删除标记</span>
+    <span class="cm">// ... chunkManager（对象存储）/ metaWriter（回写元数据） 等</span>
+}</pre>
+</div>
+
+<h2>谁干哪一摊：StreamingNode 与 DataNode</h2>
+<p>现在回答开头那个最容易搞混的问题。在<strong>流式架构</strong>下，这条"消费 WAL → growing 段 → flush → binlog"的流水线，到底跑在哪？答案是：<strong>主要由 StreamingNode 驱动</strong>。
+StreamingNode 内部有一个 <strong>flusher（落盘器）</strong>（<span class="mono">internal/streamingnode/server/flusher</span>），它<strong>消费自己负责的那些 PChannel 上的 WAL</strong>，
+复用上面讲的 <span class="mono">writebuffer</span> 与 <span class="mono">syncmgr</span> 这套通用落盘机制，把日志攒成段、flush 成 binlog。同时 StreamingNode 还维护 <strong>RecoveryStorage（恢复存储）</strong>——
+记录"消费到哪了"的检查点，崩溃重启后能从 WAL 正确位置接着消费，不重不漏。换句话说，<strong>段分配、消费 WAL、攒段、落盘、检查点，这一整套都收拢在了 StreamingNode 这一侧</strong>。</p>
+
+<p>那 <strong>DataNode</strong> 还做什么？在流式架构里，DataNode 的角色已经<strong>收窄</strong>：它不再是"消费消息队列、攒段落盘"的主力，而是主要承担<strong>后台的重活——compaction（段合并/压实）</strong>，
+由 DataCoord 调度、DataNode 执行（第 19 课详述）。简单记：<strong>StreamingNode 负责"把日志变成段、把段落成 binlog"（写入路的落盘）；DataNode/DataCoord 负责"把已有的 binlog 整理得更高效"（后台的合并与回收）。</strong>
+这条边界不必死记每个包名，但要抓住骨架：<strong>落盘在 StreamingNode（沿 WAL），整理在 DataNode（离线）。</strong>它们共享 <span class="mono">flushcommon</span> 这套通用代码，但触发的时机和目的截然不同。</p>
+
+<p>为什么 Milvus 要把"落盘"从 DataNode 挪到 StreamingNode？这背后是流式架构的一次重要演进。在<strong>旧模型</strong>里，Proxy 把消息发进消息队列，DataNode 作为独立消费者去订阅、攒段、落盘——
+写入路径上隔着一层"队列 + 独立消费进程"，链路长、协调点多。<strong>新模型</strong>把"写 WAL"和"消费 WAL 落盘"<strong>收拢到同一侧</strong>：StreamingNode 既是某批 PChannel 的写入负责人，又是它们的消费者。
+好处很直接：段分配（写入时做）与段落盘（消费时做）发生在<strong>同一个进程</strong>里，对"这个段现在攒到哪了"有最一手、最一致的认知，不必跨进程同步状态；
+崩溃恢复也更干净——RecoveryStorage 就在本地，记着检查点，重启即可沿 WAL 续上。这正是上一课"<strong>把有状态的职责收归到独占该通道的单一节点</strong>"那条原则，在落盘这件事上的兑现。</p>
+
+<p>所以如果你脑子里还残留着"DataNode 消费 MQ、攒段、flush"的旧图景，这一课请把它<strong>更新掉</strong>：在当前流式架构下，<strong>落盘的主力是 StreamingNode 的 flusher</strong>，DataNode 退居二线、专注后台 compaction。
+这也是为什么我们这一部分（写入链路）的核心是 WAL 与 StreamingNode，而把 compaction、GC 单独留到后面讲——<strong>"写进来"和"整理好"是两条节奏完全不同的线</strong>，分开理解才不会乱。</p>
+
+<table class="t">
+  <tr><th>职责</th><th>谁来做</th><th>关键包</th></tr>
+  <tr><td><strong>段分配</strong>（决定行进哪个段）</td><td>StreamingNode（写入时）</td><td class="mono">streamingnode/.../interceptors/shard</td></tr>
+  <tr><td><strong>消费 WAL、攒 growing 段</strong></td><td>StreamingNode 的 flusher</td><td class="mono">streamingnode/server/flusher · flushcommon/writebuffer</td></tr>
+  <tr><td><strong>flush 落盘成 binlog</strong></td><td>SyncManager（被 flusher 调用）</td><td class="mono">flushcommon/syncmgr</td></tr>
+  <tr><td><strong>检查点/崩溃恢复</strong></td><td>StreamingNode 的 RecoveryStorage</td><td class="mono">streamingnode/server/wal/recovery</td></tr>
+  <tr><td><strong>compaction / GC</strong></td><td>DataCoord 调度、DataNode 执行</td><td class="mono">datacoord · datanode（第 19 课）</td></tr>
+</table>
+
+<h2>一行数据落盘的全程</h2>
+<p>把这条路连成一条线，你就看完了"日志变成数据"的第一步，也看清了写入链路最后一个环节的全貌：</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>消费 WAL</h4><p>StreamingNode 的 flusher 沿自己负责的 PChannel 读 InsertMessage。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>攒进 growing 段</h4><p class="mono">writebuffer</p><p>按 vchannel 把行追加进内存里的 growing 段（段 ID 已由 StreamingNode 分配）。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>触发封口</h4><p>段满（大小）或够久（时间），seal。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>flush 落盘</h4><p class="mono">syncmgr · SyncTask</p><p>序列化成 insert/stats/delta binlog 写进对象存储。</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>回写元数据 + 检查点</h4><p>登记段为 sealed、记录 binlog 路径；推进 RecoveryStorage 检查点。</p></div></div>
+  <div class="step"><div class="num">6</div><div class="sc"><h4>后续：compaction</h4><p>DataCoord 择机调度 DataNode 合并小段（第 19 课）。</p></div></div>
+</div>
+
+<h2>growing 与 sealed：两种段、两种待遇</h2>
+<p>最后把 growing 与 sealed 这对概念并排放，你会更清楚这条路的"相变（phase transition）"到底发生了什么：</p>
+
+<div class="cols">
+  <div class="col"><h4>growing 段</h4><p>活在<strong>内存</strong>里，正在从 WAL 不断接收新行，<strong>可写可读但易失</strong>。它的可靠性其实来自<strong>背后的 WAL</strong>——即使 growing 段还没落盘就丢了，从 WAL 重放即可重建。
+  查询要读到最新数据，就必须同时查 growing 段（这部分由 QueryNode 的 delegator 处理，留到读取链路细讲）。</p></div>
+  <div class="col"><h4>sealed 段</h4><p>已 flush 成<strong>对象存储里的 binlog</strong>，<strong>只读、不可变、持久</strong>。它是后续<strong>建索引</strong>（在不可变数据上才好建）、<strong>compaction</strong>（合并、应用删除）的对象。
+  一旦 sealed，这段数据就脱离了 WAL 的"待消费"队列，正式成为冷静、稳定的"已落盘资产"，也才有资格在它之上建索引、与其他段合并。</p></div>
+</div>
+
+<p>这个从 growing 到 sealed 的相变，是 Milvus 把"高速写入"与"高效检索"<strong>缝合</strong>的关键接缝：写入侧只管把行往 growing 段里灌、灌满就封；
+检索侧则在一个个不可变的 sealed 段上建索引、做查询。两侧由这条 flush 流水线连接，又被 WAL 这条单一事实来源兜底。理解了这一步，你就理解了一行数据"从日志到磁盘"的完整一跃——下一课，我们打开那个 binlog 文件，看看里面的列式格式到底长什么样，以及它为什么对向量检索如此关键。</p>
+
+<p>临走前再把这一部分（写入链路）的脉络收一收。从第 15 课到这里，我们完整走了一遍"<strong>一行数据从进门到落盘</strong>"：Proxy 校验、定主键、哈希分片、打包，把消息 Append 进 WAL（第 15 课）；
+WAL 作为单一事实来源，用消息 + TimeTick 把写入串成有序、可重放的日志，由 StreamingNode/StreamingCoord 撑起（第 16 课）；StreamingNode 的 flusher 再沿 WAL 把日志攒成 growing 段、flush 成 binlog（这一课）。
+三课连起来，恰好就是开篇那张图——<strong>客户端 → Proxy → StreamingClient.Append → StreamingNode → WAL 后端 →（落盘）对象存储</strong>——的逐段展开。
+至于落盘之后的事：binlog 内部长什么样、小段怎么合并、删除与 upsert 怎么处理，是本部分后面几课的内容。<strong>写入的主干你已经握住了，剩下的都是在这条主干上长出的枝叶。</strong></p>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  一句话串起来：<strong>StreamingNode 的 flusher 消费自己 PChannel 上的 WAL → 按 vchannel 把行攒进内存里的 growing 段（段 ID 在写入时已由 StreamingNode 的 shard 拦截器分配）→ 段满或够久则 seal → SyncManager 把数据序列化成 insert/stats/delta binlog flush 进对象存储，并回写元数据、推进 RecoveryStorage 检查点</strong>。
+  落盘在 StreamingNode（沿 WAL），而 compaction/GC 这类后台整理由 DataCoord 调度、DataNode 执行。记住骨架：<strong>落盘在线（StreamingNode）、整理离线（DataNode）</strong>。
+</div>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>growing 段</strong>：从 WAL 消费的行先攒进内存缓冲（<span class="mono">flushcommon/writebuffer</span>），可写可读但易失，可靠性靠背后的 WAL 兜底。</li>
+    <li><strong>段分配在写入侧</strong>：段 ID 由 StreamingNode 的分片管理拦截器分配（<span class="mono">interceptors/shard</span>），不是 Proxy、也不是 flush 时才定。</li>
+    <li><strong>flush 触发</strong>：段满（大小）或够久（时间/显式请求）则 seal，由 <span class="mono">SyncManager</span> 的 <span class="mono">SyncTask</span> 序列化成 binlog 落对象存储。</li>
+    <li><strong>三类 binlog</strong>：insert（数据）、stats（统计）、delta（删除标记），细节见第 18 课。</li>
+    <li><strong>分工</strong>：StreamingNode 负责消费 WAL、攒段、flush、检查点（落盘）；DataCoord/DataNode 负责 compaction/GC（后台整理，第 19 课）；二者共享 <span class="mono">flushcommon</span>。</li>
+    <li><strong>相变</strong>：growing（内存、可变、易失）→ sealed（对象存储、只读、持久），是写入与检索的接缝。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. WAL 里的 insert 消息，为什么要先在内存里攒成 growing 段、而不是来一行就往对象存储写一行？</div>
+  <ol class="opts">
+    <li>对象存储擅长少而大的文件、怕海量小文件；growing 段用内存缓冲把“碎写”聚合成“批写”，攒满再一次性落成大 binlog，既保护后端又摊薄每行成本</li>
+    <li>因为内存比对象存储更持久可靠</li>
+    <li>因为 growing 段不需要主键</li>
+    <li>因为对象存储不支持向量数据</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：A</strong>。这是 LSM-Tree 类引擎的共有智慧：先在内存攒（memtable），再批量落盘（SSTable）。growing 段还吸收了写入与落盘之间的速率差，可靠性由背后的 WAL 兜底（丢了可重放）</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. 在当前流式架构下，“消费 WAL → 攒 growing 段 → flush 成 binlog”这条落盘流水线主要由谁驱动？</div>
+  <ol class="opts">
+    <li>DataNode 独立订阅消息队列、攒段落盘（旧模型）</li>
+    <li>StreamingNode 的 flusher：它消费自己负责的 PChannel 上的 WAL，复用 flushcommon 的 writebuffer/syncmgr 落盘，并用 RecoveryStorage 记检查点；DataNode 退居二线、专注后台 compaction</li>
+    <li>Proxy 在返回客户端前同步落盘</li>
+    <li>DataCoord 亲自把数据写进对象存储</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。新模型把“写 WAL”和“消费 WAL 落盘”收拢到同一侧：段分配（写入时）与落盘（消费时）同进程，状态一致、恢复干净。这是“把有状态职责收归独占该通道的单一节点”的体现</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 段的 flush 同时设置“按大小”和“按时间”两个触发条件，主要原因是？</div>
+  <ol class="opts">
+    <li>两条件取先到者，分别堵住两种坏情况：只看大小会让慢分片的段迟迟攒不满、落不了盘；只看时间会让热分片的段瞬间膨胀到内存扛不住</li>
+    <li>因为对象存储要求固定的写入间隔</li>
+    <li>因为大小和时间必须同时满足才能 flush</li>
+    <li>为了让 binlog 文件大小完全相等</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：A</strong>。“用两个维度的阈值夹出健康工作区间”：大小兜住快分片不撑爆内存，时间兜住慢分片不饿着不落盘，取先到者。此外还有显式 flush（建索引/释放前确保落盘）</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>本课强调一个段在生命周期里可能多次 flush，于是对象存储里一个段往往对应“一组”而非“一个”binlog 文件——这正是后面需要 compaction 的根源。请顺着这个线索想一想：随着不断 flush，小 binlog 越积越多会给“检索”带来什么具体开销？compaction 把它们合并后，又分别改善了哪些方面？（可结合第 7 课段的列式布局与即将到来的第 19 课。）</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Last lesson we saw the WAL is the single source of truth, and planted a hook: segments, indexes — the "searchable data" — are all shapes derived by <strong>consuming the WAL and replaying the log</strong>.
+This lesson covers the first step of "<strong>log becoming data</strong>" — how insert messages in the WAL first accumulate in memory into a <strong>growing segment</strong>,
+then at the right moment <strong>flush</strong> (seal and persist) into <strong>binlog</strong> files in object storage. Along the way we settle a commonly-confused question: <strong>who actually does this — the StreamingNode or the DataNode?</strong>
+The answer overturns what some older tutorials taught — so another undercurrent of this lesson is <strong>correcting the outdated belief that "the DataNode handles persistence."</strong>
+</p>
+
+<div class="card analogy">
+  <div class="tag">🏭 Analogy</div>
+  Picture this path as a <strong>packing-and-shipping</strong> line. The WAL is a conveyor steadily delivering parts; at the station sits <strong>a box being filled</strong> (the growing segment), and each arriving part (insert row) is stacked into it.
+  The box won't fill forever — once it is <strong>full</strong> (size threshold) or has <strong>waited too long</strong> (time threshold), it gets <strong>sealed</strong>. The sealed box, with its manifest, ships to the <strong>warehouse</strong> (object storage) and becomes <strong>read-only, never changed</strong> — that is a binlog.
+  Note the division of labor: <strong>"which box a part goes into" is assigned by the dispatch desk</strong> (segment assignment, done by the StreamingNode), while <strong>"seal the box and haul it to the warehouse" is the packer's job</strong> (flush, done by the persistence machinery).
+  The neatest part of the whole line: the parts manifest on the conveyor (the WAL) <strong>is always kept</strong> — even if an unsealed box is knocked over, just re-stack it from the conveyor's record and not a single part is lost.
+</div>
+
+<h2>The growing segment: an in-memory buffer accumulated from the WAL</h2>
+<p>Recall Lesson 7: a segment is Milvus's basic unit of data organization. A segment has two states — <strong>growing</strong> and <strong>sealed</strong>. A row's journey to disk begins in growing.
+As a consumer reads forward along the WAL and meets an InsertMessage, it <strong>appends its rows into the corresponding in-memory growing segment</strong>. This in-memory buffer is maintained in code by <span class="inline">writebuffer</span> (<span class="mono">internal/flushcommon/writebuffer</span>),
+which accumulates consumed rows per vchannel, waiting until there is enough to persist in one shot.</p>
+
+<p>The name "growing" is wonderfully apt: it <strong>is getting bigger</strong> — row count rising, memory rising — but not yet set. Its opposite, the sealed segment, is like a "<strong>fossil already set in shape</strong>" — fixed content, never changed again.
+At any moment a collection often holds <strong>a few growing segments</strong> (one per active shard, receiving new data) alongside <strong>many sealed segments</strong> (historical data, persisted).
+That ratio itself reveals a vector DB's workload shape: <strong>the vast majority of data is history that "stabilizes once written," and only the small leading edge is still changing</strong>. Splitting "changing" from "unchanging" into two segment kinds with two treatments is the very starting point of Milvus's efficiency.</p>
+
+<p>Here we reclaim two hooks planted in the last two lessons. First: <strong>who assigns the segment ID?</strong> Last lesson, the Proxy left the segment ID empty (0) when packing, deferring the real assignment to the <strong>StreamingNode</strong>.
+Concretely, the StreamingNode's WAL write path has a <strong>Shard Management interceptor</strong> (<span class="mono">internal/streamingnode/server/wal/interceptors/shard</span>),
+which, as a message is written to the WAL, decides "which segment these rows belong to" — opening a new one when a segment is full. So <strong>segment assignment happens on the write side, on the StreamingNode</strong>, giving each shard's segment numbering a unique, consistent source.
+Second: why accumulate in memory rather than write row-by-row? Because object storage <strong>loves big files and hates small ones</strong> — accumulating thousands of rows into one big binlog before persisting is far more efficient than one small file per row. That is the fundamental reason growing segments exist: <strong>use an in-memory buffer to aggregate "scattered writes" into "batched writes."</strong></p>
+
+<p>One layer deeper, the growing segment is really a clever <strong>buffer zone</strong> absorbing the <strong>rate mismatch</strong> between the write side and the persist side. WAL writes can be fast and bursty — hundreds of thousands of rows a second is nothing unusual;
+object-storage persistence has fixed overhead and prefers "few, large" files. Without the growing segment as a buffer, persisting one file per arriving row would crush object storage under a sea of tiny files (metadata explosion, throughput collapse).
+The growing segment pools this <strong>torrential write stream</strong> into "reservoirs," releasing a flood to object storage only once a pool is full — protecting the backend and amortizing the per-row persist cost. This is the wisdom shared by nearly all LSM-tree storage engines:
+<strong>accumulate in memory first (memtable), then batch-persist (SSTable)</strong>. Milvus's growing→sealed is essentially that idea realized over vector data.</p>
+
+<h2>flush: when to seal and persist into a binlog</h2>
+<p>A growing segment doesn't grow forever. When it meets a <strong>trigger condition</strong> it is <strong>sealed</strong> and then <strong>flushed</strong> to object storage. Two common trigger kinds:</p>
+
+<ul>
+  <li><strong>By size</strong>: the segment reached the configured capacity cap (row count or bytes) — "the box is full," so seal it.</li>
+  <li><strong>By time</strong>: the segment isn't full but has existed long enough (or an explicit flush request arrived); to make data durable and processable sooner, it is sealed too.</li>
+</ul>
+
+<p>Why have both triggers rather than only size? Because each plugs a different "<strong>bad case</strong>." Size-only leads to an awkward situation: a cold, slow-writing shard takes ages to fill one growing segment,
+so that batch of data lingers unpersisted — occupying memory yet unable to be indexed or efficiently searched. <strong>Time-based sealing</strong> backstops exactly this slow shard: even when not full, after enough time it is force-persisted, bounding the latency of data "visibility" and "durability."
+Conversely, time-only fails too: a hot shard flooded with rows in an instant would, if forced to wait for a fixed time, balloon a single segment beyond what memory can hold. <strong>Size-based sealing</strong> backstops this fast shard. The two conditions take <strong>whichever comes first</strong> —
+seal by whoever is satisfied earlier — so the fast don't blow up memory and the slow don't starve unpersisted. This is a classic engineering move: "<strong>use thresholds on two dimensions to bracket a healthy operating range</strong>," which you'll meet again in rate limiting, batching, and cache flushing.
+There is also an <strong>explicit flush</strong>: a user actively calling flush, or the system needing data persisted before certain operations (like index building or releasing a collection), requests sealing directly — giving upper layers a way to "<strong>freeze the current writes</strong>."</p>
+
+<p>The persisting action after sealing is handled by the <strong>SyncManager</strong> (<span class="mono">internal/flushcommon/syncmgr</span>). It serializes the data accumulated in this segment into individual <strong>binlog files</strong> written to object storage.
+One persist is wrapped as a <span class="inline">SyncTask</span>, which records clearly: which collection, partition, and segment this is, its timestamp range, and which binlogs were produced —
+<strong>insertBinlogs for the inserted data, statsBinlogs for statistics, and deltaBinlog for delete markers</strong> (Lesson 18 dissects these binlog formats). Once the SyncTask completes, the segment turns from "an in-memory growing" into "a sealed one in object storage," and the data <strong>truly lands on disk</strong> for the first time.</p>
+
+<p>A detail worth spelling out: flush is <strong>not</strong> "atomically swapping out the entire growing segment," but more like "<strong>slicing off the batch currently accumulated, packaging it into binlogs, and writing it out</strong>."
+A logical segment may undergo <strong>multiple flushes</strong> over its lifetime — each writing the newly accumulated increment as a fresh batch of binlogs, so a segment in object storage often corresponds to <strong>a set of (not one) binlog files</strong>.
+This also explains why <strong>compaction</strong> (Lesson 19) is later needed: as flushes continue, small binlogs pile up and must be periodically merged, or a query would have to open too many file fragments.
+Also, after flush completes comes a key step — <strong>writing back metadata</strong>: via the metaWriter, "which binlogs this segment gained, their paths, the row counts" are registered into the metadata (ultimately into the segment meta managed by DataCoord, recall Lesson 12).
+Only when the metadata registration succeeds is this batch of binlogs "recognized by the system, visible to later queries and compaction." <strong>Data to object storage + metadata registered, both done, and only then is one flush truly complete.</strong></p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/flushcommon/syncmgr/task.go</span><span class="ln">SyncTask: all the bookkeeping of one flush (excerpt)</span></div>
+  <pre><span class="kw">type</span> SyncTask <span class="kw">struct</span> {
+    collectionID int64
+    partitionID  int64
+    segmentID    int64        <span class="cm">// segment ID assigned by the StreamingNode</span>
+    channelName  string
+    tsFrom, tsTo typeutil.Timestamp  <span class="cm">// timestamp range of this batch</span>
+
+    <span class="cm">// the three binlog kinds produced on persist (field ID -&gt; binlog)</span>
+    insertBinlogs map[int64]*datapb.FieldBinlog  <span class="cm">// inserted data</span>
+    statsBinlogs  map[int64]*datapb.FieldBinlog  <span class="cm">// statistics</span>
+    deltaBinlog   *datapb.FieldBinlog            <span class="cm">// delete markers</span>
+    <span class="cm">// ... chunkManager (object storage) / metaWriter (write back meta), etc.</span>
+}</pre>
+</div>
+
+<h2>Who does what: StreamingNode vs DataNode</h2>
+<p>Now answer the easily-confused question from the start. In the <strong>streaming architecture</strong>, where does this "consume WAL → growing segment → flush → binlog" pipeline actually run? The answer: <strong>mainly driven by the StreamingNode</strong>.
+The StreamingNode contains a <strong>flusher</strong> (<span class="mono">internal/streamingnode/server/flusher</span>) that <strong>consumes the WAL on the PChannels it owns</strong>,
+reusing the same general persistence machinery — <span class="mono">writebuffer</span> and <span class="mono">syncmgr</span> — to accumulate the log into segments and flush them into binlogs. The StreamingNode also maintains <strong>RecoveryStorage</strong> —
+a checkpoint of "how far I have consumed," so that on crash-restart it resumes consuming from the correct WAL position with no loss or duplication. In other words, <strong>segment assignment, WAL consumption, segment accumulation, persistence, and checkpointing are all gathered on the StreamingNode side</strong>.</p>
+
+<p>So what does the <strong>DataNode</strong> still do? In the streaming architecture the DataNode's role has <strong>narrowed</strong>: it is no longer the main force "consuming a message queue and persisting segments," but mainly takes on the <strong>heavy background work — compaction</strong>,
+scheduled by DataCoord and executed by the DataNode (detailed in Lesson 19). Remember it simply: <strong>the StreamingNode "turns the log into segments and segments into binlogs" (write-path persistence); the DataNode/DataCoord "tidy existing binlogs to be more efficient" (background merge and reclaim).</strong>
+Don't memorize every package name on this boundary, but grasp the skeleton: <strong>persistence on the StreamingNode (along the WAL), tidying on the DataNode (offline).</strong> They share the common <span class="mono">flushcommon</span> code, but their triggers and purposes are entirely different.</p>
+
+<p>Why does Milvus move "persistence" from the DataNode to the StreamingNode? Behind this is an important evolution of the streaming architecture. In the <strong>old model</strong>, the Proxy published messages to a message queue, and the DataNode, as an independent consumer, subscribed, accumulated segments, and persisted —
+the write path had a layer of "queue + independent consumer process" in the way, with a long chain and many coordination points. The <strong>new model</strong> <strong>gathers "write the WAL" and "consume the WAL to persist" onto the same side</strong>: the StreamingNode is both the write owner of a subset of PChannels and their consumer.
+The benefit is direct: segment assignment (done at write time) and segment persistence (done at consume time) happen in the <strong>same process</strong>, with first-hand, consistent knowledge of "how far this segment has accumulated," needing no cross-process state sync;
+crash recovery is cleaner too — RecoveryStorage is local, holding the checkpoint, so a restart just resumes along the WAL. This is exactly last lesson's principle of "<strong>gather stateful duties into the single node that owns the channel</strong>," realized for persistence.</p>
+
+<p>So if your mind still carries the old picture of "DataNode consumes the MQ, accumulates segments, flushes," this lesson please <strong>update it</strong>: under the current streaming architecture, <strong>the main force of persistence is the StreamingNode's flusher</strong>, while the DataNode steps back to focus on background compaction.
+That is also why this part (the write path) centers on the WAL and the StreamingNode, leaving compaction and GC for later — <strong>"writing in" and "tidying up" are two lines of entirely different cadence</strong>, and understanding them separately keeps things clear.</p>
+
+<table class="t">
+  <tr><th>duty</th><th>who does it</th><th>key package</th></tr>
+  <tr><td><strong>segment assignment</strong> (which segment a row enters)</td><td>StreamingNode (at write time)</td><td class="mono">streamingnode/.../interceptors/shard</td></tr>
+  <tr><td><strong>consume WAL, accumulate growing segment</strong></td><td>StreamingNode's flusher</td><td class="mono">streamingnode/server/flusher · flushcommon/writebuffer</td></tr>
+  <tr><td><strong>flush into binlogs</strong></td><td>SyncManager (called by the flusher)</td><td class="mono">flushcommon/syncmgr</td></tr>
+  <tr><td><strong>checkpoint / crash recovery</strong></td><td>StreamingNode's RecoveryStorage</td><td class="mono">streamingnode/server/wal/recovery</td></tr>
+  <tr><td><strong>compaction / GC</strong></td><td>DataCoord schedules, DataNode executes</td><td class="mono">datacoord · datanode (Lesson 19)</td></tr>
+</table>
+
+<h2>The full journey of a row to disk</h2>
+<p>String the path into one line and you've seen the first step of "log becoming data":</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>consume WAL</h4><p>the StreamingNode's flusher reads InsertMessages along the PChannels it owns.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>accumulate into a growing segment</h4><p class="mono">writebuffer</p><p>append rows per vchannel into the in-memory growing segment (segment ID already assigned by the StreamingNode).</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>trigger seal</h4><p>segment full (size) or old enough (time), seal.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>flush to disk</h4><p class="mono">syncmgr · SyncTask</p><p>serialize into insert/stats/delta binlogs written to object storage.</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>write back meta + checkpoint</h4><p>register the segment as sealed, record binlog paths; advance the RecoveryStorage checkpoint.</p></div></div>
+  <div class="step"><div class="num">6</div><div class="sc"><h4>later: compaction</h4><p>DataCoord schedules the DataNode to merge small segments when apt (Lesson 19).</p></div></div>
+</div>
+
+<h2>Growing vs sealed: two states, two treatments</h2>
+<p>Finally, place growing and sealed side by side and the "phase transition" of this path becomes clearer:</p>
+
+<div class="cols">
+  <div class="col"><h4>growing segment</h4><p>lives in <strong>memory</strong>, continuously receiving new rows from the WAL, <strong>readable and writable but volatile</strong>. Its reliability actually comes from the <strong>WAL behind it</strong> — even if a growing segment is lost before persisting, it can be rebuilt by replaying the WAL.
+  To read the latest data, a query must also read growing segments (handled by the QueryNode's delegator, left for the read path).</p></div>
+  <div class="col"><h4>sealed segment</h4><p>already flushed into <strong>binlogs in object storage</strong>, <strong>read-only, immutable, durable</strong>. It is the target of later <strong>index building</strong> (best done on immutable data) and <strong>compaction</strong> (merge, apply deletes).
+  Once sealed, this data leaves the WAL's "to-be-consumed" queue and formally becomes a calm, stable "persisted asset," and only then is it eligible to have indexes built on it and to be merged with other segments.</p></div>
+</div>
+
+<p>This phase transition from growing to sealed is the key seam where Milvus <strong>stitches</strong> "high-speed writes" to "efficient retrieval": the write side just pours rows into the growing segment and seals when full;
+the retrieval side builds indexes and runs queries over individual immutable sealed segments. The two sides are joined by this flush pipeline and backstopped by the WAL, the single source of truth. Understand this step and
+you understand a row's complete leap "from log to disk" — next lesson we open that binlog file to see what its columnar format actually looks like, and why it matters so much for vector search.</p>
+
+<p>Before leaving, let's gather the throughline of this part (the write path). From Lesson 15 to here we walked the full arc of "<strong>a row from entering the door to landing on disk</strong>": the Proxy validates, settles the primary key, hash-shards, packs, and Appends messages to the WAL (Lesson 15);
+the WAL, as the single source of truth, strings writes into an ordered, replayable log of messages + TimeTick, held up by the StreamingNode/StreamingCoord (Lesson 16); the StreamingNode's flusher then accumulates the log into growing segments along the WAL and flushes them into binlogs (this lesson).
+The three lessons together are exactly the per-segment unfolding of that opening diagram — <strong>Client → Proxy → StreamingClient.Append → StreamingNode → WAL backend → (persist) object storage</strong>.
+As for what happens after persistence: what a binlog looks like inside, how small segments merge, how deletes and upserts are handled — those are the later lessons of this part. <strong>You now hold the trunk of the write path; the rest are branches growing off it.</strong></p>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>the StreamingNode's flusher consumes the WAL on its PChannels → accumulates rows per vchannel into an in-memory growing segment (segment ID already assigned at write time by the StreamingNode's shard interceptor) → seals when full or old enough → the SyncManager serializes the data into insert/stats/delta binlogs flushed to object storage, writes back metadata, and advances the RecoveryStorage checkpoint</strong>.
+  Persistence is on the StreamingNode (along the WAL), while background tidying like compaction/GC is scheduled by DataCoord and executed by the DataNode. Remember the skeleton: <strong>persistence online (StreamingNode), tidying offline (DataNode)</strong>.
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Growing segment</strong>: rows consumed from the WAL first accumulate in an in-memory buffer (<span class="mono">flushcommon/writebuffer</span>) — readable/writable but volatile, with reliability backstopped by the WAL.</li>
+    <li><strong>Assignment on the write side</strong>: segment IDs are assigned by the StreamingNode's shard-management interceptor (<span class="mono">interceptors/shard</span>), not the Proxy and not at flush time.</li>
+    <li><strong>Flush triggers</strong>: full (size) or old enough (time/explicit request) seals the segment; <span class="mono">SyncManager</span>'s <span class="mono">SyncTask</span> serializes it into binlogs in object storage.</li>
+    <li><strong>Three binlog kinds</strong>: insert (data), stats (statistics), delta (delete markers); details in Lesson 18.</li>
+    <li><strong>Division of labor</strong>: the StreamingNode consumes the WAL, accumulates, flushes, checkpoints (persistence); DataCoord/DataNode do compaction/GC (background tidying, Lesson 19); both share <span class="mono">flushcommon</span>.</li>
+    <li><strong>Phase transition</strong>: growing (memory, mutable, volatile) → sealed (object storage, read-only, durable) — the seam between writing and retrieval.</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Why do WAL insert messages first accumulate into an in-memory growing segment instead of writing one file per arriving row to object storage?</div>
+  <ol class="opts">
+    <li>Object storage loves few large files and hates many small ones; the growing segment uses an in-memory buffer to aggregate 'scattered writes' into 'batched writes', persisting one big binlog when full — protecting the backend and amortizing per-row cost</li>
+    <li>Because memory is more durable and reliable than object storage</li>
+    <li>Because growing segments need no primary key</li>
+    <li>Because object storage cannot store vector data</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. This is the wisdom of LSM-tree engines: accumulate in memory (memtable), then batch-persist (SSTable). The growing segment also absorbs the write-vs-persist rate mismatch, with reliability backstopped by the WAL (lost data is replayable)</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Under the current streaming architecture, who mainly drives the 'consume WAL → grow segment → flush into binlogs' persistence pipeline?</div>
+  <ol class="opts">
+    <li>The DataNode independently subscribes the MQ and persists segments (the old model)</li>
+    <li>The StreamingNode's flusher: it consumes the WAL on its own PChannels, reuses flushcommon's writebuffer/syncmgr to persist, and checkpoints via RecoveryStorage; the DataNode steps back to focus on background compaction</li>
+    <li>The Proxy persists synchronously before returning to the client</li>
+    <li>DataCoord writes data into object storage itself</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. The new model gathers 'write WAL' and 'consume WAL to persist' on the same side: segment assignment (at write) and persistence (at consume) share a process — consistent state, clean recovery. This embodies 'gather stateful duties into the single node that owns the channel'</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Why does segment flush set both a 'by size' and a 'by time' trigger?</div>
+  <ol class="opts">
+    <li>Whichever comes first triggers, each plugging a bad case: size-only lets a slow shard's segment never fill and never persist; time-only lets a hot shard's segment balloon beyond memory</li>
+    <li>Because object storage requires a fixed write interval</li>
+    <li>Because both size and time must be satisfied to flush</li>
+    <li>To make all binlog files exactly equal in size</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. 'Use thresholds on two dimensions to bracket a healthy range': size keeps the fast shard from blowing memory, time keeps the slow shard from starving unpersisted, take whichever is first. There is also explicit flush (ensure persistence before index build/release)</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson stresses a segment may flush multiple times in its life, so a segment in object storage often maps to 'a set' of binlog files, not one — the very root of why compaction is later needed. Follow this thread: as flushes pile up small binlogs, what concrete cost does this impose on 'retrieval'? After compaction merges them, which aspects improve and how? (Tie in Lesson 7's columnar layout and the upcoming Lesson 19.)</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="16-streaming-and-wal.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">流式系统与 WAL</span><span class="lang-en">Streaming &amp;amp; WAL</span></div></a><a class="next" href="../index.html"><div class="dir"><span class="lang-zh">完成 →</span><span class="lang-en">Done →</span></div><div class="ttl"><span class="lang-zh">返回目录</span><span class="lang-en">Back to index</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>
