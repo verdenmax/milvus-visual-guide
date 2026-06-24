@@ -1239,6 +1239,25 @@ results</strong> that are painful to debug.</p>
 these three layers separate in your head and you'll instantly locate "which layer the problem is in" when reading any vector-search
 config, tuning, or incident.</p>
 
+<h2>A worked example: same two vectors, what each of the three rulers gives</h2>
+<p>Actually "computing" the metrics once makes the intuition stick. Take two 2-D vectors (small dimensions just for hand-calculation; the
+same holds in hundreds of dimensions): <span class="mono">a = [3, 4]</span> and <span class="mono">b = [4, 3]</span>, both with magnitude 5
+(since 3²+4²=25). The three rulers give:</p>
+
+<table class="t">
+  <tr><th>Metric</th><th>How to compute</th><th>Result</th><th>How to read</th></tr>
+  <tr><td><strong>L2²</strong></td><td class="mono">(3−4)² + (4−3)² = 1 + 1</td><td class="mono">2 (L2 = √2 ≈ 1.41)</td><td>distance, smaller = more alike</td></tr>
+  <tr><td><strong>IP</strong></td><td class="mono">3·4 + 4·3 = 12 + 12</td><td class="mono">24</td><td>similarity, larger = more alike</td></tr>
+  <tr><td><strong>COSINE</strong></td><td class="mono">IP ÷ (|a|·|b|) = 24 ÷ 25</td><td class="mono">0.96</td><td>similarity, closer to 1 = more alike</td></tr>
+</table>
+
+<p>Now <strong>normalize</strong> both vectors (divide each by its magnitude 5): <span class="mono">a' = [0.6, 0.8]</span> and
+<span class="mono">b' = [0.8, 0.6]</span>, then take their inner product: <span class="mono">0.6·0.8 + 0.8·0.6 = 0.96</span> — <strong>exactly the
+COSINE above</strong>. That confirms with concrete numbers the earlier claim: <strong>for normalized vectors, IP equals COSINE</strong>. You can also
+see L2 and COSINE point "opposite ways": a and b sit some distance apart (L2=√2) yet point in quite similar directions (COSINE=0.96). Pick
+the wrong ruler and the "alike or not" verdict can flip entirely — which is exactly why "index and search must use the same metric" is a
+<strong>rule, not a suggestion</strong>.</p>
+
 <h2>topK and score thresholds: what one search returns</h2>
 <p>Putting metrics to work, one <strong>search</strong> is: given a <strong>query vector</strong>, compute "near/far" for each item by the metric,
 and return the nearest <strong>K</strong> — that is <strong>topK</strong>. Results are <strong>sorted by similarity</strong> — rank 1 most alike, then down.
@@ -1565,20 +1584,39 @@ much memory the machines have, and where the latency red line sits, then map bac
 surfaces on its own.</p>
 
 <h2>Where these names come from: Knowhere index types</h2>
-<p>These indexes aren't built in-house by Milvus; they come from its vector-search <strong>kernel library Knowhere</strong> (an upstream lib).
-On the Milvus side, the C++ code <strong>references</strong> these Knowhere index enum constants. Below is where the Milvus kernel enumerates
-index types (note: Knowhere is its own repository — we only show where Milvus references it, <strong>without fabricating Knowhere's file
-paths</strong>):</p>
+<p>These indexes aren't built in-house by Milvus; they come from its vector-search <strong>kernel library Knowhere</strong> (an upstream/third-party lib).
+The index names are all Knowhere <span class="mono">IndexEnum</span> string constants; the Milvus C++ side <strong>references</strong> them and picks one per
+collection config. An easily-missed detail: <strong>these enum constants are scattered across different files, not defined together in a single file</strong>.
+The snippet below lists only the enums that <strong>actually appear in</strong> <span class="mono">index/Utils.cpp</span> (the IVF and sparse-vector families) —
+note carefully that <strong>this lesson's two flagship indexes, HNSW and DiskANN, are NOT in this file</strong>. Their real reference sites are in the
+table that follows; this guide <strong>does not fabricate which file any symbol lives in</strong>:</p>
 
 <div class="codefile">
-  <div class="cf-head"><span class="dot"></span><span class="path">internal/core/src/index/Utils.cpp</span><span class="ln">references knowhere::IndexEnum</span></div>
-  <pre><span class="cm">// Milvus kernel side references the index-type constants Knowhere provides</span>
-knowhere::IndexEnum::INDEX_FAISS_IVFFLAT      <span class="cm">// IVF_FLAT</span>
-knowhere::IndexEnum::INDEX_FAISS_BIN_IVFFLAT  <span class="cm">// IVF for binary vectors</span>
-knowhere::IndexEnum::INDEX_HNSW               <span class="cm">// HNSW graph index</span>
-knowhere::IndexEnum::INDEX_DISKANN            <span class="cm">// DiskANN (disk-resident)</span>
-knowhere::IndexEnum::INDEX_SPARSE_INVERTED_INDEX <span class="cm">// sparse-vector inverted index</span></pre>
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/core/src/index/Utils.cpp</span><span class="ln">knowhere::IndexEnum refs actually in this file</span></div>
+  <pre><span class="cm">// referenced in NM_List() / BIN_List() / unsupported_index_combinations()</span>
+knowhere::IndexEnum::INDEX_FAISS_IVFFLAT          <span class="cm">// IVF_FLAT (dense float)</span>
+knowhere::IndexEnum::INDEX_FAISS_BIN_IDMAP        <span class="cm">// binary-vector FLAT</span>
+knowhere::IndexEnum::INDEX_FAISS_BIN_IVFFLAT      <span class="cm">// IVF for binary vectors</span>
+knowhere::IndexEnum::INDEX_SPARSE_INVERTED_INDEX  <span class="cm">// sparse-vector inverted index</span>
+knowhere::IndexEnum::INDEX_SPARSE_WAND            <span class="cm">// sparse-vector WAND</span></pre>
 </div>
+
+<p>So where do <strong>HNSW and DiskANN</strong> actually "live"? Mapping each index family to where it is referenced in the Milvus source makes it
+clear (HNSW is Knowhere's own enum — core only references it; it is not defined in the milvus files above):</p>
+
+<table class="t">
+  <tr><th>Index family</th><th>Knowhere enum constant</th><th>Milvus-side reference site</th></tr>
+  <tr><td><strong>IVF_FLAT</strong></td><td class="mono">INDEX_FAISS_IVFFLAT</td><td class="mono">index/Utils.cpp</td></tr>
+  <tr><td><strong>Sparse inverted / WAND</strong></td><td class="mono">INDEX_SPARSE_INVERTED_INDEX / _WAND</td><td class="mono">index/Utils.cpp</td></tr>
+  <tr><td><strong>DiskANN</strong></td><td class="mono">INDEX_DISKANN</td><td class="mono">common/Utils.h (DISK_INDEX_LIST), index/VectorDiskIndex.cpp</td></tr>
+  <tr><td><strong>HNSW</strong></td><td class="mono">INDEX_HNSW</td><td>Knowhere library enum, referenced by core (not defined in the milvus files above)</td></tr>
+</table>
+
+<p>So the correct mental model is: <strong>index names are Knowhere <span class="mono">IndexEnum</span> constants that Milvus selects per collection</strong>;
+and "which file a constant is written in" depends on where it's used — IVF/sparse appear in the support lists in <span class="mono">index/Utils.cpp</span>,
+DiskANN appears in <span class="mono">VectorDiskIndex.cpp</span> and <span class="mono">common/Utils.h</span> because it needs dedicated "disk-resident"
+logic, and HNSW is an enum from the Knowhere library. Read the source against this table and you won't go "looking for the wrong symbol in the
+wrong file".</p>
 
 <p>The <strong>actual build process, parameter details, and the engineering pipeline that schedules index building</strong> are the subject of
 <strong>Part 5</strong>, where we'll really dive into the C++ kernel. For this lesson you only need <strong>selection intuition</strong>: know these
@@ -1608,7 +1646,7 @@ feasible</strong> in a continuously-writing production system.</p>
     <li><strong>HNSW</strong>: multi-layer small-world graph, <span class="mono">M / efConstruction / ef</span>; high recall, low latency, but the most
     memory-hungry and most popular.</li>
     <li><strong>PQ / DiskANN</strong>: compress / sink to disk, to serve huge scale that won't fit in memory.</li>
-    <li>These are <strong>Knowhere</strong> index types (referenced by Milvus, see <span class="mono">index/Utils.cpp</span>); build details are saved for Part 5.</li>
+    <li>These are <strong>Knowhere</strong> index enums (referenced by Milvus): IVF/sparse in <span class="mono">index/Utils.cpp</span>, DiskANN in <span class="mono">VectorDiskIndex.cpp</span>, HNSW a Knowhere library enum; build details are saved for Part 5.</li>
   </ul>
 </div>
 
@@ -1690,6 +1728,19 @@ relational DB's, mainly used for <strong>filtering</strong> ("price below 500", 
 <strong>one primary key + one (or more) vectors + several scalar fields</strong>. A search finds similar by vector while also constraining by
 scalar fields — exactly what separates a "vector database" from a "pure algorithm library".</p>
 
+<div class="cellgroup">
+  <div class="cg-cap"><b>Anatomy of one entity</b>: a primary key to pinpoint + a vector field for similarity + several scalar fields for filtering — three kinds of field make up "a row"</div>
+  <div class="cells"><span class="lab">field</span><span class="cell hl">item_id</span><span class="cell q">image_vec</span><span class="cell">price</span><span class="cell">category</span><span class="cell">$meta</span></div>
+  <div class="cells"><span class="lab">value</span><span class="cell hl">10086</span><span class="cell q">[0.90, 0.10, …]</span><span class="cell">499.0</span><span class="cell">shoes</span><span class="cell">{"sale":true}</span></div>
+  <div class="cells"><span class="lab">role</span><span class="cell hl">PK · unique</span><span class="cell q">vector · search</span><span class="cell">scalar · filter</span><span class="cell">scalar · part. key</span><span class="cell">dynamic field</span></div>
+</div>
+
+<p>This "anatomy" is basically the whole essence of the Milvus data model: <strong>a single row simultaneously houses "a primary key to
+pinpoint exactly", "a vector to fuzzily find similar", and "scalars to filter precisely"</strong>. Each plays its role and none is optional —
+without a primary key you can't delete/update/dedup, without a vector it degrades to an ordinary database, without scalar filtering you
+can only do "pure similarity" with no way to express business conditions. Keep these three kinds of field straight in your head, and when
+you later read the write and query paths you'll instantly see what role each field plays at each step.</p>
+
 <p>One key difference from a relational DB to flag first: <strong>once the schema is set at collection creation, the structure is largely
 stable</strong>. Core metadata like dimension, primary key, and metric can't be changed at will — unlike the freewheeling
 <span class="mono">ALTER TABLE</span> add/drop column of a relational DB. The reason is that for top retrieval performance, Milvus plans the
@@ -1701,6 +1752,20 @@ stability of the core structure is the necessary price it pays for high performa
 <p>By the way, <strong>above the collection there is also a database layer</strong>: a Milvus instance can hold several databases, each holding
 several collections, for coarser-grained isolation (different business lines, different environments). This lesson focuses on the
 collection and its internals; just know the database layer exists.</p>
+
+<div class="layers">
+  <div class="layer l-app"><div class="lh"><span class="badge">outermost</span><span class="name">database</span></div><div class="ld">an instance can hold several databases — the coarsest isolation (business line / environment).</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">≈ table</span><span class="name">collection</span></div><div class="ld">the main data organization, defined by one schema; this lesson's focus.</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">logical split</span><span class="name">partition</span></div><div class="ld">a collection is split into logical blocks by rule (or partition key); a query only searches relevant partitions.</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">physical storage</span><span class="name">segment</span></div><div class="ld">each partition is further split into many segments — the physical units that actually persist and get indexed (next lesson).</div></div>
+</div>
+
+<p>This four-level containment "<strong>database → collection → partition → segment</strong>" is the skeleton for understanding Milvus data
+organization: the further out, the more it is a <strong>logical/management</strong> concept (isolation, naming, splitting); the further in, the
+more it is a <strong>physical/storage</strong> concept (actually consuming memory, landing in object storage, getting indexed). Note that partition
+and segment straddle the "logical ↔ physical" line: a partition is a logical drawer you can see and specify, while a segment is a physical
+box Milvus manages internally that you usually never notice. This lesson keeps the lens on the collection and partition levels; segments
+are dissected next lesson.</p>
 
 <table class="t">
   <tr><th>Milvus concept</th><th>≈ relational DB</th><th>Note</th></tr>
@@ -2010,14 +2075,22 @@ So "immutable segments + delete logs + compaction" is the clever design that let
 But for the main flow, remembering <strong>Growing → Sealed → Flushing → Flushed → (Dropped)</strong> is enough—it traces a row of data's whole life "from mutable in memory, to immutable on disk, to finally reclaimed."</p>
 
 <div class="codefile">
-  <div class="cf-head"><span class="dot"></span><span class="path">SegmentState enum (commonpb, referenced by datacoord)</span><span class="ln">commonpb.SegmentState_* in internal/datacoord</span></div>
-  <pre><span class="cm">// Segment lifecycle states (literal Milvus code, heavily used by datacoord)</span>
+  <div class="cf-head"><span class="dot"></span><span class="path">commonpb.SegmentState</span><span class="ln">generated enum in milvus-proto go-api/v3 (common.proto)</span></div>
+  <pre><span class="cm">// Segment lifecycle states (generated from common.proto, heavily used by datacoord)</span>
 SegmentState_Growing    <span class="cm">// in memory, mutable, continuous writes</span>
 SegmentState_Sealed     <span class="cm">// full, immutable, read-only</span>
 SegmentState_Flushing   <span class="cm">// landing to disk as binlog</span>
 SegmentState_Flushed    <span class="cm">// flushed to object storage, indexable</span>
 SegmentState_Dropped    <span class="cm">// replaced by compaction/delete, awaiting GC</span>
 SegmentState_Importing  <span class="cm">// temporary segment during bulk import</span></pre>
+</div>
+
+<div class="card warn">
+  <div class="tag">⚠️ Numeric order ≠ temporal order</div>
+  This lesson teaches the <strong>temporal order</strong> (Growing→Sealed→Flushing→Flushed→Dropped), but the enum's <strong>numeric values</strong>
+  in the proto do <strong>not</strong> follow that order: <span class="mono">NotExist=1, Growing=2, Sealed=3, Flushed=4, Flushing=5, Dropped=6</span>—
+  note that <strong>Flushed's number (4) actually precedes Flushing's (5)</strong>. That is just the historical order in which enum values were
+  appended; it has nothing to do with the real state-transition order. This is <strong>expected</strong>—don't infer flow direction from the numbers.
 </div>
 
 <h2>vchannel → pchannel: which pipe data flows in through</h2>
@@ -2106,6 +2179,23 @@ Segment, column, log, and index now close the loop.</p>
 <p>Reading this table, note one thing in particular: <strong>no matter which stage the data is in, once it's in the log it is "landed"</strong>—at query time Milvus looks at <strong>both</strong> the sealed segments loaded on QueryNodes (historical data)
 and the still-growing Growing segments (newest data), merging both results. That's why Milvus can "search data the instant it's written," unlike traditional offline indexes that wait for a batch round.
 Understand this table and you understand the core mechanism of Milvus's storage-query collaboration.</p>
+
+<h2>At query time: both Growing and Sealed are searched</h2>
+<p>A common misconception is that "only flushed, indexed segments get searched." The opposite is true: <strong>a single query fans out to both
+kinds of segment</strong>—the <strong>Sealed segments</strong> loaded on QueryNodes (historical data, with an ANN index, efficient search) and the
+<strong>Growing segments</strong> still in memory (newest data, no formal index yet, brute-force/temporary search)—then <strong>merges</strong> the topK
+candidates from both sides into one global result. Drop either side and the result is incomplete: searching only Sealed misses the freshest
+just-written data, while searching only Growing can't see the vast history.</p>
+
+<div class="cols">
+  <div class="col"><h4>Growing segments (newest)</h4><p>In memory, mutable, not formally indexed yet. They provide <strong>freshness</strong>: just-written data lives here, searched by brute force or temporary structures. Small in size, so brute force is fast enough.</p></div>
+  <div class="col"><h4>Sealed segments (history)</h4><p>Flushed, ANN-indexed, loaded by QueryNodes. They provide <strong>scale and efficiency</strong>: efficient nearest-neighbor search over vast historical data happens here.</p></div>
+</div>
+
+<p>This "search both kinds, then merge" design is exactly how Milvus reconciles <strong>"finds the newest" and "finds history fast"</strong>. It also
+explains why "you can search right after an insert"—that row is sitting in some Growing segment right now, with no need to wait for flush and
+indexing. Later query-path lessons unpack "how results are merged and how the consistency level affects visibility"; for now, remember one
+line: <strong>Growing and Sealed are the two legs a query stands on—neither is dispensable.</strong></p>
 
 <div class="card macro">
   <div class="tag">🌍 Big picture</div>
@@ -2213,6 +2303,20 @@ if a node dies, it holds no exclusive state, so just restart or reload on anothe
   <div class="layer l-core"><div class="lh"><span class="badge">Dep ③</span><span class="name">message queue / WAL</span></div><div class="ld">rocksmq / Pulsar / Kafka / Woodpecker. An ordered, durable, replayable write log—the carrier of "log as data."</div></div>
 </div>
 
+<table class="t">
+  <thead><tr><th>External dependency</th><th>Role (capability outsourced)</th><th>Typical implementations / examples</th></tr></thead>
+  <tbody>
+    <tr><td><strong>etcd</strong></td><td>metadata + service discovery: strongly consistent, watchable</td><td class="mono">etcd (same as K8s)</td></tr>
+    <tr><td><strong>object storage</strong></td><td>persist massive immutable data: binlogs, index files, delta logs</td><td class="mono">MinIO / AWS S3 / GCS / Aliyun OSS</td></tr>
+    <tr><td><strong>message queue / WAL</strong></td><td>ordered, durable, replayable write log ("log as data")</td><td class="mono">RocksMQ / Pulsar / Kafka / Woodpecker</td></tr>
+  </tbody>
+</table>
+
+<p>Note one pattern in this table: <strong>the three dependencies map onto three very different storage needs—"small but critical", "large but
+cheap", and "ordered and replayable"</strong>—metadata is small yet must be strongly consistent, vector data is large yet write-rarely read-often,
+and the write log must be strictly ordered and replayable. Handing each to the mature system best suited to it is the core idea of this
+external-dependency design. We unpack them one by one below.</p>
+
 <h3>① etcd — metadata and service discovery</h3>
 <p><strong>etcd</strong> is a <strong>strongly consistent distributed key-value store</strong>. Milvus uses it to hold all <strong>metadata</strong>: which collections exist, their schemas, each segment's state and location, index metadata, etc.;
 and for <strong>service discovery</strong>—nodes register themselves in etcd on startup, and coordinators learn "which nodes are alive and where" through etcd. Metadata is small but <strong>critically important</strong>, must be strongly consistent and never lost; if metadata is corrupted or lost, the whole cluster "loses its bearings,"
@@ -2286,6 +2390,21 @@ mq:
   <div class="col"><h4>Standalone</h4><p>A <strong>single process</strong> packing all components together, MQ defaults to built-in <strong>RocksMQ</strong>, metadata via embedded or local etcd, data via local MinIO. Suited for <strong>small-to-mid production, single-machine</strong>, simple to operate.</p></div>
   <div class="col"><h4>Cluster</h4><p>Components (coordinators + various nodes) <strong>deployed and scaled independently</strong> on <strong>Kubernetes</strong>, MQ defaults to <strong>Pulsar</strong>, relying on external etcd / S3 / Pulsar clusters. For <strong>large-scale, high-concurrency, high-availability</strong> production.</p></div>
 </div>
+
+<table class="t">
+  <thead><tr><th>Shape</th><th>How it runs</th><th>Dependencies used</th><th>Scale</th><th>When</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Milvus Lite</strong></td><td>pip-installed <strong>in-process</strong> library, embedded in your Python process</td><td><strong>zero external deps</strong>, data in local files</td><td>up to ~millions · single machine</td><td>learning, prototyping, laptop experiments, unit tests</td></tr>
+    <tr><td><strong>Standalone</strong></td><td><strong>single process</strong> packing all components together</td><td>built-in RocksMQ + local MinIO + embedded/local etcd</td><td>tens of millions · single machine</td><td>small-to-mid production, wants simple ops</td></tr>
+    <tr><td><strong>Cluster</strong></td><td>each component deployed and scaled independently on <strong>K8s</strong></td><td>external production-grade etcd / S3 / Pulsar</td><td>hundreds of millions+ · high concurrency &amp; HA</td><td>large-scale production, per-component scaling</td></tr>
+  </tbody>
+</table>
+
+<p>This table lays out the differences at a glance: left to right, <strong>components split further apart, dependencies move more external, the
+scale it carries grows, and ops gets heavier</strong>. Lite suits "I want my first vector search running today," Standalone suits "one machine
+carries one business line," Cluster suits "hundreds of millions of vectors, shared across teams, no downtime." Crucially they share the same
+API and data model, so you needn't pick the final shape up front—<strong>start on Lite/Standalone and migrate to Cluster as scale grows</strong>,
+with business code barely changing.</p>
 
 <p>The core difference among the three is a continuum of <strong>"component aggregation" and "dependency externalization"</strong>: Lite crams everything into one process with zero external deps; Standalone is still one process but starts using dependencies like object storage;
 Cluster splits every component apart and externalizes every dependency into an independent cluster, buying unbounded horizontal scaling. They share <strong>the same API and data model</strong>, so you can <strong>start with Lite and migrate smoothly to Cluster</strong> with almost no business-code changes.</p>
