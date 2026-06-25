@@ -390,6 +390,11 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 要看某个历史时刻的快照（时间旅行、回溯排查），用 Customized 指定 ts。还要记住：<strong>同一个集合、不同查询完全可以用不同级别</strong>——
 级别是查询粒度的选择，不是集合的全局属性，这给了你按业务逐查调优的空间。</p>
 
+<p>这里要澄清一个常见误解：<strong>一致性级别是"读"侧的选择，不是"写"侧的</strong>。无论你选哪一档，<strong>写入永远是完整、确定地进入系统的</strong>——
+盖戳、入 WAL、最终被所有节点消费到，这一点不因级别而变。级别只影响"<strong>一次读愿意等到多新、看到哪一刻的快照</strong>"。
+所以"用了 Eventually 会不会丢写入？"这个担心是多余的：数据一条都不会少，你只是<strong>选择了暂时不等它到齐就先答</strong>而已。
+把"写得全不全"和"读得新不新"这两件事分开，你就不会被一致性级别绕晕。</p>
+
 <div class="cellgroup">
   <div class="cg-cap"><b>MVCC：用 Tg=100 决定谁可见</b>（可见 ⇔ 插入 ts ≤ 100 且其后无墓碑 ≤ 100）</div>
   <div class="cells"><span class="lab">行A</span><span class="cell q">插入@80</span><span class="sep">→</span><span class="cell q">可见 ✓</span></div>
@@ -571,6 +576,13 @@ recommendation, RAG, where missing a few rows is harmless but low latency and hi
 fresh", chasing raw speed (offline analytics, massive recall) — Eventually; viewing a snapshot at some historical instant (time travel,
 retrospective debugging) — Customized with an explicit ts. And remember: <strong>the same collection can use different levels for different
 queries</strong> — the level is a per-query choice, not a global property of the collection, giving you room to tune query by query.</p>
+
+<p>A common misconception to clear up here: <strong>the consistency level is a "read"-side choice, not a "write"-side one</strong>. Whichever tier
+you pick, <strong>a write always enters the system fully and deterministically</strong> — stamped, into the WAL, eventually consumed by every node;
+that doesn't change with the level. The level only affects "<strong>how fresh a single read is willing to wait for, which instant's snapshot it
+sees</strong>". So the worry "does using Eventually lose writes?" is misplaced: not one row goes missing; you've merely <strong>chosen to answer
+before waiting for it all to arrive</strong>. Separate "how complete the write" from "how fresh the read" and the consistency levels stop being
+confusing.</p>
 
 <div class="cellgroup">
   <div class="cg-cap"><b>MVCC: Tg=100 decides who is visible</b> (visible &hArr; insert ts ≤ 100 and no tombstone ≤ 100 after it)</div>

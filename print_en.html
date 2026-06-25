@@ -9798,6 +9798,13 @@ fresh", chasing raw speed (offline analytics, massive recall) — Eventually; vi
 retrospective debugging) — Customized with an explicit ts. And remember: <strong>the same collection can use different levels for different
 queries</strong> — the level is a per-query choice, not a global property of the collection, giving you room to tune query by query.</p>
 
+<p>A common misconception to clear up here: <strong>the consistency level is a "read"-side choice, not a "write"-side one</strong>. Whichever tier
+you pick, <strong>a write always enters the system fully and deterministically</strong> — stamped, into the WAL, eventually consumed by every node;
+that doesn't change with the level. The level only affects "<strong>how fresh a single read is willing to wait for, which instant's snapshot it
+sees</strong>". So the worry "does using Eventually lose writes?" is misplaced: not one row goes missing; you've merely <strong>chosen to answer
+before waiting for it all to arrive</strong>. Separate "how complete the write" from "how fresh the read" and the consistency levels stop being
+confusing.</p>
+
 <div class="cellgroup">
   <div class="cg-cap"><b>MVCC: Tg=100 decides who is visible</b> (visible &hArr; insert ts ≤ 100 and no tombstone ≤ 100 after it)</div>
   <div class="cells"><span class="lab">row A</span><span class="cell q">insert@80</span><span class="sep">→</span><span class="cell q">visible ✓</span></div>
@@ -10166,8 +10173,8 @@ network stays feather-light.</p></div>
 </div>
 
 <h2>Split: cut data into parallelizable small blocks</h2>
-<p>The premise of everything is <strong>splitting</strong>. A collection's data isn't one heap but is cut into many <strong>immutable
-segments</strong>, then spread over several <strong>shards (vchannels)</strong> (Lessons 7, 12). A segment is the <strong>smallest unit of
+<p>The premise of everything is <strong>splitting</strong>. A collection's data isn't one heap but is cut into many <strong>segments</strong>
+(immutable once sealed), then spread over several <strong>shards (vchannels)</strong> (Lessons 7, 12). A segment is the <strong>smallest unit of
 parallel search</strong>: each can be searched, indexed, and loaded independently, with no dependency on the others. A shard is the <strong>unit
 of routing and parallelism</strong>: writes hash by primary key into different shards, queries fan out to all shards. Because data is cut and
 spread from the start, "letting many nodes work at once" has a physical basis — you can't parallelize an indivisible whole, but you can easily
@@ -10182,8 +10189,8 @@ tradeoff tells you which way to turn the dial when tuning.</p>
 <h2>Search & combine: fan out, then gather back layer by layer</h2>
 <p>A query takes the classic <strong>scatter-gather</strong> shape (Lessons 3, 25). The Proxy <strong>scatters</strong> the request to all
 relevant shards; each shard's delegator hands it to the QueryNodes holding different segments; each segment computes <strong>its own topK</strong>
-in C++ segcore. Results then <strong>gather back</strong> — in <strong>three merge levels</strong> (Lesson 29): segment topK → the QueryNode
-merges its segments' results into a <strong>node topK</strong> → the Proxy merges the shards' results into a <strong>global topK</strong>. Each
+in C++ segcore. Results then <strong>gather back</strong> — in <strong>three merge levels</strong> (Lesson 29): segment topK → each shard's delegator
+merges its shard's QueryNodes' results into a <strong>shard topK</strong> → the Proxy merges the shards' results into a <strong>global topK</strong>. Each
 layer passes up only "the top K candidates", so even with hundreds of millions of vectors below, <strong>only K-scale data flows on the
 network</strong> — the very crux of fast, cheap distributed search.</p>
 
@@ -10197,7 +10204,7 @@ is" — the total's pressure was long since absorbed by divide-and-conquer and p
   <div class="tcap"><b>scatter-gather of one topK search</b>: each layer passes up a local topK, converging upward</div>
   <div class="stations">
     <div class="stn"><h5>segment</h5><div class="cellrow"><span class="vc">segment topK</span></div><div class="cellrow"><span class="vc">segment topK</span></div><div class="tlab">segcore each on its own</div></div>
-    <div class="stn"><h5>node</h5><div class="cellrow"><span class="vc hot">node topK</span></div><div class="tlab">delegator merges this node</div></div>
+    <div class="stn"><h5>shard</h5><div class="cellrow"><span class="vc hot">shard topK</span></div><div class="tlab">delegator merges this shard</div></div>
     <div class="stn"><h5>Proxy</h5><div class="cellrow"><span class="vc hot">global topK</span></div><div class="tlab">cross-shard merge</div></div>
   </div>
 </div>
