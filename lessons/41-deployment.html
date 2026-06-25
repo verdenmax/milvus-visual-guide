@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>41 · 部署与运维 / Deployment &amp; operations - Milvus 图解教程</title>
+<meta name="description" content="第九部分 · API、工具与运维｜部署与运维 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="41 · 部署与运维 / Deployment &amp; operations - Milvus 图解教程">
+<meta property="og:description" content="第九部分 · API、工具与运维｜部署与运维 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="41 · 部署与运维 / Deployment &amp; operations - Milvus 图解教程">
+<meta name="twitter:description" content="第九部分 · API、工具与运维｜部署与运维 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.timeline .tl-row { display: flex; align-items: flex-start; gap: .6rem; padding: .12rem 0; }
+.timeline .tl-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: .45rem; }
+.timeline .tl-t { font-family: ui-monospace, monospace; font-weight: 700; color: var(--accent-ink); min-width: 2.4rem; font-size: .82rem; flex-shrink: 0; margin-top: .18rem; }
+.timeline .tl-c { font-size: .9rem; color: var(--muted); }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第九部分 · API、工具与运维</span><span class="lang-en">Part 9 · API, tools &amp; ops</span></span>
+    <span class="pill">41 / 41</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:100%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第九部分 · API、工具与运维</span><span class="lang-en">Part 9 · API, tools &amp; ops</span></div>
+    <h1><span class="lang-zh">部署与运维</span><span class="lang-en">Deployment &amp; operations</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+第 8 课告诉你 Milvus <strong>依赖什么</strong>（etcd、对象存储、消息队列）、有哪几种<strong>部署形态</strong>。这一课作为第 9 部分的收尾，换一副<strong>运维实战</strong>的眼镜：你到底怎么<strong>把它真正跑起来</strong>——从一行命令的内嵌单机，到一整个生产级 Kubernetes 集群；以及第 3 部分那套"<strong>拆开的架构</strong>"，在部署时如何回报你"<strong>哪里热就单独扩哪里</strong>"的弹性。这是把前面所有知识<strong>落到地上</strong>的一课。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 类比</div>
+  部署一套系统，像<strong>选一个住处</strong>。<strong>内嵌单机</strong>（<span class="mono">standalone_embed.sh</span>）像一间<strong>精装单身公寓</strong>：水电网全部内建、拎包即住、几分钟上手——适合一个人（开发、试用）。<strong>docker-compose</strong> 像一套<strong>带独立水电的服务式公寓</strong>：etcd、存储、消息队列都是真正分开的"管线"，但仍同住一栋楼（一台机器）。
+  <strong>Kubernetes（Helm / Operator）</strong> 则像一整座<strong>有物业的公寓社区</strong>：每个服务住自己的单元、可以<strong>按需加盖楼层</strong>（独立伸缩），还有一位"<strong>物业管家</strong>"（Operator）替你处理扩容、故障替换、滚动升级。住处的选择，取决于你是"<strong>一个人试住</strong>"还是"<strong>要扛起一座城的流量</strong>"。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观视角</div>
+  一句话：<strong>部署是一道阶梯——内嵌单机(零依赖、本地)→ docker-compose(本地全量)→ k8s 的 Helm Chart / Milvus Operator(生产)；集群模式下各组件可独立伸缩(读扩 QueryNode、写扩 streaming/DataNode)；消息队列(rocksmq/Pulsar/Kafka/Woodpecker)是关键部署决策，它就是第 16/31 课那条 WAL 的后端</strong>。配置(第 40 课)、可观测(第 39 课)、版本协调(第 37 课)在这里合流。
+</div>
+
+<h2>从一行命令到一个集群：部署的阶梯</h2>
+<p>"怎么把 Milvus 跑起来"没有唯一答案，而是<strong>一道由简到繁的阶梯</strong>，你站在哪一级，取决于你要做什么。最低一级是<strong>内嵌单机</strong>（<span class="inline">scripts/standalone_embed.sh</span>）：它把该有的依赖尽量<strong>内嵌</strong>——连 etcd 都能用嵌入式的（脚本里能看到 <span class="mono">ETCD_USE_EMBED=true</span>）、消息用本地的 rocksmq、数据落本地盘。好处是<strong>几乎零外部依赖、一条命令起一个完整 Milvus</strong>，最适合<strong>学习、本地开发、跑通一个 demo</strong>。</p>
+<p>往上一级是 <strong>docker-compose</strong>：把 etcd、对象存储（MinIO）、消息队列（如 Pulsar）作为<strong>真正独立的容器</strong>拉起来，再加上 Milvus 本身。这一级让你在<strong>一台机器</strong>上体验到"<strong>各依赖各司其职</strong>"的真实形态，比内嵌更接近生产、又比 k8s 简单，适合<strong>本地集成测试、小规模试用</strong>。最高一级是 <strong>Kubernetes</strong>，这才是生产的主场：官方提供 <strong>Helm Chart</strong>（一键模板化部署）和 <strong>Milvus Operator</strong>（用一个"运维大脑"声明式地管理整个集群的生命周期——扩缩容、故障自愈、滚动升级）。这道阶梯的设计很贴心：<strong>上手时零负担，认真用时有生产级方案</strong>，你可以随着需求"<strong>逐级往上走</strong>"，而不必一开始就被复杂度劝退。下面把这道阶梯画出来。</p>
+
+<p>这道阶梯里，最值得多说一句的是 <strong>Milvus Operator</strong>，因为它代表了一种现代的运维范式——<strong>声明式管理</strong>。传统运维是"<strong>命令式</strong>"的：你一条条敲命令告诉系统"先起这个、再扩那个、挂了去重启"。Operator 反过来，是<strong>声明式</strong>的：你只写一份描述"<strong>我想要的最终状态</strong>"的清单（比如"QueryNode 要 5 个、DataNode 要 3 个、用这个版本"），Operator 这个"<strong>运维大脑</strong>"就会<strong>持续地把现实拉向你声明的状态</strong>——少了就补、挂了就换、要升级就一个个滚动替换。这背后是 Kubernetes 的核心思想：<strong>声明期望、由控制器不断校正</strong>。你会发现，这和 Milvus 内部协调器（第 11–13 课）"<strong>盯着期望状态、不断驱动现实向它收敛</strong>"的做法<strong>如出一辙</strong>——只不过一个管的是集群里的段与索引，一个管的是 k8s 里的 Pod 与服务。理解了这层同构，你就明白为什么说 Operator 是"把 Milvus 自己那套协调哲学，搬到了部署层"——<strong>整个系统从里到外，贯穿着同一种"声明期望、自动收敛"的审美</strong>。</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>内嵌单机</h4><p><span class="mono">standalone_embed.sh</span>：嵌入式 etcd + 本地 rocksmq + 本地盘，一条命令、零外部依赖。学习/开发首选。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>docker-compose</h4><p>etcd / MinIO / Pulsar 各作独立容器 + Milvus，一台机器上体验真实分工。集成测试/小试用。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Helm Chart</h4><p>k8s 上模板化一键部署，参数可调，各组件以 Pod 形式运行。中大规模。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Milvus Operator</h4><p>声明式“运维大脑”：扩缩容、故障自愈、滚动升级全自动。生产首选。</p></div></div>
+</div>
+
+<h2>集群模式的回报：按需独立伸缩</h2>
+<p>为什么要费劲上集群模式？因为它兑现了第 3 部分那套"<strong>存算分离、组件解耦</strong>"架构的<strong>核心红利</strong>：<strong>哪一部分成了瓶颈，就单独给哪一部分加机器</strong>，而不必整体放大。这一点，正是 Milvus 把"协调器/工作节点""读路径/写路径"拆得那么开的<strong>终极目的</strong>。</p>
+<p>举几个具体场景你就懂了。业务是<strong>读多写少</strong>（典型的检索服务）？那就<strong>多加 QueryNode</strong>，让更多节点并行扛搜索流量，而写入侧的资源原封不动。反过来，正在<strong>灌一大批数据</strong>（离线导入）？那就临时<strong>加强写入/流式与建索引</strong >的算力，读侧不受影响。存储不够了？因为数据在<strong>对象存储</strong>（无状态、可独立扩容），加容量也不牵动计算节点。这种"<strong>按需、局部、独立</strong>"的伸缩，是单机模式给不了的——单机所有角色挤在一个进程里，要扩只能<strong>整体复制</strong>，既浪费又不灵活。所以选择集群模式的<strong>真正理由</strong>，往往不是"能装更多数据"，而是"<strong>能把钱花在刀刃上</strong>"：精准地为真正紧张的那一环扩容。下面用对比看清两种模式各自的取舍。</p>
+
+<p>顺着这个思路，再点破一个常被初学者误解的点：<strong>"上集群"并不总是"更好"，而是"更适合某些场景"</strong>。集群模式带来弹性与容错，但代价也实打实——你要额外运维 etcd、Pulsar、对象存储这一整套外部依赖，要管 k8s、管网络、管一堆 Pod 的健康，整体复杂度<strong>陡增</strong>。对一个数据量不大、流量平稳、团队人手有限的场景，硬上集群往往是<strong>给自己找麻烦</strong>：你为"<strong>可能用得上的弹性</strong>"付出了"<strong>实打实的运维负担</strong>"。所以成熟的判断不是"集群一定比单机强"，而是<strong>按真实需求选型</strong>：先用单机把业务跑顺、把数据规模和流量摸清，<strong>当单机真的扛不住、或对可用性有了硬要求时，再往集群迁</strong>。这种"<strong>不为不需要的复杂度买单</strong>"的克制，和第 40 课"危险配置默认锁死"、第 37 课"GPU 默认不编译"是同一种工程成熟度——<strong>复杂度是有成本的，只在它确实带来价值时才引入</strong>。把这条原则记在心里，你在为 Milvus（乃至任何系统）做部署决策时，就不会被"看起来更高级"的方案牵着走，而会回到那个最朴素的问题：<strong>我的场景，到底需要什么？</strong></p>
+
+<div class="cols">
+  <div class="col"><h4>单机 standalone</h4><p>所有角色一个进程，依赖可内嵌。<strong>部署最简、延迟稳定</strong>，但要扩只能整体复制。适合开发、小规模、低运维负担的场景。</p></div>
+  <div class="col"><h4>集群 cluster</h4><p>组件分散为独立 Pod，依赖外置(Pulsar/etcd/S3)。<strong>可按需独立伸缩</strong>(读扩 QueryNode、写扩 streaming/DataNode)、容错更强。代价是运维更复杂。生产首选。</p></div>
+</div>
+
+<h2>选哪种消息队列：一个关键部署决策</h2>
+<p>部署 Milvus 时，有一个决定值得单独拎出来讲：<strong>用哪种消息队列（MQ）</strong>。回忆第 16、31 课——Milvus 的写入是"<strong>先落日志（WAL）</strong>"，而这条<strong>日志的后端</strong>，正是这里说的 MQ。<span class="inline">configs/milvus.yaml</span> 里 <span class="mono">mq.type</span> 支持四种：<strong>rocksmq</strong>（基于 RocksDB、本地嵌入）、<strong>Pulsar</strong>、<strong>Kafka</strong>、<strong>Woodpecker</strong>。</p>
+<p>怎么选？官方给了清晰的默认与建议。<strong>单机模式</strong>默认用 <strong>rocksmq</strong>——它本地、轻量、零外部部署，最省心；<strong>集群模式</strong>默认用 <strong>Pulsar</strong>（注意：<strong>rocksmq 在集群模式下不支持</strong>，因为它是本地的、无法被多节点共享）。Kafka 是另一个成熟的集群选项。而对<strong>新部署</strong>，官方明确推荐 <strong>Woodpecker</strong>——它是 Milvus 自研的新一代日志存储，主打"<strong>更好的性能、更简单的运维、更低的成本</strong>"。这个选择之所以"关键"，是因为它直接决定了你的<strong>写入路径架在什么之上</strong>：选本地的 rocksmq 就只能单机；要上集群、要高吞吐写入，就得是 Pulsar/Kafka/Woodpecker 这类<strong>分布式日志</strong>。把这张表记住，部署时就不会在 MQ 上踩坑。</p>
+
+<p>这里还藏着一个值得品味的<strong>架构深意</strong>：为什么 Milvus 要把"写日志"这件如此核心的事，<strong>外包给一个可替换的 MQ</strong>，而不是自己写死一套？答案又回到那条贯穿全书的哲学——<strong>把最难、最该交给专业组件的事，交出去</strong>。"一条全局有序、持久、可重放的日志"听起来简单，真要在分布式环境里做到<strong>高吞吐、不丢、可扩展</strong>，是极难的工程；Pulsar、Kafka 这些系统已经为此打磨了多年。Milvus 把日志后端做成<strong>可插拔</strong>，就既能在单机时用最轻的 rocksmq、又能在生产时换上久经考验的分布式日志，还能在时机成熟时换上自研、更贴合自身需求的 Woodpecker——<strong>同一套写入逻辑，底层日志想换就换</strong>。这种"<strong>对接口编程、把实现做成可替换</strong>"的思路，你在第 22 课（索引交给 Knowhere）、第 39 课（监控接 Prometheus/OTel）都见过，这里是它在<strong>写入路径</strong>上的又一次体现。看懂这一点，你选 MQ 时就不只是"挑个组件"，而是在<strong>为整条写入路径选地基</strong>——地基的吞吐与可靠性，直接决定了你的集群能扛多大的写入洪峰。</p>
+
+<table class="t">
+  <tr><th>MQ 类型</th><th>是什么</th><th>适用</th><th>默认/建议</th></tr>
+  <tr><td class="mono">rocksmq</td><td>基于 RocksDB 的本地嵌入式日志</td><td>仅单机</td><td>单机默认</td></tr>
+  <tr><td class="mono">Pulsar</td><td>成熟的分布式消息系统</td><td>集群</td><td>集群默认</td></tr>
+  <tr><td class="mono">Kafka</td><td>成熟的分布式消息系统</td><td>集群</td><td>集群可选</td></tr>
+  <tr><td class="mono">Woodpecker</td><td>Milvus 自研新一代日志存储</td><td>单机/集群</td><td>新部署推荐</td></tr>
+</table>
+
+<h2>运维三件套合一：配置、可观测、平滑升级</h2>
+<p>把第 9 部分串起来，你会发现这几课讲的其实是<strong>同一件事的不同侧面</strong>——怎么让 Milvus 在生产里<strong>跑得稳、看得见、调得动、换得平</strong>。<strong>调得动</strong>，靠第 40 课的配置系统：用 etcd 下发、热更新限流与日志级别，不重启就能应对流量变化。<strong>看得见</strong>，靠第 39 课的可观测性：日志、指标、链路追踪三管齐下，出问题能从全集群里追出那一个请求。<strong>换得平</strong>，靠第 37 课提过的<strong>索引引擎版本协调</strong>（取所有节点的最小版本）以及 Operator 的<strong>滚动升级</strong>：一个节点一个节点地换，新老共存而不中断服务。</p>
+<p>这就是把一套分布式向量数据库<strong>真正运营起来</strong>的全貌：<strong>部署</strong>决定它长在什么形态上、<strong>依赖</strong>替它扛住最难的分布式问题（一致性交给 etcd、持久化交给对象存储、有序日志交给 MQ）、<strong>独立伸缩</strong>让你把算力精准投到瓶颈处、<strong>配置与可观测</strong>让你在不停机的前提下看清并调整它。回望整个第 9 部分——从 API 契约、到可观测、到配置、到部署——我们其实走完了"<strong>一个用户/运维者会真正接触到的整张外圈</strong>"。至此，你不仅懂 Milvus 内部怎么运转，也懂了怎么把它用起来、管起来。下一部分（第 10 部分），我们走向最后一程：<strong>实践与贡献</strong>——怎么编译运行、怎么测试、有哪些代码约定，以及如何给 Milvus 提交你的第一个 PR。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>部署阶梯</strong>：内嵌单机(<span class="mono">standalone_embed.sh</span>，零依赖)→ docker-compose(本地全量)→ Helm Chart → Milvus Operator(声明式生产运维)；按需逐级往上。</li>
+    <li><strong>集群的回报</strong>：兑现存算分离红利——按需独立伸缩(读扩 QueryNode、写扩 streaming/DataNode、存储在对象存储独立扩)，把算力精准投到瓶颈处。</li>
+    <li><strong>MQ 是关键部署决策</strong>：它是 WAL 后端——rocksmq(仅单机/默认)、Pulsar(集群默认)、Kafka(集群可选)、Woodpecker(新部署推荐)；由 <span class="mono">mq.type</span> 选。</li>
+    <li><strong>运维合流</strong>：配置(40，热更新)、可观测(39，追一个请求)、版本协调+滚动升级(37/Operator)共同让 Milvus 跑得稳、看得见、调得动、换得平。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. Milvus 的部署方式从内嵌单机到 k8s Operator 排成一道阶梯，这样设计的意义是什么？</div>
+  <ol class="opts">
+    <li>内嵌单机用于生产，Operator 用于开发</li>
+    <li>几种方式功能完全不同、互不兼容</li>
+    <li>上手零负担(standalone_embed 一条命令零依赖)、认真用有生产级方案(Helm/Operator)，可随需求逐级往上，不被复杂度劝退</li>
+    <li>因为 Milvus 只能在 k8s 上运行</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：C</strong>。阶梯由简到繁：内嵌单机(standalone_embed.sh，嵌入式 etcd+本地 rocksmq+本地盘，几乎零外部依赖)适合学习/开发；docker-compose 把 etcd/MinIO/Pulsar 拉成独立容器，在一台机器体验真实分工，适合集成测试；k8s 的 Helm Chart 模板化部署、Milvus Operator 声明式管理全生命周期(扩缩容/自愈/滚动升级)，是生产首选。你按需选择那一级，而非被迫一上来就扛全部复杂度。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. 选择集群模式(而非单机)最核心的回报是什么？</div>
+  <ol class="opts">
+    <li>集群模式延迟一定比单机更低</li>
+    <li>兑现存算分离红利——可按需独立伸缩：读多就扩 QueryNode、写多就扩 streaming/DataNode、存储在对象存储独立扩，把算力精准投到瓶颈处</li>
+    <li>集群模式不需要任何外部依赖</li>
+    <li>集群模式让所有组件挤进一个进程</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。集群模式兑现了第 3 部分“存算分离、组件解耦”的红利：哪一环是瓶颈就单独给哪一环加机器。读多写少就多加 QueryNode；批量灌数据就临时加强写入/流式与建索引；存储不够就扩对象存储(无状态、不牵动计算)。单机所有角色挤在一个进程，要扩只能整体复制、既浪费又不灵活。所以选集群的真正理由往往不是“装更多数据”，而是“把钱花在刀刃上”。但代价是要运维外部依赖与 k8s，复杂度更高——按真实需求选型。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 关于 Milvus 的消息队列(MQ)选择，下面哪个说法正确？</div>
+  <ol class="opts">
+    <li>MQ 就是 WAL 的后端：rocksmq 仅单机(默认)、Pulsar 集群默认、Kafka 集群可选、Woodpecker 新部署推荐；由 mq.type 选，地基的吞吐/可靠性决定写入能力</li>
+    <li>四种 MQ 完全等价，随便选都一样</li>
+    <li>rocksmq 在集群模式下是默认且推荐</li>
+    <li>MQ 只是个可有可无的缓存，删掉不影响写入</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：A</strong>。回忆第 16/31 课，Milvus 写入先落 WAL，而这条日志的后端就是 MQ。mq.type 支持 rocksmq(基于 RocksDB、本地嵌入，仅单机、单机默认)、Pulsar(集群默认；rocksmq 在集群不支持，因其本地无法多节点共享)、Kafka(集群可选)、Woodpecker(Milvus 自研、新部署推荐，主打更好性能/更简运维/更低成本)。把日志后端做成可插拔，体现“对接口编程、实现可替换”的思路——选 MQ 实质是为整条写入路径选地基。</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>本课把部署比作“选住处”，并说集群模式兑现了存算分离的红利。请：(1) 给三个不同场景(本地学习 / 小团队稳定流量的生产 / 读流量暴涨的大规模检索服务)各推荐一种部署方式并说明理由；(2) 解释为什么“上集群”不总是更好——它带来弹性，但代价是什么？(3) 结合第 16/31 课，说明 MQ 为什么是“关键部署决策”：把日志后端做成可插拔(rocksmq/Pulsar/Woodpecker)，体现了本书反复出现的哪种设计哲学(可联系第 22 课 Knowhere、第 39 课 Prometheus/OTel)？</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Lesson 8 told you what Milvus <strong>depends on</strong> (etcd, object storage, message queue) and what <strong>deployment shapes</strong> exist. As Part 9's finale, this lesson puts on the <strong>ops glasses</strong>: how you actually <strong>run it</strong> — from a one-command embedded single node to a full production Kubernetes cluster; and how Part 3's "<strong>disaggregated architecture</strong>" pays you back at deploy time with the elasticity of "<strong>scale exactly the part that's hot</strong>". This is the lesson that brings everything down to earth.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Deploying a system is like <strong>choosing a place to live</strong>. <strong>Embedded single-node</strong> (<span class="mono">standalone_embed.sh</span>) is a <strong>fully-furnished studio</strong>: utilities all built in, move in instantly, ready in minutes — for one person (dev, trial). <strong>docker-compose</strong> is a <strong>serviced apartment with real separate utilities</strong>: etcd, storage, message queue are genuinely separate "lines", yet still one building (one machine).
+  <strong>Kubernetes (Helm / Operator)</strong> is a whole <strong>managed apartment complex</strong>: each service lives in its own unit, you can <strong>add floors on demand</strong> (independent scaling), and a "<strong>property manager</strong>" (the Operator) handles scaling, fault replacement, and rolling upgrades for you. Which home you pick depends on whether you're "<strong>one person trying it out</strong>" or "<strong>carrying a city's worth of traffic</strong>".
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>deployment is a ladder — embedded single-node (zero-dep, local) → docker-compose (local full) → k8s Helm Chart / Milvus Operator (production); in cluster mode components scale independently (scale reads via QueryNode, writes via streaming/DataNode); the message queue (rocksmq/Pulsar/Kafka/Woodpecker) is a key deployment decision — it's the WAL backend of Lessons 16/31</strong>. Config (Lesson 40), observability (Lesson 39), and version coordination (Lesson 37) all converge here.
+</div>
+
+<h2>From one command to a cluster: the deployment ladder</h2>
+<p>"How to run Milvus" has no single answer — it's a <strong>ladder from simple to elaborate</strong>, and which rung you stand on depends on what you're doing. The lowest rung is <strong>embedded single-node</strong> (<span class="inline">scripts/standalone_embed.sh</span>): it <strong>embeds</strong> the needed dependencies as much as possible — even etcd can be embedded (the script shows <span class="mono">ETCD_USE_EMBED=true</span>), messaging uses local rocksmq, data lands on local disk. The upside is <strong>nearly zero external dependencies — one command starts a complete Milvus</strong> — ideal for <strong>learning, local development, running a demo</strong>.</p>
+<p>One rung up is <strong>docker-compose</strong>: bring up etcd, object storage (MinIO), and a message queue (e.g. Pulsar) as <strong>genuinely separate containers</strong>, plus Milvus itself. This rung lets you experience, on <strong>one machine</strong>, the real shape of "<strong>each dependency doing its job</strong>" — closer to production than embedded, simpler than k8s — good for <strong>local integration testing and small trials</strong>. The top rung is <strong>Kubernetes</strong>, the home turf of production: the project offers a <strong>Helm Chart</strong> (one-click templated deploy) and the <strong>Milvus Operator</strong> (an "ops brain" declaratively managing the whole cluster's lifecycle — scaling, self-healing, rolling upgrades). This ladder is considerate by design: <strong>zero burden to start, production-grade when serious</strong>; you can "<strong>climb rung by rung</strong>" as needs grow, rather than being scared off by complexity up front. The ladder, drawn:</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Embedded single-node</h4><p><span class="mono">standalone_embed.sh</span>: embedded etcd + local rocksmq + local disk, one command, zero external deps. Learning/dev first choice.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>docker-compose</h4><p>etcd / MinIO / Pulsar as separate containers + Milvus; experience real division of labor on one machine. Integration tests/small trials.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Helm Chart</h4><p>templated one-click deploy on k8s, tunable params, each component as Pods. Medium/large scale.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Milvus Operator</h4><p>declarative "ops brain": scaling, self-healing, rolling upgrades all automatic. Production first choice.</p></div></div>
+</div>
+
+<h2>The cluster payoff: scale independently, on demand</h2>
+<p>Why bother with cluster mode? Because it cashes in the <strong>core dividend</strong> of Part 3's "<strong>compute/storage separation, decoupled components</strong>" architecture: <strong>whichever part becomes the bottleneck, add machines to just that part</strong>, without scaling the whole. This is the <strong>ultimate purpose</strong> of why Milvus pulls "coordinators/worker nodes" and "read path/write path" so far apart.</p>
+<p>A few concrete scenarios make it click. Workload is <strong>read-heavy, write-light</strong> (a typical search service)? Then <strong>add more QueryNodes</strong> so more nodes carry search traffic in parallel, while the write side stays untouched. Conversely, <strong>bulk-loading a huge dataset</strong> (offline import)? Then temporarily <strong>beef up write/streaming and index-building</strong> compute, leaving reads unaffected. Out of storage? Because data lives in <strong>object storage</strong> (stateless, independently scalable), adding capacity doesn't disturb compute nodes. This "<strong>on-demand, local, independent</strong>" scaling is what single-node can't give — there all roles crowd one process, and to scale you can only <strong>replicate the whole</strong>, wasteful and inflexible. So the <strong>real reason</strong> to choose cluster mode is often not "hold more data" but "<strong>spend money where it counts</strong>": scale precisely the one strained link. The two modes' trade-offs:</p>
+
+<div class="cols">
+  <div class="col"><h4>standalone</h4><p>all roles in one process, deps embeddable. <strong>Simplest deploy, stable latency</strong>, but scaling means replicating the whole. For dev, small scale, low ops burden.</p></div>
+  <div class="col"><h4>cluster</h4><p>components as separate Pods, deps external (Pulsar/etcd/S3). <strong>Scale independently on demand</strong> (reads via QueryNode, writes via streaming/DataNode), stronger fault tolerance. Costlier to operate. Production choice.</p></div>
+</div>
+
+<h2>Which message queue: a key deployment decision</h2>
+<p>When deploying Milvus, one decision deserves its own spotlight: <strong>which message queue (MQ)</strong>. Recall Lessons 16 and 31 — Milvus writes by "<strong>logging first (WAL)</strong>", and this <strong>log's backend</strong> is exactly the MQ here. In <span class="inline">configs/milvus.yaml</span>, <span class="mono">mq.type</span> supports four: <strong>rocksmq</strong> (RocksDB-based, local embedded), <strong>Pulsar</strong>, <strong>Kafka</strong>, <strong>Woodpecker</strong>.</p>
+<p>How to choose? The project gives clear defaults and advice. <strong>Standalone</strong> defaults to <strong>rocksmq</strong> — local, lightweight, zero external deployment, most carefree; <strong>cluster</strong> defaults to <strong>Pulsar</strong> (note: <strong>rocksmq isn't supported in cluster mode</strong>, being local and unshareable across nodes). Kafka is another mature cluster option. For <strong>new deployments</strong>, the project explicitly recommends <strong>Woodpecker</strong> — Milvus's own next-gen log storage, aiming at "<strong>better performance, simpler ops, lower cost</strong>". This choice is "key" because it directly determines <strong>what your write path stands on</strong>: pick local rocksmq and you're single-node only; for a cluster with high-throughput writes you need a <strong>distributed log</strong> like Pulsar/Kafka/Woodpecker. Memorize this table and you won't trip on the MQ at deploy time.</p>
+
+<table class="t">
+  <tr><th>MQ type</th><th>What it is</th><th>For</th><th>Default/advice</th></tr>
+  <tr><td class="mono">rocksmq</td><td>RocksDB-based local embedded log</td><td>standalone only</td><td>standalone default</td></tr>
+  <tr><td class="mono">Pulsar</td><td>mature distributed messaging system</td><td>cluster</td><td>cluster default</td></tr>
+  <tr><td class="mono">Kafka</td><td>mature distributed messaging system</td><td>cluster</td><td>cluster option</td></tr>
+  <tr><td class="mono">Woodpecker</td><td>Milvus's own next-gen log storage</td><td>standalone/cluster</td><td>recommended for new</td></tr>
+</table>
+
+<h2>Ops trio as one: config, observability, smooth upgrades</h2>
+<p>Tie Part 9 together and you'll see these lessons are <strong>different facets of one thing</strong> — how to make Milvus, in production, <strong>run stable, be seen, be tunable, upgrade smoothly</strong>. <strong>Tunable</strong>, via Lesson 40's config system: push via etcd, hot-reload rate limits and log levels, adapting to traffic without restart. <strong>Seen</strong>, via Lesson 39's observability: logs, metrics, traces three-pronged, tracing that one request out of the whole cluster when something breaks. <strong>Smooth upgrades</strong>, via Lesson 37's <strong>index-engine version coordination</strong> (take the minimum version across nodes) plus the Operator's <strong>rolling upgrade</strong>: replace node by node, old and new coexisting without interrupting service.</p>
+<p>This is the full picture of truly <strong>operating</strong> a distributed vector database: <strong>deployment</strong> decides what shape it grows into, <strong>dependencies</strong> shoulder the hardest distributed problems for it (consistency to etcd, durability to object storage, ordered logging to the MQ), <strong>independent scaling</strong> lets you pour compute precisely at the bottleneck, and <strong>config + observability</strong> let you see and adjust it without downtime. Looking back over all of Part 9 — from the API contract, to observability, to config, to deployment — we've actually walked "<strong>the entire outer ring a user/operator really touches</strong>". By now you not only understand how Milvus works inside, but how to use and run it. Next (Part 10), the final leg: <strong>practice and contributing</strong> — how to build and run, how to test, what code conventions exist, and how to submit your first PR to Milvus.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Deployment ladder</strong>: embedded single-node (<span class="mono">standalone_embed.sh</span>, zero-dep) → docker-compose (local full) → Helm Chart → Milvus Operator (declarative production ops); climb on demand.</li>
+    <li><strong>Cluster payoff</strong>: cashes the compute/storage-separation dividend — scale independently on demand (reads via QueryNode, writes via streaming/DataNode, storage independently in object store), pouring compute precisely at the bottleneck.</li>
+    <li><strong>MQ is a key deployment decision</strong>: it's the WAL backend — rocksmq (standalone-only/default), Pulsar (cluster default), Kafka (cluster option), Woodpecker (recommended for new); chosen via <span class="mono">mq.type</span>.</li>
+    <li><strong>Ops convergence</strong>: config (40, hot reload), observability (39, trace one request), version coordination + rolling upgrade (37/Operator) together make Milvus run stable, be seen, be tunable, upgrade smoothly.</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Milvus's deployment options form a ladder from embedded single-node to the k8s Operator. What's the point of this design?</div>
+  <ol class="opts">
+    <li>Embedded single-node is for production, the Operator for development</li>
+    <li>The options have totally different, incompatible features</li>
+    <li>Zero burden to start (standalone_embed: one command, zero deps) and production-grade when serious (Helm/Operator); climb rung by rung as needs grow, not scared off by complexity</li>
+    <li>Because Milvus only runs on k8s</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. The ladder runs simple to elaborate: embedded single-node (standalone_embed.sh — embedded etcd + local rocksmq + local disk, near-zero external deps) for learning/dev; docker-compose brings etcd/MinIO/Pulsar up as separate containers for real division of labor on one machine, for integration tests; k8s Helm Chart templates the deploy and the Milvus Operator declaratively manages the full lifecycle (scaling/self-healing/rolling upgrade) for production. You pick the rung you need rather than shouldering all complexity up front.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. What's the core payoff of choosing cluster mode (over standalone)?</div>
+  <ol class="opts">
+    <li>Cluster mode always has lower latency than standalone</li>
+    <li>It cashes the compute/storage-separation dividend — scale independently on demand: add QueryNodes for reads, streaming/DataNodes for writes, storage scales independently in the object store — pouring compute precisely at the bottleneck</li>
+    <li>Cluster mode needs no external dependencies</li>
+    <li>Cluster mode crams all components into one process</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. Cluster mode cashes Part 3's 'compute/storage separation, decoupled components' dividend: add machines to whichever link is the bottleneck. Read-heavy → more QueryNodes; bulk loading → temporarily beef up write/streaming and index building; out of storage → scale the object store (stateless, doesn't disturb compute). Standalone crowds all roles in one process, so scaling means replicating the whole — wasteful and inflexible. The real reason for cluster is usually not 'hold more data' but 'spend where it counts'. The cost is operating external deps and k8s — choose by real need.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. About Milvus's message queue (MQ) choice, which is correct?</div>
+  <ol class="opts">
+    <li>The MQ is the WAL backend: rocksmq standalone-only (default), Pulsar cluster default, Kafka cluster option, Woodpecker recommended for new; chosen via mq.type — the backend's throughput/reliability bounds write capacity</li>
+    <li>All four MQs are equivalent; pick any, no difference</li>
+    <li>rocksmq is the default and recommended in cluster mode</li>
+    <li>The MQ is just an optional cache; removing it doesn't affect writes</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. Recall Lessons 16/31: Milvus writes by logging to the WAL first, and that log's backend is the MQ. mq.type supports rocksmq (RocksDB-based, local embedded — standalone only, standalone default), Pulsar (cluster default; rocksmq isn't supported in cluster, being local and unshareable), Kafka (cluster option), Woodpecker (Milvus's own, recommended for new, for better performance/simpler ops/lower cost). Making the log backend pluggable reflects 'program to an interface, swap the implementation' — choosing the MQ is choosing the foundation for the whole write path.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson likens deployment to 'choosing a home' and says cluster mode cashes the compute/storage-separation dividend. Please: (1) recommend a deployment method for each of three scenarios (local learning / a small team's steady-traffic production / a large-scale search service with surging read traffic) and justify each; (2) explain why 'going cluster' isn't always better — it brings elasticity, but at what cost? (3) Tying to Lessons 16/31, explain why the MQ is a 'key deployment decision': making the log backend pluggable (rocksmq/Pulsar/Woodpecker) reflects which recurring design philosophy of this guide (relate to Lesson 22 Knowhere, Lesson 39 Prometheus/OTel)?</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="40-configuration.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">配置：paramtable 与 milvus.yaml</span><span class="lang-en">Configuration: paramtable &amp; milvus.yaml</span></div></a><a class="next" href="../index.html"><div class="dir"><span class="lang-zh">完成 →</span><span class="lang-en">Done →</span></div><div class="ttl"><span class="lang-zh">返回目录</span><span class="lang-en">Back to index</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>

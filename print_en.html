@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 40 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 41 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
@@ -368,6 +368,7 @@ details[open] > summary { list-style: none; }
   <li>API & multi-language SDKs</li>
   <li>Observability: logs/metrics/traces</li>
   <li>Configuration: paramtable & milvus.yaml</li>
+  <li>Deployment & operations</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -8041,6 +8042,119 @@ A distributed system like Milvus hides <strong>hundreds of knobs</strong>: timeo
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
     <li>This lesson likens config to a control panel that's 'labeled, prioritized, partly hot-turnable'. Please: (1) describe a config value's full journey from milvus.yaml/env/etcd to the code's GetAsInt(), and say who wins on conflict and why that design is reasonable; (2) you changed a rate-limit in milvus.yaml in production but it 'doesn't take effect' — using the priority chain, how would you debug? (3) Why doesn't Milvus make every config hot-reloadable, instead locking some via Immutable/Forbidden? What shared engineering value does this share with Lesson 37's 'GPU off by default'?</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Deployment & operations</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Lesson 8 told you what Milvus <strong>depends on</strong> (etcd, object storage, message queue) and what <strong>deployment shapes</strong> exist. As Part 9's finale, this lesson puts on the <strong>ops glasses</strong>: how you actually <strong>run it</strong> — from a one-command embedded single node to a full production Kubernetes cluster; and how Part 3's "<strong>disaggregated architecture</strong>" pays you back at deploy time with the elasticity of "<strong>scale exactly the part that's hot</strong>". This is the lesson that brings everything down to earth.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Deploying a system is like <strong>choosing a place to live</strong>. <strong>Embedded single-node</strong> (<span class="mono">standalone_embed.sh</span>) is a <strong>fully-furnished studio</strong>: utilities all built in, move in instantly, ready in minutes — for one person (dev, trial). <strong>docker-compose</strong> is a <strong>serviced apartment with real separate utilities</strong>: etcd, storage, message queue are genuinely separate "lines", yet still one building (one machine).
+  <strong>Kubernetes (Helm / Operator)</strong> is a whole <strong>managed apartment complex</strong>: each service lives in its own unit, you can <strong>add floors on demand</strong> (independent scaling), and a "<strong>property manager</strong>" (the Operator) handles scaling, fault replacement, and rolling upgrades for you. Which home you pick depends on whether you're "<strong>one person trying it out</strong>" or "<strong>carrying a city's worth of traffic</strong>".
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>deployment is a ladder — embedded single-node (zero-dep, local) → docker-compose (local full) → k8s Helm Chart / Milvus Operator (production); in cluster mode components scale independently (scale reads via QueryNode, writes via streaming/DataNode); the message queue (rocksmq/Pulsar/Kafka/Woodpecker) is a key deployment decision — it's the WAL backend of Lessons 16/31</strong>. Config (Lesson 40), observability (Lesson 39), and version coordination (Lesson 37) all converge here.
+</div>
+
+<h2>From one command to a cluster: the deployment ladder</h2>
+<p>"How to run Milvus" has no single answer — it's a <strong>ladder from simple to elaborate</strong>, and which rung you stand on depends on what you're doing. The lowest rung is <strong>embedded single-node</strong> (<span class="inline">scripts/standalone_embed.sh</span>): it <strong>embeds</strong> the needed dependencies as much as possible — even etcd can be embedded (the script shows <span class="mono">ETCD_USE_EMBED=true</span>), messaging uses local rocksmq, data lands on local disk. The upside is <strong>nearly zero external dependencies — one command starts a complete Milvus</strong> — ideal for <strong>learning, local development, running a demo</strong>.</p>
+<p>One rung up is <strong>docker-compose</strong>: bring up etcd, object storage (MinIO), and a message queue (e.g. Pulsar) as <strong>genuinely separate containers</strong>, plus Milvus itself. This rung lets you experience, on <strong>one machine</strong>, the real shape of "<strong>each dependency doing its job</strong>" — closer to production than embedded, simpler than k8s — good for <strong>local integration testing and small trials</strong>. The top rung is <strong>Kubernetes</strong>, the home turf of production: the project offers a <strong>Helm Chart</strong> (one-click templated deploy) and the <strong>Milvus Operator</strong> (an "ops brain" declaratively managing the whole cluster's lifecycle — scaling, self-healing, rolling upgrades). This ladder is considerate by design: <strong>zero burden to start, production-grade when serious</strong>; you can "<strong>climb rung by rung</strong>" as needs grow, rather than being scared off by complexity up front. The ladder, drawn:</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Embedded single-node</h4><p><span class="mono">standalone_embed.sh</span>: embedded etcd + local rocksmq + local disk, one command, zero external deps. Learning/dev first choice.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>docker-compose</h4><p>etcd / MinIO / Pulsar as separate containers + Milvus; experience real division of labor on one machine. Integration tests/small trials.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Helm Chart</h4><p>templated one-click deploy on k8s, tunable params, each component as Pods. Medium/large scale.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Milvus Operator</h4><p>declarative "ops brain": scaling, self-healing, rolling upgrades all automatic. Production first choice.</p></div></div>
+</div>
+
+<h2>The cluster payoff: scale independently, on demand</h2>
+<p>Why bother with cluster mode? Because it cashes in the <strong>core dividend</strong> of Part 3's "<strong>compute/storage separation, decoupled components</strong>" architecture: <strong>whichever part becomes the bottleneck, add machines to just that part</strong>, without scaling the whole. This is the <strong>ultimate purpose</strong> of why Milvus pulls "coordinators/worker nodes" and "read path/write path" so far apart.</p>
+<p>A few concrete scenarios make it click. Workload is <strong>read-heavy, write-light</strong> (a typical search service)? Then <strong>add more QueryNodes</strong> so more nodes carry search traffic in parallel, while the write side stays untouched. Conversely, <strong>bulk-loading a huge dataset</strong> (offline import)? Then temporarily <strong>beef up write/streaming and index-building</strong> compute, leaving reads unaffected. Out of storage? Because data lives in <strong>object storage</strong> (stateless, independently scalable), adding capacity doesn't disturb compute nodes. This "<strong>on-demand, local, independent</strong>" scaling is what single-node can't give — there all roles crowd one process, and to scale you can only <strong>replicate the whole</strong>, wasteful and inflexible. So the <strong>real reason</strong> to choose cluster mode is often not "hold more data" but "<strong>spend money where it counts</strong>": scale precisely the one strained link. The two modes' trade-offs:</p>
+
+<div class="cols">
+  <div class="col"><h4>standalone</h4><p>all roles in one process, deps embeddable. <strong>Simplest deploy, stable latency</strong>, but scaling means replicating the whole. For dev, small scale, low ops burden.</p></div>
+  <div class="col"><h4>cluster</h4><p>components as separate Pods, deps external (Pulsar/etcd/S3). <strong>Scale independently on demand</strong> (reads via QueryNode, writes via streaming/DataNode), stronger fault tolerance. Costlier to operate. Production choice.</p></div>
+</div>
+
+<h2>Which message queue: a key deployment decision</h2>
+<p>When deploying Milvus, one decision deserves its own spotlight: <strong>which message queue (MQ)</strong>. Recall Lessons 16 and 31 — Milvus writes by "<strong>logging first (WAL)</strong>", and this <strong>log's backend</strong> is exactly the MQ here. In <span class="inline">configs/milvus.yaml</span>, <span class="mono">mq.type</span> supports four: <strong>rocksmq</strong> (RocksDB-based, local embedded), <strong>Pulsar</strong>, <strong>Kafka</strong>, <strong>Woodpecker</strong>.</p>
+<p>How to choose? The project gives clear defaults and advice. <strong>Standalone</strong> defaults to <strong>rocksmq</strong> — local, lightweight, zero external deployment, most carefree; <strong>cluster</strong> defaults to <strong>Pulsar</strong> (note: <strong>rocksmq isn't supported in cluster mode</strong>, being local and unshareable across nodes). Kafka is another mature cluster option. For <strong>new deployments</strong>, the project explicitly recommends <strong>Woodpecker</strong> — Milvus's own next-gen log storage, aiming at "<strong>better performance, simpler ops, lower cost</strong>". This choice is "key" because it directly determines <strong>what your write path stands on</strong>: pick local rocksmq and you're single-node only; for a cluster with high-throughput writes you need a <strong>distributed log</strong> like Pulsar/Kafka/Woodpecker. Memorize this table and you won't trip on the MQ at deploy time.</p>
+
+<table class="t">
+  <tr><th>MQ type</th><th>What it is</th><th>For</th><th>Default/advice</th></tr>
+  <tr><td class="mono">rocksmq</td><td>RocksDB-based local embedded log</td><td>standalone only</td><td>standalone default</td></tr>
+  <tr><td class="mono">Pulsar</td><td>mature distributed messaging system</td><td>cluster</td><td>cluster default</td></tr>
+  <tr><td class="mono">Kafka</td><td>mature distributed messaging system</td><td>cluster</td><td>cluster option</td></tr>
+  <tr><td class="mono">Woodpecker</td><td>Milvus's own next-gen log storage</td><td>standalone/cluster</td><td>recommended for new</td></tr>
+</table>
+
+<h2>Ops trio as one: config, observability, smooth upgrades</h2>
+<p>Tie Part 9 together and you'll see these lessons are <strong>different facets of one thing</strong> — how to make Milvus, in production, <strong>run stable, be seen, be tunable, upgrade smoothly</strong>. <strong>Tunable</strong>, via Lesson 40's config system: push via etcd, hot-reload rate limits and log levels, adapting to traffic without restart. <strong>Seen</strong>, via Lesson 39's observability: logs, metrics, traces three-pronged, tracing that one request out of the whole cluster when something breaks. <strong>Smooth upgrades</strong>, via Lesson 37's <strong>index-engine version coordination</strong> (take the minimum version across nodes) plus the Operator's <strong>rolling upgrade</strong>: replace node by node, old and new coexisting without interrupting service.</p>
+<p>This is the full picture of truly <strong>operating</strong> a distributed vector database: <strong>deployment</strong> decides what shape it grows into, <strong>dependencies</strong> shoulder the hardest distributed problems for it (consistency to etcd, durability to object storage, ordered logging to the MQ), <strong>independent scaling</strong> lets you pour compute precisely at the bottleneck, and <strong>config + observability</strong> let you see and adjust it without downtime. Looking back over all of Part 9 — from the API contract, to observability, to config, to deployment — we've actually walked "<strong>the entire outer ring a user/operator really touches</strong>". By now you not only understand how Milvus works inside, but how to use and run it. Next (Part 10), the final leg: <strong>practice and contributing</strong> — how to build and run, how to test, what code conventions exist, and how to submit your first PR to Milvus.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Deployment ladder</strong>: embedded single-node (<span class="mono">standalone_embed.sh</span>, zero-dep) → docker-compose (local full) → Helm Chart → Milvus Operator (declarative production ops); climb on demand.</li>
+    <li><strong>Cluster payoff</strong>: cashes the compute/storage-separation dividend — scale independently on demand (reads via QueryNode, writes via streaming/DataNode, storage independently in object store), pouring compute precisely at the bottleneck.</li>
+    <li><strong>MQ is a key deployment decision</strong>: it's the WAL backend — rocksmq (standalone-only/default), Pulsar (cluster default), Kafka (cluster option), Woodpecker (recommended for new); chosen via <span class="mono">mq.type</span>.</li>
+    <li><strong>Ops convergence</strong>: config (40, hot reload), observability (39, trace one request), version coordination + rolling upgrade (37/Operator) together make Milvus run stable, be seen, be tunable, upgrade smoothly.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Milvus's deployment options form a ladder from embedded single-node to the k8s Operator. What's the point of this design?</div>
+  <ol class="opts">
+    <li>Embedded single-node is for production, the Operator for development</li>
+    <li>The options have totally different, incompatible features</li>
+    <li>Zero burden to start (standalone_embed: one command, zero deps) and production-grade when serious (Helm/Operator); climb rung by rung as needs grow, not scared off by complexity</li>
+    <li>Because Milvus only runs on k8s</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. The ladder runs simple to elaborate: embedded single-node (standalone_embed.sh — embedded etcd + local rocksmq + local disk, near-zero external deps) for learning/dev; docker-compose brings etcd/MinIO/Pulsar up as separate containers for real division of labor on one machine, for integration tests; k8s Helm Chart templates the deploy and the Milvus Operator declaratively manages the full lifecycle (scaling/self-healing/rolling upgrade) for production. You pick the rung you need rather than shouldering all complexity up front.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. What's the core payoff of choosing cluster mode (over standalone)?</div>
+  <ol class="opts">
+    <li>Cluster mode always has lower latency than standalone</li>
+    <li>It cashes the compute/storage-separation dividend — scale independently on demand: add QueryNodes for reads, streaming/DataNodes for writes, storage scales independently in the object store — pouring compute precisely at the bottleneck</li>
+    <li>Cluster mode needs no external dependencies</li>
+    <li>Cluster mode crams all components into one process</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. Cluster mode cashes Part 3's 'compute/storage separation, decoupled components' dividend: add machines to whichever link is the bottleneck. Read-heavy → more QueryNodes; bulk loading → temporarily beef up write/streaming and index building; out of storage → scale the object store (stateless, doesn't disturb compute). Standalone crowds all roles in one process, so scaling means replicating the whole — wasteful and inflexible. The real reason for cluster is usually not 'hold more data' but 'spend where it counts'. The cost is operating external deps and k8s — choose by real need.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. About Milvus's message queue (MQ) choice, which is correct?</div>
+  <ol class="opts">
+    <li>The MQ is the WAL backend: rocksmq standalone-only (default), Pulsar cluster default, Kafka cluster option, Woodpecker recommended for new; chosen via mq.type — the backend's throughput/reliability bounds write capacity</li>
+    <li>All four MQs are equivalent; pick any, no difference</li>
+    <li>rocksmq is the default and recommended in cluster mode</li>
+    <li>The MQ is just an optional cache; removing it doesn't affect writes</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. Recall Lessons 16/31: Milvus writes by logging to the WAL first, and that log's backend is the MQ. mq.type supports rocksmq (RocksDB-based, local embedded — standalone only, standalone default), Pulsar (cluster default; rocksmq isn't supported in cluster, being local and unshareable), Kafka (cluster option), Woodpecker (Milvus's own, recommended for new, for better performance/simpler ops/lower cost). Making the log backend pluggable reflects 'program to an interface, swap the implementation' — choosing the MQ is choosing the foundation for the whole write path.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson likens deployment to 'choosing a home' and says cluster mode cashes the compute/storage-separation dividend. Please: (1) recommend a deployment method for each of three scenarios (local learning / a small team's steady-traffic production / a large-scale search service with surging read traffic) and justify each; (2) explain why 'going cluster' isn't always better — it brings elasticity, but at what cost? (3) Tying to Lessons 16/31, explain why the MQ is a 'key deployment decision': making the log backend pluggable (rocksmq/Pulsar/Woodpecker) reflects which recurring design philosophy of this guide (relate to Lesson 22 Knowhere, Lesson 39 Prometheus/OTel)?</li>
   </ul>
 </div>
 </div>

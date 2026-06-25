@@ -127,6 +127,8 @@ PAGES = [
      "第九部分 · API、工具与运维", "Part 9 · API, tools & ops"),
     ("40-configuration.html", "配置：paramtable 与 milvus.yaml", "Configuration: paramtable & milvus.yaml",
      "第九部分 · API、工具与运维", "Part 9 · API, tools & ops"),
+    ("41-deployment.html", "部署与运维", "Deployment & operations",
+     "第九部分 · API、工具与运维", "Part 9 · API, tools & ops"),
 ]
 
 
@@ -648,6 +650,8 @@ SUBTITLES = {
                               "three pillars: logs mlog (ctx/structured/cross-node propagation); metrics Prometheus (pkg/metrics); traces OpenTelemetry (pkg/tracer+otelgrpc); stitch one request via ctx"),
     "40-configuration.html": ("ParamItem(Key/Default/Doc + GetAsInt/Bool 类型安全) · 分层数据源 file&lt;env&lt;etcd 按优先级合并 · config.Manager · 热更新 vs Immutable",
                               "ParamItem (Key/Default/Doc + GetAsInt/Bool type-safe); layered sources file&lt;env&lt;etcd merged by priority; config.Manager; hot reload vs Immutable"),
+    "41-deployment.html": ("部署阶梯：内嵌单机→compose→Helm/Operator · 集群按需独立伸缩 · MQ 即 WAL 后端(rocksmq/Pulsar/Kafka/Woodpecker) · 配置/可观测/滚动升级合流",
+                           "deployment ladder: embedded→compose→Helm/Operator; cluster scales independently; MQ is the WAL backend (rocksmq/Pulsar/Kafka/Woodpecker); config/observability/rolling-upgrade converge"),
 }
 
 

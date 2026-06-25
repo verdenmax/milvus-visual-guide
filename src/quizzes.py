@@ -2668,6 +2668,67 @@ QUIZZES = {
             },
         ],
     },
+    "41-deployment.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "Milvus 的部署方式从内嵌单机到 k8s Operator 排成一道阶梯，这样设计的意义是什么？",
+                    "en": "Milvus's deployment options form a ladder from embedded single-node to the k8s Operator. What's the point of this design?",
+                },
+                "opts": [
+                    {"zh": "上手零负担(standalone_embed 一条命令零依赖)、认真用有生产级方案(Helm/Operator)，可随需求逐级往上，不被复杂度劝退", "en": "Zero burden to start (standalone_embed: one command, zero deps) and production-grade when serious (Helm/Operator); climb rung by rung as needs grow, not scared off by complexity"},
+                    {"zh": "因为 Milvus 只能在 k8s 上运行", "en": "Because Milvus only runs on k8s"},
+                    {"zh": "几种方式功能完全不同、互不兼容", "en": "The options have totally different, incompatible features"},
+                    {"zh": "内嵌单机用于生产，Operator 用于开发", "en": "Embedded single-node is for production, the Operator for development"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "阶梯由简到繁：内嵌单机(standalone_embed.sh，嵌入式 etcd+本地 rocksmq+本地盘，几乎零外部依赖)适合学习/开发；docker-compose 把 etcd/MinIO/Pulsar 拉成独立容器，在一台机器体验真实分工，适合集成测试；k8s 的 Helm Chart 模板化部署、Milvus Operator 声明式管理全生命周期(扩缩容/自愈/滚动升级)，是生产首选。你按需选择那一级，而非被迫一上来就扛全部复杂度。",
+                    "en": "The ladder runs simple to elaborate: embedded single-node (standalone_embed.sh — embedded etcd + local rocksmq + local disk, near-zero external deps) for learning/dev; docker-compose brings etcd/MinIO/Pulsar up as separate containers for real division of labor on one machine, for integration tests; k8s Helm Chart templates the deploy and the Milvus Operator declaratively manages the full lifecycle (scaling/self-healing/rolling upgrade) for production. You pick the rung you need rather than shouldering all complexity up front.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "选择集群模式(而非单机)最核心的回报是什么？",
+                    "en": "What's the core payoff of choosing cluster mode (over standalone)?",
+                },
+                "opts": [
+                    {"zh": "兑现存算分离红利——可按需独立伸缩：读多就扩 QueryNode、写多就扩 streaming/DataNode、存储在对象存储独立扩，把算力精准投到瓶颈处", "en": "It cashes the compute/storage-separation dividend — scale independently on demand: add QueryNodes for reads, streaming/DataNodes for writes, storage scales independently in the object store — pouring compute precisely at the bottleneck"},
+                    {"zh": "集群模式延迟一定比单机更低", "en": "Cluster mode always has lower latency than standalone"},
+                    {"zh": "集群模式不需要任何外部依赖", "en": "Cluster mode needs no external dependencies"},
+                    {"zh": "集群模式让所有组件挤进一个进程", "en": "Cluster mode crams all components into one process"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "集群模式兑现了第 3 部分“存算分离、组件解耦”的红利：哪一环是瓶颈就单独给哪一环加机器。读多写少就多加 QueryNode；批量灌数据就临时加强写入/流式与建索引；存储不够就扩对象存储(无状态、不牵动计算)。单机所有角色挤在一个进程，要扩只能整体复制、既浪费又不灵活。所以选集群的真正理由往往不是“装更多数据”，而是“把钱花在刀刃上”。但代价是要运维外部依赖与 k8s，复杂度更高——按真实需求选型。",
+                    "en": "Cluster mode cashes Part 3's 'compute/storage separation, decoupled components' dividend: add machines to whichever link is the bottleneck. Read-heavy → more QueryNodes; bulk loading → temporarily beef up write/streaming and index building; out of storage → scale the object store (stateless, doesn't disturb compute). Standalone crowds all roles in one process, so scaling means replicating the whole — wasteful and inflexible. The real reason for cluster is usually not 'hold more data' but 'spend where it counts'. The cost is operating external deps and k8s — choose by real need.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "关于 Milvus 的消息队列(MQ)选择，下面哪个说法正确？",
+                    "en": "About Milvus's message queue (MQ) choice, which is correct?",
+                },
+                "opts": [
+                    {"zh": "MQ 就是 WAL 的后端：rocksmq 仅单机(默认)、Pulsar 集群默认、Kafka 集群可选、Woodpecker 新部署推荐；由 mq.type 选，地基的吞吐/可靠性决定写入能力", "en": "The MQ is the WAL backend: rocksmq standalone-only (default), Pulsar cluster default, Kafka cluster option, Woodpecker recommended for new; chosen via mq.type — the backend's throughput/reliability bounds write capacity"},
+                    {"zh": "MQ 只是个可有可无的缓存，删掉不影响写入", "en": "The MQ is just an optional cache; removing it doesn't affect writes"},
+                    {"zh": "rocksmq 在集群模式下是默认且推荐", "en": "rocksmq is the default and recommended in cluster mode"},
+                    {"zh": "四种 MQ 完全等价，随便选都一样", "en": "All four MQs are equivalent; pick any, no difference"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "回忆第 16/31 课，Milvus 写入先落 WAL，而这条日志的后端就是 MQ。mq.type 支持 rocksmq(基于 RocksDB、本地嵌入，仅单机、单机默认)、Pulsar(集群默认；rocksmq 在集群不支持，因其本地无法多节点共享)、Kafka(集群可选)、Woodpecker(Milvus 自研、新部署推荐，主打更好性能/更简运维/更低成本)。把日志后端做成可插拔，体现“对接口编程、实现可替换”的思路——选 MQ 实质是为整条写入路径选地基。",
+                    "en": "Recall Lessons 16/31: Milvus writes by logging to the WAL first, and that log's backend is the MQ. mq.type supports rocksmq (RocksDB-based, local embedded — standalone only, standalone default), Pulsar (cluster default; rocksmq isn't supported in cluster, being local and unshareable), Kafka (cluster option), Woodpecker (Milvus's own, recommended for new, for better performance/simpler ops/lower cost). Making the log backend pluggable reflects 'program to an interface, swap the implementation' — choosing the MQ is choosing the foundation for the whole write path.",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课把部署比作“选住处”，并说集群模式兑现了存算分离的红利。请：(1) 给三个不同场景(本地学习 / 小团队稳定流量的生产 / 读流量暴涨的大规模检索服务)各推荐一种部署方式并说明理由；(2) 解释为什么“上集群”不总是更好——它带来弹性，但代价是什么？(3) 结合第 16/31 课，说明 MQ 为什么是“关键部署决策”：把日志后端做成可插拔(rocksmq/Pulsar/Woodpecker)，体现了本书反复出现的哪种设计哲学(可联系第 22 课 Knowhere、第 39 课 Prometheus/OTel)？",
+                "en": "This lesson likens deployment to 'choosing a home' and says cluster mode cashes the compute/storage-separation dividend. Please: (1) recommend a deployment method for each of three scenarios (local learning / a small team's steady-traffic production / a large-scale search service with surging read traffic) and justify each; (2) explain why 'going cluster' isn't always better — it brings elasticity, but at what cost? (3) Tying to Lessons 16/31, explain why the MQ is a 'key deployment decision': making the log backend pluggable (rocksmq/Pulsar/Woodpecker) reflects which recurring design philosophy of this guide (relate to Lesson 22 Knowhere, Lesson 39 Prometheus/OTel)?",
+            },
+        ],
+    },
 }
 
 
