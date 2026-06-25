@@ -324,10 +324,10 @@ html[data-lang="zh"] .lang-en { display: none !important; }
   <div class="topbar-inner">
     <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
     <span class="pill"><span class="lang-zh">第十部分 · 实践与贡献</span><span class="lang-en">Part 10 · Practice &amp; contributing</span></span>
-    <span class="pill">45 / 46</span>
+    <span class="pill">45 / 47</span>
     <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
   </div>
-  <div class="progress"><span style="width:97%"></span></div>
+  <div class="progress"><span style="width:95%"></span></div>
 </div>
 <div class="wrap">
   <div class="hero">
@@ -400,7 +400,7 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 
 <h2>从读者到贡献者：你已经准备好了</h2>
 <p>走到这里，请回望你已经拥有的东西。你懂 Milvus 的<strong>宏观架构</strong>（协调器与节点、控制面与数据面）、走过<strong>写入与查询</strong>的完整链路、钻进过 <strong>C++ 内核</strong>看它怎么把"快"做出来、也摸清了 <strong>API、可观测、配置、部署</strong>这层外圈；现在，你还会<strong>编它、测它、按它的约定改它、把改动提成合规的 PR</strong>。这一整套，正是一个<strong>合格贡献者</strong>该有的全貌——你已经准备好了。</p>
-<p>提 PR 这件事，最难的从来不是流程，而是<strong>迈出第一步的勇气</strong>。别等"<strong>完全搞懂一切</strong>"才动手——没有人是那样开始的。一个好的起点，往往是从 <span class="mono">good first issue</span> 标签的小问题入手、或修一个文档里的笔误、补一处缺失的测试。流程会因为<strong>第一次走通而变得熟悉</strong>，自信会因为<strong>第一个 PR 被合入而建立</strong>。这份指南的全部内容——四十多课的图、类比、源码、测验——都是为了<strong>把你领到这一步</strong>：让你不再把 Milvus 当成一个高深莫测的黑盒，而是看清它的骨架、读懂它的取舍，并<strong>有底气去改它、去贡献它</strong>。读到这里的你，已经走完了从"<strong>好奇的旁观者</strong>"到"<strong>有准备的贡献者</strong>"的路。剩下的最后一课，是一份<strong>术语表</strong>，供你日后随时回查。而真正的下一步，在 GitHub 上等着你——<strong>去提你的第一个 PR 吧</strong>。</p>
+<p>提 PR 这件事，最难的从来不是流程，而是<strong>迈出第一步的勇气</strong>。别等"<strong>完全搞懂一切</strong>"才动手——没有人是那样开始的。一个好的起点，往往是从 <span class="mono">good first issue</span> 标签的小问题入手、或修一个文档里的笔误、补一处缺失的测试。流程会因为<strong>第一次走通而变得熟悉</strong>，自信会因为<strong>第一个 PR 被合入而建立</strong>。这份指南的全部内容——四十多课的图、类比、源码、测验——都是为了<strong>把你领到这一步</strong>：让你不再把 Milvus 当成一个高深莫测的黑盒，而是看清它的骨架、读懂它的取舍，并<strong>有底气去改它、去贡献它</strong>。读到这里的你，已经走完了从"<strong>好奇的旁观者</strong>"到"<strong>有准备的贡献者</strong>"的路。剩下的最后一课，是一份<strong>术语表</strong>，供你日后随时回查；术语表之后还有<strong>第 11 部分"进阶专题（选读）"</strong>，收录批量导入、混合检索、配额限流等生产里很重要的进阶话题，等你有需要时再来。而真正的下一步，在 GitHub 上等着你——<strong>去提你的第一个 PR 吧</strong>。</p>
 
 <p>最后留一句话给此刻的你。技术细节会忘、命令会生疏、版本会演进，但这份指南真正想留给你的，不是某条具体的命令，而是一种<strong>面对庞大系统时的底气</strong>——相信任何复杂的东西，都能被<strong>拆成一层层可以理解的结构</strong>；相信再硬核的内核，背后也是一个个<strong>可被讲清的工程取舍</strong>。带着这份底气，你不仅能读懂 Milvus，也能去读懂下一个让你好奇的大系统。开源世界最迷人的地方，正在于它<strong>向每一个愿意动手的人敞开</strong>——你不需要是专家才能开始，你会<strong>因为开始而逐渐成为专家</strong>。这份指南到此即将作结，但你与 Milvus、与开源的故事，才刚刚翻开第一页。<strong>去贡献吧，世界在等你的第一个 PR。</strong></p>
 
@@ -519,7 +519,7 @@ You can build, test, and follow conventions — one step remains: <strong>turn y
 
 <h2>From reader to contributor: you're ready</h2>
 <p>Having come this far, look back at what you now hold. You understand Milvus's <strong>macro architecture</strong> (coordinators and nodes, control vs data plane), have walked the full <strong>write and query</strong> paths, drilled into the <strong>C++ core</strong> to see how "fast" is made, and mapped the outer ring of <strong>API, observability, config, deployment</strong>; now you can also <strong>build it, test it, change it by its conventions, and turn changes into a compliant PR</strong>. That whole set is exactly what a <strong>qualified contributor</strong> has — you're ready.</p>
-<p>The hardest part of filing a PR was never the process but the <strong>courage to take the first step</strong>. Don't wait to "<strong>understand everything</strong>" before acting — no one starts that way. A good start is often a small <span class="mono">good first issue</span>, fixing a typo in the docs, or adding a missing test. The process <strong>becomes familiar once you've done it once</strong>; confidence <strong>builds when your first PR is merged</strong>. Everything in this guide — forty-odd lessons of diagrams, analogies, source, and quizzes — was to <strong>bring you to this step</strong>: so you no longer see Milvus as an inscrutable black box, but read its skeleton, grasp its trade-offs, and <strong>have the nerve to change and contribute to it</strong>. Reaching here, you've walked the road from "<strong>a curious bystander</strong>" to "<strong>a prepared contributor</strong>". The last lesson is a <strong>glossary</strong> for future reference. But the real next step waits for you on GitHub — <strong>go file your first PR</strong>.</p>
+<p>The hardest part of filing a PR was never the process but the <strong>courage to take the first step</strong>. Don't wait to "<strong>understand everything</strong>" before acting — no one starts that way. A good start is often a small <span class="mono">good first issue</span>, fixing a typo in the docs, or adding a missing test. The process <strong>becomes familiar once you've done it once</strong>; confidence <strong>builds when your first PR is merged</strong>. Everything in this guide — forty-odd lessons of diagrams, analogies, source, and quizzes — was to <strong>bring you to this step</strong>: so you no longer see Milvus as an inscrutable black box, but read its skeleton, grasp its trade-offs, and <strong>have the nerve to change and contribute to it</strong>. Reaching here, you've walked the road from "<strong>a curious bystander</strong>" to "<strong>a prepared contributor</strong>". The last lesson is a <strong>glossary</strong> for future reference; after it comes <strong>Part 11, "Advanced topics (optional)"</strong> — bulk import, hybrid search, quotas and rate-limiting, and other production-important topics, there when you need them. But the real next step waits for you on GitHub — <strong>go file your first PR</strong>.</p>
 
 <div class="card key">
   <div class="tag">📌 Key points</div>

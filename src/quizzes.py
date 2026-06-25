@@ -2973,6 +2973,67 @@ QUIZZES = {
             },
         ],
     },
+    "47-bulk-import.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "为什么 Milvus 在流式写入之外，还要单独做一条批量导入路径？",
+                    "en": "Why does Milvus build a separate bulk-import path in addition to streaming writes?",
+                },
+                "opts": [
+                    {"zh": "海量一次性灌库若仍逐行走 WAL 会又慢、又挤占在线写入、又浪费(这些数据本就一次写定)；批量导入绕过 WAL、读文件直接生成段，专为离线大批量优化", "en": "Routing a one-shot massive load through the WAL row by row is slow, crowds out online writes, and is wasteful (this data is write-once); bulk import bypasses the WAL and reads files straight into segments, optimized for large offline loads"},
+                    {"zh": "因为流式写入无法保证数据安全", "en": "Because streaming writes can't keep data safe"},
+                    {"zh": "因为批量导入产出的段格式和流式不同、必须分开", "en": "Because imported segments have a different format and must be separate"},
+                    {"zh": "纯粹为了多一个 API", "en": "Purely to add one more API"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "流式写入(第15–17课)为在线持续写入而生：逐行经 Proxy→WAL→growing→flush，保证实时可见、崩溃可重放。但一次性灌入上亿历史行时，逐行走 WAL 会慢(每行序列化/Append/定序/消费)、会把 WAL 与 StreamingNode 堵死拖垮在线写入、且对“一次写定、不再改”的数据而言 WAL 的实时/可重放保险纯属浪费。所以批量导入绕过 WAL、直接读文件写段——批量场景用批量工具。注意“绕过 WAL≠不安全”：导入的事实来源是源文件本身，失败重来即可。",
+                    "en": "Streaming writes (L15–17) are built for online continuous ingestion: row by row via Proxy→WAL→growing→flush, ensuring real-time visibility and crash replay. But loading hundreds of millions of historical rows at once via the WAL is slow (each row serialized/appended/ordered/consumed), jams the WAL and StreamingNode (hurting online writes), and wastes the WAL's real-time/replay insurance on write-once data. So bulk import bypasses the WAL, reading files straight into segments — batch tools for batch scenes. Note 'bypassing WAL ≠ unsafe': the source of truth is the source files themselves; on failure, just rerun.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "批量导入被 DataCoord 编排成一个多阶段作业，其阶段大致是什么、为什么分阶段？",
+                    "en": "Bulk import is a DataCoord-orchestrated multi-phase job. What are the phases roughly, and why phase it?",
+                },
+                "opts": [
+                    {"zh": "Pending→PreImport(扫描/校验/估算)→Import(读文件直接写段)→Sorting→IndexBuilding→提交；分阶段以便断点续作、进度可查、失败可重试", "en": "Pending→PreImport (scan/validate/estimate)→Import (read files straight into segments)→Sorting→IndexBuilding→commit; phased for resumability, queryable progress, retry on failure"},
+                    {"zh": "只有一个阶段：把文件一把灌进去", "en": "Just one phase: dump the files in at once"},
+                    {"zh": "先建索引、再读文件，顺序相反", "en": "Build indexes first, then read files — reverse order"},
+                    {"zh": "由 Proxy 而非 DataCoord 全程执行", "en": "Executed entirely by Proxy, not DataCoord"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "客户端调 ImportV2，Proxy 的 importTask 转交 DataCoord(本就管段/落盘/建索引的协调者)。DataCoord 把导入当成有状态作业：Pending→PreImporting→Importing→Sorting→IndexBuilding→Uncommitted→Committing(失败进 Failed)。导入海量数据是长时间、易失败的过程，拆成阶段才能断点续作、进度可查、失败可重试——与第21课“按段建索引”同一种“拆成可调度可恢复小步”的智慧。DataNode 执行实际的读文件写段，importutilv2 支持 json/csv/numpy/parquet。",
+                    "en": "The client calls ImportV2; Proxy's importTask hands it to DataCoord (already the coordinator of segments/flushing/indexing). DataCoord treats import as a stateful job: Pending→PreImporting→Importing→Sorting→IndexBuilding→Uncommitted→Committing (Failed on error). Importing massive data is long-running and failure-prone, so phasing enables resume, queryable progress, and retry — the same 'schedulable, recoverable steps' wisdom as Lesson 21's per-segment indexing. DataNodes do the actual read-files-into-segments; importutilv2 supports json/csv/numpy/parquet.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "为什么把 PreImport 和 Import 拆成两段，PreImport 在做什么？",
+                    "en": "Why split PreImport from Import, and what does PreImport do?",
+                },
+                "opts": [
+                    {"zh": "PreImport 先空跑勘探：校验 schema、估算行数与分布(autoID 时尤其要预知行数以预留主键 ID)，不写数据；提前排雷、规划切段，让正式 Import 能放心并行", "en": "PreImport does a dry-run survey first: validate schema, estimate row count and distribution (esp. under autoID, to pre-allocate PK IDs), writing no data; it clears mines and plans segment slicing so the real Import can run in parallel with confidence"},
+                    {"zh": "PreImport 就是把数据先写一遍、Import 再写一遍", "en": "PreImport writes the data once and Import writes it again"},
+                    {"zh": "两者完全相同，只是名字不同", "en": "They're identical, just named differently"},
+                    {"zh": "PreImport 负责删除旧数据", "en": "PreImport deletes old data"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "“先勘探、再施工”：PreImport 只扫描/校验/估算、不落数据。它提前确认文件可读、schema 对得上(不匹配就早报错，免得写到一半留下半成品段)；并估算行数与分布——在 autoID 下，系统须预知行数才能一次性预留连续的主键 ID 区间分给并行的 DataNode，否则主键会撞号或留空洞。用一次廉价预扫描换取正式执行的确定性与高效；与第44课 merr“输入错误尽早在边界发现”一脉相承。",
+                    "en": "'Survey first, then build': PreImport only scans/validates/estimates, writing no data. It confirms files are readable and the schema matches (erroring early instead of leaving half-built segments), and estimates row count/distribution — under autoID, the system must know the count to pre-allocate a contiguous PK-ID range for parallel DataNodes, else PKs collide or leave gaps. A cheap pre-scan buys certainty and efficiency at execution time; akin to Lesson 44's merr 'catch input errors early at the boundary'.",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课说批量导入与流式写入是“同一个段抽象、两条生产路径”。请：(1) 给三个场景各选一条写入路径并说明：A) 线上应用用户持续插入数据；B) 从旧系统迁移 5 亿条历史向量；C) 每天凌晨批量回填昨日数据。(2) 解释“绕过 WAL”为何在导入场景里是安全的——导入的“事实来源”是什么？(3) 为什么让两条路径都产出“同格式的段”很重要？这与第 22 课(Knowhere 统一接口)、第 36 课(算子统一吃一批吐一批)体现了怎样共同的设计审美？",
+                "en": "This lesson says bulk import and streaming writes are 'one segment abstraction, two production paths'. Please: (1) pick a write path for each scenario and justify: A) an online app continuously inserting user data; B) migrating 500M historical vectors from a legacy system; C) a nightly batch backfill of yesterday's data. (2) Explain why 'bypassing the WAL' is safe in the import scenario — what is the import's 'source of truth'? (3) Why does it matter that both paths produce 'same-format segments'? What shared design aesthetic does this share with Lesson 22 (Knowhere's unified interface) and Lesson 36 (operators uniformly consuming/emitting a batch)?",
+            },
+        ],
+    },
 }
 
 

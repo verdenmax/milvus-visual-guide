@@ -139,6 +139,8 @@ PAGES = [
      "第十部分 · 实践与贡献", "Part 10 · Practice & contributing"),
     ("46-glossary.html", "术语表", "Glossary",
      "第十部分 · 实践与贡献", "Part 10 · Practice & contributing"),
+    ("47-bulk-import.html", "批量导入：第二条写入路径", "Bulk import: the second write path",
+     "第十一部分 · 进阶专题（选读）", "Part 11 · Advanced topics (optional)"),
 ]
 
 
@@ -672,6 +674,8 @@ SUBTITLES = {
                                  "fork-and-pull flow; DCO sign-off git commit -s; PR title {type}: {desc}; link issue/design-doc by type; bots (DCO/Mergify/CI) gate first"),
     "46-glossary.html": ("全书术语速查表：按主题(架构/写入/查询/索引/C++ 内核/流式/运维与贡献)归拢关键概念，每条一句话定义 + 课次",
                          "the guide's quick-reference glossary: key concepts by theme (architecture/write/query/indexing/C++ core/streaming/ops & contributing), each a one-line definition + lesson"),
+    "47-bulk-import.html": ("绕过 WAL 的第二条写入路径 · ImportV2 → DataCoord 多阶段作业(PreImport/Import/Sort/Index/提交) · DataNode 读 json/csv/parquet 直接写段 · 与流式分工",
+                            "the second write path bypassing WAL · ImportV2 → DataCoord multi-phase job (PreImport/Import/Sort/Index/commit) · DataNode reads json/csv/parquet straight into segments · divides labor with streaming"),
 }
 
 

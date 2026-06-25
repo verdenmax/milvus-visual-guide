@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 46 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 47 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
@@ -374,6 +374,7 @@ details[open] > summary { list-style: none; }
   <li>Code conventions</li>
   <li>Submitting PRs & contributing</li>
   <li>Glossary</li>
+  <li>Bulk import: the second write path</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -8704,7 +8705,7 @@ You can build, test, and follow conventions — one step remains: <strong>turn y
 
 <h2>From reader to contributor: you're ready</h2>
 <p>Having come this far, look back at what you now hold. You understand Milvus's <strong>macro architecture</strong> (coordinators and nodes, control vs data plane), have walked the full <strong>write and query</strong> paths, drilled into the <strong>C++ core</strong> to see how "fast" is made, and mapped the outer ring of <strong>API, observability, config, deployment</strong>; now you can also <strong>build it, test it, change it by its conventions, and turn changes into a compliant PR</strong>. That whole set is exactly what a <strong>qualified contributor</strong> has — you're ready.</p>
-<p>The hardest part of filing a PR was never the process but the <strong>courage to take the first step</strong>. Don't wait to "<strong>understand everything</strong>" before acting — no one starts that way. A good start is often a small <span class="mono">good first issue</span>, fixing a typo in the docs, or adding a missing test. The process <strong>becomes familiar once you've done it once</strong>; confidence <strong>builds when your first PR is merged</strong>. Everything in this guide — forty-odd lessons of diagrams, analogies, source, and quizzes — was to <strong>bring you to this step</strong>: so you no longer see Milvus as an inscrutable black box, but read its skeleton, grasp its trade-offs, and <strong>have the nerve to change and contribute to it</strong>. Reaching here, you've walked the road from "<strong>a curious bystander</strong>" to "<strong>a prepared contributor</strong>". The last lesson is a <strong>glossary</strong> for future reference. But the real next step waits for you on GitHub — <strong>go file your first PR</strong>.</p>
+<p>The hardest part of filing a PR was never the process but the <strong>courage to take the first step</strong>. Don't wait to "<strong>understand everything</strong>" before acting — no one starts that way. A good start is often a small <span class="mono">good first issue</span>, fixing a typo in the docs, or adding a missing test. The process <strong>becomes familiar once you've done it once</strong>; confidence <strong>builds when your first PR is merged</strong>. Everything in this guide — forty-odd lessons of diagrams, analogies, source, and quizzes — was to <strong>bring you to this step</strong>: so you no longer see Milvus as an inscrutable black box, but read its skeleton, grasp its trade-offs, and <strong>have the nerve to change and contribute to it</strong>. Reaching here, you've walked the road from "<strong>a curious bystander</strong>" to "<strong>a prepared contributor</strong>". The last lesson is a <strong>glossary</strong> for future reference; after it comes <strong>Part 11, "Advanced topics (optional)"</strong> — bulk import, hybrid search, quotas and rate-limiting, and other production-important topics, there when you need them. But the real next step waits for you on GitHub — <strong>go file your first PR</strong>.</p>
 
 <div class="card key">
   <div class="tag">📌 Key points</div>
@@ -8851,9 +8852,124 @@ This is the guide's <strong>quick-reference glossary</strong>, gathering the key
   <tr><td><strong>PR types</strong></td><td>feat (needs issue+design doc)/fix (needs issue)/enhance/doc/test...</td><td>L45</td></tr>
 </table>
 
-<p style="margin-top:1.4rem;color:var(--muted)">And with that, this <strong>Milvus Visual Guide</strong> comes to an end. May these diagrams, analogies, and snippets of source help you see a vast vector database as a landscape you can understand — and join. <strong>Go contribute — the world awaits your first PR.</strong></p>
+<p style="margin-top:1.4rem;color:var(--muted)">The main ten parts close here. The following <strong>Part 11, "Advanced topics (optional)"</strong> is a bonus course for when you have appetite to spare — bulk import, multi-vector hybrid search & reranking, quotas and rate-limiting, plus RBAC/resource groups/multi-tenancy and other production features; come back when you need them. May these diagrams, analogies, and snippets of source help you see a vast vector database as a landscape you can understand — and join. <strong>Go contribute — the world awaits your first PR.</strong></p>
 
 
+</section>
+<section class="lesson-print">
+<h1>Bulk import: the second write path</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+The writes in Part 4 were the <strong>online, streaming</strong> path: row by row through Proxy → WAL → growing → flush. But when you must <strong>load hundreds of millions of rows at once</strong> (migration, offline base-loading), sending every row through the WAL is slow and wasteful. For this Milvus has a <strong>second write path</strong> — <strong>bulk import</strong>: read files directly, <strong>bypass the WAL</strong>, and have DataCoord orchestrate a multi-phase <strong>import job</strong> that turns whole batches <strong>directly into segments</strong>. This lesson covers that "by-the-truckload" channel and how it divides labor with streaming writes.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of streaming writes as <strong>à-la-carte service</strong>: guests order dish by dish, the kitchen makes and plates them one at a time — <strong>real-time, flexible</strong>, but one serving at a time. Bulk import is like <strong>restocking a warehouse by the truckload</strong>: a truck pulls up to the back, <strong>skipping the front-of-house ordering flow</strong>, and the goods are counted, shelved, and logged in directly.
+  You wouldn't restock a whole warehouse "à la carte" (too slow), nor call a truck for one guest's dish. <strong>Each path has its scene</strong>: everyday real-time writes go streaming (Lessons 15–17); one-shot massive loading goes bulk import. Grasp "<strong>one database, two restocking channels</strong>" and you see why Milvus builds a separate import.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>bulk import is a second write path that bypasses the WAL — the client calls <span class="mono">ImportV2</span> (<span class="inline">proxy/task_import.go</span>), DataCoord orchestrates a multi-phase job (<span class="inline">datacoord/import_*</span>): Pending → PreImport (scan/validate/estimate) → Import (DataNode reads files straight into segments) → Sorting → IndexBuilding → commit-visible; file reading via <span class="inline">importutilv2</span> supports json/csv/numpy/parquet</strong>. It makes "one-shot massive loading" a dedicated batch pipeline.
+</div>
+
+<h2>Why a second write path</h2>
+<p>The streaming writes of Lessons 15–17 are tailored for <strong>online, continuous</strong> ingestion: each write is packed by Proxy, appended to the WAL, buffered into a growing segment by the StreamingNode, then flushed. This guarantees <strong>real-time visibility, crash recovery, and a single ordered log shared by reads and writes</strong> — perfect for "write and query at the same time". But it assumes one thing: <strong>writes trickle in steadily</strong>.</p>
+<p>Reality has another need: <strong>load one huge batch of historical data at once</strong> — migrating from another system, base-loading hundreds of millions of pre-computed vectors, or periodic batch backfills. Here, routing every row through the WAL causes trouble: it's <strong>slow</strong> (each row serialized, appended, ordered, consumed), it <strong>crowds out online writes</strong> (a massive backfill jams the WAL and StreamingNode, hurting normal real-time ingestion), and it's <strong>wasteful</strong> (this data is "written once, never changed" — it needs none of the WAL's real-time, replayable insurance). Just as you wouldn't restock a warehouse à la carte — <strong>batch scenarios need batch tools</strong>. So Milvus offers a second path: <strong>bulk import</strong>, reading files directly, bypassing the WAL, optimized for "large, offline, write-once". The two paths side by side:</p>
+
+<div class="cols">
+  <div class="col"><h4>Streaming writes (L15–17)</h4><p>row by row via Proxy → <strong>WAL</strong> → growing → flush. <strong>Real-time visible, replayable, log shared by reads/writes</strong>. For online continuous writes; but massive backfills are slow and crowd out online.</p></div>
+  <div class="col"><h4>Bulk import (this lesson)</h4><p>read files → <strong>bypass the WAL</strong> → generate segments directly → sort/index → commit. <strong>High throughput, no crowding out online</strong>. For migration/offline base-loading/backfill; not for per-row real-time.</p></div>
+</div>
+
+<h2>ImportV2 and the import job</h2>
+<p>Bulk import starts at a dedicated API entry: <span class="mono">ImportV2</span>. The client tells the Proxy <strong>which files to import</strong> (json/csv/numpy/parquet files sitting in object storage); on the Proxy side the <span class="mono">importTask</span> in <span class="inline">internal/proxy/task_import.go</span> catches it and hands it to <strong>DataCoord</strong> — note the <strong>orchestration brain is DataCoord</strong> (it already coordinates segments, flushing, and index building, Lesson 12), so scheduling this "turn files into segments" batch job is natural for it.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">data files</div><div class="nd">json/csv/numpy/parquet in object storage</div></div>
+  <div class="arrow">ImportV2</div>
+  <div class="node"><div class="nt">Proxy</div><div class="nd">importTask catches &amp; forwards</div></div>
+  <div class="arrow">orchestrate</div>
+  <div class="node hl"><div class="nt">DataCoord</div><div class="nd">multi-phase job state machine</div></div>
+  <div class="arrow">dispatch</div>
+  <div class="node"><div class="nt">DataNode</div><div class="nd">read files → write segments (binlog)</div></div>
+</div>
+<p>DataCoord treats an import not as "an action" but as a <strong>stateful, multi-phase job</strong> (code in <span class="inline">internal/datacoord/import_job.go</span>, <span class="mono">import_checker.go</span>, etc.). The job has a <strong>state machine</strong>: <span class="mono">Pending → PreImporting → Importing → Sorting → IndexBuilding → Uncommitted → Committing → done</span> (failures go to <span class="mono">Failed</span>). Why a multi-phase job rather than one shot? Because importing massive data is a <strong>long-running, failure-prone</strong> process, and splitting it into phases enables <strong>resumability, queryable progress, and retry on failure</strong> — the same wisdom as Lesson 21's "index per segment": <strong>break one big task into schedulable, recoverable steps</strong>. The pipeline below is the full journey of an import job.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>PreImport</h4><p>a DataNode first <strong>scans the files</strong>: validate schema match, estimate row count and distribution (especially under autoID). <strong>Writes no data</strong> — a "count-and-plan before work".</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Import</h4><p>DataNodes actually <strong>read files and write straight into segments</strong> (producing binlogs), <strong>bypassing the WAL</strong>. The main haul, split across DataNodes in parallel by file.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Sorting / IndexBuilding</h4><p><strong>sort</strong> the imported segments (by PK/clustering, aiding later search), then <strong>build indexes</strong> (reusing the Lesson 21–23 index pipeline).</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Commit to visible</h4><p>once everything's ready, an <strong>atomic commit</strong> makes the new segments <strong>visible to queries</strong> — all or nothing, so you never query a "half-loaded" batch.</p></div></div>
+</div>
+
+<h2>The beauty of two phases: PreImport vs Import</h2>
+<p>The most savorable part of the pipeline is splitting <strong>PreImport</strong> from <strong>Import</strong>. Intuitively you might think "read files, write segments — just do it in one step?" But Milvus deliberately <strong>does a dry run first</strong> (PreImport): only <strong>scan, validate, estimate</strong>, writing no data. What is this step doing? It's <strong>front-loading risk and planning</strong>.</p>
+<p>Concretely, PreImport first confirms <strong>the files are readable and the schema matches</strong> — if your parquet columns don't match the collection schema, this step <strong>errors early</strong>, instead of failing halfway and leaving a pile of half-built segments to clean up. It also <strong>estimates row count and distribution</strong>: under autoID (auto-increment primary keys), the system needs to know in advance "roughly how many rows, how to slice segments, how many PK IDs to pre-allocate", and PreImport's estimate lets the real Import phase <strong>slice segments evenly and reserve enough resources</strong>. This "<strong>survey first, then build</strong>" two-step is a classic engineering move for large, uncertain inputs: <strong>spend one cheap pre-scan to buy certainty and efficiency at execution time</strong>. Once PreImport passes, the Import phase can <strong>haul in parallel with confidence</strong>, because the mines were cleared during the survey. This echoes Lesson 44's merr philosophy — <strong>an "input error" catchable early at the boundary shouldn't be left to blow up deep inside</strong>.</p>
+
+<h2>How it divides labor with streaming writes</h2>
+<p>Finally, the <strong>division and cooperation</strong> of the two write paths. They <strong>share the same "segment" abstraction</strong> (Lesson 7): whether data was streamed into a growing segment then flushed, or bulk-imported straight into a segment, <strong>the end product is the same binlog-format segment in object storage</strong>, loaded and searched by QueryNodes alike. So bulk import <strong>isn't a separate world</strong> — it's <strong>a more efficient path producing the same product</strong>, which is why it slots seamlessly into the whole system.</p>
+<p>How to choose in practice? <strong>Online, continuous, real-time-visible</strong> writes (an app's everyday insert) go <strong>streaming</strong>; <strong>one-shot, massive, offline, write-once</strong> loading (migration, batch backfill, offline base-loading) goes <strong>bulk import</strong>. Many production deployments <strong>use both</strong>: one big import to base-load historical data, then streaming writes to carry the incremental flow thereafter. Grasp "<strong>one segment abstraction, two production paths</strong>" and your view of Milvus's write side is complete — it can catch a real-time trickle like a tap, and swallow a truckload like a loading dock. That's the <strong>elasticity</strong> a mature database should have.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Second write path</strong>: bulk import <strong>bypasses the WAL</strong>, optimized for "large, offline, write-once"; streaming writes (L15–17) are built for online real-time ingestion — the two divide labor.</li>
+    <li><strong>A DataCoord-orchestrated job</strong>: <span class="mono">ImportV2</span> → multi-phase state machine <span class="mono">Pending→PreImport→Import→Sorting→IndexBuilding→commit</span>; phased for resumability, queryable progress, retry on failure.</li>
+    <li><strong>PreImport vs Import</strong>: a dry-run survey first (validate schema, estimate rows/distribution, esp. autoID), then parallel hauling (DataNodes read json/csv/numpy/parquet straight into segments). Survey first, then build.</li>
+    <li><strong>Shared segment abstraction</strong>: imported segments are <strong>same-format</strong> as streamed-and-flushed ones, loaded alike by QueryNodes; the commit is <strong>atomic</strong> (all-visible or none). Production often uses both: import to base-load + streaming for the increment.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Why does Milvus build a separate bulk-import path in addition to streaming writes?</div>
+  <ol class="opts">
+    <li>Because imported segments have a different format and must be separate</li>
+    <li>Routing a one-shot massive load through the WAL row by row is slow, crowds out online writes, and is wasteful (this data is write-once); bulk import bypasses the WAL and reads files straight into segments, optimized for large offline loads</li>
+    <li>Purely to add one more API</li>
+    <li>Because streaming writes can't keep data safe</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. Streaming writes (L15–17) are built for online continuous ingestion: row by row via Proxy→WAL→growing→flush, ensuring real-time visibility and crash replay. But loading hundreds of millions of historical rows at once via the WAL is slow (each row serialized/appended/ordered/consumed), jams the WAL and StreamingNode (hurting online writes), and wastes the WAL's real-time/replay insurance on write-once data. So bulk import bypasses the WAL, reading files straight into segments — batch tools for batch scenes. Note 'bypassing WAL ≠ unsafe': the source of truth is the source files themselves; on failure, just rerun.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Bulk import is a DataCoord-orchestrated multi-phase job. What are the phases roughly, and why phase it?</div>
+  <ol class="opts">
+    <li>Executed entirely by Proxy, not DataCoord</li>
+    <li>Just one phase: dump the files in at once</li>
+    <li>Build indexes first, then read files — reverse order</li>
+    <li>Pending→PreImport (scan/validate/estimate)→Import (read files straight into segments)→Sorting→IndexBuilding→commit; phased for resumability, queryable progress, retry on failure</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. The client calls ImportV2; Proxy's importTask hands it to DataCoord (already the coordinator of segments/flushing/indexing). DataCoord treats import as a stateful job: Pending→PreImporting→Importing→Sorting→IndexBuilding→Uncommitted→Committing (Failed on error). Importing massive data is long-running and failure-prone, so phasing enables resume, queryable progress, and retry — the same 'schedulable, recoverable steps' wisdom as Lesson 21's per-segment indexing. DataNodes do the actual read-files-into-segments; importutilv2 supports json/csv/numpy/parquet.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Why split PreImport from Import, and what does PreImport do?</div>
+  <ol class="opts">
+    <li>PreImport deletes old data</li>
+    <li>PreImport does a dry-run survey first: validate schema, estimate row count and distribution (esp. under autoID, to pre-allocate PK IDs), writing no data; it clears mines and plans segment slicing so the real Import can run in parallel with confidence</li>
+    <li>They're identical, just named differently</li>
+    <li>PreImport writes the data once and Import writes it again</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. 'Survey first, then build': PreImport only scans/validates/estimates, writing no data. It confirms files are readable and the schema matches (erroring early instead of leaving half-built segments), and estimates row count/distribution — under autoID, the system must know the count to pre-allocate a contiguous PK-ID range for parallel DataNodes, else PKs collide or leave gaps. A cheap pre-scan buys certainty and efficiency at execution time; akin to Lesson 44's merr 'catch input errors early at the boundary'.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson says bulk import and streaming writes are 'one segment abstraction, two production paths'. Please: (1) pick a write path for each scenario and justify: A) an online app continuously inserting user data; B) migrating 500M historical vectors from a legacy system; C) a nightly batch backfill of yesterday's data. (2) Explain why 'bypassing the WAL' is safe in the import scenario — what is the import's 'source of truth'? (3) Why does it matter that both paths produce 'same-format segments'? What shared design aesthetic does this share with Lesson 22 (Knowhere's unified interface) and Lesson 36 (operators uniformly consuming/emitting a batch)?</li>
+  </ul>
+</div>
+</div>
 </section>
 </body>
 </html>

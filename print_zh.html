@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus 图解学习指南 - 打印版</h1>
-<p style="color:var(--muted)">全 46 课 - 逐课分页。用浏览器 Ctrl/Cmd+P 即可导出 PDF。</p>
+<p style="color:var(--muted)">全 47 课 - 逐课分页。用浏览器 Ctrl/Cmd+P 即可导出 PDF。</p>
 <div class="print-toc"><h2>目录</h2>
 <ol>
   <li>Milvus 是什么</li>
@@ -374,6 +374,7 @@ details[open] > summary { list-style: none; }
   <li>代码约定</li>
   <li>提交 PR 与贡献</li>
   <li>术语表</li>
+  <li>批量导入：第二条写入路径</li>
 </ol></div>
 <section class="lesson-print">
 <h1>Milvus 是什么</h1>
@@ -8678,7 +8679,7 @@ Go 这边则有对应的封装（如第 2、27 课的 <span class="mono">LocalSe
 
 <h2>从读者到贡献者：你已经准备好了</h2>
 <p>走到这里，请回望你已经拥有的东西。你懂 Milvus 的<strong>宏观架构</strong>（协调器与节点、控制面与数据面）、走过<strong>写入与查询</strong>的完整链路、钻进过 <strong>C++ 内核</strong>看它怎么把"快"做出来、也摸清了 <strong>API、可观测、配置、部署</strong>这层外圈；现在，你还会<strong>编它、测它、按它的约定改它、把改动提成合规的 PR</strong>。这一整套，正是一个<strong>合格贡献者</strong>该有的全貌——你已经准备好了。</p>
-<p>提 PR 这件事，最难的从来不是流程，而是<strong>迈出第一步的勇气</strong>。别等"<strong>完全搞懂一切</strong>"才动手——没有人是那样开始的。一个好的起点，往往是从 <span class="mono">good first issue</span> 标签的小问题入手、或修一个文档里的笔误、补一处缺失的测试。流程会因为<strong>第一次走通而变得熟悉</strong>，自信会因为<strong>第一个 PR 被合入而建立</strong>。这份指南的全部内容——四十多课的图、类比、源码、测验——都是为了<strong>把你领到这一步</strong>：让你不再把 Milvus 当成一个高深莫测的黑盒，而是看清它的骨架、读懂它的取舍，并<strong>有底气去改它、去贡献它</strong>。读到这里的你，已经走完了从"<strong>好奇的旁观者</strong>"到"<strong>有准备的贡献者</strong>"的路。剩下的最后一课，是一份<strong>术语表</strong>，供你日后随时回查。而真正的下一步，在 GitHub 上等着你——<strong>去提你的第一个 PR 吧</strong>。</p>
+<p>提 PR 这件事，最难的从来不是流程，而是<strong>迈出第一步的勇气</strong>。别等"<strong>完全搞懂一切</strong>"才动手——没有人是那样开始的。一个好的起点，往往是从 <span class="mono">good first issue</span> 标签的小问题入手、或修一个文档里的笔误、补一处缺失的测试。流程会因为<strong>第一次走通而变得熟悉</strong>，自信会因为<strong>第一个 PR 被合入而建立</strong>。这份指南的全部内容——四十多课的图、类比、源码、测验——都是为了<strong>把你领到这一步</strong>：让你不再把 Milvus 当成一个高深莫测的黑盒，而是看清它的骨架、读懂它的取舍，并<strong>有底气去改它、去贡献它</strong>。读到这里的你，已经走完了从"<strong>好奇的旁观者</strong>"到"<strong>有准备的贡献者</strong>"的路。剩下的最后一课，是一份<strong>术语表</strong>，供你日后随时回查；术语表之后还有<strong>第 11 部分"进阶专题（选读）"</strong>，收录批量导入、混合检索、配额限流等生产里很重要的进阶话题，等你有需要时再来。而真正的下一步，在 GitHub 上等着你——<strong>去提你的第一个 PR 吧</strong>。</p>
 
 <p>最后留一句话给此刻的你。技术细节会忘、命令会生疏、版本会演进，但这份指南真正想留给你的，不是某条具体的命令，而是一种<strong>面对庞大系统时的底气</strong>——相信任何复杂的东西，都能被<strong>拆成一层层可以理解的结构</strong>；相信再硬核的内核，背后也是一个个<strong>可被讲清的工程取舍</strong>。带着这份底气，你不仅能读懂 Milvus，也能去读懂下一个让你好奇的大系统。开源世界最迷人的地方，正在于它<strong>向每一个愿意动手的人敞开</strong>——你不需要是专家才能开始，你会<strong>因为开始而逐渐成为专家</strong>。这份指南到此即将作结，但你与 Milvus、与开源的故事，才刚刚翻开第一页。<strong>去贡献吧，世界在等你的第一个 PR。</strong></p>
 
@@ -8827,9 +8828,132 @@ Go 这边则有对应的封装（如第 2、27 课的 <span class="mono">LocalSe
   <tr><td><strong>PR 类型</strong></td><td>feat(须 issue+设计文档)/fix(须 issue)/enhance/doc/test...</td><td>第 45 课</td></tr>
 </table>
 
-<p style="margin-top:1.4rem;color:var(--muted)">读到这里，这份《Milvus 图解教程》就全部结束了。愿这些图、类比与源码,陪你把一个庞大的向量数据库,看成一幅可以理解、也可以参与的图景。<strong>去贡献吧——世界在等你的第一个 PR。</strong></p>
+<p style="margin-top:1.4rem;color:var(--muted)">主线十个部分到此收束。后面的<strong>第 11 部分"进阶专题（选读）"</strong>是给学有余力的你准备的"加餐"——批量导入、混合检索与重排、配额限流、以及 RBAC/资源组/多租户等生产特性，需要时再翻。愿这些图、类比与源码，陪你把一个庞大的向量数据库，看成一幅可以理解、也可以参与的图景。<strong>去贡献吧——世界在等你的第一个 PR。</strong></p>
 
 
+</section>
+<section class="lesson-print">
+<h1>批量导入：第二条写入路径</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+前面第 4 部分讲的写入，是<strong>在线、流式</strong>的那条路：一行行经 Proxy → WAL → growing → flush。但当你要<strong>一次性灌进上亿行</strong>历史数据（迁移、离线建库）时，让每行都走 WAL 既慢又浪费。Milvus 为此准备了<strong>第二条写入路径</strong>——<strong>批量导入（bulk import）</strong>：直接读文件、<strong>绕过 WAL</strong>、由 DataCoord 编排一个多阶段<strong>导入作业</strong>，把整批数据<strong>直接生成段</strong>。这一课看这条"批量进货"通道怎么运作，以及它和流式写入的分工。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 类比</div>
+  把流式写入想成餐厅<strong>零点上菜</strong>：客人一道道点，厨房一道道做、一道道端——<strong>实时、灵活</strong>，但一次只走一份。批量导入则像给仓库<strong>整车进货</strong>：一卡车货拉到后门，<strong>不走前厅点单流程</strong>，直接清点、上架、登记入库。
+  你不会用"零点上菜"的方式去补一整仓库的货（太慢），也不会为了一位客人点一道菜去叫一整卡车。<strong>两条路各有各的场景</strong>：日常实时写入走流式（第 15–17 课），一次性海量灌库走批量导入。理解了"<strong>同一个库、两条进货通道</strong>"，你就明白为什么 Milvus 要单独做这套 import。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观视角</div>
+  一句话：<strong>批量导入是绕过 WAL 的第二条写入路径——客户端调 <span class="mono">ImportV2</span>(<span class="inline">proxy/task_import.go</span>)，DataCoord 编排一个多阶段作业(<span class="inline">datacoord/import_*</span>)：Pending → PreImport(扫描/校验/估算) → Import(DataNode 读文件直接写段) → Sorting → IndexBuilding → 提交可见；文件读取由 <span class="inline">importutilv2</span> 支持 json/csv/numpy/parquet</strong>。它把"一次性海量灌库"做成一条专用的批处理流水线。
+</div>
+
+<p class="lead" style="font-size:1rem;color:var(--muted)">这一课是第 11 部分（进阶专题）的第一篇。前十部分讲透了 Milvus 的"主干"，这一部分补上几块"<strong>生产里很重要、但不属核心引擎</strong>"的拼图——先从这条容易被忽略、却几乎人人会用到的第二写入路径说起。</p>
+
+<h2>为什么需要第二条写入路径</h2>
+<p>第 15–17 课的流式写入，是为<strong>在线、持续</strong>的写入量身打造的：每条写入经 Proxy 打包、Append 进 WAL、由 StreamingNode 攒进 growing 段、再 flush 落盘。这套机制保证了<strong>实时可见、崩溃可恢复、读写共用一条有序日志</strong>——对"用户一边写、一边查"的在线场景堪称完美。但它有一个隐含前提：<strong>写入是"细水长流"的</strong>。</p>
+<p>可现实里有另一类需求：<strong>一次性把一大批历史数据灌进来</strong>——从别的系统迁移过来、把离线算好的几亿条向量建成库、或定期批量回填。这种场景下，如果还让每一行都走 WAL，问题就来了：<strong>慢</strong>（每行都要序列化、Append、定序、消费），<strong>挤占在线写入</strong>（海量回填把 WAL 和 StreamingNode 堵死，正常实时写入跟着遭殃），还<strong>浪费</strong>（这些数据本来就是"一次写定、不再改"的，根本不需要 WAL 的实时性与可重放保险）。就像你不会用"零点上菜"的方式补满一仓库——<strong>批量场景需要批量工具</strong>。于是 Milvus 给出第二条路：<strong>批量导入</strong>，直接读文件、绕过 WAL、专为"大批量、离线、一次写定"优化。下面把两条路摆在一起。</p>
+
+<p>这里要澄清一个常见误解：<strong>"绕过 WAL"不等于"不安全""会丢数据"</strong>。WAL 的核心价值，是为"<strong>实时、随时可能崩</strong>"的在线写入提供"<strong>先记日志、崩了重放</strong>"的保险（第 16 课）。但批量导入的场景<strong>性质完全不同</strong>：源数据<strong>本来就好端端地躺在文件里</strong>（对象存储上的 parquet 等），就算导入中途失败，<strong>源文件还在、重来一次即可</strong>，根本不需要 WAL 那套重放保险。换句话说，导入的"<strong>事实来源</strong>"是<strong>那批源文件本身</strong>，而不是 WAL。正因为有这个前提，批量导入才敢理直气壮地绕过 WAL、走捷径——它不是<strong>偷懒省掉了安全</strong>，而是<strong>这个场景本就不需要那一层</strong>。这是个很好的工程思维示范：<strong>一个机制（WAL）是为某种前提（实时、易失、唯一可信源在内存）服务的；当前提变了（离线、源文件可重读），就该大胆地为新场景选更合适的路</strong>，而不是教条地"凡写入必过 WAL"。看懂这一点，你就不会再担心"导入绕过 WAL 会不会不可靠"了。</p>
+
+<div class="cols">
+  <div class="col"><h4>流式写入（第 15–17 课）</h4><p>逐行经 Proxy → <strong>WAL</strong> → growing → flush。<strong>实时可见、可重放、读写共用日志</strong>。适合在线持续写入；但海量回填会又慢又挤占在线。</p></div>
+  <div class="col"><h4>批量导入（本课）</h4><p>读文件 → <strong>绕过 WAL</strong> → 直接生成段 → 排序/建索引 → 提交。<strong>吞吐高、不挤占在线</strong>。适合迁移/离线建库/批量回填；不追求逐行实时。</p></div>
+</div>
+
+<h2>ImportV2 与导入作业</h2>
+<p>批量导入从一个专门的 API 入口开始：<span class="mono">ImportV2</span>。客户端把"<strong>要导入哪些文件</strong>"（存在对象存储上的 json/csv/numpy/parquet 文件）告诉 Proxy，Proxy 侧由 <span class="inline">internal/proxy/task_import.go</span> 的 <span class="mono">importTask</span> 接住，转交给 <strong>DataCoord</strong>——注意，导入的<strong>编排大脑是 DataCoord</strong>（它本就是管段、管落盘、管建索引的协调者，第 12 课），由它来调度这件"把文件变成段"的批活，再自然不过。</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">数据文件</div><div class="nd">对象存储上的 json/csv/numpy/parquet</div></div>
+  <div class="arrow">ImportV2</div>
+  <div class="node"><div class="nt">Proxy</div><div class="nd">importTask 接住、转交</div></div>
+  <div class="arrow">编排</div>
+  <div class="node hl"><div class="nt">DataCoord</div><div class="nd">多阶段作业状态机</div></div>
+  <div class="arrow">派任务</div>
+  <div class="node"><div class="nt">DataNode</div><div class="nd">读文件 → 直接写段(binlog)</div></div>
+</div>
+<p>DataCoord 不是把导入当成"一个动作"，而是当成一个<strong>有状态、多阶段的作业（Job）</strong>来管（代码在 <span class="inline">internal/datacoord/import_job.go</span>、<span class="mono">import_checker.go</span> 等）。这个作业有一台<strong>状态机</strong>：<span class="mono">Pending → PreImporting → Importing → Sorting → IndexBuilding → Uncommitted → Committing → 完成</span>（失败则进 <span class="mono">Failed</span>）。为什么要做成多阶段的作业、而不是一把梭？因为导入海量数据是个<strong>长时间、易失败</strong>的过程，拆成阶段才能<strong>断点续作、进度可查、失败可重试</strong>——这和第 21 课"按段建索引"的拆分智慧一脉相承：<strong>把一件大事拆成可调度、可恢复的小步</strong>。下面这条流水线，就是一次导入作业的完整旅程。</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>PreImport（预导入）</h4><p>DataNode 先<strong>扫一遍文件</strong>：校验 schema 是否匹配、估算行数与分布（autoID 时尤其要估）。<strong>不写数据</strong>，相当于"开工前的清点与规划"。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Import（导入）</h4><p>DataNode 真正<strong>读文件、直接写进段</strong>（生成 binlog），<strong>绕过 WAL</strong>。这是搬运主力，按文件分配给多个 DataNode 并行干。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Sorting / IndexBuilding</h4><p>对导入的段<strong>排序</strong>（按主键/聚类，利于后续检索），再<strong>建索引</strong>（复用第 21–23 课的建索引链路）。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>提交可见</h4><p>一切就绪后<strong>原子提交</strong>，这批新段才正式<strong>对查询可见</strong>——要么全可见、要么都不可见，不会查到"灌了一半"的数据。</p></div></div>
+</div>
+
+<h2>两阶段的妙处：PreImport 与 Import 分开</h2>
+<p>整条流水线里，最值得品味的是把 <strong>PreImport</strong> 和 <strong>Import</strong> <strong>拆成两段</strong>。直觉上你可能觉得"读文件写段，一步到位不就行了？"但 Milvus 偏要先<strong>空跑一遍</strong>（PreImport）：只<strong>扫描、校验、估算</strong>，不落任何数据。这一步在干什么？它在<strong>把风险和规划前置</strong>。</p>
+<p>具体说，PreImport 会先确认<strong>文件能不能读、schema 对不对得上</strong>——如果你的 parquet 列和集合 schema 不匹配，这一步就能<strong>提前报错</strong>，而不是写到一半才发现、留下一堆半成品段要清理。它还会<strong>估算行数与数据分布</strong>：在 autoID（自增主键）场景下，系统需要预先知道"这批数据大概多少行、该怎么切段、该预分配多少主键 ID"，PreImport 的估算正是为正式 Import 阶段<strong>把段切得均匀、把资源备足</strong>。这种"<strong>先勘探、再施工</strong>"的两段式，是处理大批量、不确定输入时的经典工程手法：<strong>用一次廉价的预扫描，换取正式执行时的确定性与高效</strong>。一旦 PreImport 通过，Import 阶段就能<strong>放心大胆地并行搬运</strong>，因为该踩的雷已经在勘探阶段排掉了。这也呼应了第 44 课的 merr 哲学——<strong>能在边界上提前发现的"输入错误"，就别拖到深处才爆</strong>。</p>
+
+<p>再往深看一层，PreImport 估算行数分布这件事，和 autoID 的关系尤其值得点破。回忆第 6 课：主键可以让 Milvus <strong>自增分配</strong>（autoID）。流式写入时，每行的自增主键是<strong>写一行发一个</strong>，顺理成章；但批量导入是<strong>一次灌一大批</strong>，系统必须<strong>预先知道这批有多少行</strong>，才能<strong>一次性预留出一整段连续的主键 ID 区间</strong>分给它们——否则多个 DataNode 并行写时，主键就可能<strong>撞号或留空洞</strong>。PreImport 的行数估算，正是为这件"预分配主键"的事打底。你看，一个看似简单的"先扫一遍"，背后牵动的是<strong>主键唯一性</strong>这条数据库的命根子。这也再次说明：<strong>批量与流式虽然产物相同，但"怎么安全地批量生产"本身是一门需要单独设计的学问</strong>——不能简单地把流式逻辑搬过来一灌了事。Milvus 把这些隐藏的复杂度，都收进了 import 作业这条专用流水线里，让你只需"告诉它文件在哪"，剩下的勘探、切段、分配、搬运、排序、建索引、提交，它替你一气呵成。</p>
+
+<h2>它和流式写入怎么分工</h2>
+<p>最后把两条写入路径的<strong>分工与协同</strong>讲清。它们<strong>共享同一套"段"的抽象</strong>（第 7 课）：无论数据是流式攒进 growing 再 flush 成的段，还是批量导入直接生成的段，<strong>最终都是对象存储里同样格式的 binlog 段</strong>，被 QueryNode 一视同仁地加载、检索。也就是说，批量导入<strong>不是另起炉灶</strong>，而是<strong>换一条更高效的路、生产出同样的产物</strong>——这正是它能无缝融入整个系统的原因。</p>
+
+<p>这种"<strong>不同生产路径、相同最终产物</strong>"的设计，其实是个值得反复体会的架构智慧。试想另一种糟糕的设计：如果批量导入产出的是一种<strong>和流式段格式不同的"导入专用段"</strong>，那 QueryNode 就得<strong>认两种段、写两套加载与检索逻辑</strong>，整个读路径瞬间复杂一倍、还容易出 bug。Milvus 偏不——它让两条写入路径在<strong>"段"这个抽象上汇合</strong>：上游你爱怎么生产怎么生产（细水长流也好、整车卸货也罢），但<strong>交付给下游的，必须是同一种规格的段</strong>。这就像工厂里"<strong>不管哪条产线，下线的零件都得符合同一张图纸</strong>"——于是组装环节（QueryNode）才能对所有零件一视同仁。把"<strong>多样的生产</strong>"收敛到"<strong>统一的产物接口</strong>"，正是让一个系统能<strong>容纳多条路径却不失控</strong>的关键。你在第 22 课（索引交给 Knowhere 的统一接口）、第 36 课（算子统一吃一批吐一批）都见过这种审美，这里是它在<strong>写入路径</strong>上的又一次体现——而这，也正是第 11 部分想带你看到的：<strong>主干之外，Milvus 在每一处"该统一的地方统一、该分路的地方分路"的成熟权衡</strong>。</p>
+<p>那实践中怎么选？<strong>在线、持续、要求实时可见</strong>的写入（用户应用的日常 insert）走<strong>流式</strong>；<strong>一次性、海量、离线、一次写定</strong>的灌库（数据迁移、批量回填、离线建库）走<strong>批量导入</strong>。很多生产部署是<strong>两者并用</strong>：先用一次大 import 把历史数据灌进来打底，再用流式写入承接此后的增量。理解了"<strong>同一个段抽象、两条生产路径</strong>"，你对 Milvus 写入侧的认识就完整了——它既能像水龙头一样接住实时细流，也能像卸货码头一样吞下整车批货。这正是一个成熟数据库该有的<strong>弹性</strong>。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>第二条写入路径</strong>：批量导入<strong>绕过 WAL</strong>，专为"大批量、离线、一次写定"优化；流式写入(第 15–17 课)则为在线实时写入而生，二者分工。</li>
+    <li><strong>DataCoord 编排的作业</strong>：<span class="mono">ImportV2</span> → 多阶段状态机 <span class="mono">Pending→PreImport→Import→Sorting→IndexBuilding→提交</span>；拆阶段以便断点续作、进度可查、失败可重试。</li>
+    <li><strong>PreImport vs Import</strong>：先空跑勘探(校验 schema、估算行数/分布，尤其 autoID)，再正式并行搬运(DataNode 读 json/csv/numpy/parquet 直接写段)。先勘探、再施工。</li>
+    <li><strong>共享段抽象</strong>：导入产出的段与流式 flush 的段<strong>同格式</strong>，被 QueryNode 一视同仁加载；提交是<strong>原子的</strong>(全可见或都不可见)。生产常两者并用：import 打底 + 流式接增量。</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. 为什么 Milvus 在流式写入之外，还要单独做一条批量导入路径？</div>
+  <ol class="opts">
+    <li>因为批量导入产出的段格式和流式不同、必须分开</li>
+    <li>海量一次性灌库若仍逐行走 WAL 会又慢、又挤占在线写入、又浪费(这些数据本就一次写定)；批量导入绕过 WAL、读文件直接生成段，专为离线大批量优化</li>
+    <li>纯粹为了多一个 API</li>
+    <li>因为流式写入无法保证数据安全</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。流式写入(第15–17课)为在线持续写入而生：逐行经 Proxy→WAL→growing→flush，保证实时可见、崩溃可重放。但一次性灌入上亿历史行时，逐行走 WAL 会慢(每行序列化/Append/定序/消费)、会把 WAL 与 StreamingNode 堵死拖垮在线写入、且对“一次写定、不再改”的数据而言 WAL 的实时/可重放保险纯属浪费。所以批量导入绕过 WAL、直接读文件写段——批量场景用批量工具。注意“绕过 WAL≠不安全”：导入的事实来源是源文件本身，失败重来即可。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. 批量导入被 DataCoord 编排成一个多阶段作业，其阶段大致是什么、为什么分阶段？</div>
+  <ol class="opts">
+    <li>由 Proxy 而非 DataCoord 全程执行</li>
+    <li>只有一个阶段：把文件一把灌进去</li>
+    <li>先建索引、再读文件，顺序相反</li>
+    <li>Pending→PreImport(扫描/校验/估算)→Import(读文件直接写段)→Sorting→IndexBuilding→提交；分阶段以便断点续作、进度可查、失败可重试</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。客户端调 ImportV2，Proxy 的 importTask 转交 DataCoord(本就管段/落盘/建索引的协调者)。DataCoord 把导入当成有状态作业：Pending→PreImporting→Importing→Sorting→IndexBuilding→Uncommitted→Committing(失败进 Failed)。导入海量数据是长时间、易失败的过程，拆成阶段才能断点续作、进度可查、失败可重试——与第21课“按段建索引”同一种“拆成可调度可恢复小步”的智慧。DataNode 执行实际的读文件写段，importutilv2 支持 json/csv/numpy/parquet。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 为什么把 PreImport 和 Import 拆成两段，PreImport 在做什么？</div>
+  <ol class="opts">
+    <li>PreImport 负责删除旧数据</li>
+    <li>PreImport 先空跑勘探：校验 schema、估算行数与分布(autoID 时尤其要预知行数以预留主键 ID)，不写数据；提前排雷、规划切段，让正式 Import 能放心并行</li>
+    <li>两者完全相同，只是名字不同</li>
+    <li>PreImport 就是把数据先写一遍、Import 再写一遍</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。“先勘探、再施工”：PreImport 只扫描/校验/估算、不落数据。它提前确认文件可读、schema 对得上(不匹配就早报错，免得写到一半留下半成品段)；并估算行数与分布——在 autoID 下，系统须预知行数才能一次性预留连续的主键 ID 区间分给并行的 DataNode，否则主键会撞号或留空洞。用一次廉价预扫描换取正式执行的确定性与高效；与第44课 merr“输入错误尽早在边界发现”一脉相承。</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>本课说批量导入与流式写入是“同一个段抽象、两条生产路径”。请：(1) 给三个场景各选一条写入路径并说明：A) 线上应用用户持续插入数据；B) 从旧系统迁移 5 亿条历史向量；C) 每天凌晨批量回填昨日数据。(2) 解释“绕过 WAL”为何在导入场景里是安全的——导入的“事实来源”是什么？(3) 为什么让两条路径都产出“同格式的段”很重要？这与第 22 课(Knowhere 统一接口)、第 36 课(算子统一吃一批吐一批)体现了怎样共同的设计审美？</li>
+  </ul>
+</div>
+</div>
 </section>
 </body>
 </html>
