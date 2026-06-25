@@ -1,4 +1,4 @@
-"""Content for Part 10 (Practice & contributing). Lessons 42-46.
+"""Content for Part 10 (Practice &amp; contributing). Lessons 42-46.
 
 Bilingual {"zh","en"} dicts mirroring part1-9. Facts verified against the
 Makefile (milvus/build-cpp/build-go/generated-proto/test-go/generate-mockery),

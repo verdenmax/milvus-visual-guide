@@ -647,7 +647,7 @@ Channels are the carriers of write streams; spreading them evenly across nodes l
 for tolerance, once it discovers via etcd's session mechanism (detailed in Lessons 9 and 14) that a datanode has gone missing, it must immediately hand that node's channels to healthy ones so interrupted writes recover fast. You'll find this highly symmetric, in spirit, with the next lesson's QueryCoord doing "segment/channel assignment + rebalancing" on the query side —
 one balances the write side, the other the query side, but both follow the same coordinator philosophy of "central bookkeeping, dynamic scheduling, failover."</p>
 
-<p>Finally, <strong>index-build scheduling</strong>. For vectors to be efficiently searchable, ANN indexes must be built first (Lessons 5 & 6). DataCoord <strong>schedules</strong> these index-build tasks: which segment to index, with what params, assigned to whom.
+<p>Finally, <strong>index-build scheduling</strong>. For vectors to be efficiently searchable, ANN indexes must be built first (Lessons 5 &amp; 6). DataCoord <strong>schedules</strong> these index-build tasks: which segment to index, with what params, assigned to whom.
 A commonly misunderstood fact must be made clear: <strong>Milvus today has no standalone indexnode process</strong>. Although index-build tasks are scheduled by DataCoord, what actually <strong>runs the build is a worker inside datanode</strong>.
 You can see the evidence in code: the <span class="mono">DataNodeClient</span> interface directly <strong>embeds</strong> <span class="mono">workerpb.IndexNodeClient</span> — meaning the "index node" capability has been merged into datanode, rather than spun up as a separate process.</p>
 

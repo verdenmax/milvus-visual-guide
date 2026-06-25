@@ -343,17 +343,17 @@ details[open] > summary { list-style: none; }
   <li>QueryCoordV2</li>
   <li>Metadata & coordination</li>
   <li>Insert via Proxy</li>
-  <li>Streaming &amp; WAL</li>
-  <li>DataNode &amp; flush</li>
-  <li>Binlog &amp; storage format</li>
-  <li>Compaction &amp; GC</li>
-  <li>Delete &amp; upsert</li>
+  <li>Streaming & WAL</li>
+  <li>DataNode & flush</li>
+  <li>Binlog & storage format</li>
+  <li>Compaction & GC</li>
+  <li>Delete & upsert</li>
   <li>The index service</li>
   <li>Knowhere vector indexes</li>
-  <li>Index build &amp; load</li>
-  <li>Scalar &amp; full-text</li>
+  <li>Index build & load</li>
+  <li>Scalar & full-text</li>
   <li>Search via Proxy</li>
-  <li>QueryNode &amp; the delegator</li>
+  <li>QueryNode & the delegator</li>
   <li>Segcore (C++)</li>
   <li>The execution engine</li>
   <li>Reduce & result assembly</li>
@@ -895,7 +895,7 @@ responsibility — once you build the mapping among those four facts, you've gai
 <div class="card spark">
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
-    <li>Using this lesson's four-group nav (Access Proxy / Coordination MixCoord / Worker nodes / Storage & deps), assign each of these to a group and a rough code directory: (1) creating a collection, (2) the in-segment compute of one vector search, (3) flushing freshly written data into a binlog, (4) storing 'which shard is on which machine'.</li>
+    <li>Using this lesson's four-group nav (Access Proxy / Coordination MixCoord / Worker nodes / Storage &amp; deps), assign each of these to a group and a rough code directory: (1) creating a collection, (2) the in-segment compute of one vector search, (3) flushing freshly written data into a binlog, (4) storing 'which shard is on which machine'.</li>
   </ul>
 </div>
 </div>
@@ -2107,7 +2107,7 @@ So "immutable segments + delete logs + compaction" is the clever design that let
   <div class="step"><div class="num">1</div><div class="sc"><h4>Trigger seal</h4><p>Segment full (size cap) <strong>or</strong> timeout—DataCoord turns the Growing segment Sealed; read-only from now on.</p></div></div>
   <div class="step"><div class="num">2</div><div class="sc"><h4>Flush to binlog</h4><p><strong>Serialize column-organized in-memory data into binlog files</strong>, written field by field to object storage; once done it is Flushed—persisted, crash-proof.</p></div></div>
   <div class="step"><div class="num">3</div><div class="sc"><h4>Build index async</h4><p>IndexNode reads binlogs and <strong>builds the ANN index</strong> (IVF/HNSW…); index files also go to object storage.</p></div></div>
-  <div class="step"><div class="num">4</div><div class="sc"><h4>Load & search</h4><p>QueryNode <strong>loads</strong> the sealed segment and its index into memory for efficient ANN search; Growing segments fill in the freshest data.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Load &amp; search</h4><p>QueryNode <strong>loads</strong> the sealed segment and its index into memory for efficient ANN search; Growing segments fill in the freshest data.</p></div></div>
 </div>
 
 <p>Note steps 3 and 4 happen <strong>asynchronously</strong>: flushing and indexing run in the background, blocking neither writes nor queries on Growing segments. This pipeline where
@@ -2340,7 +2340,7 @@ if a node dies, it holds no exclusive state, so just restart or reload on anothe
 
 <div class="layers">
   <div class="layer l-app"><div class="lh"><span class="badge">App</span><span class="name">Milvus components</span></div><div class="ld">Coordinators (rootcoord/datacoord/querycoord) + nodes (proxy/querynode/datanode/streamingnode)—mostly stateless</div></div>
-  <div class="layer l-main"><div class="lh"><span class="badge">Dep ①</span><span class="name">etcd · metadata + service discovery</span></div><div class="ld">collection/schema/segment metadata, node registration & health, global config. Strong consistency, watchable.</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">Dep ①</span><span class="name">etcd · metadata + service discovery</span></div><div class="ld">collection/schema/segment metadata, node registration &amp; health, global config. Strong consistency, watchable.</div></div>
   <div class="layer l-part"><div class="lh"><span class="badge">Dep ②</span><span class="name">object storage · MinIO / S3</span></div><div class="ld">binlogs (columnar data), index files, delta logs. Cheap, near-infinite, durable.</div></div>
   <div class="layer l-core"><div class="lh"><span class="badge">Dep ③</span><span class="name">message queue / WAL</span></div><div class="ld">rocksmq / Pulsar / Kafka / Woodpecker. An ordered, durable, replayable write log—the carrier of "log as data."</div></div>
 </div>
@@ -2457,13 +2457,13 @@ for <strong>billions of rows, high concurrency, HA, per-component scaling</stron
 Remember this through-line: <strong>the bigger the scale, the more you split components apart and externalize dependencies</strong>; yet at every tier the API and data model stay unchanged—this is what lets Milvus "start small, never sweat big."</p>
 
 <div class="vflow">
-  <div class="step"><div class="num">1</div><div class="sc"><h4>Lite: learning & prototyping</h4><p>pip install, in-process, local files. <strong>Zero external deps</strong>, your first vector search in minutes.</p></div></div>
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Lite: learning &amp; prototyping</h4><p>pip install, in-process, local files. <strong>Zero external deps</strong>, your first vector search in minutes.</p></div></div>
   <div class="step"><div class="num">2</div><div class="sc"><h4>Standalone: small-mid production</h4><p>Single-process all-in-one, RocksMQ + local MinIO/etcd. Simplest ops, for single-machine-is-enough scenarios.</p></div></div>
   <div class="step"><div class="num">3</div><div class="sc"><h4>Cluster: large-scale production</h4><p>Components scale on their own on K8s, Pulsar + external etcd/S3. Built for high concurrency, HA, and massive data.</p></div></div>
 </div>
 
-<p>Finally, let's tie this whole "Foundations" part together: Lesson 4 covered <strong>embeddings & similarity</strong> (what the data looks like, how to compare), Lesson 5 covered <strong>ANN algorithms</strong> (how to compare fast),
-Lesson 6 covered the <strong>data model</strong> (how to organize fields and tables), Lesson 7 covered <strong>segments & log-as-data</strong> (how data is stored and flows internally), and this lesson covered <strong>external dependencies & deployment</strong> (what supports the whole system and in what shape it runs).
+<p>Finally, let's tie this whole "Foundations" part together: Lesson 4 covered <strong>embeddings &amp; similarity</strong> (what the data looks like, how to compare), Lesson 5 covered <strong>ANN algorithms</strong> (how to compare fast),
+Lesson 6 covered the <strong>data model</strong> (how to organize fields and tables), Lesson 7 covered <strong>segments &amp; log-as-data</strong> (how data is stored and flows internally), and this lesson covered <strong>external dependencies &amp; deployment</strong> (what supports the whole system and in what shape it runs).
 With these five foundations, you have all the prerequisites to understand the upcoming Milvus subsystems (write path, query path, indexing, compaction…).</p>
 
 <p>Looking back, these five lessons answer five progressively deeper questions: <strong>"what is a vector and how to compare it" → "how to compare massive vectors fast" → "how to model business data" → "how data is stored and flows inside the engine" → "what external infrastructure the whole engine relies on and at what scale it runs."</strong>
@@ -3330,7 +3330,7 @@ Channels are the carriers of write streams; spreading them evenly across nodes l
 for tolerance, once it discovers via etcd's session mechanism (detailed in Lessons 9 and 14) that a datanode has gone missing, it must immediately hand that node's channels to healthy ones so interrupted writes recover fast. You'll find this highly symmetric, in spirit, with the next lesson's QueryCoord doing "segment/channel assignment + rebalancing" on the query side —
 one balances the write side, the other the query side, but both follow the same coordinator philosophy of "central bookkeeping, dynamic scheduling, failover."</p>
 
-<p>Finally, <strong>index-build scheduling</strong>. For vectors to be efficiently searchable, ANN indexes must be built first (Lessons 5 & 6). DataCoord <strong>schedules</strong> these index-build tasks: which segment to index, with what params, assigned to whom.
+<p>Finally, <strong>index-build scheduling</strong>. For vectors to be efficiently searchable, ANN indexes must be built first (Lessons 5 &amp; 6). DataCoord <strong>schedules</strong> these index-build tasks: which segment to index, with what params, assigned to whom.
 A commonly misunderstood fact must be made clear: <strong>Milvus today has no standalone indexnode process</strong>. Although index-build tasks are scheduled by DataCoord, what actually <strong>runs the build is a worker inside datanode</strong>.
 You can see the evidence in code: the <span class="mono">DataNodeClient</span> interface directly <strong>embeds</strong> <span class="mono">workerpb.IndexNodeClient</span> — meaning the "index node" capability has been merged into datanode, rather than spun up as a separate process.</p>
 
@@ -3446,7 +3446,7 @@ DataCoord governs "how data is written in and stored well"; this lesson's <stron
 <p>The first intuition to break: <strong>in Milvus, data being "stored" doesn't mean it's "searchable."</strong> A collection's segments lying quietly in object storage can't be searched as-is; they must first go through <strong>load</strong> — QueryCoord schedules that collection's segments and indexes into several QueryNodes' memory,
 building online copies available for retrieval, and only then does the collection enter the "searchable" state. Conversely, <strong>release</strong> returns that memory, turning the collection back to "stored but not searched." That's why, using Milvus, after creating a collection and ingesting data, you must still explicitly <span class="mono">load_collection</span> before you can search.</p>
 
-<p>Why this "load" threshold rather than making all data searchable anytime? Because vector retrieval is <strong>memory-intensive</strong>: ANN indexes must reside in memory to be fast (Lessons 5 & 6), and memory is an expensive, limited resource. Loading every collection blindly would soon blow memory.
+<p>Why this "load" threshold rather than making all data searchable anytime? Because vector retrieval is <strong>memory-intensive</strong>: ANN indexes must reside in memory to be fast (Lessons 5 &amp; 6), and memory is an expensive, limited resource. Loading every collection blindly would soon blow memory.
 So Milvus hands the decision of "<strong>whether to occupy precious query memory</strong>" to the user via load/release — load the collection you want to search; release it to free space when idle. QueryCoord is the keeper of this gate, uniformly governing "which collections are online right now, and on which nodes each is loaded."</p>
 
 <p>This gate also lets Milvus gracefully support the "<strong>data far larger than memory</strong>" scenario. You can ingest into a collection far more data than a single machine's memory, resting safely in object storage; only when you actually query do you load the needed collection (even partially, by partition, on demand) into memory.
@@ -4071,7 +4071,7 @@ Remember the shape of this pipeline; every later step will line up against it pr
 </div>
 </section>
 <section class="lesson-print">
-<h1>Streaming &amp; WAL</h1>
+<h1>Streaming & WAL</h1>
 
 <p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
 Last lesson the Proxy validated, sharded, and packed a batch of inserts, finally <strong>appending them to the WAL</strong>. This lesson we step into the WAL itself — the <strong>backbone</strong> of Milvus's write path.
@@ -4286,7 +4286,7 @@ It is this WAL that cleanly cuts apart "what must be done at once" from "what ca
 </div>
 </section>
 <section class="lesson-print">
-<h1>DataNode &amp; flush</h1>
+<h1>DataNode & flush</h1>
 
 <p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
 Last lesson we saw the WAL is the single source of truth, and planted a hook: segments, indexes — the "searchable data" — are all shapes derived by <strong>consuming the WAL and replaying the log</strong>.
@@ -4489,7 +4489,7 @@ As for what happens after persistence: what a binlog looks like inside, how smal
 </div>
 </section>
 <section class="lesson-print">
-<h1>Binlog &amp; storage format</h1>
+<h1>Binlog & storage format</h1>
 
 <p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
 Last lesson a segment was flushed into binlogs in object storage — but what does a binlog file <strong>actually look like inside</strong>? This lesson <strong>cracks it open</strong>: a segment in object storage isn't one file but <strong>a family of files</strong> —
@@ -4694,7 +4694,7 @@ You only need to know it <strong>exists and coexists with classic binlogs</stron
 </div>
 </section>
 <section class="lesson-print">
-<h1>Compaction &amp; GC</h1>
+<h1>Compaction & GC</h1>
 
 <p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
 Last lesson we saw what a binlog looks like, and planted two "troublesome seeds": one, writes accumulate <strong>ever more small binlogs</strong> (each flush slices off a fragment, piling up shards); two, deletes <strong>only record tombstones, never truly erase</strong> (the void markers in delta_log keep stacking up).
@@ -4897,7 +4897,7 @@ The former optimizes <strong>reads</strong> (fewer, cleaner segments), the latte
 </div>
 </section>
 <section class="lesson-print">
-<h1>Delete &amp; upsert</h1>
+<h1>Delete & upsert</h1>
 
 <p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
 "Delete a row" sounds like the most trivial operation in a database, yet on an <strong>append-only, immutable</strong> storage substrate it hides a twist: once a binlog is written it can't be changed — so what does "delete" actually delete? This lesson fully cracks open <strong>delete</strong> and <strong>upsert</strong> —
@@ -5160,7 +5160,7 @@ This is also the root reason DataCoord must <strong>own the index metadata</stro
 <table class="t">
   <tr><th>Stage</th><th>Who</th><th>Output / state</th></tr>
   <tr><td><strong>CreateIndex</strong></td><td>Proxy→DataCoord</td><td>write the index definition to metadata (collection-level)</td></tr>
-  <tr><td><strong>Inspect & emit tasks</strong></td><td>DataCoord (inspector)</td><td>each not-yet-built sealed segment → one build task</td></tr>
+  <tr><td><strong>Inspect &amp; emit tasks</strong></td><td>DataCoord (inspector)</td><td>each not-yet-built sealed segment → one build task</td></tr>
   <tr><td><strong>Build</strong></td><td>datanode worker</td><td>read binlogs · call Knowhere · write index files to object storage</td></tr>
   <tr><td><strong>Register</strong></td><td>worker→DataCoord</td><td>index-file paths into metadata · mark segment "indexed"</td></tr>
   <tr><td><strong>Load</strong></td><td>QueryNode</td><td>on collection load, read the index into memory / mmap for ANN</td></tr>
@@ -5400,7 +5400,7 @@ knowhere::IndexEnum::<span class="nb">INDEX_SPARSE_WAND</span>        <span clas
 </div>
 </section>
 <section class="lesson-print">
-<h1>Index build &amp; load</h1>
+<h1>Index build & load</h1>
 
 <p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
 The last two lessons covered "<strong>who builds the index</strong>" (DataCoord schedules, a worker executes) and "<strong>what index to build</strong>" (Knowhere's vector-index families). This lesson cuts to the <strong>data flow</strong>: physically, where does a segment's data travel as it goes from "raw vectors" to "a searchable index"?
@@ -5560,7 +5560,7 @@ With that, the <strong>vector-index</strong> thread is complete: Lesson 21 "who 
 </div>
 </section>
 <section class="lesson-print">
-<h1>Scalar &amp; full-text</h1>
+<h1>Scalar & full-text</h1>
 
 <p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
 The indexes of the last three lessons all served <strong>vector search</strong>. But real queries are rarely "pure vector" — they often carry <strong>scalar filters</strong> ("price &lt; 100, category = electronics, listed this week") and <strong>full-text search</strong> ("the product description contains 'waterproof'").
@@ -5891,7 +5891,7 @@ The implementation of <span class="inline">parseGuaranteeTsFromConsistency</span
 </div>
 </section>
 <section class="lesson-print">
-<h1>QueryNode &amp; the delegator</h1>
+<h1>QueryNode & the delegator</h1>
 
 <p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
 Last lesson, the Proxy <strong>translated a search into a plan, fixed the guarantee ts, and scattered it across shards</strong>. But the moment a "shard" catches the request, the story truly enters the <strong>search engine's</strong> turf. Each shard's <strong>receiver</strong> is a special role running on a QueryNode — the <strong>delegator (shard leader)</strong>.
@@ -7865,7 +7865,7 @@ Last lesson, a request came in through the API. But once it runs through Milvus'
   <div class="col"><h4>✅ mlog: structured + propagatable</h4><p><span class="mono">mlog.Info(ctx, "search failed", mlog.Int64("user", id))</span>. Typed fields, precisely filterable; via ctx + <span class="mono">OptPropagated</span> + interceptors, the marker <strong>flows with the request across nodes</strong>, one ID stitching the whole cluster.</p></div>
 </div>
 
-<h2>Metrics & traces: Prometheus + OpenTelemetry</h2>
+<h2>Metrics &amp; traces: Prometheus + OpenTelemetry</h2>
 <p>The other two pillars both build on industry <strong>open standards</strong>, so they plug straight into mature ecosystem tools. <strong>Metrics</strong> are <strong>Prometheus-style</strong>: under <span class="inline">pkg/metrics</span>, each component has its own instrumentation file (<span class="mono">datacoord_metrics.go</span>, <span class="mono">datanode_metrics.go</span>, querynode, proxy, even <span class="mono">cgo_metrics.go</span> watching the Go↔C++ bridge). These are exposed at an HTTP endpoint, periodically <strong>scraped</strong> by Prometheus into time series, then drawn into dashboards by <strong>Grafana</strong> — latency, QPS, queue levels, memory at a glance, with thresholds for <strong>automatic alerts</strong>.</p>
 <p><strong>Traces</strong> use <strong>OpenTelemetry</strong> (today's prevailing tracing standard): the core is in <span class="inline">pkg/tracer</span>, depending on <span class="mono">go.opentelemetry.io/otel</span>. Its key is again "<strong>stitching the trail across nodes</strong>" — via <strong>otelgrpc interceptors</strong> (<span class="mono">GetInterceptorOpts</span>): when a request goes from Proxy over gRPC to a QueryNode, the interceptor <strong>tucks the "trace context"</strong> (containing this trace's unique ID and current span) <strong>into the RPC metadata</strong>; the downstream node, on receipt, attaches its own processing as a <strong>child span</strong> on the same trace. All nodes' spans, gathered into a backend like Jaeger, assemble a <strong>complete call tree</strong>: which segment is slowest, which hop errored, drawn as a timeline you <strong>see through at a glance</strong>. Notice logs (OptPropagated fields) and traces (otel trace context) <strong>use the same move</strong> — <strong>tuck "identity" into ctx, then propagate with the RPC</strong>. No coincidence — it's the <strong>core method</strong> of distributed observability.</p>
 

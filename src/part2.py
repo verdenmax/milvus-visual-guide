@@ -1672,7 +1672,7 @@ So "immutable segments + delete logs + compaction" is the clever design that let
   <div class="step"><div class="num">1</div><div class="sc"><h4>Trigger seal</h4><p>Segment full (size cap) <strong>or</strong> timeout—DataCoord turns the Growing segment Sealed; read-only from now on.</p></div></div>
   <div class="step"><div class="num">2</div><div class="sc"><h4>Flush to binlog</h4><p><strong>Serialize column-organized in-memory data into binlog files</strong>, written field by field to object storage; once done it is Flushed—persisted, crash-proof.</p></div></div>
   <div class="step"><div class="num">3</div><div class="sc"><h4>Build index async</h4><p>IndexNode reads binlogs and <strong>builds the ANN index</strong> (IVF/HNSW…); index files also go to object storage.</p></div></div>
-  <div class="step"><div class="num">4</div><div class="sc"><h4>Load & search</h4><p>QueryNode <strong>loads</strong> the sealed segment and its index into memory for efficient ANN search; Growing segments fill in the freshest data.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Load &amp; search</h4><p>QueryNode <strong>loads</strong> the sealed segment and its index into memory for efficient ANN search; Growing segments fill in the freshest data.</p></div></div>
 </div>
 
 <p>Note steps 3 and 4 happen <strong>asynchronously</strong>: flushing and indexing run in the background, blocking neither writes nor queries on Growing segments. This pipeline where
@@ -2026,7 +2026,7 @@ if a node dies, it holds no exclusive state, so just restart or reload on anothe
 
 <div class="layers">
   <div class="layer l-app"><div class="lh"><span class="badge">App</span><span class="name">Milvus components</span></div><div class="ld">Coordinators (rootcoord/datacoord/querycoord) + nodes (proxy/querynode/datanode/streamingnode)—mostly stateless</div></div>
-  <div class="layer l-main"><div class="lh"><span class="badge">Dep ①</span><span class="name">etcd · metadata + service discovery</span></div><div class="ld">collection/schema/segment metadata, node registration & health, global config. Strong consistency, watchable.</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">Dep ①</span><span class="name">etcd · metadata + service discovery</span></div><div class="ld">collection/schema/segment metadata, node registration &amp; health, global config. Strong consistency, watchable.</div></div>
   <div class="layer l-part"><div class="lh"><span class="badge">Dep ②</span><span class="name">object storage · MinIO / S3</span></div><div class="ld">binlogs (columnar data), index files, delta logs. Cheap, near-infinite, durable.</div></div>
   <div class="layer l-core"><div class="lh"><span class="badge">Dep ③</span><span class="name">message queue / WAL</span></div><div class="ld">rocksmq / Pulsar / Kafka / Woodpecker. An ordered, durable, replayable write log—the carrier of "log as data."</div></div>
 </div>
@@ -2143,13 +2143,13 @@ for <strong>billions of rows, high concurrency, HA, per-component scaling</stron
 Remember this through-line: <strong>the bigger the scale, the more you split components apart and externalize dependencies</strong>; yet at every tier the API and data model stay unchanged—this is what lets Milvus "start small, never sweat big."</p>
 
 <div class="vflow">
-  <div class="step"><div class="num">1</div><div class="sc"><h4>Lite: learning & prototyping</h4><p>pip install, in-process, local files. <strong>Zero external deps</strong>, your first vector search in minutes.</p></div></div>
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Lite: learning &amp; prototyping</h4><p>pip install, in-process, local files. <strong>Zero external deps</strong>, your first vector search in minutes.</p></div></div>
   <div class="step"><div class="num">2</div><div class="sc"><h4>Standalone: small-mid production</h4><p>Single-process all-in-one, RocksMQ + local MinIO/etcd. Simplest ops, for single-machine-is-enough scenarios.</p></div></div>
   <div class="step"><div class="num">3</div><div class="sc"><h4>Cluster: large-scale production</h4><p>Components scale on their own on K8s, Pulsar + external etcd/S3. Built for high concurrency, HA, and massive data.</p></div></div>
 </div>
 
-<p>Finally, let's tie this whole "Foundations" part together: Lesson 4 covered <strong>embeddings & similarity</strong> (what the data looks like, how to compare), Lesson 5 covered <strong>ANN algorithms</strong> (how to compare fast),
-Lesson 6 covered the <strong>data model</strong> (how to organize fields and tables), Lesson 7 covered <strong>segments & log-as-data</strong> (how data is stored and flows internally), and this lesson covered <strong>external dependencies & deployment</strong> (what supports the whole system and in what shape it runs).
+<p>Finally, let's tie this whole "Foundations" part together: Lesson 4 covered <strong>embeddings &amp; similarity</strong> (what the data looks like, how to compare), Lesson 5 covered <strong>ANN algorithms</strong> (how to compare fast),
+Lesson 6 covered the <strong>data model</strong> (how to organize fields and tables), Lesson 7 covered <strong>segments &amp; log-as-data</strong> (how data is stored and flows internally), and this lesson covered <strong>external dependencies &amp; deployment</strong> (what supports the whole system and in what shape it runs).
 With these five foundations, you have all the prerequisites to understand the upcoming Milvus subsystems (write path, query path, indexing, compaction…).</p>
 
 <p>Looking back, these five lessons answer five progressively deeper questions: <strong>"what is a vector and how to compare it" → "how to compare massive vectors fast" → "how to model business data" → "how data is stored and flows inside the engine" → "what external infrastructure the whole engine relies on and at what scale it runs."</strong>

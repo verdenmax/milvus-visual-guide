@@ -47,8 +47,8 @@ jobs:
       - name: Render PDFs
         run: |
           BIN="$(command -v chromium || command -v chromium-browser)"
-          "$BIN" --headless --no-sandbox --print-to-pdf=guide_zh.pdf print_zh.html
-          "$BIN" --headless --no-sandbox --print-to-pdf=guide_en.pdf print_en.html
+          "$BIN" --headless --no-sandbox --print-to-pdf=milvus-visual-guide-zh.pdf print_zh.html
+          "$BIN" --headless --no-sandbox --print-to-pdf=milvus-visual-guide-en.pdf print_en.html
       - uses: actions/upload-artifact@v4
         with:
           name: guide-pdfs

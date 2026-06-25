@@ -1,7 +1,7 @@
 """Part 4 · The write path (lessons 15-20). One Part module per milestone.
 
-Part 4 covers L15-L20: L15 insert via Proxy, L16 streaming & WAL, L17 datanode &
-flush, L18 binlog & storage format, L19 compaction & GC, and L20 delete & upsert
+Part 4 covers L15-L20: L15 insert via Proxy, L16 streaming &amp; WAL, L17 datanode &
+flush, L18 binlog &amp; storage format, L19 compaction &amp; GC, and L20 delete &amp; upsert
 (MVCC). Each value is ``{"zh": html, "en": html}`` and is
 wired into registry.CONTENT / shell.PAGES / shell.SUBTITLES / quizzes.QUIZZES.
 

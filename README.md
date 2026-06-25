@@ -4,6 +4,7 @@
 [![CI](https://github.com/verdenmax/milvus-visual-guide/actions/workflows/ci.yml/badge.svg)](https://github.com/verdenmax/milvus-visual-guide/actions/workflows/ci.yml)
 [![Deploy](https://github.com/verdenmax/milvus-visual-guide/actions/workflows/deploy.yml/badge.svg)](https://github.com/verdenmax/milvus-visual-guide/actions/workflows/deploy.yml)
 [![Parts](https://img.shields.io/badge/parts-10-7048e8)](https://verdenmax.github.io/milvus-visual-guide/)
+[![Lessons](https://img.shields.io/badge/lessons-46-7048e8)](https://verdenmax.github.io/milvus-visual-guide/)
 [![Explains Milvus](https://img.shields.io/badge/explains-milvus-1296db?logo=github&logoColor=white)](https://github.com/milvus-io/milvus)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-2b8a3e)](#build--validate)
 [![Code: MIT](https://img.shields.io/badge/code-MIT-blue.svg)](LICENSE)
@@ -18,8 +19,8 @@ and *"how to build, test and contribute a PR"*.
 > contains **no Milvus source code** beyond small, cited snippets; it explains Milvus by quoting
 > short, attributed excerpts. Milvus itself is **Apache-2.0**-licensed by its own authors.
 
-> **Status:** built **part-by-part** (milestone-driven). Part 1 lands first; the remaining parts
-> follow. See `docs/superpowers/plans/` for the roadmap.
+> **Status:** **complete** - all **10 parts / 46 lessons** are built and validated. The guide was
+> built milestone-driven; see `docs/superpowers/plans/` for the roadmap.
 
 Every lesson is self-contained, embeds both languages (toggle in the page), and uses hand-drawn
 diagrams, worked-example traces, real (cited) code, and a short self-test quiz.
@@ -113,8 +114,8 @@ Dual-licensed:
 > **声明：** 本项目是**第三方、非官方**的学习材料，**不包含 Milvus 源码**（仅引用少量、标注来源的
 > 代码片段来讲解）。Milvus 本身由其作者以 **Apache-2.0** 许可发布。
 
-> **进度：** 按里程碑**分部分**逐步构建，第一部分先落地，其余部分陆续补齐，路线图见
-> `docs/superpowers/plans/`。
+> **进度：** **已完成** —— 全部 **10 个部分 / 46 课**均已构建并通过校验。本指南按里程碑分部分构建，
+> 路线图见 `docs/superpowers/plans/`。
 
 每一课都自成一体、内嵌中英双语（页内可切换），用手绘图、worked-example 追踪图、真实（标注来源的）
 代码和一段自测题来讲清一个概念。
