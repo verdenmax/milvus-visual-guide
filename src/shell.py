@@ -109,6 +109,8 @@ PAGES = [
      "第六部分 · 查询链路", "Part 6 · The query path"),
     ("31-wal-architecture.html", "WAL 架构", "WAL architecture",
      "第七部分 · 流式系统", "Part 7 · Streaming system"),
+    ("32-ddl-dcl-via-log.html", "通过日志的 DDL/DCL", "DDL/DCL through the log",
+     "第七部分 · 流式系统", "Part 7 · Streaming system"),
 ]
 
 
@@ -612,6 +614,8 @@ SUBTITLES = {
                                            "TSO global clock; guarantee ts; five consistency levels; MVCC; tsafe wait"),
     "31-wal-architecture.html": ("StreamingCoord 调度 · StreamingNode 拦截器链 · WAL Backend · RecoveryStorage 检查点重放",
                                  "StreamingCoord scheduling; StreamingNode interceptor chain; WAL Backend; RecoveryStorage checkpoint-replay"),
+    "32-ddl-dcl-via-log.html": ("DML=Append/单日志 · DDL/DCL=Broadcast/多日志 · Broadcaster 锁+ACK · 消息语义",
+                                "DML=Append/one log; DDL/DCL=Broadcast/many logs; Broadcaster lock+ACK; message semantics"),
 }
 
 

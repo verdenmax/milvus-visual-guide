@@ -2119,6 +2119,67 @@ QUIZZES = {
             },
         ],
     },
+    "32-ddl-dcl-via-log.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "为什么 DDL/DCL(建/删集合、RBAC 等)不能像普通 insert 那样只写进一条 PChannel？",
+                    "en": "Why can't DDL/DCL (create/drop collection, RBAC, etc.) just write into one PChannel like an ordinary insert?",
+                },
+                "opts": [
+                    {"zh": "因为它们改的是整个集合/集群的元信息，必须对所有相关 PChannel 原子生效，否则分片间会对“集合是否存在/schema/权限”产生分裂认知", "en": "Because they change whole-collection/cluster metadata and must take effect atomically across all relevant PChannels, or shards would split on 'does the collection exist / schema / permissions'"},
+                    {"zh": "因为 DDL 数据量太大，一条日志放不下", "en": "Because DDL is too large to fit in one log"},
+                    {"zh": "因为 DDL 必须比 DML 慢", "en": "Because DDL must be slower than DML"},
+                    {"zh": "因为 PChannel 不支持写元数据", "en": "Because PChannels can't store metadata"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "DML 只影响某些行(进一条 PChannel)；DDL/DCL 改的是 schema/分区/权限等对整个集合所有分片都成立的元信息。若只广播到一半 PChannel，分片间就会对“集合是否存在”等持不同认知，造成元信息层面的不一致——这是正确性底线，故须原子。",
+                    "en": "DML affects some rows (one PChannel); DDL/DCL change metadata (schema/partitions/permissions) true for all of a collection's shards. If broadcast to only half the PChannels, shards disagree on 'does the collection exist', causing metadata-level inconsistency — a correctness floor, hence atomicity.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "Broadcaster 如何保证一次 DDL/DCL 的“原子广播”？",
+                    "en": "How does the Broadcaster ensure a DDL/DCL's 'atomic broadcast'?",
+                },
+                "opts": [
+                    {"zh": "StreamingClient.Broadcast → 资源加锁 → 分发到所有相关 PChannel → 收齐每条 PChannel 的 ACK → 释放锁", "en": "StreamingClient.Broadcast → lock the resource → distribute to all relevant PChannels → collect each PChannel's ACK → release the lock"},
+                    {"zh": "直接写 etcd，绕过所有 PChannel", "en": "Write etcd directly, bypassing all PChannels"},
+                    {"zh": "随机选一条 PChannel 写入即可", "en": "Just write to one random PChannel"},
+                    {"zh": "让客户端自己挨个通知每个分片", "en": "Have the client notify each shard one by one"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "DDL 走 Broadcast 而非 Append：Broadcaster 先锁住本次变更涉及的资源(防并发冲突)，把消息分发到所有相关 PChannel(各自写进 WAL)，追踪每条的 ACK，全部确认后才算成功并释放锁。锁+全员 ACK 共同实现“全有或全无”。",
+                    "en": "DDL goes via Broadcast, not Append: the Broadcaster locks the affected resource (preventing concurrent conflict), distributes the message to all relevant PChannels (each writes its WAL), tracks each ACK, and succeeds only after all confirm, then releases the lock. Lock + all-acks give 'all-or-nothing'.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "为什么 Milvus 要把 DDL 也编进 WAL，而不是只写进 etcd？",
+                    "en": "Why does Milvus also encode DDL into the WAL, rather than only writing it into etcd?",
+                },
+                "opts": [
+                    {"zh": "为了让“改结构”和“改数据”共用同一条日志、同一套 TimeTick，从而天然有序(如“先建集合再写入”的因果)、可重放、对所有消费者一致", "en": "So 'changing structure' and 'changing data' share one log and one TimeTick — naturally ordered (e.g. 'create then write' causality), replayable, consistent for all consumers"},
+                    {"zh": "因为 etcd 容量不够", "en": "Because etcd lacks capacity"},
+                    {"zh": "为了让 DDL 更慢以便观察", "en": "To make DDL slower for observability"},
+                    {"zh": "WAL 比 etcd 更省钱", "en": "The WAL is cheaper than etcd"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "若 DDL 走 etcd、DML 走 WAL，两条时间线难以保证“先建集合后写入”的因果。把 DDL 也编进同一条 WAL、用同一套 TimeTick 排序，结构变更与数据变更落在同一条时间线上，顺序对所有人一致；DDL 也因此获得可重放、可被多方消费等好处。元数据最终仍落 etcd，但“何时发生/如何排序”由 WAL 裁定。",
+                    "en": "If DDL went via etcd and DML via the WAL, two timelines make 'create-then-write' causality hard. Encoding DDL into the same WAL with the same TimeTick puts structural and data changes on one timeline, consistent for all; DDL also gains replayability and multi-consumer benefits. Metadata still lands in etcd, but 'when/how-ordered' is adjudicated by the WAL.",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课把“原子性”分成了两个维度：跨 PChannel 的原子(Broadcaster：锁+全员 ACK)与单 PChannel 内多条写入的原子(事务：Txn 拦截器)。请各想一个需要它们的具体例子(如：建集合要让所有分片同时认账；一次批量 upsert 要么都见要么都不见)。再思考：如果某条 PChannel 在广播中迟迟不 ACK(其节点宕机)，结合第 31 课的“节点失联→PChannel 重新分配→从检查点重放”，系统最终如何仍收敛到一致？",
+                "en": "This lesson split 'atomicity' into two dimensions: cross-PChannel atomicity (Broadcaster: lock + all-acks) and within-PChannel multi-write atomicity (transactions: the Txn interceptor). Think of a concrete example needing each (e.g. create-collection must be acknowledged by all shards at once; a batch upsert must be all-or-nothing visible). Then consider: if one PChannel never ACKs during a broadcast (its node crashed), how — combined with Lesson 31's 'node lost → PChannel reassigned → replay from checkpoint' — does the system still converge to consistency?",
+            },
+        ],
+    },
 }
 
 

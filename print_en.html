@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 31 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 32 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
@@ -359,6 +359,7 @@ details[open] > summary { list-style: none; }
   <li>Reduce & result assembly</li>
   <li>Consistency & timestamps</li>
   <li>WAL architecture</li>
+  <li>DDL/DCL through the log</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -6857,6 +6858,174 @@ into one log like an ordinary write, but needs a mechanism called the <strong>Br
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
     <li>This lesson says Milvus makes 'the WAL the protagonist, with segments/indexes as log-derivable derived data' — the opposite priority of a traditional single-node DB (where the WAL is just a crash-recovery byproduct and tables are the protagonist). Consider: what capabilities does this 'inversion' buy Milvus (segments in memory, multiple data forms tailing the log asynchronously, replicas/CDC syncing by copying the log)? And what cost or precondition does it impose (a strong dependence on the WAL's reliability, ordering and replayability)?</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>DDL/DCL through the log</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Last lesson's writes had an implicit premise: one insert/delete lands in <strong>one</strong> PChannel. But one kind of write is inherently
+different — <strong>DDL/DCL</strong> (create/drop collection, create/drop partition, create database, alter alias, RBAC grants…). They change not
+one shard's data but the <strong>metadata of the whole collection (even the whole cluster)</strong>, so they must apply <strong>atomically and at
+once</strong> to <strong>many PChannels</strong>: you can't have the east shard already "know the collection exists" while the west shard does not.
+An ordinary write into one log suffices; DDL/DCL must "<strong>broadcast one statement to all relevant logs, all-or-nothing</strong>". A mechanism
+called the <strong>Broadcaster</strong> handles exactly this.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  An ordinary write is like a memo to one <strong>department</strong> (into that one line). DDL is like <strong>changing the company-wide rulebook
+  at once</strong>: you can't have Marketing on the new rules while Finance is still on the old — chaos. The right way: first <strong>lock the relevant
+  departments</strong> (so nobody secretly edits the same rulebook meanwhile), <strong>deliver the new rules to every department simultaneously</strong>,
+  and only once <strong>every department acknowledges "received and in effect"</strong> does the change count. The <strong>Broadcaster</strong> does
+  exactly this "<strong>lock → deliver to all → collect acks</strong>", ensuring everyone agrees on "which rulebook is current".
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>DML uses Append (into one PChannel); DDL/DCL uses Broadcast — via StreamingCoord's Broadcaster, atomically broadcast to all
+  relevant PChannels, with resource locking and ACK confirmation</strong>. Every DDL/DCL event is a <strong>typed Message</strong> (create-collection /
+  create-partition / RBAC… each its own type). So "changing structure" and "changing data" <strong>share one log and one set of timestamps</strong> —
+  naturally ordered, replayable and recoverable.
+</div>
+
+<h2>DML vs DDL: one log vs a flock of logs</h2>
+<p>First, sort out the two kinds of writes. <strong>DML (data manipulation)</strong> — insert, delete, upsert — affects <strong>specific rows</strong>;
+those rows hash by primary key into some VChannel/PChannel, so one DML <strong>only needs one log</strong> (Lessons 15, 31). <strong>DDL (data definition)</strong>
+— create/drop collection, create/drop partition, create database, alter alias — and <strong>DCL (data control)</strong> — RBAC grant/revoke — change
+<strong>metadata (schema, partitions, permissions)</strong>, which <strong>holds for all shards of the collection</strong>. Imagine "create collection C"
+reaching only half the PChannels: half the shards think C exists and accept writes, the other half don't recognize C — data splits. So DDL/DCL must meet two
+hard requirements: <strong>(1) atomicity</strong> (all relevant PChannels take effect, or none) and <strong>(2) a clear order relative to DML</strong>
+("create the collection, then write into it" causality must not scramble). An ordinary Append can't give these two, hence the Broadcaster.</p>
+
+<div class="cols">
+  <div class="col"><h4>DML: single-PChannel Append</h4><p>insert/delete land in one PChannel by primary key, <strong>into one log</strong>. Small scope, high parallelism.</p></div>
+  <div class="col"><h4>DDL/DCL: multi-PChannel Broadcast</h4><p>create/drop collection, RBAC, etc. change metadata and must <strong>atomically broadcast to all relevant PChannels</strong> — all or nothing.</p></div>
+</div>
+
+<h2>The Broadcaster: lock, broadcast, collect acks</h2>
+<p>The <strong>Broadcaster</strong> (code in <span class="mono">internal/streamingcoord/server/broadcaster</span>) is the part of StreamingCoord dedicated to
+"atomic cross-PChannel broadcast". A DDL/DCL's journey: the client's request goes through the Proxy and calls <span class="mono">StreamingClient.Broadcast</span>
+(not the ordinary Append); the message is handed to StreamingCoord's Broadcaster; the Broadcaster first does <strong>resource locking</strong> — locking the
+resource this change touches (say a collection) so two concurrent DDLs can't conflict on the same object; then it <strong>distributes the DDL message to all
+relevant PChannels</strong> (each writes it as a log entry); finally it <strong>tracks the ACK from each PChannel</strong> — only when all relevant PChannels
+confirm "I've written this DDL into my log" does the broadcast succeed and the lock release. <strong>Lock + all-acks</strong> together guarantee "atomic,
+consistent" effect.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Broadcast initiated</h4><p>the Proxy calls <span class="mono">StreamingClient.Broadcast</span>; the DDL message goes to StreamingCoord's Broadcaster.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Resource lock</h4><p>lock the resource this change touches, preventing concurrent-DDL conflicts.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Broadcast to PChannels</h4><p>distribute the message to all relevant PChannels, each landing it in its own WAL.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>All-acks to succeed</h4><p>track each PChannel's confirmation; after all ACK, release the lock — broadcast succeeds.</p></div></div>
+</div>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/streamingcoord/server/broadcaster</span><span class="ln">atomic cross-PChannel broadcast (illustrative)</span></div>
+  <pre><span class="cm">// DDL/DCL go via Broadcast, not Append:</span>
+<span class="cm">//   StreamingClient.Broadcast(msg)</span>
+<span class="cm">//     -> Broadcaster: lock resource -> distribute to all relevant PChannels</span>
+<span class="cm">//     -> collect each PChannel's ACK -> release lock, success</span></pre>
+</div>
+
+<h2>Message semantics: every event is a "typed sentence"</h2>
+<p>Whether DML or DDL/DCL, what's written into the WAL is a <strong>Message</strong>, and a <strong>semantic, typed</strong> one — not a blob of bytes
+but "<strong>a sentence the system understands</strong>". The streaming system defines distinct message semantics for different events (categorized in the
+docs <span class="mono">message/message-semantic-*</span>): create-collection is one type, create-partition another, and database, alias, RBAC each their own,
+with transaction begin/commit having their own messages too. Because messages are typed, <strong>each consumer knows precisely "what this log entry asks me to
+do"</strong>: build a new segment, flush a batch, update a schema, or adjust a permission. Modeling "everything that happens in the system" uniformly as
+"<strong>a stream of semantic messages</strong>" is what lets this streaming architecture gracefully carry DML, DDL, DCL, transactions, replication and more —
+they differ in form, but in the log they are all "messages", all obeying the same ordered, replayable rules.</p>
+
+<table class="t">
+  <tr><th>Message class</th><th>Typical events</th><th>Scope</th></tr>
+  <tr><td><strong>Collection</strong></td><td class="mono">create/drop collection, alter schema</td><td>all PChannels of the collection</td></tr>
+  <tr><td><strong>Partition</strong></td><td class="mono">create/drop partition</td><td>all PChannels of the collection</td></tr>
+  <tr><td><strong>Database</strong></td><td class="mono">create/drop database</td><td>cluster level</td></tr>
+  <tr><td><strong>Alias</strong></td><td class="mono">create/alter/drop alias</td><td>cluster level</td></tr>
+  <tr><td><strong>RBAC (DCL)</strong></td><td class="mono">grant/revoke role permissions</td><td>cluster level</td></tr>
+  <tr><td><strong>Txn</strong></td><td class="mono">transaction begin / commit</td><td>frame a batch as one atomic unit</td></tr>
+</table>
+
+<p>A pattern emerges from this table: <strong>the larger the scope, the more it needs "broadcast + atomic"</strong>. Cluster-level Database/Alias/RBAC and
+collection-level Collection/Partition all need every relevant PChannel in lockstep, so they go through the Broadcaster; transactions (Txn) are another kind —
+not "broadcast to many shards" but framing a run of writes "begin…commit" into one atomic unit <strong>within one log</strong>, via the <strong>Txn interceptor</strong>
+from the last lesson. Seeing "atomicity" in two dimensions clarifies it: <strong>cross-PChannel atomicity via the Broadcaster (lock + all-acks), within-one-PChannel
+multi-write atomicity via transactions</strong>. With these two mechanisms, Milvus covers atomic needs of different scales, from "change a collection's structure" to
+"treat a batch as one".</p>
+
+<p>Typed messages also bring a big engineering convenience: <strong>evolvability</strong>. To support a new DDL, you just <strong>add a new message type</strong> and a
+handling branch in the Broadcaster and the consumers — no need to redesign writing or ordering, because "broadcast + atomic + ordered + replayable" are <strong>shared by all
+messages</strong>. That is the compounding return of modeling "system events" as a "message stream": build the infrastructure once, and each new event is just "another kind of car
+on existing rails".</p>
+
+<h2>Why DDL also "goes into the log"</h2>
+<p>You might ask: just write metadata into etcd (Lesson 14) — why also stuff it into the WAL? The key is <strong>ordering and consistency</strong>. If DDL went
+via etcd and DML via the WAL, the two paths would have separate timelines, making "<strong>create collection, then write</strong>" causality hard to guarantee —
+a shard might receive a write while it "hasn't seen the create-collection yet", and be at a loss. By <strong>encoding DDL/DCL into the same WAL, ordered by the
+same TimeTick</strong>, "changing structure" and "changing data" land on <strong>one timeline</strong>: order is unambiguous and consistent for all consumers. And
+once DDL is in the log, it gains all the WAL's benefits: <strong>replayable</strong> (recover "the collection was created" after a crash), <strong>multi-consumer</strong>
+(each component perceives structural changes as needed). Metadata still ends up in etcd and the like, but "<strong>when the change happened and how it orders against
+data</strong>" is adjudicated uniformly by the WAL. This again shows the unifying beauty of "log as data": <strong>treat structural changes as just another message in
+the data stream</strong>, and the whole system only needs to understand one thing — "one ordered log". Next lesson, we see how this log can also be "copied out" —
+cross-cluster <strong>replication and CDC</strong>.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>DML vs DDL/DCL</strong>: DML affects some rows, into one PChannel (Append); DDL/DCL change metadata and must take effect <strong>atomically across all relevant PChannels</strong>.</li>
+    <li><strong>Broadcaster</strong> (<span class="mono">streamingcoord/server/broadcaster</span>): <span class="mono">StreamingClient.Broadcast</span> → <strong>lock resource → broadcast to PChannels → collect ACKs → release lock</strong>, ensuring atomic consistency.</li>
+    <li><strong>Message semantics</strong>: every event is a <strong>typed Message</strong> (create-collection/partition/database/alias/RBAC/txn each a type), so consumers know precisely "what to do".</li>
+    <li><strong>DDL also in the log</strong>: sharing one WAL and one TimeTick with DML, "changing structure" and "changing data" land on one timeline — naturally ordered, replayable, consistent for all.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Why can't DDL/DCL (create/drop collection, RBAC, etc.) just write into one PChannel like an ordinary insert?</div>
+  <ol class="opts">
+    <li>Because PChannels can't store metadata</li>
+    <li>Because DDL is too large to fit in one log</li>
+    <li>Because DDL must be slower than DML</li>
+    <li>Because they change whole-collection/cluster metadata and must take effect atomically across all relevant PChannels, or shards would split on 'does the collection exist / schema / permissions'</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. DML affects some rows (one PChannel); DDL/DCL change metadata (schema/partitions/permissions) true for all of a collection's shards. If broadcast to only half the PChannels, shards disagree on 'does the collection exist', causing metadata-level inconsistency — a correctness floor, hence atomicity.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. How does the Broadcaster ensure a DDL/DCL's 'atomic broadcast'?</div>
+  <ol class="opts">
+    <li>Have the client notify each shard one by one</li>
+    <li>StreamingClient.Broadcast → lock the resource → distribute to all relevant PChannels → collect each PChannel's ACK → release the lock</li>
+    <li>Write etcd directly, bypassing all PChannels</li>
+    <li>Just write to one random PChannel</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. DDL goes via Broadcast, not Append: the Broadcaster locks the affected resource (preventing concurrent conflict), distributes the message to all relevant PChannels (each writes its WAL), tracks each ACK, and succeeds only after all confirm, then releases the lock. Lock + all-acks give 'all-or-nothing'.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Why does Milvus also encode DDL into the WAL, rather than only writing it into etcd?</div>
+  <ol class="opts">
+    <li>Because etcd lacks capacity</li>
+    <li>To make DDL slower for observability</li>
+    <li>So 'changing structure' and 'changing data' share one log and one TimeTick — naturally ordered (e.g. 'create then write' causality), replayable, consistent for all consumers</li>
+    <li>The WAL is cheaper than etcd</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. If DDL went via etcd and DML via the WAL, two timelines make 'create-then-write' causality hard. Encoding DDL into the same WAL with the same TimeTick puts structural and data changes on one timeline, consistent for all; DDL also gains replayability and multi-consumer benefits. Metadata still lands in etcd, but 'when/how-ordered' is adjudicated by the WAL.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson split 'atomicity' into two dimensions: cross-PChannel atomicity (Broadcaster: lock + all-acks) and within-PChannel multi-write atomicity (transactions: the Txn interceptor). Think of a concrete example needing each (e.g. create-collection must be acknowledged by all shards at once; a batch upsert must be all-or-nothing visible). Then consider: if one PChannel never ACKs during a broadcast (its node crashed), how — combined with Lesson 31's 'node lost → PChannel reassigned → replay from checkpoint' — does the system still converge to consistency?</li>
   </ul>
 </div>
 </div>

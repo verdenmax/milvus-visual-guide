@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>32 · 通过日志的 DDL/DCL / DDL/DCL through the log - Milvus 图解教程</title>
+<meta name="description" content="第七部分 · 流式系统｜通过日志的 DDL/DCL - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="32 · 通过日志的 DDL/DCL / DDL/DCL through the log - Milvus 图解教程">
+<meta property="og:description" content="第七部分 · 流式系统｜通过日志的 DDL/DCL - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="32 · 通过日志的 DDL/DCL / DDL/DCL through the log - Milvus 图解教程">
+<meta name="twitter:description" content="第七部分 · 流式系统｜通过日志的 DDL/DCL - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.timeline .tl-row { display: flex; align-items: flex-start; gap: .6rem; padding: .12rem 0; }
+.timeline .tl-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: .45rem; }
+.timeline .tl-t { font-family: ui-monospace, monospace; font-weight: 700; color: var(--accent-ink); min-width: 2.4rem; font-size: .82rem; flex-shrink: 0; margin-top: .18rem; }
+.timeline .tl-c { font-size: .9rem; color: var(--muted); }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第七部分 · 流式系统</span><span class="lang-en">Part 7 · Streaming system</span></span>
+    <span class="pill">32 / 32</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:100%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第七部分 · 流式系统</span><span class="lang-en">Part 7 · Streaming system</span></div>
+    <h1><span class="lang-zh">通过日志的 DDL/DCL</span><span class="lang-en">DDL/DCL through the log</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+上一课的写入有个隐含前提：一次 insert/delete 只落进<strong>一条</strong> PChannel。可有一类写入天生不一样——<strong>DDL/DCL</strong>（建/删集合、建/删分区、建数据库、改别名、授权 RBAC……）。
+它们改的不是某个分片的数据，而是<strong>整个集合（乃至整个集群）的元信息</strong>，因此必须<strong>同时、原子地</strong>作用到<strong>很多条 PChannel</strong> 上：不能东边的分片已经"知道集合建好了"、西边的还"不知道"。
+普通写入进一条日志就够，DDL/DCL 却要"<strong>一句话广播到所有相关日志、且要么全成、要么全不成</strong>"。这件事由一个叫 <strong>Broadcaster（广播器）</strong>的机制专门负责。它也再次展示了"一切皆消息"的威力：连"改结构"这种特殊操作，最终也被收进同一条日志流里统一处理。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 生活类比</div>
+  普通写入像给某个<strong>部门</strong>发一条通知（只进那条线）。而 DDL 像<strong>全公司同时换一份新规章</strong>：不能让市场部已按新规、财务部还按旧规——那会乱套。
+  正确做法是：先<strong>把相关部门都"锁住"</strong>（这期间不许有人偷偷改同一份规章），把新规<strong>同时下发到每个部门</strong>，等<strong>每个部门都回执"收到并生效"</strong>，这次变更才算数。
+  <strong>Broadcaster</strong> 干的就是这件"<strong>锁住 → 同时下发 → 收齐回执</strong>"的事，保证全公司对"现在按哪份规章"有一致认知。少了任何一步——不锁，就可能两份新规打架；不收齐回执，就可能有人没收到却以为成了——一致性就破了。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  一句话：<strong>DML 走 Append（进一条 PChannel）；DDL/DCL 走 Broadcast——经 StreamingCoord 的 Broadcaster 原子地广播到所有相关 PChannel，带资源锁与 ACK 确认</strong>。
+  每个 DDL/DCL 事件都是一条<strong>带语义的 Message</strong>（建集合/建分区/RBAC…各有自己的类型）。  这样，"改结构"和"改数据"就<strong>共用同一条日志、同一套时间戳</strong>，天然有序、可重放、可恢复。说到底，Milvus 没有为 DDL 另起炉灶，而是把它<strong>翻译成日志里的一种消息</strong>，让"广播原子性"成为流式系统里一项可复用的能力——这正是统一抽象的力量。
+</div>
+
+<h2>DML vs DDL：一条日志 vs 一群日志</h2>
+<p>先把两类写入摆清楚。<strong>DML（数据操作）</strong>——insert、delete、upsert——影响的是<strong>具体某些行</strong>，这些行按主键哈希落到某条 VChannel/PChannel，所以一次 DML <strong>只需进一条日志</strong>（第 15、31 课）。
+<strong>DDL（数据定义）</strong>——create/drop collection、create/drop partition、create database、alter alias——和 <strong>DCL（数据控制）</strong>——RBAC 授权/回收——改的是<strong>元信息（schema、分区、权限）</strong>，
+它<strong>对整个集合的所有分片都成立</strong>。设想"建集合 C"只广播给了一半 PChannel：那么一半分片认为 C 存在、能接收写入，另一半还不认 C——数据就分裂了。所以 DDL/DCL 必须满足两个硬性要求：
+<strong>① 原子性</strong>（对所有相关 PChannel 要么全生效、要么全不生效）；<strong>② 与 DML 的相对顺序明确</strong>（"先建集合、再往里写"这种因果不能乱）。一条普通的 Append 给不了这两条保证，于是有了 Broadcaster。</p>
+
+<p>为什么"一半生效"如此致命？因为 Milvus 的很多组件都<strong>独立地消费各自的 PChannel</strong> 来感知世界（第 31 课的"一份日志、多方重放"）。如果建集合的消息只到了一半 PChannel，
+那么负责另一半的 StreamingNode、DataNode、QueryNode 就会处在"<strong>对同一个集合是否存在持有不同认知</strong>"的分裂状态：有的开始为它分配段、建索引、接收查询，有的却把发来的写入当成"未知集合"拒掉。
+这种<strong>元信息层面的不一致</strong>，比丢几条数据要可怕得多——它会让系统对"现在到底有哪些集合、什么 schema、谁有权限"失去统一答案，进而引发连锁错误。所以 DDL/DCL 的原子性不是"锦上添花"，而是<strong>正确性的底线</strong>：
+要么让所有人同时进入新认知，要么所有人都停在旧认知，绝不允许中间态。理解了这个"底线"，你就明白 Broadcaster 那套看似繁琐的"锁 + 全员 ACK"为什么必不可少——它正是为了把"中间态"彻底消灭。换句话说，繁琐不是设计的缺点，而是"原子性"在分布式世界里必须付出的、最小的代价。</p>
+
+<div class="cols">
+  <div class="col"><h4>DML：单 PChannel Append</h4><p>insert/delete 按主键落到某条 PChannel，<strong>进一条日志</strong>即可。范围小、并行高、走最快的路径。</p></div>
+  <div class="col"><h4>DDL/DCL：多 PChannel Broadcast</h4><p>建/删集合、RBAC 等改元信息，必须<strong>原子地广播到所有相关 PChannel</strong>，要么全成、要么全不成，宁慢勿乱。</p></div>
+</div>
+
+<h2>Broadcaster：锁住、广播、收齐回执</h2>
+<p>举个最直观的因果例子：你先 <span class="inline">create_collection("docs")</span>，紧接着 <span class="inline">insert</span> 一批数据进 docs。如果"建集合"和"插数据"走两条互不相干的路，
+插数据的消息完全可能<strong>先于</strong>"建集合"到达某个分片——那个分片一脸茫然："docs 是什么？我不认识。"于是写入失败或行为未定义。要杜绝这种错乱，唯一可靠的办法是让"建集合"和"插数据"<strong>排在同一条有序时间线上</strong>，
+且"建集合"对所有相关分片<strong>原子地先生效</strong>。Broadcaster 正是为前半句（原子广播）服务，而"同一条时间线"则靠把 DDL 也编进 WAL、共用 TimeTick 来实现。下面就看 Broadcaster 具体怎么做到"原子"。</p>
+<p><strong>Broadcaster</strong>（代码在 <span class="mono">internal/streamingcoord/server/broadcaster</span>）是 StreamingCoord 里专管"跨 PChannel 原子广播"的部件。一次 DDL/DCL 的旅程是这样的：
+客户端的请求经 Proxy，调用 <span class="mono">StreamingClient.Broadcast</span>（而不是普通的 Append），消息被交给 StreamingCoord 的 Broadcaster；Broadcaster 先做<strong>资源加锁</strong>——
+把这次变更涉及的资源（比如某个集合）"锁住"，防止两个并发 DDL 同时改同一个对象造成冲突；然后把这条 DDL 消息<strong>分发到所有相关的 PChannel</strong>（每条 PChannel 各自把它当成一条日志写下）；
+最后<strong>追踪每条 PChannel 的 ACK</strong>——只有当所有相关 PChannel 都确认"我已经把这条 DDL 写进我的日志"了，这次广播才算成功、锁才释放。<strong>锁 + 全员 ACK</strong>，共同保证了"原子地、一致地"生效。</p>
+
+<p>这里有几个细节值得品味。其一，<strong>资源锁的粒度</strong>：Broadcaster 锁的是"<strong>这次变更涉及的资源</strong>"（如某个具体集合），而不是把整个集群锁死——这样不相干的 DDL（改 A 集合 vs 改 B 集合）可以并行，只有真正冲突的才互斥，
+既保正确又不牺牲并发。其二，<strong>失败怎么办</strong>：如果广播过程中某条 PChannel 迟迟不 ACK（比如负责它的节点挂了），这次广播就不会被当成成功；配合上一课的"节点失联→PChannel 重新分配→从检查点重放"，新接手的节点会把这条 DDL 一并恢复出来，
+最终仍能收敛到一致。其三，<strong>ACK 的意义</strong>：它确认的不是"消息送达网络"，而是"<strong>这条 DDL 已经被写进了那条 PChannel 的 WAL</strong>"——也就是说，一旦广播成功，这次变更就已经<strong>持久地、可重放地</strong>记在了每条相关日志里，崩溃也丢不了。
+把这三点串起来看，Broadcaster 本质是在多条独立日志之上，<strong>搭了一层"全有或全无"的原子提交协议</strong>——这正是分布式系统里经典的难题，而 Milvus 借"日志 + 锁 + ACK"把它解得相当干净。</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Broadcast 发起</h4><p>Proxy 调 <span class="mono">StreamingClient.Broadcast</span>，DDL 消息交给 StreamingCoord 的 Broadcaster。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>资源加锁</h4><p>锁住本次变更涉及的资源，防止并发 DDL 冲突。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>广播到各 PChannel</h4><p>把消息分发给所有相关 PChannel，各自落进自己的 WAL。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>收齐 ACK 才算成</h4><p>追踪每条 PChannel 的确认；全部 ACK 后释放锁，广播成功。</p></div></div>
+</div>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/streamingcoord/server/broadcaster</span><span class="ln">跨 PChannel 原子广播（节选示意）</span></div>
+  <pre><span class="cm">// DDL/DCL 经 Broadcast 而非 Append：</span>
+<span class="cm">//   StreamingClient.Broadcast(msg)</span>
+<span class="cm">//     -> Broadcaster: 锁资源 -> 分发到所有相关 PChannel</span>
+<span class="cm">//     -> 收齐每条 PChannel 的 ACK -> 释放锁，成功</span></pre>
+</div>
+
+<h2>消息语义：每个事件都是一条"有类型的话"</h2>
+<p>无论 DML 还是 DDL/DCL，写进 WAL 的都是一条 <strong>Message</strong>，而且是<strong>带语义、带类型</strong>的——不是一坨字节，而是"<strong>一句系统能看懂的话</strong>"。流式系统为不同的事件定义了各自的消息语义
+（在文档 <span class="mono">message/message-semantic-*</span> 里分门别类）：建集合是一种、建分区是一种、数据库、别名、RBAC 各是一种，事务的开始/提交也各有其消息。
+正因为消息是有类型的，<strong>每个消费者都能精确地知道"这条日志要我做什么"</strong>：是要建一个新段、刷一批数据，还是更新一份 schema、调整一条权限。把"系统里发生的一切"统一建模成"<strong>一条条有语义的消息流</strong>"，
+是这套流式架构能优雅承载 DML、DDL、DCL、事务、复制等各种异质操作的根本——它们形态各异，但在日志里都是"消息"，都遵循同一套有序、可重放的规则。</p>
+
+<table class="t">
+  <tr><th>消息类别</th><th>典型事件</th><th>作用范围</th></tr>
+  <tr><td><strong>Collection</strong></td><td class="mono">建/删集合、改 schema</td><td>该集合的所有 PChannel</td></tr>
+  <tr><td><strong>Partition</strong></td><td class="mono">建/删分区</td><td>该集合的所有 PChannel</td></tr>
+  <tr><td><strong>Database</strong></td><td class="mono">建/删数据库</td><td>集群级</td></tr>
+  <tr><td><strong>Alias</strong></td><td class="mono">建/改/删别名</td><td>集群级</td></tr>
+  <tr><td><strong>RBAC（DCL）</strong></td><td class="mono">授权/回收角色权限</td><td>集群级</td></tr>
+  <tr><td><strong>Txn</strong></td><td class="mono">事务 开始 / 提交</td><td>把一批写入框成原子单元</td></tr>
+</table>
+
+<p>从这张表能看出一个规律：<strong>作用范围越大、越需要"广播 + 原子"</strong>。集群级的 Database/Alias/RBAC、集合级的 Collection/Partition，都得让相关的所有 PChannel 步调一致，所以走 Broadcaster；
+而事务（Txn）则是另一类——它不是"广播给很多分片"，而是在<strong>同一条日志内</strong>把"开始…提交"之间的一串写入框成一个原子单元，靠的是上一课说的 <strong>Txn 拦截器</strong>。把"原子"这件事拆成两个维度看会更清楚：
+<strong>跨 PChannel 的原子靠 Broadcaster（锁 + 全员 ACK），单 PChannel 内多条写入的原子靠事务</strong>。Milvus 用这两套机制，覆盖了从"改一个集合的结构"到"把一批数据当成一笔"这些不同尺度的原子需求。</p>
+
+<p>消息有类型，还带来一个工程上的大便利：<strong>可演进</strong>。系统要支持一种新的 DDL（比如未来某个新对象的建/删），只需在消息体系里<strong>新增一种消息类型</strong>、在 Broadcaster 与各消费者那里<strong>加一条处理分支</strong>，
+而不必重新设计写入与排序机制——因为"广播 + 原子 + 有序 + 可重放"这些底层能力是<strong>所有消息共享</strong>的。这正是把"系统事件"统一建模成"消息流"的复利：基础设施一次建好，之后每种新事件都只是"在既有轨道上多跑一种车"。
+当你日后在 <span class="mono">internal/streamingnode</span> 里看到一长串 message 类型和对应的 handler，不必被数量吓到——它们形态各异，但都站在同一套有序日志的地基上，遵循同一套规则。<strong>抓住"一切皆消息"这条主线，纷繁的类型就有了统一的归处。</strong></p>
+
+<h2>为什么 DDL 也要"进日志"</h2>
+<p>你也许会问：元信息直接写进 etcd（第 14 课）不就行了，何必也塞进 WAL？关键在于<strong>顺序与一致</strong>。如果 DDL 走 etcd、DML 走 WAL，两条路各有各的时间线，就很难保证"<strong>先建集合、再写入</strong>"这种因果——
+某个分片可能在"还没收到建集合"时就收到了写入，无所适从。把 DDL/DCL 也<strong>编进同一条 WAL、用同一套 TimeTick 排序</strong>，"改结构"和"改数据"就落在了<strong>同一条时间线</strong>上，先后一目了然、对所有消费者一致。
+而且 DDL 进了日志，就同样获得了 WAL 的全部好处：<strong>可重放</strong>（崩溃后照样能把"集合建过了"这件事恢复出来）、<strong>可被多方消费</strong>（各组件按需感知结构变化）。最终元数据仍会落到 etcd 等存储，但"<strong>变更何时发生、与数据如何排序</strong>"由 WAL 统一裁定。</p>
+
+<p>这其实触及一个更深的问题：<strong>"结构"和"数据"到底该不该用同一套机制管？</strong>很多系统把它们分开——元数据走一致性存储（如 etcd/ZooKeeper），数据走另一条路，结果就得额外花大力气去协调两条时间线的先后。
+Milvus 的选择是<strong>把它们统一进同一条日志</strong>：DDL 是日志里的消息，DML 也是日志里的消息，二者天然共享顺序。这带来的简化是惊人的——你不再需要一个"DDL 与 DML 的协调器"，因为<strong>顺序在写进日志的那一刻就已被 TimeTick 一锤定音</strong>。
+代价是 DDL 也得忍受日志的约束（要广播、要 ACK、要走流式路径），但换来"<strong>全局只有一条时间线</strong>"的清爽，对一个要正确处理"边改结构边读写"的分布式数据库来说，太值了。</p>
+
+<p>这再次印证了"日志即数据"的统一之美：<strong>把结构变更也当成数据流里的一条消息</strong>，整个系统就只需要理解"一条有序的日志"这一种东西。下一课，我们看这条日志还能怎么"复制出去"——跨集群的<strong>复制与 CDC</strong>。</p>
+
+<p>把这一课放回"日志即数据"的大图景：到此为止，我们已经看到 WAL 承载了<strong>三类越来越"重"的写</strong>——普通 DML（一条日志）、跨分片的 DDL/DCL（Broadcaster 广播）、以及把多条写框成一笔的事务（Txn 拦截器）。
+它们的范围、原子性要求各不相同，却被<strong>统一收纳进同一条有序日志</strong>，用同一套 TimeTick 排序、同一套重放机制恢复。这种"<strong>用一个统一抽象，吸收各种异质需求</strong>"的能力，正是一个好架构的标志：你不必为每种操作都发明一套新机制，
+而是把它们都翻译成"日志里的一条（或一组）消息"，剩下的有序、持久、可恢复、可消费，全由日志这层统一兜底。当你以后读 Milvus 源码、看到形形色色的 message 类型在 streamingnode 里流转，记住它们背后是<strong>同一条主线</strong>：
+一切系统事件，都是这条单一事实来源日志上的一条消息。理解了这条主线，纷繁的细节就有了归处。这，也是 Milvus 把一个庞杂系统收拢成"一条日志 + 若干消费者"这种<strong>可理解、可演进</strong>结构的根本秘诀。把这点记牢，再看后面的复制与 CDC，你会发现它依旧是同一个故事的延续：连"把数据同步到另一个集群"，本质也只是"<strong>把这条日志复制一份过去重放</strong>"而已。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>DML vs DDL/DCL</strong>：DML 影响某些行、进一条 PChannel(Append)；DDL/DCL 改元信息、须对所有相关 PChannel <strong>原子生效</strong>。</li>
+    <li><strong>Broadcaster</strong>(<span class="mono">streamingcoord/server/broadcaster</span>)：<span class="mono">StreamingClient.Broadcast</span> → <strong>资源加锁 → 广播到各 PChannel → 收齐 ACK → 释放锁</strong>，保证原子一致。</li>
+    <li><strong>消息语义</strong>：每个事件都是一条<strong>带类型的 Message</strong>(建集合/分区/数据库/别名/RBAC/事务各一种)，消费者据此精确知道"该做什么"，且新增事件只需加一种消息类型，易演进。</li>
+    <li><strong>DDL 也进日志</strong>：与 DML 共用同一条 WAL、同一套 TimeTick，"改结构"和"改数据"落在同一条时间线上——天然有序、可重放、对所有人一致。</li>
+    <li><strong>两种原子</strong>：跨 PChannel 的原子靠 Broadcaster(锁+全员 ACK)，单 PChannel 内多写的原子靠事务(Txn 拦截器)；ACK 确认的是"已写进对方 WAL"，故持久不丢。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. 为什么 DDL/DCL(建/删集合、RBAC 等)不能像普通 insert 那样只写进一条 PChannel？</div>
+  <ol class="opts">
+    <li>因为 PChannel 不支持写元数据</li>
+    <li>因为 DDL 数据量太大，一条日志放不下</li>
+    <li>因为 DDL 必须比 DML 慢</li>
+    <li>因为它们改的是整个集合/集群的元信息，必须对所有相关 PChannel 原子生效，否则分片间会对“集合是否存在/schema/权限”产生分裂认知</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。DML 只影响某些行(进一条 PChannel)；DDL/DCL 改的是 schema/分区/权限等对整个集合所有分片都成立的元信息。若只广播到一半 PChannel，分片间就会对“集合是否存在”等持不同认知，造成元信息层面的不一致——这是正确性底线，故须原子。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Broadcaster 如何保证一次 DDL/DCL 的“原子广播”？</div>
+  <ol class="opts">
+    <li>让客户端自己挨个通知每个分片</li>
+    <li>StreamingClient.Broadcast → 资源加锁 → 分发到所有相关 PChannel → 收齐每条 PChannel 的 ACK → 释放锁</li>
+    <li>直接写 etcd，绕过所有 PChannel</li>
+    <li>随机选一条 PChannel 写入即可</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。DDL 走 Broadcast 而非 Append：Broadcaster 先锁住本次变更涉及的资源(防并发冲突)，把消息分发到所有相关 PChannel(各自写进 WAL)，追踪每条的 ACK，全部确认后才算成功并释放锁。锁+全员 ACK 共同实现“全有或全无”。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 为什么 Milvus 要把 DDL 也编进 WAL，而不是只写进 etcd？</div>
+  <ol class="opts">
+    <li>因为 etcd 容量不够</li>
+    <li>为了让 DDL 更慢以便观察</li>
+    <li>为了让“改结构”和“改数据”共用同一条日志、同一套 TimeTick，从而天然有序(如“先建集合再写入”的因果)、可重放、对所有消费者一致</li>
+    <li>WAL 比 etcd 更省钱</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：C</strong>。若 DDL 走 etcd、DML 走 WAL，两条时间线难以保证“先建集合后写入”的因果。把 DDL 也编进同一条 WAL、用同一套 TimeTick 排序，结构变更与数据变更落在同一条时间线上，顺序对所有人一致；DDL 也因此获得可重放、可被多方消费等好处。元数据最终仍落 etcd，但“何时发生/如何排序”由 WAL 裁定。</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>本课把“原子性”分成了两个维度：跨 PChannel 的原子(Broadcaster：锁+全员 ACK)与单 PChannel 内多条写入的原子(事务：Txn 拦截器)。请各想一个需要它们的具体例子(如：建集合要让所有分片同时认账；一次批量 upsert 要么都见要么都不见)。再思考：如果某条 PChannel 在广播中迟迟不 ACK(其节点宕机)，结合第 31 课的“节点失联→PChannel 重新分配→从检查点重放”，系统最终如何仍收敛到一致？</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Last lesson's writes had an implicit premise: one insert/delete lands in <strong>one</strong> PChannel. But one kind of write is inherently
+different — <strong>DDL/DCL</strong> (create/drop collection, create/drop partition, create database, alter alias, RBAC grants…). They change not
+one shard's data but the <strong>metadata of the whole collection (even the whole cluster)</strong>, so they must apply <strong>atomically and at
+once</strong> to <strong>many PChannels</strong>: you can't have the east shard already "know the collection exists" while the west shard does not.
+An ordinary write into one log suffices; DDL/DCL must "<strong>broadcast one statement to all relevant logs, all-or-nothing</strong>". A mechanism
+called the <strong>Broadcaster</strong> handles exactly this.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  An ordinary write is like a memo to one <strong>department</strong> (into that one line). DDL is like <strong>changing the company-wide rulebook
+  at once</strong>: you can't have Marketing on the new rules while Finance is still on the old — chaos. The right way: first <strong>lock the relevant
+  departments</strong> (so nobody secretly edits the same rulebook meanwhile), <strong>deliver the new rules to every department simultaneously</strong>,
+  and only once <strong>every department acknowledges "received and in effect"</strong> does the change count. The <strong>Broadcaster</strong> does
+  exactly this "<strong>lock → deliver to all → collect acks</strong>", ensuring everyone agrees on "which rulebook is current".
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>DML uses Append (into one PChannel); DDL/DCL uses Broadcast — via StreamingCoord's Broadcaster, atomically broadcast to all
+  relevant PChannels, with resource locking and ACK confirmation</strong>. Every DDL/DCL event is a <strong>typed Message</strong> (create-collection /
+  create-partition / RBAC… each its own type). So "changing structure" and "changing data" <strong>share one log and one set of timestamps</strong> —
+  naturally ordered, replayable and recoverable.
+</div>
+
+<h2>DML vs DDL: one log vs a flock of logs</h2>
+<p>First, sort out the two kinds of writes. <strong>DML (data manipulation)</strong> — insert, delete, upsert — affects <strong>specific rows</strong>;
+those rows hash by primary key into some VChannel/PChannel, so one DML <strong>only needs one log</strong> (Lessons 15, 31). <strong>DDL (data definition)</strong>
+— create/drop collection, create/drop partition, create database, alter alias — and <strong>DCL (data control)</strong> — RBAC grant/revoke — change
+<strong>metadata (schema, partitions, permissions)</strong>, which <strong>holds for all shards of the collection</strong>. Imagine "create collection C"
+reaching only half the PChannels: half the shards think C exists and accept writes, the other half don't recognize C — data splits. So DDL/DCL must meet two
+hard requirements: <strong>(1) atomicity</strong> (all relevant PChannels take effect, or none) and <strong>(2) a clear order relative to DML</strong>
+("create the collection, then write into it" causality must not scramble). An ordinary Append can't give these two, hence the Broadcaster.</p>
+
+<div class="cols">
+  <div class="col"><h4>DML: single-PChannel Append</h4><p>insert/delete land in one PChannel by primary key, <strong>into one log</strong>. Small scope, high parallelism.</p></div>
+  <div class="col"><h4>DDL/DCL: multi-PChannel Broadcast</h4><p>create/drop collection, RBAC, etc. change metadata and must <strong>atomically broadcast to all relevant PChannels</strong> — all or nothing.</p></div>
+</div>
+
+<h2>The Broadcaster: lock, broadcast, collect acks</h2>
+<p>The <strong>Broadcaster</strong> (code in <span class="mono">internal/streamingcoord/server/broadcaster</span>) is the part of StreamingCoord dedicated to
+"atomic cross-PChannel broadcast". A DDL/DCL's journey: the client's request goes through the Proxy and calls <span class="mono">StreamingClient.Broadcast</span>
+(not the ordinary Append); the message is handed to StreamingCoord's Broadcaster; the Broadcaster first does <strong>resource locking</strong> — locking the
+resource this change touches (say a collection) so two concurrent DDLs can't conflict on the same object; then it <strong>distributes the DDL message to all
+relevant PChannels</strong> (each writes it as a log entry); finally it <strong>tracks the ACK from each PChannel</strong> — only when all relevant PChannels
+confirm "I've written this DDL into my log" does the broadcast succeed and the lock release. <strong>Lock + all-acks</strong> together guarantee "atomic,
+consistent" effect.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Broadcast initiated</h4><p>the Proxy calls <span class="mono">StreamingClient.Broadcast</span>; the DDL message goes to StreamingCoord's Broadcaster.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Resource lock</h4><p>lock the resource this change touches, preventing concurrent-DDL conflicts.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Broadcast to PChannels</h4><p>distribute the message to all relevant PChannels, each landing it in its own WAL.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>All-acks to succeed</h4><p>track each PChannel's confirmation; after all ACK, release the lock — broadcast succeeds.</p></div></div>
+</div>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/streamingcoord/server/broadcaster</span><span class="ln">atomic cross-PChannel broadcast (illustrative)</span></div>
+  <pre><span class="cm">// DDL/DCL go via Broadcast, not Append:</span>
+<span class="cm">//   StreamingClient.Broadcast(msg)</span>
+<span class="cm">//     -> Broadcaster: lock resource -> distribute to all relevant PChannels</span>
+<span class="cm">//     -> collect each PChannel's ACK -> release lock, success</span></pre>
+</div>
+
+<h2>Message semantics: every event is a "typed sentence"</h2>
+<p>Whether DML or DDL/DCL, what's written into the WAL is a <strong>Message</strong>, and a <strong>semantic, typed</strong> one — not a blob of bytes
+but "<strong>a sentence the system understands</strong>". The streaming system defines distinct message semantics for different events (categorized in the
+docs <span class="mono">message/message-semantic-*</span>): create-collection is one type, create-partition another, and database, alias, RBAC each their own,
+with transaction begin/commit having their own messages too. Because messages are typed, <strong>each consumer knows precisely "what this log entry asks me to
+do"</strong>: build a new segment, flush a batch, update a schema, or adjust a permission. Modeling "everything that happens in the system" uniformly as
+"<strong>a stream of semantic messages</strong>" is what lets this streaming architecture gracefully carry DML, DDL, DCL, transactions, replication and more —
+they differ in form, but in the log they are all "messages", all obeying the same ordered, replayable rules.</p>
+
+<table class="t">
+  <tr><th>Message class</th><th>Typical events</th><th>Scope</th></tr>
+  <tr><td><strong>Collection</strong></td><td class="mono">create/drop collection, alter schema</td><td>all PChannels of the collection</td></tr>
+  <tr><td><strong>Partition</strong></td><td class="mono">create/drop partition</td><td>all PChannels of the collection</td></tr>
+  <tr><td><strong>Database</strong></td><td class="mono">create/drop database</td><td>cluster level</td></tr>
+  <tr><td><strong>Alias</strong></td><td class="mono">create/alter/drop alias</td><td>cluster level</td></tr>
+  <tr><td><strong>RBAC (DCL)</strong></td><td class="mono">grant/revoke role permissions</td><td>cluster level</td></tr>
+  <tr><td><strong>Txn</strong></td><td class="mono">transaction begin / commit</td><td>frame a batch as one atomic unit</td></tr>
+</table>
+
+<p>A pattern emerges from this table: <strong>the larger the scope, the more it needs "broadcast + atomic"</strong>. Cluster-level Database/Alias/RBAC and
+collection-level Collection/Partition all need every relevant PChannel in lockstep, so they go through the Broadcaster; transactions (Txn) are another kind —
+not "broadcast to many shards" but framing a run of writes "begin…commit" into one atomic unit <strong>within one log</strong>, via the <strong>Txn interceptor</strong>
+from the last lesson. Seeing "atomicity" in two dimensions clarifies it: <strong>cross-PChannel atomicity via the Broadcaster (lock + all-acks), within-one-PChannel
+multi-write atomicity via transactions</strong>. With these two mechanisms, Milvus covers atomic needs of different scales, from "change a collection's structure" to
+"treat a batch as one".</p>
+
+<p>Typed messages also bring a big engineering convenience: <strong>evolvability</strong>. To support a new DDL, you just <strong>add a new message type</strong> and a
+handling branch in the Broadcaster and the consumers — no need to redesign writing or ordering, because "broadcast + atomic + ordered + replayable" are <strong>shared by all
+messages</strong>. That is the compounding return of modeling "system events" as a "message stream": build the infrastructure once, and each new event is just "another kind of car
+on existing rails".</p>
+
+<h2>Why DDL also "goes into the log"</h2>
+<p>You might ask: just write metadata into etcd (Lesson 14) — why also stuff it into the WAL? The key is <strong>ordering and consistency</strong>. If DDL went
+via etcd and DML via the WAL, the two paths would have separate timelines, making "<strong>create collection, then write</strong>" causality hard to guarantee —
+a shard might receive a write while it "hasn't seen the create-collection yet", and be at a loss. By <strong>encoding DDL/DCL into the same WAL, ordered by the
+same TimeTick</strong>, "changing structure" and "changing data" land on <strong>one timeline</strong>: order is unambiguous and consistent for all consumers. And
+once DDL is in the log, it gains all the WAL's benefits: <strong>replayable</strong> (recover "the collection was created" after a crash), <strong>multi-consumer</strong>
+(each component perceives structural changes as needed). Metadata still ends up in etcd and the like, but "<strong>when the change happened and how it orders against
+data</strong>" is adjudicated uniformly by the WAL. This again shows the unifying beauty of "log as data": <strong>treat structural changes as just another message in
+the data stream</strong>, and the whole system only needs to understand one thing — "one ordered log". Next lesson, we see how this log can also be "copied out" —
+cross-cluster <strong>replication and CDC</strong>.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>DML vs DDL/DCL</strong>: DML affects some rows, into one PChannel (Append); DDL/DCL change metadata and must take effect <strong>atomically across all relevant PChannels</strong>.</li>
+    <li><strong>Broadcaster</strong> (<span class="mono">streamingcoord/server/broadcaster</span>): <span class="mono">StreamingClient.Broadcast</span> → <strong>lock resource → broadcast to PChannels → collect ACKs → release lock</strong>, ensuring atomic consistency.</li>
+    <li><strong>Message semantics</strong>: every event is a <strong>typed Message</strong> (create-collection/partition/database/alias/RBAC/txn each a type), so consumers know precisely "what to do".</li>
+    <li><strong>DDL also in the log</strong>: sharing one WAL and one TimeTick with DML, "changing structure" and "changing data" land on one timeline — naturally ordered, replayable, consistent for all.</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Why can't DDL/DCL (create/drop collection, RBAC, etc.) just write into one PChannel like an ordinary insert?</div>
+  <ol class="opts">
+    <li>Because PChannels can't store metadata</li>
+    <li>Because DDL is too large to fit in one log</li>
+    <li>Because DDL must be slower than DML</li>
+    <li>Because they change whole-collection/cluster metadata and must take effect atomically across all relevant PChannels, or shards would split on 'does the collection exist / schema / permissions'</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. DML affects some rows (one PChannel); DDL/DCL change metadata (schema/partitions/permissions) true for all of a collection's shards. If broadcast to only half the PChannels, shards disagree on 'does the collection exist', causing metadata-level inconsistency — a correctness floor, hence atomicity.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. How does the Broadcaster ensure a DDL/DCL's 'atomic broadcast'?</div>
+  <ol class="opts">
+    <li>Have the client notify each shard one by one</li>
+    <li>StreamingClient.Broadcast → lock the resource → distribute to all relevant PChannels → collect each PChannel's ACK → release the lock</li>
+    <li>Write etcd directly, bypassing all PChannels</li>
+    <li>Just write to one random PChannel</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. DDL goes via Broadcast, not Append: the Broadcaster locks the affected resource (preventing concurrent conflict), distributes the message to all relevant PChannels (each writes its WAL), tracks each ACK, and succeeds only after all confirm, then releases the lock. Lock + all-acks give 'all-or-nothing'.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Why does Milvus also encode DDL into the WAL, rather than only writing it into etcd?</div>
+  <ol class="opts">
+    <li>Because etcd lacks capacity</li>
+    <li>To make DDL slower for observability</li>
+    <li>So 'changing structure' and 'changing data' share one log and one TimeTick — naturally ordered (e.g. 'create then write' causality), replayable, consistent for all consumers</li>
+    <li>The WAL is cheaper than etcd</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. If DDL went via etcd and DML via the WAL, two timelines make 'create-then-write' causality hard. Encoding DDL into the same WAL with the same TimeTick puts structural and data changes on one timeline, consistent for all; DDL also gains replayability and multi-consumer benefits. Metadata still lands in etcd, but 'when/how-ordered' is adjudicated by the WAL.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson split 'atomicity' into two dimensions: cross-PChannel atomicity (Broadcaster: lock + all-acks) and within-PChannel multi-write atomicity (transactions: the Txn interceptor). Think of a concrete example needing each (e.g. create-collection must be acknowledged by all shards at once; a batch upsert must be all-or-nothing visible). Then consider: if one PChannel never ACKs during a broadcast (its node crashed), how — combined with Lesson 31's 'node lost → PChannel reassigned → replay from checkpoint' — does the system still converge to consistency?</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="31-wal-architecture.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">WAL 架构</span><span class="lang-en">WAL architecture</span></div></a><a class="next" href="../index.html"><div class="dir"><span class="lang-zh">完成 →</span><span class="lang-en">Done →</span></div><div class="ttl"><span class="lang-zh">返回目录</span><span class="lang-en">Back to index</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>

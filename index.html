@@ -323,7 +323,7 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 <div class="topbar">
   <div class="topbar-inner">
     <span class="home">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></span>
-    <span class="pill"><span class="lang-zh">共 31 课 · 7 个部分</span><span class="lang-en">31 lessons · 7 parts</span></span>
+    <span class="pill"><span class="lang-zh">共 32 课 · 7 个部分</span><span class="lang-en">32 lessons · 7 parts</span></span>
     <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
   </div>
   <div class="progress"><span style="width:100%"></span></div>
@@ -385,7 +385,8 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 <a href="lessons/29-reduce.html"><span class="n">29</span><span class="tt"><span class="lang-zh">Reduce 与结果归并</span><span class="lang-en">Reduce &amp; result assembly</span></span><span class="ts"><span class="lang-zh">三层归并：段内/节点/Proxy · 按主键去重 · 排序 · offset/limit · scatter-gather</span><span class="lang-en">three-level merge: segment/node/Proxy; dedup by PK; sort; offset/limit; scatter-gather</span></span></a>
 <a href="lessons/30-consistency-and-timestamps.html"><span class="n">30</span><span class="tt"><span class="lang-zh">一致性与时间戳</span><span class="lang-en">Consistency &amp; timestamps</span></span><span class="ts"><span class="lang-zh">TSO 全局时钟 · 保证时间戳 · 五种一致性级别 · MVCC · tsafe 等待</span><span class="lang-en">TSO global clock; guarantee ts; five consistency levels; MVCC; tsafe wait</span></span></a>
 <div class="toc-part"><span class="lang-zh">第七部分 · 流式系统</span><span class="lang-en">Part 7 · Streaming system</span></div>
-<a href="lessons/31-wal-architecture.html"><span class="n">31</span><span class="tt"><span class="lang-zh">WAL 架构</span><span class="lang-en">WAL architecture</span></span><span class="ts"><span class="lang-zh">StreamingCoord 调度 · StreamingNode 拦截器链 · WAL Backend · RecoveryStorage 检查点重放</span><span class="lang-en">StreamingCoord scheduling; StreamingNode interceptor chain; WAL Backend; RecoveryStorage checkpoint-replay</span></span></a></div>
+<a href="lessons/31-wal-architecture.html"><span class="n">31</span><span class="tt"><span class="lang-zh">WAL 架构</span><span class="lang-en">WAL architecture</span></span><span class="ts"><span class="lang-zh">StreamingCoord 调度 · StreamingNode 拦截器链 · WAL Backend · RecoveryStorage 检查点重放</span><span class="lang-en">StreamingCoord scheduling; StreamingNode interceptor chain; WAL Backend; RecoveryStorage checkpoint-replay</span></span></a>
+<a href="lessons/32-ddl-dcl-via-log.html"><span class="n">32</span><span class="tt"><span class="lang-zh">通过日志的 DDL/DCL</span><span class="lang-en">DDL/DCL through the log</span></span><span class="ts"><span class="lang-zh">DML=Append/单日志 · DDL/DCL=Broadcast/多日志 · Broadcaster 锁+ACK · 消息语义</span><span class="lang-en">DML=Append/one log; DDL/DCL=Broadcast/many logs; Broadcaster lock+ACK; message semantics</span></span></a></div>
   <div class="toc-empty" id="tocempty"><span class="lang-zh">没有匹配的课程，换个关键词试试。</span><span class="lang-en">No matching lessons, try another keyword.</span></div>
   <p style="margin:2.4rem 0 0;color:var(--faint);font-size:.78rem;text-align:center"><span class="lang-zh">本项目是第三方、非官方的学习材料，不含 Milvus 源码（仅引用少量标注来源的片段）；Milvus 由其作者以 Apache-2.0 许可发布。</span><span class="lang-en">Third-party, unofficial learning material; contains no Milvus source code beyond small, cited snippets. Milvus is Apache-2.0-licensed by its authors.</span></p>
 </div>
