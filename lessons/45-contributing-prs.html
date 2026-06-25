@@ -353,6 +353,14 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 <h2>fork-and-pull：贡献的标准流程</h2>
 <p>Milvus（和绝大多数开源项目一样）用 <strong>fork-and-pull</strong> 协作。核心思想是：<strong>你没有官方仓库的写权限，所以你在自己的副本上干活，再请求把成果"拉"回去</strong>。流程是固定的几步。第一步，<strong>fork</strong>：在 GitHub 上把 <span class="mono">milvus-io/milvus</span> 复制一份到你自己的账号下。第二步，<strong>clone 并配 upstream</strong>：把你的 fork 克隆到本地，再把官方仓库加为 <span class="mono">upstream</span> 远程（<span class="mono">git remote add upstream git@github.com:milvus-io/milvus.git</span>），这样你能随时<strong>同步官方最新代码</strong>。</p>
 
+<div class="flow">
+  <div class="node"><div class="nt">本地仓库</div><div class="nd">写代码 + commit -s</div></div>
+  <div class="arrow">push</div>
+  <div class="node"><div class="nt">origin（你的 fork）</div><div class="nd">你有写权限</div></div>
+  <div class="arrow">PR</div>
+  <div class="node hl"><div class="nt">upstream（官方 master）</div><div class="nd">只能 fetch 同步，不能直接 push</div></div>
+</div>
+
 <p>这里把 fork、upstream、origin 这三个容易混的概念<strong>一次理清</strong>，因为很多新人就栽在搞不清"该往哪儿推、从哪儿拉"。<strong>upstream</strong> 指官方仓库 <span class="mono">milvus-io/milvus</span>——它是"<strong>真理之源</strong>"，你<strong>只能从它拉（fetch）、不能往它推</strong>。<strong>origin</strong> 指你自己账号下的那个 fork——它是你的<strong>专属工作区</strong>，你<strong>往它推（push）</strong>自己的分支。<strong>本地仓库</strong>则是你电脑上的克隆，是你真正写代码的地方。一次典型的贡献，数据就这样流动：<strong>从 upstream 拉最新 → 在本地改 → 推到 origin → 从 origin 向 upstream 发 PR</strong>。看清这个三角，你就不会再问"为什么 push 不上去官方仓库"（你本就没权限、也不该直接推），也不会忘了"<strong>开发前先从 upstream 同步</strong>"。把这三者的关系刻进脑子，整个 fork-and-pull 流程就从一串需要死记的命令，变成了一幅<strong>你能自己推导出来的图</strong>——这正是理解胜过记忆的地方。</p>
 <p>第三步，<strong>开分支干活</strong>：从最新的 <span class="mono">upstream/master</span> 切出一个<strong>专题分支</strong>（<span class="mono">git checkout upstream/master -b my-topic-branch</span>），在上面改代码、提交。第四步，<strong>同步并推送</strong>：提交前先 <span class="mono">git fetch upstream</span>、必要时 rebase 解决冲突，再 push 到你自己的 fork（origin）。第五步，<strong>提 PR</strong>：在 GitHub 上从你的分支向 <span class="mono">milvus-io/milvus</span> 的 master 发起 Pull Request。之后就是 <strong>CI 自动跑 + 维护者评审</strong>；获得批准后，你的代码就被<strong>合入 master</strong>——恭喜，你成了贡献者。这套"<strong>各自在副本上改、通过 PR 汇聚</strong>"的模式，让成千上万素不相识的人，能在<strong>不互相踩脚</strong>的前提下协作改一个项目。下面把这条主路画出来。</p>
 
@@ -471,6 +479,14 @@ You can build, test, and follow conventions — one step remains: <strong>turn y
 
 <h2>fork-and-pull: the standard contribution flow</h2>
 <p>Milvus (like most open-source projects) uses <strong>fork-and-pull</strong>. The core idea: <strong>you don't have write access to the official repo, so you work on your own copy and request to "pull" the result back</strong>. The flow is a fixed few steps. First, <strong>fork</strong>: on GitHub, copy <span class="mono">milvus-io/milvus</span> into your own account. Second, <strong>clone and set upstream</strong>: clone your fork locally, then add the official repo as the <span class="mono">upstream</span> remote (<span class="mono">git remote add upstream git@github.com:milvus-io/milvus.git</span>) so you can always <strong>sync the latest official code</strong>.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">local repo</div><div class="nd">write code + commit -s</div></div>
+  <div class="arrow">push</div>
+  <div class="node"><div class="nt">origin (your fork)</div><div class="nd">you have write access</div></div>
+  <div class="arrow">PR</div>
+  <div class="node hl"><div class="nt">upstream (official master)</div><div class="nd">fetch-only to sync, never push directly</div></div>
+</div>
 <p>Third, <strong>branch and work</strong>: cut a <strong>topic branch</strong> from the latest <span class="mono">upstream/master</span> (<span class="mono">git checkout upstream/master -b my-topic-branch</span>), change code and commit on it. Fourth, <strong>sync and push</strong>: before committing, <span class="mono">git fetch upstream</span>, rebase to resolve conflicts if needed, then push to your own fork (origin). Fifth, <strong>open a PR</strong>: on GitHub, file a Pull Request from your branch to <span class="mono">milvus-io/milvus</span>'s master. Then comes <strong>CI auto-running + maintainer review</strong>; once approved, your code is <strong>merged to master</strong> — congratulations, you're a contributor. This "<strong>everyone revises on a copy, converging via PRs</strong>" model lets thousands of strangers collaborate on one project <strong>without stepping on each other</strong>. The main path, drawn:</p>
 
 <div class="vflow">

@@ -42,6 +42,12 @@ LESSON_42 = {
 <h2>一条命令编出一个二进制：make milvus</h2>
 <p>把依赖装齐、两段串好，最终你得到的是<strong>一个</strong>叫 <span class="mono">milvus</span> 的可执行文件——注意，是<strong>一个</strong>，不是十几个。这件事很有意思：Milvus 明明有 Proxy、各协调器、各类节点十几种角色，编出来却<strong>只有一个二进制</strong>。秘密在入口 <span class="inline">cmd/main.go</span>：同一个程序，<strong>靠启动参数决定"这次扮演哪个角色"</strong>。要起一个 Proxy，就用"proxy"角色启动它；要起 QueryNode，就用"querynode"角色启动它。</p>
 
+<div class="flow">
+  <div class="node"><div class="nt">milvus 二进制</div><div class="nd">一次编译的唯一产物</div></div>
+  <div class="arrow">--role→</div>
+  <div class="node hl"><div class="nt">扮演某一角色</div><div class="nd">proxy / 协调器 / querynode / datanode / streamingnode</div></div>
+</div>
+
 <p>这种"一个二进制扮演多角色"的玩法，技术上靠的是<strong>启动时的角色分发</strong>：<span class="inline">cmd/main.go</span> 解析命令行（要扮演哪个角色），再去初始化对应组件的服务。你可以把它想成一个<strong>"多面手演员"</strong>：剧本（代码）里写好了所有角色的台词，开演前导演（启动参数）告诉他"今晚演 Proxy"，他就只把 Proxy 那套演出来。这种设计在分布式系统里相当常见，因为它把"<strong>构建产物</strong>"和"<strong>运行角色</strong>"解耦了——<strong>编译期只管产出一个全能二进制，运行期才决定它当什么用</strong>。对比另一种思路（每个角色编一个独立二进制），单二进制的好处在运维上尤其明显：你的镜像仓库里只需要<strong>一个</strong>镜像、升级时只需替换<strong>一个</strong>制品，而不必同步十几个版本号。当然代价是这个二进制会大一些（它包含了所有角色的代码），但对一个反正要靠 cgo 链接整个 C++ 内核的程序来说，这点体积不值一提。理解了"单二进制 + 角色分发"，你再看第 41 课"同一个二进制在不同机器上以不同角色启动"，就会觉得顺理成章。</p>
 <p>这种"<strong>一个二进制、多种角色</strong>"的设计，好处不少。<strong>构建简单</strong>：一次编译，到处部署，不必为每种角色单独打包。<strong>版本一致</strong>：所有角色天然同源同版本，杜绝"Proxy 是新版、QueryNode 是旧版"的错配。<strong>部署灵活</strong>：单机模式下，一个进程里就能把所有角色<strong>一起拉起</strong>（这正是第 41 课"内嵌单机"能那么轻的原因之一）；集群模式下，同一个二进制在不同机器上<strong>以不同角色</strong>分别启动。完整的构建流程，从装依赖到产出二进制，串成一条线就是下面这样。</p>
 
@@ -110,6 +116,12 @@ Across the first nine parts you've seen Milvus inside out. The final part (Part 
 
 <h2>One command, one binary: make milvus</h2>
 <p>With deps installed and the two stages chained, what you finally get is <strong>one</strong> executable named <span class="mono">milvus</span> — note, <strong>one</strong>, not a dozen. This is intriguing: Milvus clearly has a dozen roles (Proxy, coordinators, various nodes), yet compiles to <strong>a single binary</strong>. The secret is the entrypoint <span class="inline">cmd/main.go</span>: the same program <strong>decides "which role to play this time" by launch arguments</strong>. To start a Proxy, launch it in the "proxy" role; for a QueryNode, the "querynode" role.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">milvus binary</div><div class="nd">the one product of a single build</div></div>
+  <div class="arrow">--role→</div>
+  <div class="node hl"><div class="nt">play one role</div><div class="nd">proxy / coordinator / querynode / datanode / streamingnode</div></div>
+</div>
 <p>This "<strong>one binary, many roles</strong>" design has real benefits. <strong>Simple builds</strong>: compile once, deploy everywhere, no per-role packaging. <strong>Version consistency</strong>: all roles are inherently same-source, same-version, ruling out "Proxy new, QueryNode old" mismatches. <strong>Flexible deployment</strong>: in standalone mode one process can bring up all roles <strong>together</strong> (a key reason Lesson 41's "embedded single-node" can be so light); in cluster mode the same binary is launched <strong>in different roles</strong> on different machines. The full build flow, from installing deps to producing the binary, as one line:</p>
 
 <div class="vflow">
@@ -213,6 +225,11 @@ LESSON_43 = {
 </div>
 <p>开发时如果你只想跑<strong>某一个测试函数</strong>，也可以直接用 go test，但<strong>那串标志一个都不能少</strong>：<span class="mono">go test -tags dynamic,test -gcflags="all=-N -l" ./internal/proxy/... -run TestXxx</span>。把这条命令记进肌肉，是给 Milvus 写代码的日常。串起这一课：测试 Milvus 的"特殊"，全都源于它 <strong>Go+C++ + 运行时 mock</strong> 的本质——<span class="mono">dynamic,test</span> 是为 cgo 与测试代码、<span class="mono">-N -l</span> 是为 mockey 打补丁；两种 mock 各管接口与函数；Makefile 把这些复杂度包成 <span class="mono">make test-*</span> 一键搞定。下一课，我们看写代码时要守的那些<strong>约定</strong>——错误处理(merr)、生成文件、import 顺序等，它们是你的代码能被合入的隐形门槛。</p>
 
+<div class="cols">
+  <div class="col"><h4>❌ go test ./...</h4><p>缺了那串标志：<strong>找不到还没编的 C++ 库</strong>（dynamic）、<strong>mockey 打不上补丁</strong>（缺 -N -l）→ 编译失败或诡异 panic。</p></div>
+  <div class="col"><h4>✅ go test -tags dynamic,test -gcflags="all=-N -l"</h4><p>动态链接 C++ + 启用测试代码 + 保留可替换入口 → mockery/mockey 就位、<strong>测试正常跑</strong>。用 <span class="mono">make test-*</span> 一键带全。</p></div>
+</div>
+
 <p>退一步看，Milvus 的测试设定其实给了你一个<strong>极佳的学习抓手</strong>：它把这个项目最硬核的两点——<strong>cgo 双语</strong>与<strong>重度并发</strong>——逼到了你每天都要面对的命令行里。你每敲一次 <span class="mono">-tags dynamic,test</span>，就在复习"它是 Go+C++"；每敲一次 <span class="mono">-race</span>，就在提醒自己"它满是并发、共享状态要小心"；每靠 mockey 打一次补丁，就在体会"真实代码并非都能优雅注入"。所以别把这串标志当成需要死记的麻烦，把它读成 Milvus<strong>性格的速写</strong>——一个为性能而拥抱双语、为正确而严防并发的系统，连它的测试命令都在替它<strong>说出这两条立身之本</strong>。带着这种理解去跑测试，你敲下的就不只是命令，而是对这个系统一次次的<strong>温故</strong>。</p>
 
 <div class="card key">
@@ -279,6 +296,11 @@ You can build Milvus; next is to <strong>write and run its tests</strong>. But y
 </div>
 <p>During development, to run just <strong>one test function</strong>, you can use go test directly, but <strong>not one of those flags may be missing</strong>: <span class="mono">go test -tags dynamic,test -gcflags="all=-N -l" ./internal/proxy/... -run TestXxx</span>. Committing this to muscle memory is daily life writing Milvus code. To wrap up: the "specialness" of testing Milvus all stems from its <strong>Go+C++ + runtime-mock</strong> nature — <span class="mono">dynamic,test</span> for cgo and test code, <span class="mono">-N -l</span> for mockey's patching; two mock kinds cover interfaces and functions; the Makefile wraps this complexity into one-command <span class="mono">make test-*</span>. Next lesson: the <strong>conventions</strong> to follow when writing code — error handling (merr), generated files, import order — the invisible bar your code must clear to be merged.</p>
 
+<div class="cols">
+  <div class="col"><h4>❌ go test ./...</h4><p>missing the flag string: <strong>can't find the not-yet-built C++ libs</strong> (dynamic), <strong>mockey can't patch</strong> (no -N -l) → compile failure or baffling panic.</p></div>
+  <div class="col"><h4>✅ go test -tags dynamic,test -gcflags="all=-N -l"</h4><p>dynamic-link C++ + enable test code + keep replaceable entries → mockery/mockey in place, <strong>tests run normally</strong>. <span class="mono">make test-*</span> carries them all.</p></div>
+</div>
+
 <div class="card key">
   <div class="tag">📌 Key points</div>
   <ul>
@@ -322,6 +344,14 @@ LESSON_44 = {
 <h2>为什么这条区分如此要紧：它决定了"要不要重试"</h2>
 <p>你可能会问：分这么细，图什么？答案是——<strong>错误的归类，直接决定了系统的重试行为，错一点就出大问题</strong>。Milvus 内部很多地方会对失败的操作做<strong>自动重试</strong>（典型如 <span class="mono">retry.Do</span> 包着的调用）。如果一个<strong>本该重试</strong>的暂时性错误（System，比如"节点还没就绪"）被错标成 Input、变得不可重试，那么一次<strong>本来等一下就能成功</strong>的操作，会被<strong>当场判死</strong>、直接失败——明明是虚惊一场，却被你亲手做实了。</p>
 <p>反过来更糟：如果一个<strong>注定失败</strong>的 Input 错误（比如"集合不存在"）被错标成可重试的 System 错误，那么系统会<strong>傻乎乎地一遍遍重试</strong>一个永远不会成功的操作，白白消耗资源、还可能拖垮调用方。所以 merr 里你能看到很讲究的设计：像 <span class="mono">ErrCollectionNotFound</span> 默认是 <strong>System 错误</strong>（因为 datacoord 等内部路径在恢复/重试时，需要把"暂时找不到"当作可重试），<strong>只在 proxy 那道面向用户的边界上</strong>，才用 <span class="mono">WrapErrAsInputErrorWhen</span> 把它"翻面"成给用户看的 Input 错误。这种"<strong>同一个错，在内部可重试、到边界才定性为用户错</strong>"的精细，正是 merr 的精髓。还有两条配套铁律要记牢：给已有错误加上下文，<strong>只用 <span class="mono">merr.Wrap/Wrapf</span></strong>（别用 <span class="mono">WrapErrXxxErr(err,…)</span>，那会盖掉里层的错误码）；把某个错误改成 Input 之前，先 grep 一下有没有 <span class="mono">retry.Do</span> 在依赖它的可重试性——<strong>改错一个归类，可能悄悄破坏一条重试链</strong>。</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">错误发生</div><div class="nd">某分支返回 err</div></div>
+  <div class="arrow">归因测试</div>
+  <div class="node"><div class="nt">谁的错？</div><div class="nd">请求本身逼出=Input；内部/暂时=System</div></div>
+  <div class="arrow">决定</div>
+  <div class="node hl"><div class="nt">retry.Do</div><div class="nd">System→重试(可能成功)；Input→直接返回用户</div></div>
+</div>
 
 <p>这里顺带教你一个读 merr 代码时极有用的<strong>观察习惯</strong>：盯住 <span class="inline">errors.go</span> 里每个错误定义末尾那个<strong>布尔值</strong>（可重试与否）和那个<strong>数字码</strong>。可重试标志告诉你这个错"<strong>天生属于哪一类</strong>"——<span class="mono">true</span> 的多半是 System(暂时性、可再试)、<span class="mono">false</span> 的多半是确定性失败。而数字码是<strong>分段</strong>的：相近职责的错误，码也排在相近的<strong>区间</strong>里(你能在文件里看到一段段注释标明哪段归哪类)。这个分段不是装饰——新增错误时，你<strong>必须从对应区间里挑码</strong>，而不能随手拍一个数字，否则会破坏"<strong>码→类别</strong>"的隐含契约，甚至和别处(比如 C++ segcore 那套码)撞车。所以给 Milvus 加一个新错误，正确流程是：先 grep <span class="inline">errors.go</span> 看清现有的分段、找到你这个错该属于的家族区间、再在区间里取一个没用过的码、按 Input/System 设好可重试标志。这套"<strong>先看地图、再落子</strong>"的严谨，正是 merr 想培养你的工程直觉——<strong>错误码不是随便编的，它是一份需要被尊重的契约</strong>。</p>
 
@@ -389,6 +419,14 @@ You can build and test; one gate remains before "<strong>your code can be merged
 <p>You might ask: why split so finely? Because — <strong>an error's classification directly decides the system's retry behavior, and getting it slightly wrong causes big problems</strong>. Many places inside Milvus <strong>auto-retry</strong> failed operations (typically calls wrapped in <span class="mono">retry.Do</span>). If a transient error that <strong>should be retried</strong> (System, e.g. "node not ready") is mislabeled Input and becomes non-retriable, then an operation that <strong>would have succeeded after a brief wait</strong> gets <strong>condemned on the spot</strong> and fails outright — a false alarm you turned real with your own hands.</p>
 <p>The reverse is worse: if a <strong>doomed</strong> Input error (e.g. "collection doesn't exist") is mislabeled a retriable System error, the system will <strong>foolishly retry over and over</strong> an operation that can never succeed, burning resources and possibly dragging down the caller. So merr has careful designs: <span class="mono">ErrCollectionNotFound</span> defaults to a <strong>System error</strong> (because internal paths in datacoord etc. need to treat "temporarily not found" as retriable during recovery/retry), and <strong>only at the user-facing proxy boundary</strong> is it "flipped" via <span class="mono">WrapErrAsInputErrorWhen</span> into an Input error for the user. This subtlety — "<strong>the same error is retriable internally, classified as user error only at the boundary</strong>" — is the essence of merr. Two companion iron rules to remember: to add context to an existing error, <strong>use only <span class="mono">merr.Wrap/Wrapf</span></strong> (not <span class="mono">WrapErrXxxErr(err,…)</span>, which masks the inner code); before turning an error Input, grep whether any <span class="mono">retry.Do</span> depends on its retriability — <strong>mislabeling one classification can quietly break a retry chain</strong>.</p>
 
+<div class="flow">
+  <div class="node"><div class="nt">an error occurs</div><div class="nd">a branch returns err</div></div>
+  <div class="arrow">blame test</div>
+  <div class="node"><div class="nt">whose fault?</div><div class="nd">request forces it=Input; internal/transient=System</div></div>
+  <div class="arrow">decides</div>
+  <div class="node hl"><div class="nt">retry.Do</div><div class="nd">System→retry (may succeed); Input→return to user</div></div>
+</div>
+
 <h2>Other hard conventions: logging, import order, generated files</h2>
 <p>Beyond merr, a few unglamorous conventions can also block your PR — luckily most are <strong>linter-checked</strong>, so you needn't memorize them; violations are flagged on the spot. <strong>Log only via mlog</strong>: as Lesson 39 covered, Milvus's <span class="inline">.golangci.yml</span> uses depguard to <strong>explicitly forbid</strong> <span class="mono">pkg/v3/log</span>, the standard <span class="mono">log</span>, raw <span class="mono">zap</span> — all must become <span class="mono">pkg/v3/mlog</span>, every log carrying ctx. <strong>Import order</strong>: <span class="mono">gci</span> enforces three sections — <strong>stdlib → third-party → <span class="mono">github.com/milvus-io</span></strong>, this project's packages always last; <span class="mono">make</span> has a gci fix to sort them automatically. <strong>Don't hand-edit generated files</strong>: mockery-generated mocks (Lesson 43) and proto-generated <span class="mono">.pb.go</span> must be changed at the "source" and regenerated, not at the artifact. The conventions, with "who enforces", as a cheatsheet:</p>
 
@@ -443,6 +481,14 @@ LESSON_45 = {
 
 <h2>fork-and-pull：贡献的标准流程</h2>
 <p>Milvus（和绝大多数开源项目一样）用 <strong>fork-and-pull</strong> 协作。核心思想是：<strong>你没有官方仓库的写权限，所以你在自己的副本上干活，再请求把成果"拉"回去</strong>。流程是固定的几步。第一步，<strong>fork</strong>：在 GitHub 上把 <span class="mono">milvus-io/milvus</span> 复制一份到你自己的账号下。第二步，<strong>clone 并配 upstream</strong>：把你的 fork 克隆到本地，再把官方仓库加为 <span class="mono">upstream</span> 远程（<span class="mono">git remote add upstream git@github.com:milvus-io/milvus.git</span>），这样你能随时<strong>同步官方最新代码</strong>。</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">本地仓库</div><div class="nd">写代码 + commit -s</div></div>
+  <div class="arrow">push</div>
+  <div class="node"><div class="nt">origin（你的 fork）</div><div class="nd">你有写权限</div></div>
+  <div class="arrow">PR</div>
+  <div class="node hl"><div class="nt">upstream（官方 master）</div><div class="nd">只能 fetch 同步，不能直接 push</div></div>
+</div>
 
 <p>这里把 fork、upstream、origin 这三个容易混的概念<strong>一次理清</strong>，因为很多新人就栽在搞不清"该往哪儿推、从哪儿拉"。<strong>upstream</strong> 指官方仓库 <span class="mono">milvus-io/milvus</span>——它是"<strong>真理之源</strong>"，你<strong>只能从它拉（fetch）、不能往它推</strong>。<strong>origin</strong> 指你自己账号下的那个 fork——它是你的<strong>专属工作区</strong>，你<strong>往它推（push）</strong>自己的分支。<strong>本地仓库</strong>则是你电脑上的克隆，是你真正写代码的地方。一次典型的贡献，数据就这样流动：<strong>从 upstream 拉最新 → 在本地改 → 推到 origin → 从 origin 向 upstream 发 PR</strong>。看清这个三角，你就不会再问"为什么 push 不上去官方仓库"（你本就没权限、也不该直接推），也不会忘了"<strong>开发前先从 upstream 同步</strong>"。把这三者的关系刻进脑子，整个 fork-and-pull 流程就从一串需要死记的命令，变成了一幅<strong>你能自己推导出来的图</strong>——这正是理解胜过记忆的地方。</p>
 <p>第三步，<strong>开分支干活</strong>：从最新的 <span class="mono">upstream/master</span> 切出一个<strong>专题分支</strong>（<span class="mono">git checkout upstream/master -b my-topic-branch</span>），在上面改代码、提交。第四步，<strong>同步并推送</strong>：提交前先 <span class="mono">git fetch upstream</span>、必要时 rebase 解决冲突，再 push 到你自己的 fork（origin）。第五步，<strong>提 PR</strong>：在 GitHub 上从你的分支向 <span class="mono">milvus-io/milvus</span> 的 master 发起 Pull Request。之后就是 <strong>CI 自动跑 + 维护者评审</strong>；获得批准后，你的代码就被<strong>合入 master</strong>——恭喜，你成了贡献者。这套"<strong>各自在副本上改、通过 PR 汇聚</strong>"的模式，让成千上万素不相识的人，能在<strong>不互相踩脚</strong>的前提下协作改一个项目。下面把这条主路画出来。</p>
@@ -515,6 +561,14 @@ You can build, test, and follow conventions — one step remains: <strong>turn y
 
 <h2>fork-and-pull: the standard contribution flow</h2>
 <p>Milvus (like most open-source projects) uses <strong>fork-and-pull</strong>. The core idea: <strong>you don't have write access to the official repo, so you work on your own copy and request to "pull" the result back</strong>. The flow is a fixed few steps. First, <strong>fork</strong>: on GitHub, copy <span class="mono">milvus-io/milvus</span> into your own account. Second, <strong>clone and set upstream</strong>: clone your fork locally, then add the official repo as the <span class="mono">upstream</span> remote (<span class="mono">git remote add upstream git@github.com:milvus-io/milvus.git</span>) so you can always <strong>sync the latest official code</strong>.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">local repo</div><div class="nd">write code + commit -s</div></div>
+  <div class="arrow">push</div>
+  <div class="node"><div class="nt">origin (your fork)</div><div class="nd">you have write access</div></div>
+  <div class="arrow">PR</div>
+  <div class="node hl"><div class="nt">upstream (official master)</div><div class="nd">fetch-only to sync, never push directly</div></div>
+</div>
 <p>Third, <strong>branch and work</strong>: cut a <strong>topic branch</strong> from the latest <span class="mono">upstream/master</span> (<span class="mono">git checkout upstream/master -b my-topic-branch</span>), change code and commit on it. Fourth, <strong>sync and push</strong>: before committing, <span class="mono">git fetch upstream</span>, rebase to resolve conflicts if needed, then push to your own fork (origin). Fifth, <strong>open a PR</strong>: on GitHub, file a Pull Request from your branch to <span class="mono">milvus-io/milvus</span>'s master. Then comes <strong>CI auto-running + maintainer review</strong>; once approved, your code is <strong>merged to master</strong> — congratulations, you're a contributor. This "<strong>everyone revises on a copy, converging via PRs</strong>" model lets thousands of strangers collaborate on one project <strong>without stepping on each other</strong>. The main path, drawn:</p>
 
 <div class="vflow">

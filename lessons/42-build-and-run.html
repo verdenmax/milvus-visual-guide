@@ -368,6 +368,12 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 <h2>一条命令编出一个二进制：make milvus</h2>
 <p>把依赖装齐、两段串好，最终你得到的是<strong>一个</strong>叫 <span class="mono">milvus</span> 的可执行文件——注意，是<strong>一个</strong>，不是十几个。这件事很有意思：Milvus 明明有 Proxy、各协调器、各类节点十几种角色，编出来却<strong>只有一个二进制</strong>。秘密在入口 <span class="inline">cmd/main.go</span>：同一个程序，<strong>靠启动参数决定"这次扮演哪个角色"</strong>。要起一个 Proxy，就用"proxy"角色启动它；要起 QueryNode，就用"querynode"角色启动它。</p>
 
+<div class="flow">
+  <div class="node"><div class="nt">milvus 二进制</div><div class="nd">一次编译的唯一产物</div></div>
+  <div class="arrow">--role→</div>
+  <div class="node hl"><div class="nt">扮演某一角色</div><div class="nd">proxy / 协调器 / querynode / datanode / streamingnode</div></div>
+</div>
+
 <p>这种"一个二进制扮演多角色"的玩法，技术上靠的是<strong>启动时的角色分发</strong>：<span class="inline">cmd/main.go</span> 解析命令行（要扮演哪个角色），再去初始化对应组件的服务。你可以把它想成一个<strong>"多面手演员"</strong>：剧本（代码）里写好了所有角色的台词，开演前导演（启动参数）告诉他"今晚演 Proxy"，他就只把 Proxy 那套演出来。这种设计在分布式系统里相当常见，因为它把"<strong>构建产物</strong>"和"<strong>运行角色</strong>"解耦了——<strong>编译期只管产出一个全能二进制，运行期才决定它当什么用</strong>。对比另一种思路（每个角色编一个独立二进制），单二进制的好处在运维上尤其明显：你的镜像仓库里只需要<strong>一个</strong>镜像、升级时只需替换<strong>一个</strong>制品，而不必同步十几个版本号。当然代价是这个二进制会大一些（它包含了所有角色的代码），但对一个反正要靠 cgo 链接整个 C++ 内核的程序来说，这点体积不值一提。理解了"单二进制 + 角色分发"，你再看第 41 课"同一个二进制在不同机器上以不同角色启动"，就会觉得顺理成章。</p>
 <p>这种"<strong>一个二进制、多种角色</strong>"的设计，好处不少。<strong>构建简单</strong>：一次编译，到处部署，不必为每种角色单独打包。<strong>版本一致</strong>：所有角色天然同源同版本，杜绝"Proxy 是新版、QueryNode 是旧版"的错配。<strong>部署灵活</strong>：单机模式下，一个进程里就能把所有角色<strong>一起拉起</strong>（这正是第 41 课"内嵌单机"能那么轻的原因之一）；集群模式下，同一个二进制在不同机器上<strong>以不同角色</strong>分别启动。完整的构建流程，从装依赖到产出二进制，串成一条线就是下面这样。</p>
 
@@ -483,6 +489,12 @@ Across the first nine parts you've seen Milvus inside out. The final part (Part 
 
 <h2>One command, one binary: make milvus</h2>
 <p>With deps installed and the two stages chained, what you finally get is <strong>one</strong> executable named <span class="mono">milvus</span> — note, <strong>one</strong>, not a dozen. This is intriguing: Milvus clearly has a dozen roles (Proxy, coordinators, various nodes), yet compiles to <strong>a single binary</strong>. The secret is the entrypoint <span class="inline">cmd/main.go</span>: the same program <strong>decides "which role to play this time" by launch arguments</strong>. To start a Proxy, launch it in the "proxy" role; for a QueryNode, the "querynode" role.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">milvus binary</div><div class="nd">the one product of a single build</div></div>
+  <div class="arrow">--role→</div>
+  <div class="node hl"><div class="nt">play one role</div><div class="nd">proxy / coordinator / querynode / datanode / streamingnode</div></div>
+</div>
 <p>This "<strong>one binary, many roles</strong>" design has real benefits. <strong>Simple builds</strong>: compile once, deploy everywhere, no per-role packaging. <strong>Version consistency</strong>: all roles are inherently same-source, same-version, ruling out "Proxy new, QueryNode old" mismatches. <strong>Flexible deployment</strong>: in standalone mode one process can bring up all roles <strong>together</strong> (a key reason Lesson 41's "embedded single-node" can be so light); in cluster mode the same binary is launched <strong>in different roles</strong> on different machines. The full build flow, from installing deps to producing the binary, as one line:</p>
 
 <div class="vflow">

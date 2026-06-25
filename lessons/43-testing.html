@@ -398,6 +398,11 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 </div>
 <p>开发时如果你只想跑<strong>某一个测试函数</strong>，也可以直接用 go test，但<strong>那串标志一个都不能少</strong>：<span class="mono">go test -tags dynamic,test -gcflags="all=-N -l" ./internal/proxy/... -run TestXxx</span>。把这条命令记进肌肉，是给 Milvus 写代码的日常。串起这一课：测试 Milvus 的"特殊"，全都源于它 <strong>Go+C++ + 运行时 mock</strong> 的本质——<span class="mono">dynamic,test</span> 是为 cgo 与测试代码、<span class="mono">-N -l</span> 是为 mockey 打补丁；两种 mock 各管接口与函数；Makefile 把这些复杂度包成 <span class="mono">make test-*</span> 一键搞定。下一课，我们看写代码时要守的那些<strong>约定</strong>——错误处理(merr)、生成文件、import 顺序等，它们是你的代码能被合入的隐形门槛。</p>
 
+<div class="cols">
+  <div class="col"><h4>❌ go test ./...</h4><p>缺了那串标志：<strong>找不到还没编的 C++ 库</strong>（dynamic）、<strong>mockey 打不上补丁</strong>（缺 -N -l）→ 编译失败或诡异 panic。</p></div>
+  <div class="col"><h4>✅ go test -tags dynamic,test -gcflags="all=-N -l"</h4><p>动态链接 C++ + 启用测试代码 + 保留可替换入口 → mockery/mockey 就位、<strong>测试正常跑</strong>。用 <span class="mono">make test-*</span> 一键带全。</p></div>
+</div>
+
 <p>退一步看，Milvus 的测试设定其实给了你一个<strong>极佳的学习抓手</strong>：它把这个项目最硬核的两点——<strong>cgo 双语</strong>与<strong>重度并发</strong>——逼到了你每天都要面对的命令行里。你每敲一次 <span class="mono">-tags dynamic,test</span>，就在复习"它是 Go+C++"；每敲一次 <span class="mono">-race</span>，就在提醒自己"它满是并发、共享状态要小心"；每靠 mockey 打一次补丁，就在体会"真实代码并非都能优雅注入"。所以别把这串标志当成需要死记的麻烦，把它读成 Milvus<strong>性格的速写</strong>——一个为性能而拥抱双语、为正确而严防并发的系统，连它的测试命令都在替它<strong>说出这两条立身之本</strong>。带着这种理解去跑测试，你敲下的就不只是命令，而是对这个系统一次次的<strong>温故</strong>。</p>
 
 <div class="card key">
@@ -510,6 +515,11 @@ You can build Milvus; next is to <strong>write and run its tests</strong>. But y
   <div class="step"><div class="num">4</div><div class="sc"><h4>Collect results</h4><p>-race reports races, -cover gives coverage, -failfast stops at first error; CI uses this to gate the PR.</p></div></div>
 </div>
 <p>During development, to run just <strong>one test function</strong>, you can use go test directly, but <strong>not one of those flags may be missing</strong>: <span class="mono">go test -tags dynamic,test -gcflags="all=-N -l" ./internal/proxy/... -run TestXxx</span>. Committing this to muscle memory is daily life writing Milvus code. To wrap up: the "specialness" of testing Milvus all stems from its <strong>Go+C++ + runtime-mock</strong> nature — <span class="mono">dynamic,test</span> for cgo and test code, <span class="mono">-N -l</span> for mockey's patching; two mock kinds cover interfaces and functions; the Makefile wraps this complexity into one-command <span class="mono">make test-*</span>. Next lesson: the <strong>conventions</strong> to follow when writing code — error handling (merr), generated files, import order — the invisible bar your code must clear to be merged.</p>
+
+<div class="cols">
+  <div class="col"><h4>❌ go test ./...</h4><p>missing the flag string: <strong>can't find the not-yet-built C++ libs</strong> (dynamic), <strong>mockey can't patch</strong> (no -N -l) → compile failure or baffling panic.</p></div>
+  <div class="col"><h4>✅ go test -tags dynamic,test -gcflags="all=-N -l"</h4><p>dynamic-link C++ + enable test code + keep replaceable entries → mockery/mockey in place, <strong>tests run normally</strong>. <span class="mono">make test-*</span> carries them all.</p></div>
+</div>
 
 <div class="card key">
   <div class="tag">📌 Key points</div>
