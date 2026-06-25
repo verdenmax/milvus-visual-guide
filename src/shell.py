@@ -95,6 +95,12 @@ PAGES = [
      "第五部分 · 索引", "Part 5 · Indexing"),
     ("24-scalar-and-fulltext.html", "标量与全文索引", "Scalar &amp; full-text",
      "第五部分 · 索引", "Part 5 · Indexing"),
+    ("25-search-via-proxy.html", "经 Proxy 的搜索", "Search via Proxy",
+     "第六部分 · 查询链路", "Part 6 · The query path"),
+    ("26-querynode-and-delegator.html", "QueryNode 与 delegator", "QueryNode &amp; the delegator",
+     "第六部分 · 查询链路", "Part 6 · The query path"),
+    ("27-segcore.html", "Segcore（C++）", "Segcore (C++)",
+     "第六部分 · 查询链路", "Part 6 · The query path"),
 ]
 
 
@@ -584,6 +590,12 @@ SUBTITLES = {
                                      "sealed segment → build task (worker reads binlogs, calls Knowhere) → index files in object storage → QueryNode loads (mmap or memory); growing segments use brute force; index-engine version negotiation"),
     "24-scalar-and-fulltext.html": ("标量索引加速过滤：倒排/bitmap/排序/ngram/混合/JSON · 全文 BM25 由 Rust tantivy 落地 · 标量 bitset 下推给向量 ANN（先筛后搜）",
                                     "scalar indexes accelerate filtering: inverted/bitmap/sort/ngram/hybrid/JSON; full-text BM25 via Rust tantivy; scalar bitset pushed down into vector ANN (filter-then-search)"),
+    "25-search-via-proxy.html": ("searchTask 三段式 · 解析→建 plan→guarantee ts · 一致性级别 · 扇出到分片 · 跨分片归并",
+                                 "searchTask three stages; parse→plan→guarantee ts; consistency levels; scatter to shards; cross-shard reduce"),
+    "26-querynode-and-delegator.html": ("delegator/shard leader · sealed+growing · 段分布到 worker · 扇出归并 · 消费 WAL 尾部 · tsafe",
+                                        "delegator/shard leader; sealed+growing; segment distribution to workers; scatter & merge; consume WAL tail; tsafe"),
+    "27-segcore.html": ("C++ 单段引擎 · cgo 边界 · SegmentInterface · sealed=索引/growing=暴力 · 段内 topK",
+                        "C++ single-segment engine; cgo boundary; SegmentInterface; sealed=index/growing=brute-force; the segment's topK"),
 }
 
 

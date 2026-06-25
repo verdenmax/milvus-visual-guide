@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>26 · QueryNode 与 delegator / QueryNode &amp;amp; the delegator - Milvus 图解教程</title>
+<meta name="description" content="第六部分 · 查询链路｜QueryNode 与 delegator - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="26 · QueryNode 与 delegator / QueryNode &amp;amp; the delegator - Milvus 图解教程">
+<meta property="og:description" content="第六部分 · 查询链路｜QueryNode 与 delegator - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="26 · QueryNode 与 delegator / QueryNode &amp;amp; the delegator - Milvus 图解教程">
+<meta name="twitter:description" content="第六部分 · 查询链路｜QueryNode 与 delegator - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.timeline .tl-row { display: flex; align-items: flex-start; gap: .6rem; padding: .12rem 0; }
+.timeline .tl-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: .45rem; }
+.timeline .tl-t { font-family: ui-monospace, monospace; font-weight: 700; color: var(--accent-ink); min-width: 2.4rem; font-size: .82rem; flex-shrink: 0; margin-top: .18rem; }
+.timeline .tl-c { font-size: .9rem; color: var(--muted); }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第六部分 · 查询链路</span><span class="lang-en">Part 6 · The query path</span></span>
+    <span class="pill">26 / 27</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:96%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第六部分 · 查询链路</span><span class="lang-en">Part 6 · The query path</span></div>
+    <h1><span class="lang-zh">QueryNode 与 delegator</span><span class="lang-en">QueryNode &amp;amp; the delegator</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+上一课，Proxy 把一次搜索<strong>翻译成 plan、定好 guarantee ts、扇出到各个分片</strong>。可"分片"接住请求的那一刻，故事才真正进入<strong>检索引擎</strong>的地界。每个分片的<strong>接收者</strong>，是一个跑在 QueryNode 上的特殊角色——<strong>delegator（shard leader，分片首领）</strong>。
+这一课就走进 delegator：它如何同时照顾<strong>两类段</strong>（封存好的 sealed 段、还在长的 growing 段），如何把搜索<strong>再扇出</strong>到持有段的 worker QueryNode、再把结果合并，以及它怎么靠<strong>消费 WAL 尾部</strong>让"刚写进来的数据"也能被搜到。
+如果说第 25 课的 Proxy 是"<strong>把请求送到门口的快递</strong>"，那么 delegator 就是"<strong>分拣中心的现场主管</strong>"：它不亲自把每件货搬来搬去，而是清楚每件货在哪、该派谁去取、取回来怎么并成一份，并且时刻盯着"<strong>最新到的货有没有都算进来</strong>"。把这一层看懂，你就握住了 Milvus 读路径里<strong>最核心的协调者</strong>。
+</p>
+
+<div class="card analogy">
+  <div class="tag">📚 生活类比</div>
+  把一个分片想成一个<strong>城市片区的图书调度台</strong>，delegator 就是这个片区的<strong>调度主管</strong>。片区里的书分两种存法：
+  <strong>① 已编目入库的旧书</strong>——它们整整齐齐躺在片区里<strong>好几座分馆</strong>（worker QueryNode）的书架上，每本都进了<strong>检索目录</strong>（索引），查起来又快又准（这是 <strong>sealed 段</strong>）；
+  <strong>② 今天刚到、还没编目的新书</strong>——它们堆在调度台<strong>自己手边的"新到推车"</strong>上，还没进目录，但因为就在手边、数量也少，<strong>一本本翻一遍</strong>也快（这是 <strong>growing 段</strong>，靠每天的<strong>送货车</strong>＝WAL 尾部不断补货）。
+  来了一个"找最像的几本"的请求，调度主管要做三件事：<strong>把请求分发给各分馆</strong>各自在目录里查（扇出到 worker），<strong>自己顺手翻一遍新到推车</strong>（本地搜 growing），最后<strong>把分馆和推车的结果合在一起</strong>排个序交上去（节点内归并）。少看任何一边，答案都不完整——<strong>旧书新书都得查</strong>，这正是 delegator 存在的全部理由。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  一个 vchannel（分片）在副本内由一个 QueryNode 担任 <strong>shard leader</strong>，其上运行 <strong>delegator</strong>（<span class="mono">internal/querynodev2/delegator/delegator.go</span> 的 <span class="inline">ShardDelegator</span> 接口 / <span class="inline">shardDelegator</span>）。它是该分片所有读的入口，必须给出一个<strong>完整且新鲜</strong>的答案，因此要同时覆盖：<strong>sealed 段</strong>（已封存、带 Knowhere 索引，由 QueryCoord 安排加载、<strong>分布</strong>到副本内多个 worker QueryNode 上）与 <strong>growing 段</strong>（delegator 自己<strong>消费 WAL 尾部</strong>维护的、尚未封存的最新数据）。一次 <span class="inline">Search</span> 里，delegator 取一份段快照（<span class="inline">GetSegmentInfo</span> → sealed + growing），把 sealed 检索<strong>扇出</strong>到各 worker、growing 在本地搜，再把两边的部分结果<strong>节点内归并</strong>后返回 Proxy。它还维护一个 <strong>tsafe</strong>（已消费到的 WAL 进度），不够 guarantee ts 新就<strong>等</strong>（第 30 课）。
+</div>
+
+<h2>delegator 是谁：一个分片的读协调者</h2>
+<p>先把"分片"和"段"的关系理顺。回忆第 7 课：一个 collection 的数据按 <strong>vchannel</strong> 切成若干<strong>分片</strong>，每个分片里又装着许多<strong>段（segment）</strong>。再回忆第 13 课：<strong>QueryCoord</strong> 负责"<strong>把哪些段、加载到哪些 QueryNode</strong>"，并为每个 vchannel 在副本内指定一个 QueryNode 当 <strong>shard leader</strong>。这个 leader 上跑的就是 <strong>delegator</strong>——它是该分片<strong>对外的唯一读入口</strong>，Proxy 扇出过来的请求就落在它身上。</p>
+
+<p>关键在于：delegator <strong>本身不一定持有该分片所有段的数据</strong>。为了弹性与负载均衡，QueryCoord 会把这个分片的 sealed 段<strong>分散加载</strong>到副本内的<strong>多个 QueryNode（worker）</strong>上——可能有些段在 leader 自己身上，更多段在别的 worker 上。delegator 维护一张<strong>分布表（distribution）</strong>，记着"<strong>哪个段此刻在哪个 worker</strong>"。于是 delegator 的角色更像一个"<strong>知道货在谁手里的调度员</strong>"：它不亲自扛下所有段，而是<strong>把检索请求路由到持有对应段的 worker</strong>，再收集合并。这正是 Milvus 读路径能<strong>水平扩展</strong>的地方——段越多，摊到的 worker 越多，单 worker 的负担越轻，加机器就能提升整体检索吞吐。</p>
+
+<p>这里要补一个第 13 课埋下的概念：<strong>副本（replica）</strong>。为了高可用与更高吞吐，一个 collection 可以被加载<strong>多份</strong>，每一份叫一个副本；每个副本都是一套"<strong>能独立答全量数据</strong>"的 QueryNode 班子。delegator 说的"把段分布到多个 worker"，指的就是<strong>在同一个副本内部</strong>把段摊开。于是同一个分片，在不同副本里各有一个自己的 leader 与一套 worker。好处有二：其一，<strong>多副本分担读流量</strong>，请求可以被负载均衡到不同副本，吞吐随副本数增长；其二，<strong>容错</strong>——某个 worker 甚至某个副本出问题，别的副本仍能答得上来。把"<strong>分片（按数据切）</strong>"和"<strong>副本（按可用性复制）</strong>"这两个正交维度分清楚，你就理解了 Milvus 读侧扩展性的两条腿：分片让单次检索<strong>并行变快</strong>，副本让整体吞吐<strong>叠加变高</strong>、并带来冗余。delegator 始终是"<strong>某副本里某分片</strong>"这个交点上的那个协调者。</p>
+
+<h2>两类段：sealed（带索引）与 growing（WAL 尾部）</h2>
+<p>delegator 要给一个<strong>完整</strong>的答案，就必须同时搜两类段。它们一冷一热、一稳一新，差别正好成一对：</p>
+
+<div class="cols">
+  <div class="col"><h4>🧊 sealed 段（封存 · 带索引）</h4><p>已经<strong>封存、不再变化</strong>的段，建好了 <strong>Knowhere 向量索引</strong>（第 22 课），由 QueryCoord 安排从对象存储<strong>加载</strong>进内存、并<strong>分布</strong>到副本内多个 worker（第 23 课）。检索时走<strong>索引</strong>（HNSW/IVF…），<strong>又快又准</strong>。它们是数据的"<strong>主体</strong>"——大、稳、可被索引加速、可被水平摊开。</p></div>
+  <div class="col"><h4>🔥 growing 段（在长 · 无索引）</h4><p>还在<strong>持续接收新插入</strong>、尚未封存的段，<strong>没有索引</strong>。delegator <strong>自己消费该 vchannel 的 WAL 尾部</strong>（<span class="inline">ProcessInsert</span> / <span class="inline">ProcessDelete</span>），把刚写入的行维护成 growing 段。检索时只能<strong>暴力逐条算</strong>（第 27 课详述），但因为它小、就在本地，开销可控——它保证了"<strong>刚写完就能搜到</strong>"的新鲜度。</p></div>
+</div>
+
+<p>为什么非要<strong>分成两类</strong>、而不能统一处理？因为<strong>"新鲜"和"高效"是一对天然矛盾</strong>。索引（尤其图索引）<strong>建起来很贵</strong>、且建好后不便频繁改动，所以它只适合给"<strong>已经定型、不再变</strong>"的 sealed 段用；而刚写进来的数据<strong>每时每刻都在变</strong>，根本来不及建索引。Milvus 的解法就是"<strong>分而治之</strong>"：把<strong>稳定的大头</strong>交给索引（sealed，快），把<strong>易变的小尾巴</strong>交给暴力扫描（growing，新），两边结果一合并，就同时拿到了"<strong>快</strong>"和"<strong>新</strong>"。这其实是第 7 课"<strong>日志即数据 / LSM 思路</strong>"在读路径上的回响——新数据先在内存里以可变形态服务，攒够了再<strong>封存 + 建索引</strong>沉淀为高效的不可变主体。随着 growing 段不断被 flush、compaction（第 17、19 课）转成 sealed，"新尾巴"会持续变成"旧主体"，而 delegator 始终把<strong>两边的当前快照</strong>拼成一个完整视图。</p>
+
+<p>这里有个微妙却关键的问题：当一个 growing 段被封存、又作为 sealed 段被加载进来时，会不会<strong>被数到两次</strong>（一次当 growing、一次当 sealed），让结果重复？delegator 必须处理这种"<strong>交接（handoff）</strong>"。它的办法是维护一份"<strong>排除名单</strong>"——一个段一旦以 sealed 形态就绪、可被检索，它对应的 growing 形态就要<strong>从可读快照里排除掉</strong>，反之亦然，确保<strong>同一份数据在某一时刻只被一类段代表</strong>。再加上归并阶段<strong>按主键去重</strong>这道保险，delegator 才能在"数据形态不断从 growing 流向 sealed"的过程中，始终给出<strong>不重不漏</strong>的结果。理解这一点，你就明白 delegator 不只是个"分发+合并"的简单路由器，它还在<strong>维护一个随时间推移、段不断换形态的一致视图</strong>——这是它作为 shard leader 最不显眼、却最不能出错的职责。</p>
+
+<h2>一次分片内检索：扇出到 worker，再归并</h2>
+<p>把 delegator 处理一次 <span class="inline">Search</span> 的内部动作摆开，就是"<strong>取快照 → 分组扇出 → 本地搜 growing → 节点内归并</strong>"这一串：</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">delegator</div><div class="nd">取段快照<br>sealed+growing</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">worker QN-1</div><div class="nd">搜它持有的<br>sealed 段(索引)</div></div>
+  <div class="arrow">＋</div>
+  <div class="node"><div class="nt">worker QN-2</div><div class="nd">搜它持有的<br>sealed 段(索引)</div></div>
+  <div class="arrow">＋</div>
+  <div class="node"><div class="nt">本地 growing</div><div class="nd">暴力搜<br>WAL 尾部</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">节点内归并</div><div class="nd">合成本分片<br>局部 topK</div></div>
+</div>
+
+<p>逐步看：delegator 先调 <span class="inline">GetSegmentInfo(readable)</span> 拿到一份<strong>当前可读段的快照</strong>——返回 <span class="inline">sealed</span>（按 worker 分好组）与 <span class="inline">growing</span> 两份清单。然后它<strong>按"段在谁手上"把检索子任务分组</strong>（<span class="inline">organizeSubTask</span>）：在 worker A 上的那批段，打包成一个子请求发给 A；在 worker B 上的发给 B；growing 段就在 delegator <strong>本地</strong>搜。各 worker 各自在自己内存里的段上跑 segcore 检索（下一课），把<strong>各自的局部 topK</strong> 回传。delegator 收齐后，把"<strong>各 worker 的结果 + 本地 growing 的结果</strong>"做一次<strong>节点内归并</strong>（按距离排序、按主键去重、取 topK），得到<strong>这一个分片的局部 topK</strong>，交回给 Proxy。</p>
+
+<p>看出"<strong>扇出—归并</strong>"又出现了吗？第 25 课说一次 search 是<strong>两层扇出</strong>：Proxy 扇到分片、分片再扇到段。这一课正是<strong>第二层</strong>——delegator 把搜索扇到持有段的各 worker，再做<strong>节点内</strong>归并。于是整条读路径的归并是<strong>三级</strong>的：worker 上<strong>段内</strong>取 topK（segcore，第 27 课）、delegator 做<strong>节点内/分片内</strong>合并（本课）、Proxy 做<strong>跨分片</strong>合并（第 25 课）——这"<strong>三级 reduce</strong>"第 29 课会系统收束。本课你抓住中间这一级即可：<strong>delegator 把一个分片的零散段结果，合成该分片的一份局部 topK</strong>。</p>
+
+<p>为什么要在 delegator 这一层<strong>先合并一次</strong>，而不是把所有 worker 的原始结果一股脑全发回 Proxy？这背后是一个朴素却重要的工程考量：<strong>尽量减少跨网络搬运的数据量</strong>。设想一个分片摊在 5 个 worker 上、每个 worker 各返回 topK 条候选，如果不在节点内先归并，Proxy 就要接收 <strong>5 份</strong>候选再去重排序；而 delegator 先把这 5 份压成<strong>一份</strong> topK，发给 Proxy 的数据量就降到原来的五分之一。把"<strong>能在靠近数据的地方先聚合的，就别留到上游再聚合</strong>"——这正是分布式系统里"<strong>下推聚合 / 局部归并</strong>"的通用智慧，和数据库把过滤、聚合尽量下推到存储层是同一个道理。三级 reduce 的存在，本质就是让每一层都<strong>只把必要的精华往上交</strong>，逐级收窄，而不是把海量原始候选一路背到最顶。</p>
+
+<h2>谁是谁：一张角色对照表</h2>
+<p>delegator 这一层名词较多（leader、worker、副本、sealed、growing、tsafe），用一张表把"<strong>角色 → 是谁 / 在哪 / 干什么</strong>"钉牢：</p>
+
+<table class="t">
+  <tr><th>角色 / 概念</th><th>是谁 / 在哪</th><th>干什么</th></tr>
+  <tr><td><strong>delegator（shard leader）</strong></td><td>某 vchannel 在副本内被指定的那个 QueryNode 上</td><td>该分片读的<strong>唯一入口</strong>：取快照、扇出、归并、维护 tsafe</td></tr>
+  <tr><td><strong>worker QueryNode</strong></td><td>副本内持有 sealed 段的若干 QueryNode</td><td>在<strong>自己内存里的段</strong>上跑 segcore 检索，回传局部结果</td></tr>
+  <tr><td><strong>sealed 段</strong></td><td>分布在各 worker 内存（由 QueryCoord 加载）</td><td>带索引、走索引检索；数据主体，可水平摊开</td></tr>
+  <tr><td><strong>growing 段</strong></td><td>delegator 本地（消费 WAL 尾部得到）</td><td>无索引、暴力搜；保证最新写入可见</td></tr>
+  <tr><td><strong>tsafe</strong></td><td>delegator 维护的一个时间戳</td><td>已消费 WAL 到的进度；&lt; guarantee ts 就等（第 30 课）</td></tr>
+</table>
+
+<p>这张表里藏着 delegator 设计的两条主线。<strong>第一条是"协调 vs 计算"的再次分离</strong>：delegator 只<strong>协调</strong>（路由、归并、维护分布与 tsafe），真正在段上<strong>算距离</strong>的是 worker 上的 segcore——这和第 25 课"Proxy 只协调、不算"是同一种分层思想，只是下沉了一层。<strong>第二条是"新鲜度的责任在 leader"</strong>：sealed 段是别人加载的、稳定的；唯独 growing 这条"<strong>保鲜</strong>"的活，是 delegator 亲自消费 WAL 完成的。这也解释了 leader 为什么特殊——它不只是个调度员，还<strong>背着这个分片"看到最新写入"的责任</strong>。换个角度说：sealed 这一侧的"加载与分布"是 QueryCoord 在<strong>控制面</strong>统筹的（第 13 课），delegator 只是被动地<strong>知道</strong>结果；而 growing 这一侧的"消费与保鲜"则完全是 delegator 在<strong>数据面</strong>主动完成的。一个分片的"全貌"，正是这两股力量——上面控制面安排的稳定主体、与本地数据面追上来的最新尾巴——在 delegator 这个点上<strong>汇合</strong>而成。</p>
+
+<h2>新鲜从哪来：消费 WAL 尾部 + tsafe</h2>
+<p>最后把"<strong>为什么读能看到刚写的</strong>"这件事说透，它正是 Part 6 的主线之一。回忆第 16 课：所有写入都先 Append 进 <strong>WAL</strong>（流式日志）。delegator 作为 shard leader，会<strong>订阅并持续消费</strong>本 vchannel 的 WAL 尾部：每来一条新的 Insert/Delete 消息，它就 <span class="inline">ProcessInsert</span> / <span class="inline">ProcessDelete</span> 把对应改动<strong>反映进 growing 段</strong>。于是"写入落 WAL"和"读能看到"之间，只隔着 delegator 消费 WAL 的这一点点延迟——这就是数据<strong>保鲜</strong>的来源。这也正好呼应第 16 课的主题：WAL 不只是写入的"持久化保险"，它同时是读路径的"<strong>新鲜数据来源</strong>"——同一条流，写的人往里 Append，读这一侧的 delegator 在尾部 Tail，一前一后咬合得很紧。</p>
+
+<p>但"<strong>看得到</strong>"还不够，还要"<strong>看得够新</strong>"。delegator 维护一个 <strong>tsafe</strong>：它表示"<strong>我已经把 WAL 消费到了哪个时间戳</strong>"——意味着 ts ≤ tsafe 的所有写入，我都已反映进可读数据了。第 25 课算出的 <strong>guarantee ts</strong> 这时就派上用场：delegator 收到带 guarantee ts 的 search 后，会比较 <span class="inline">tsafe</span> 与 guarantee ts——若 <span class="inline">tsafe ≥ guaranteeTs</span>，说明该看到的写入都到齐了，立刻检索；若 <span class="inline">tsafe &lt; guaranteeTs</span>（自己还没追上），就<strong>等</strong>，等到 tsafe 追上再答。这一"<strong>等够新再答</strong>"的机制，把第 25 课的一致性级别真正<strong>兑现</strong>了：Strong 取 tMax，delegator 就得等到消费追平最新；Eventually 取极小值，几乎不用等——这正是"读得多新 ↔ 答得多快"那把标尺在<strong>分片这一端</strong>的落地。完整的 MVCC 与等待细节，留到第 30 课收口。</p>
+
+<p>把 delegator 的三重身份收一收，你就抓住了它的全貌：它是<strong>路由器</strong>（知道每个段在哪个 worker、把子任务分发过去）、是<strong>归并器</strong>（把零散结果合成一份局部 topK 再上交）、还是<strong>保鲜员与守门人</strong>（消费 WAL 维护 growing、用 tsafe 兑现一致性）。这三件事缺一不可：少了路由，它就得自己扛下全部段、失去水平扩展；少了归并，上游就被海量原始结果淹没；少了保鲜与守门，读要么看不到新数据、要么读到不该读的旧快照。正因为把这三件事都压在<strong>shard leader 这一个点</strong>上，Milvus 才能让"一个分片的读"既<strong>可扩展</strong>、又<strong>新鲜</strong>、还<strong>一致</strong>——这也是为什么 delegator 是整条查询链路里承上启下的枢纽。</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/querynodev2/delegator/delegator.go</span><span class="ln">ShardDelegator 接口（节选：读 + 段快照 + 数据 + tsafe）</span></div>
+  <pre><span class="kw">type</span> <span class="nb">ShardDelegator</span> <span class="kw">interface</span> {
+    <span class="cm">// 读：一次分片内检索（扇出到 worker + 本地 growing，再归并）</span>
+    <span class="fn">Search</span>(ctx, req *querypb.SearchRequest) ([]*internalpb.SearchResults, error)
+    <span class="cm">// 取当前可读段的快照：sealed（按 worker 分布）+ growing（本地）</span>
+    <span class="fn">GetSegmentInfo</span>(readable bool) (sealed []SnapshotItem, growing []SegmentEntry)
+    <span class="cm">// 数据：消费 WAL 尾部，把新写入反映进 growing 段</span>
+    <span class="fn">ProcessInsert</span>(insertRecords map[int64]*InsertData)
+    <span class="fn">ProcessDelete</span>(deleteData []*DeleteData, ts uint64)
+    <span class="cm">// tsafe：已消费 WAL 的进度；&lt; guarantee ts 则等待（第 30 课）</span>
+    <span class="fn">GetTSafe</span>() uint64
+    <span class="fn">UpdateTSafe</span>(ts uint64)
+    <span class="cm">// … Query / LoadSegments / SyncDistribution 等省略 …</span>
+}</pre>
+</div>
+
+<p>把本课接回主线：delegator 把一个分片的搜索<strong>扇到各 worker、再合成一份局部 topK</strong>——但 worker 拿到子请求后，到底是<strong>怎么在一个段里把最像的几条找出来</strong>的？sealed 段说"走索引"、growing 段说"暴力扫"，这两句话背后，是 Go 通过 <strong>cgo</strong> 调进 <strong>C++ 的 segcore</strong> 引擎。<strong>下一课（第 27 课）</strong>就跨过这道 Go↔C++ 的边界，走进单个段内部的检索。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>delegator = 分片读入口</strong>：某 vchannel 在副本内被指定的 shard leader（<span class="mono">delegator.go</span> 的 <span class="inline">ShardDelegator</span>），承接 Proxy 扇出过来的读。</li>
+    <li><strong>两类段都要搜</strong>：sealed（封存·带 Knowhere 索引·分布在多 worker·走索引）＋ growing（在长·无索引·本地·暴力），合并才完整。</li>
+    <li><strong>分布与扇出</strong>：QueryCoord 把 sealed 段分散加载到副本内多 worker；delegator 维护分布表，按"段在谁手上"扇出子任务（<span class="inline">organizeSubTask</span>）再归并。</li>
+    <li><strong>三级 reduce 的中间一级</strong>：段内 topK（segcore）→ <strong>delegator 节点内合并</strong> → Proxy 跨分片合并（第 29 课收束）。</li>
+    <li><strong>新鲜度来自 WAL</strong>：delegator 消费 vchannel 的 WAL 尾部（<span class="inline">ProcessInsert/Delete</span>）维护 growing，所以刚写就能搜到。</li>
+    <li><strong>tsafe 兑现一致性</strong>：维护已消费进度 tsafe，<span class="inline">tsafe &lt; guaranteeTs</span> 就等到追上再答（第 30 课详解）。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. delegator（shard leader）为了给出一个“完整且新鲜”的答案，必须同时搜哪两类段？它们的检索方式有何不同？</div>
+  <ol class="opts">
+    <li>growing 段也建好了索引，和 sealed 一样快</li>
+    <li>sealed 和 growing 都走暴力扫描，没有区别</li>
+    <li>只搜 sealed 段即可，growing 段不参与检索</li>
+    <li>sealed 段（已封存、带 Knowhere 索引、由 QueryCoord 分布到多 worker、走索引检索）+ growing 段（在长、无索引、delegator 消费 WAL 尾部维护、暴力逐条算）；两边结果合并才完整</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。“新鲜”和“高效”是一对矛盾：稳定大头交给索引（sealed，快），易变小尾巴交给暴力（growing，新）。delegator 消费 WAL 维护 growing，保证刚写就能搜到；两边合并兼得快与新。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. delegator 维护一个 tsafe。收到一个带 guarantee ts 的 search 时，它如何用 tsafe？</div>
+  <ol class="opts">
+    <li>tsafe 总是等于 tMax，所以从不需要等待</li>
+    <li>tsafe 表示“已把 WAL 消费到的时间戳”。若 tsafe ≥ guaranteeTs 则该看到的写入已到齐、立即检索；若 tsafe < guaranteeTs（还没追上）就等到 tsafe 追上再答——这把一致性级别真正兑现</li>
+    <li>tsafe 用来决定 topK 的大小</li>
+    <li>tsafe 是对象存储的版本号，与等待无关</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。tsafe 是 delegator 已消费 WAL 的进度。Strong 取 tMax 就得等到消费追平最新；Eventually 取极小值几乎不等——这正是“看得多新↔答得多快”在分片端的落地（第 30 课详解 MVCC）。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 为什么 delegator 要先在“节点内”把各 worker 的结果归并一次，再交给 Proxy，而不是把所有原始结果直接上交？</div>
+  <ol class="opts">
+    <li>因为 worker 之间必须互相通信</li>
+    <li>节点内归并是多余的，纯属浪费</li>
+    <li>因为 Proxy 没有能力做归并</li>
+    <li>为了尽量减少跨网络搬运的数据量：把 N 份 topK 压成一份再上交，Proxy 接收的数据降到 1/N；这是分布式里“局部归并/下推聚合”的通用做法，逐级收窄而非把海量候选背到最顶</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。三级 reduce 让每一层只把必要精华往上交。delegator 先压成一份 topK，大幅减少发往 Proxy 的数据——和数据库把过滤/聚合下推到存储层是同一智慧。</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>本课区分了两个正交维度：分片（按数据切，让单次检索并行变快）与副本（按可用性复制，让吞吐叠加并容错）。请思考：如果某个 collection 读 QPS 很高但数据量不大，你会优先加分片还是加副本？如果数据量巨大、单机放不下呢？delegator 在这两种扩展里各扮演什么角色？（可结合第 13 课 QueryCoord。）</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Last lesson, the Proxy <strong>translated a search into a plan, fixed the guarantee ts, and scattered it across shards</strong>. But the moment a "shard" catches the request, the story truly enters the <strong>search engine's</strong> turf. Each shard's <strong>receiver</strong> is a special role running on a QueryNode — the <strong>delegator (shard leader)</strong>.
+This lesson steps into the delegator: how it tends <strong>two kinds of segments</strong> at once (the sealed segments, settled and indexed; the growing segments, still growing), how it <strong>fans the search out again</strong> to worker QueryNodes holding segments and merges the results, and how it keeps "just-written data" searchable by <strong>consuming the tail of the WAL</strong>.
+If Lesson 25's Proxy is "<strong>the courier that brings the request to the door</strong>," the delegator is "<strong>the floor supervisor of a sorting center</strong>": it doesn't haul each item itself but knows where every item is, who to send to fetch it, how to combine what comes back into one batch, and keeps an eye on "<strong>whether the newest arrivals are all counted in</strong>." Understand this layer and you hold the <strong>most central coordinator</strong> on Milvus's read path.
+</p>
+
+<div class="card analogy">
+  <div class="tag">📮 Analogy</div>
+  Picture a shard as a <strong>district library dispatch desk</strong>, and the delegator as that district's <strong>dispatch supervisor</strong>. Books in the district are stored two ways:
+  <strong>① catalogued, archived books</strong> — neatly shelved across <strong>several branch libraries</strong> (worker QueryNodes), each entered into a <strong>search catalog</strong> (an index), fast and accurate to look up (these are <strong>sealed segments</strong>);
+  <strong>② books that arrived today, not yet catalogued</strong> — piled on the <strong>"new-arrivals cart" right beside the desk</strong>, not yet in the catalog, but since they're at hand and few, <strong>flipping through them one by one</strong> is still quick (these are <strong>growing segments</strong>, restocked by the daily <strong>delivery truck</strong> = the WAL tail).
+  When a "find the few most-alike" request arrives, the supervisor does three things: <strong>dispatch the request to each branch</strong> to look it up in their catalogs (fan out to workers), <strong>flip through the new-arrivals cart itself</strong> (search growing locally), and finally <strong>merge the branch and cart results</strong>, sort, and hand them up (node-level merge). Skip either side and the answer is incomplete — <strong>old and new books both must be searched</strong>, which is the entire reason the delegator exists.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 The big picture</div>
+  Within a replica, a vchannel (shard) is served by one QueryNode acting as <strong>shard leader</strong>, running a <strong>delegator</strong> (the <span class="inline">ShardDelegator</span> interface / <span class="inline">shardDelegator</span> in <span class="mono">internal/querynodev2/delegator/delegator.go</span>). It is the entry for all reads on that shard and must produce a <strong>complete and fresh</strong> answer, so it covers both: <strong>sealed segments</strong> (settled, with a Knowhere index, loaded and <strong>distributed</strong> by QueryCoord across multiple worker QueryNodes in the replica) and <strong>growing segments</strong> (the latest, not-yet-sealed data the delegator maintains by <strong>consuming the WAL tail</strong>). In one <span class="inline">Search</span>, the delegator takes a segment snapshot (<span class="inline">GetSegmentInfo</span> → sealed + growing), <strong>fans</strong> the sealed search out to workers, searches growing locally, then <strong>merges within the node</strong> and returns to the Proxy. It also maintains a <strong>tsafe</strong> (how far it has consumed the WAL) and <strong>waits</strong> if that is not as fresh as the guarantee ts (Lesson 30).
+</div>
+
+<h2>Who the delegator is: a shard's read coordinator</h2>
+<p>First, straighten out "shard" vs "segment." Recall Lesson 7: a collection's data is cut by <strong>vchannel</strong> into several <strong>shards</strong>, and each shard holds many <strong>segments</strong>. Recall Lesson 13: <strong>QueryCoord</strong> decides "<strong>which segments load onto which QueryNodes</strong>" and designates, for each vchannel within a replica, one QueryNode as the <strong>shard leader</strong>. What runs on that leader is the <strong>delegator</strong> — the shard's <strong>single outward read entry</strong>, the landing point for requests the Proxy fans out.</p>
+
+<p>The crucial point: the delegator <strong>does not necessarily hold all of the shard's segment data itself</strong>. For elasticity and load balancing, QueryCoord <strong>spreads</strong> the shard's sealed segments across <strong>multiple QueryNodes (workers)</strong> in the replica — some segments may sit on the leader, more on other workers. The delegator keeps a <strong>distribution table</strong> recording "<strong>which segment is on which worker right now</strong>." So the delegator is more like a "<strong>dispatcher who knows who holds the goods</strong>": rather than carrying all segments itself, it <strong>routes the search to the worker holding each segment</strong> and then collects and merges. This is exactly where Milvus's read path <strong>scales horizontally</strong> — more segments spread over more workers, lighter load per worker, so adding machines lifts overall search throughput.</p>
+
+<p>Here we should fill in a concept Lesson 13 planted: the <strong>replica</strong>. For high availability and higher throughput, a collection can be loaded in <strong>several copies</strong>, each called a replica; every replica is a full crew of QueryNodes able to "<strong>answer the entire dataset independently</strong>." When the delegator "distributes segments across multiple workers," it means spreading them out <strong>within one replica</strong>. So the same shard has, in each replica, its own leader and its own set of workers. Two benefits follow: first, <strong>multiple replicas share read traffic</strong> — requests can be load-balanced across replicas and throughput grows with replica count; second, <strong>fault tolerance</strong> — if a worker or even a whole replica has trouble, other replicas can still answer. Tell apart the two orthogonal dimensions — "<strong>shards (split by data)</strong>" and "<strong>replicas (copied for availability)</strong>" — and you understand the two legs of Milvus read-side scalability: shards make a single search <strong>faster in parallel</strong>, replicas make overall throughput <strong>stack higher</strong> and add redundancy. The delegator is always the coordinator sitting at the intersection "<strong>this shard in this replica.</strong>"</p>
+
+<h2>Two kinds of segments: sealed (indexed) and growing (WAL tail)</h2>
+<p>To give a <strong>complete</strong> answer, the delegator must search both kinds. One cold, one hot; one stable, one fresh — their differences form a neat pair:</p>
+
+<div class="cols">
+  <div class="col"><h4>🧊 sealed segment (settled · indexed)</h4><p>A segment that is <strong>settled and immutable</strong>, with a built <strong>Knowhere vector index</strong> (Lesson 22), <strong>loaded</strong> from object storage into memory and <strong>distributed</strong> across workers in the replica by QueryCoord (Lesson 23). Search goes through the <strong>index</strong> (HNSW/IVF…), <strong>fast and accurate</strong>. These are the data's "<strong>bulk</strong>" — large, stable, index-accelerated, horizontally spread.</p></div>
+  <div class="col"><h4>🔥 growing segment (growing · no index)</h4><p>A segment still <strong>receiving new inserts</strong>, not yet sealed, with <strong>no index</strong>. The delegator <strong>consumes the vchannel's WAL tail itself</strong> (<span class="inline">ProcessInsert</span> / <span class="inline">ProcessDelete</span>), maintaining just-written rows as growing segments. Search can only go <strong>brute force, row by row</strong> (detailed in Lesson 27), but since it's small and local, the cost is bounded — it guarantees the freshness of "<strong>searchable right after writing</strong>."</p></div>
+</div>
+
+<p>Why insist on <strong>two kinds</strong> rather than handle them uniformly? Because <strong>"fresh" and "efficient" are a natural conflict</strong>. An index (a graph index especially) is <strong>expensive to build</strong> and awkward to mutate frequently, so it only suits "<strong>finalized, no-longer-changing</strong>" sealed segments; freshly written data <strong>changes constantly</strong> and there's no time to index it. Milvus's answer is "<strong>divide and conquer</strong>": give the <strong>stable bulk</strong> to the index (sealed, fast) and the <strong>volatile little tail</strong> to brute force (growing, fresh), then merge — getting both "<strong>fast</strong>" and "<strong>fresh</strong>" at once. This is really Lesson 7's "<strong>log-as-data / LSM idea</strong>" echoing on the read path — new data serves in memory in a mutable form first, then once enough accumulates it is <strong>sealed + indexed</strong> into an efficient immutable bulk. As growing segments are continually flushed and compacted (Lessons 17, 19) into sealed ones, the "fresh tail" keeps becoming "old bulk," and the delegator always stitches the <strong>current snapshot of both</strong> into one complete view.</p>
+
+<p>Here is a subtle yet crucial problem: when a growing segment gets sealed and is then loaded back in as a sealed segment, could it be <strong>counted twice</strong> (once as growing, once as sealed), duplicating results? The delegator must handle this "<strong>handoff</strong>." Its method is to maintain an "<strong>exclude list</strong>" — once a segment is ready and searchable in its sealed form, its growing form must be <strong>excluded from the readable snapshot</strong>, and vice versa, ensuring that <strong>the same data is represented by only one kind of segment at any instant</strong>. Plus the safety net of <strong>dedup by primary key</strong> during merge, the delegator can keep giving <strong>no-duplicate, no-miss</strong> results even as data forms keep flowing from growing to sealed. Grasp this and you see the delegator is not just a simple "dispatch + merge" router — it <strong>maintains a consistent view as segments keep changing form over time</strong>, its least conspicuous yet most error-intolerant duty as shard leader.</p>
+
+<h2>One in-shard search: fan out to workers, then merge</h2>
+<p>Lay out the delegator's internal moves for one <span class="inline">Search</span> and you get the chain "<strong>take a snapshot → group and fan out → search growing locally → merge within the node</strong>":</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">delegator</div><div class="nd">take segment snapshot<br>sealed+growing</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">worker QN-1</div><div class="nd">search its<br>sealed segs (index)</div></div>
+  <div class="arrow">＋</div>
+  <div class="node"><div class="nt">worker QN-2</div><div class="nd">search its<br>sealed segs (index)</div></div>
+  <div class="arrow">＋</div>
+  <div class="node"><div class="nt">local growing</div><div class="nd">brute-force<br>the WAL tail</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">merge in node</div><div class="nd">this shard's<br>local topK</div></div>
+</div>
+
+<p>Step by step: the delegator first calls <span class="inline">GetSegmentInfo(readable)</span> for a <strong>snapshot of currently-readable segments</strong> — returning <span class="inline">sealed</span> (already grouped by worker) and <span class="inline">growing</span>. Then it <strong>groups the search sub-tasks by "who holds the segment"</strong> (<span class="inline">organizeSubTask</span>): the batch on worker A is packed into one sub-request to A, the batch on B goes to B, and growing segments are searched <strong>locally</strong> on the delegator. Each worker runs segcore search on the segments in its own memory (next lesson) and returns <strong>its own local topK</strong>. Once collected, the delegator <strong>merges within the node</strong> "<strong>the workers' results + the local growing results</strong>" (sort by distance, dedup by primary key, take topK) into <strong>this shard's local topK</strong> and hands it back to the Proxy.</p>
+
+<p>See "<strong>fan-out / merge</strong>" appear again? Lesson 25 said a search is a <strong>two-level fan-out</strong>: Proxy to shards, shard to segments. This lesson is the <strong>second level</strong> — the delegator fans the search out to the workers holding segments, then merges <strong>within the node</strong>. So the read path's merge is <strong>three-level</strong>: <strong>within a segment</strong> topK on a worker (segcore, Lesson 27), <strong>within the node/shard</strong> on the delegator (this lesson), and <strong>across shards</strong> on the Proxy (Lesson 25) — this "<strong>three-level reduce</strong>" is tied up systematically in Lesson 29. For this lesson, just grasp the middle level: <strong>the delegator combines a shard's scattered per-segment results into one local topK for that shard</strong>.</p>
+
+<p>Why <strong>merge once</strong> at the delegator layer rather than ship all workers' raw results straight to the Proxy? Behind this is a plain but important engineering consideration: <strong>minimize the data moved across the network</strong>. Imagine a shard spread over 5 workers, each returning topK candidates; without a node-level merge, the Proxy would receive <strong>5 sets</strong> to re-sort and dedup, whereas the delegator first compresses those 5 into <strong>one</strong> topK, cutting the data sent to the Proxy to a fifth. "<strong>Whatever can be aggregated near the data, don't defer to upstream</strong>" — this is the general wisdom of "<strong>pushdown aggregation / partial merge</strong>" in distributed systems, the same reason databases push filtering and aggregation down to the storage layer. The three-level reduce exists precisely so each layer <strong>passes up only the necessary essence</strong>, narrowing stage by stage, rather than hauling a flood of raw candidates all the way to the top.</p>
+
+<h2>Who is who: a role cheat-sheet</h2>
+<p>This layer has many nouns (leader, worker, replica, sealed, growing, tsafe). A table nails "<strong>role → who / where / does what</strong>":</p>
+
+<table class="t">
+  <tr><th>Role / concept</th><th>Who / where</th><th>Does what</th></tr>
+  <tr><td><strong>delegator (shard leader)</strong></td><td>on the QueryNode designated for a vchannel within a replica</td><td>the shard's <strong>sole read entry</strong>: take snapshot, fan out, merge, maintain tsafe</td></tr>
+  <tr><td><strong>worker QueryNode</strong></td><td>the several QueryNodes holding sealed segments in the replica</td><td>run segcore search on <strong>segments in its own memory</strong>, return partial results</td></tr>
+  <tr><td><strong>sealed segment</strong></td><td>distributed across workers' memory (loaded by QueryCoord)</td><td>indexed, searched via the index; the data bulk, horizontally spread</td></tr>
+  <tr><td><strong>growing segment</strong></td><td>local to the delegator (from consuming the WAL tail)</td><td>no index, brute-force search; guarantees latest writes are visible</td></tr>
+  <tr><td><strong>tsafe</strong></td><td>a timestamp the delegator maintains</td><td>how far the WAL is consumed; &lt; guarantee ts → wait (Lesson 30)</td></tr>
+</table>
+
+<p>This table hides two through-lines of the delegator's design. <strong>One is the re-separation of "coordinate vs compute"</strong>: the delegator only <strong>coordinates</strong> (route, merge, maintain distribution and tsafe); what actually <strong>computes distances</strong> on segments is segcore on the workers — the same layering as Lesson 25's "Proxy only coordinates, never computes," just one level lower. <strong>The other is "freshness is the leader's responsibility"</strong>: sealed segments are loaded by others and stable; only the growing "<strong>keep-fresh</strong>" job is done by the delegator itself consuming the WAL. That explains why the leader is special — it is not just a dispatcher, it also <strong>bears this shard's responsibility for "seeing the latest writes."</strong> Put another way: the "load and distribute" of the sealed side is orchestrated by QueryCoord on the <strong>control plane</strong> (Lesson 13), and the delegator merely passively <strong>knows</strong> the result; whereas the "consume and keep fresh" of the growing side is done entirely by the delegator on the <strong>data plane</strong>. A shard's "whole picture" is precisely these two forces — the stable bulk arranged by the control plane above, and the latest tail caught up by the local data plane — <strong>converging</strong> at the single point of the delegator.</p>
+
+<h2>Where freshness comes from: consuming the WAL tail + tsafe</h2>
+<p>Finally, fully explain "<strong>why a read can see what was just written</strong>," a key through-line of Part 6. Recall Lesson 16: every write is first appended to the <strong>WAL</strong> (the streaming log). As shard leader, the delegator <strong>subscribes to and continuously consumes</strong> this vchannel's WAL tail: for each new Insert/Delete message, it <span class="inline">ProcessInsert</span> / <span class="inline">ProcessDelete</span> to <strong>reflect the change into growing segments</strong>. So between "the write hits the WAL" and "a read can see it" lies only the small delay of the delegator consuming the WAL — that is the source of data <strong>freshness</strong>. This neatly echoes Lesson 16's theme: the WAL is not only the write path's "durability insurance," it is at the same time the read path's "<strong>source of fresh data</strong>" — one stream, the writer appending to it and the reader-side delegator tailing it, the two meshing tightly back to back.</p>
+
+<p>But "<strong>can see</strong>" is not enough; it must also be "<strong>fresh enough</strong>." The delegator maintains a <strong>tsafe</strong>: it means "<strong>up to which timestamp I have consumed the WAL</strong>" — i.e. all writes with ts ≤ tsafe are already reflected into readable data. Now Lesson 25's <strong>guarantee ts</strong> pays off: receiving a search carrying a guarantee ts, the delegator compares <span class="inline">tsafe</span> against guarantee ts — if <span class="inline">tsafe ≥ guaranteeTs</span>, all the writes it should see have arrived, so it searches immediately; if <span class="inline">tsafe &lt; guaranteeTs</span> (it hasn't caught up), it <strong>waits</strong> until tsafe catches up before answering. This "<strong>wait until fresh enough, then answer</strong>" mechanism truly <strong>redeems</strong> Lesson 25's consistency levels: Strong takes tMax, so the delegator must wait until its consumption catches the latest; Eventually takes a tiny value, so it barely waits — exactly how the "how-fresh-you-read ↔ how-fast-you-answer" ruler lands at the <strong>shard end</strong>. The full MVCC and waiting details are tied up in Lesson 30.</p>
+
+<p>Sum up the delegator's three identities and you have the whole picture: it is a <strong>router</strong> (knows which worker holds each segment, dispatches sub-tasks there), a <strong>merger</strong> (combines scattered results into one local topK before handing up), and a <strong>freshness-keeper and gatekeeper</strong> (consumes the WAL to maintain growing, redeems consistency via tsafe). None of the three is dispensable: without routing, it would carry all segments itself and lose horizontal scaling; without merging, upstream drowns in a flood of raw results; without keeping-fresh and gatekeeping, reads either miss new data or read a stale snapshot they shouldn't. Precisely by pressing all three onto <strong>the single point of the shard leader</strong>, Milvus makes "a shard's read" at once <strong>scalable</strong>, <strong>fresh</strong>, and <strong>consistent</strong> — which is why the delegator is the linchpin connecting both ends of the whole query path.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/querynodev2/delegator/delegator.go</span><span class="ln">ShardDelegator interface (excerpt: read + snapshot + data + tsafe)</span></div>
+  <pre><span class="kw">type</span> <span class="nb">ShardDelegator</span> <span class="kw">interface</span> {
+    <span class="cm">// read: one in-shard search (fan out to workers + local growing, then merge)</span>
+    <span class="fn">Search</span>(ctx, req *querypb.SearchRequest) ([]*internalpb.SearchResults, error)
+    <span class="cm">// snapshot of currently-readable segments: sealed (by worker) + growing (local)</span>
+    <span class="fn">GetSegmentInfo</span>(readable bool) (sealed []SnapshotItem, growing []SegmentEntry)
+    <span class="cm">// data: consume the WAL tail, reflect new writes into growing segments</span>
+    <span class="fn">ProcessInsert</span>(insertRecords map[int64]*InsertData)
+    <span class="fn">ProcessDelete</span>(deleteData []*DeleteData, ts uint64)
+    <span class="cm">// tsafe: how far the WAL is consumed; &lt; guarantee ts → wait (Lesson 30)</span>
+    <span class="fn">GetTSafe</span>() uint64
+    <span class="fn">UpdateTSafe</span>(ts uint64)
+    <span class="cm">// … Query / LoadSegments / SyncDistribution etc. omitted …</span>
+}</pre>
+</div>
+
+<p>Tie this lesson back to the line: the delegator <strong>fans a shard's search out to workers, then combines a local topK</strong> — but once a worker gets a sub-request, how exactly does it <strong>find the few most-alike rows inside a segment</strong>? "Sealed says go through the index, growing says brute-force scan" — behind those two phrases, Go calls into the <strong>C++ segcore</strong> engine over <strong>cgo</strong>. The <strong>next lesson (Lesson 27)</strong> crosses that Go↔C++ boundary and steps inside the search within a single segment.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>delegator = a shard's read entry</strong>: the shard leader designated for a vchannel within a replica (<span class="inline">ShardDelegator</span> in <span class="mono">delegator.go</span>), catching reads the Proxy fans out.</li>
+    <li><strong>both kinds of segments searched</strong>: sealed (settled · Knowhere-indexed · spread over workers · via index) + growing (growing · no index · local · brute force), merged for completeness.</li>
+    <li><strong>distribution &amp; fan-out</strong>: QueryCoord spreads sealed segments over workers; the delegator keeps a distribution table, fans sub-tasks by "who holds the segment" (<span class="inline">organizeSubTask</span>), then merges.</li>
+    <li><strong>the middle of the three-level reduce</strong>: per-segment topK (segcore) → <strong>delegator node-level merge</strong> → Proxy cross-shard merge (tied up in Lesson 29).</li>
+    <li><strong>freshness from the WAL</strong>: the delegator consumes the vchannel's WAL tail (<span class="inline">ProcessInsert/Delete</span>) to maintain growing, so just-written data is searchable.</li>
+    <li><strong>tsafe redeems consistency</strong>: it tracks consumed progress; if <span class="inline">tsafe &lt; guaranteeTs</span> it waits until caught up before answering (detailed in Lesson 30).</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. To give a 'complete and fresh' answer, which two kinds of segments must the delegator (shard leader) search, and how do their retrieval methods differ?</div>
+  <ol class="opts">
+    <li>Growing segments are also indexed, as fast as sealed</li>
+    <li>Both sealed and growing use brute force, no difference</li>
+    <li>Search only sealed segments; growing segments don't participate</li>
+    <li>sealed segments (settled, with a Knowhere index, distributed across workers by QueryCoord, searched via the index) + growing segments (growing, no index, maintained by the delegator consuming the WAL tail, brute-forced per row); merging both is what makes the answer complete</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. 'Fresh' and 'efficient' conflict: give the stable bulk to the index (sealed, fast) and the volatile tail to brute force (growing, fresh). The delegator consumes the WAL to maintain growing so just-written data is searchable; merging both gets fast and fresh at once.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. The delegator maintains a tsafe. When it receives a search carrying a guarantee ts, how does it use tsafe?</div>
+  <ol class="opts">
+    <li>tsafe always equals tMax, so no waiting is ever needed</li>
+    <li>tsafe is 'up to which timestamp the WAL has been consumed'. If tsafe ≥ guaranteeTs, the writes it should see have arrived, so it searches immediately; if tsafe < guaranteeTs (not caught up), it waits until tsafe catches up before answering — this redeems the consistency level</li>
+    <li>tsafe decides the size of topK</li>
+    <li>tsafe is an object-storage version number, unrelated to waiting</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. tsafe is the delegator's WAL-consumption progress. Strong takes tMax so it must wait until consumption catches the latest; Eventually takes a tiny value so it barely waits — exactly the 'how fresh ↔ how fast' ruler at the shard end (MVCC detailed in Lesson 30).</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Why does the delegator first merge the workers' results 'within the node' before handing them to the Proxy, instead of forwarding all raw results?</div>
+  <ol class="opts">
+    <li>Because workers must communicate with each other</li>
+    <li>Node-level merge is redundant and pure waste</li>
+    <li>Because the Proxy is incapable of merging</li>
+    <li>To minimize data moved across the network: compress N topK sets into one before forwarding, cutting what the Proxy receives to 1/N; this is the general 'partial merge / pushdown aggregation' practice in distributed systems, narrowing stage by stage rather than hauling masses of candidates to the top</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. The three-level reduce makes each layer pass up only the essence. The delegator compresses to one topK first, greatly reducing data sent to the Proxy — the same wisdom as databases pushing filtering/aggregation down to storage.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson distinguished two orthogonal dimensions: shards (split by data, making a single search faster in parallel) and replicas (copied for availability, stacking throughput and tolerating faults). Consider: if a collection has very high read QPS but modest data size, would you add shards or replicas first? What if the data is huge and won't fit on one machine? What role does the delegator play in each kind of scaling? (Tie in Lesson 13 QueryCoord.)</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="25-search-via-proxy.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">经 Proxy 的搜索</span><span class="lang-en">Search via Proxy</span></div></a><a class="next" href="27-segcore.html"><div class="dir"><span class="lang-zh">下一课 →</span><span class="lang-en">Next →</span></div><div class="ttl"><span class="lang-zh">Segcore（C++）</span><span class="lang-en">Segcore (C++)</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>

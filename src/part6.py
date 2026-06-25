@@ -1,0 +1,704 @@
+"""Part 6 - The query path (查询链路). Lessons 25-30.
+
+Read-path counterpart to Part 4: trace a search from the SDK through the Proxy,
+into the QueryNode/delegator, down to the C++ segcore, and back through reduce.
+
+M6a = L25-L27 (this batch). M6b = L28-L30 (later dispatch).
+"""
+
+LESSON_25 = {
+    "zh": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+第四部分我们把<strong>写入</strong>的一生走完了：数据从 SDK 经 Proxy、写进 WAL、落成段、建好索引。从这一课起，我们走<strong>另一条路</strong>——<strong>查询链路</strong>：一次 <span class="inline">search</span> 是怎么从 SDK 出发、被 Proxy 翻译与调度、扇出到各个分片、最后归并出 topK 返回的。
+这一部分是写入链路的"<strong>镜像</strong>"，并且会一路下钻到 C++ 的 <strong>segcore</strong>（第 27 课）。本课先站在<strong>入口</strong>看：<strong>Proxy 这一侧</strong>到底为一次搜索做了哪些事。把入口这一层吃透，你就有了一张"<strong>读路径全景的目录</strong>"——后面每一课（delegator、segcore、执行引擎、reduce、一致性）都是在补全本课提到的某一个环节。
+</p>
+
+<div class="card analogy">
+  <div class="tag">📚 生活类比</div>
+  你走进一家<strong>连锁图书馆的总服务台</strong>，说："帮我找几本和这本书最像的。"总台职员（<strong>Proxy</strong>）要依次做五件事：
+  <strong>① 听懂需求</strong>——按什么标准"像"（度量）、要几本（topK）、有没有附加条件（"只要 2020 年后出版的"=标量过滤）；
+  <strong>② 写成标准检索单</strong>——把口头需求翻译成一张分馆都看得懂的表格（search plan）；
+  <strong>③ 定一个时间快照</strong>——你要"<strong>绝对最新</strong>"（连刚还回、还没上架的也得算）还是"<strong>稍旧但更快</strong>"？这就是一致性级别决定的 <strong>guarantee 时间戳</strong>；
+  <strong>④ 把检索单分发给各分馆</strong>（shard / delegator），各分馆各自找出自己最像的几本（scatter）；
+  <strong>⑤ 汇总排序</strong>——把所有分馆交回的候选合在一起、排序、取最像的前几本给你（reduce）。
+  总台自己<strong>不翻书架</strong>，它只负责"<strong>听懂、翻译、定快照、分发、归并</strong>"。这正是 Proxy 在一次搜索里的角色。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  一次 <span class="inline">search</span> 在 Proxy 侧被封装成一个 <strong>searchTask</strong>（<span class="mono">internal/proxy/task_search.go</span>），走 <strong>PreExecute → Execute → PostExecute</strong> 三段式：<strong>PreExecute</strong> 校验并解析请求、把布尔过滤表达式编译成<strong>检索计划</strong>（plan：向量字段 + 度量 + topK + 标量过滤）、并由<strong>一致性级别</strong>推出 <strong>guarantee 时间戳</strong>（<span class="inline">parseGuaranteeTsFromConsistency</span>，<span class="mono">internal/proxy/util.go</span>）；<strong>Execute</strong> 把请求<strong>扇出（scatter）</strong>到该 collection 的各个分片（vchannel 的 <strong>delegator</strong>）；<strong>PostExecute</strong> 把各分片回来的结果<strong>跨分片归并（reduce）</strong>成最终 topK。Proxy 只做"<strong>翻译 + 调度 + 归并</strong>"，真正搜段的活在 QueryNode（第 26 课）和 segcore（第 27 课）。
+</div>
+
+<p>开讲之前，先把和写路径的"<strong>镜像</strong>"关系看具体。<strong>写</strong>的时候，Proxy 把一批行按 vchannel 切开、追加进 WAL——这是一次"<strong>会写入的扇出</strong>"；<strong>读</strong>的时候，Proxy 把同一个查询发往每个分片、再把回来的结果归并——这是一次"<strong>会收集的扇出</strong>"。两者都绕着第 3 课就埋下的同一对概念转：<strong>按 vchannel 分片</strong>（决定打哪些分片）与<strong>时间戳</strong>（写入给数据盖戳、读取携带 guarantee ts）。如果你还记得第四部分的写路径，其实已经掌握了读路径的<strong>骨架形状</strong>——这一部分只是往里填读路径特有的几个"器官"：plan、delegator、segcore、reduce、一致性。</p>
+
+<h2>一次搜索在 Proxy 侧的五步</h2>
+<p>把总台职员那五件事落到代码上，就是 <span class="mono">searchTask</span> 的主干流程。下面这条竖流把它一步步摆开：</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>解析请求（parse）</h4><p>从 <span class="inline">SearchRequest</span> 取出：要搜的 collection / 分区、向量字段、<strong>topK</strong>、<strong>度量类型</strong>（L2/IP/COSINE）、查询向量（placeholder group）、布尔<strong>过滤表达式</strong>（如 <span class="mono">year &gt; 2020</span>）、以及<strong>一致性级别</strong>。在 <span class="inline">PreExecute</span> 里完成校验与字段解析。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>构建检索计划（plan）</h4><p>把过滤表达式<strong>编译成 <span class="inline">planpb.PlanNode</span></strong>：一棵带<strong>向量 ANN 节点</strong>（字段 + 度量 + topK）和<strong>标量谓词子树</strong>的计划树。这张"检索单"会随请求一起发给分片，下钻到 segcore 时被执行（第 28 课详述执行引擎）。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>定 guarantee 时间戳</h4><p>按<strong>一致性级别</strong>调用 <span class="inline">parseGuaranteeTsFromConsistency</span> 算出本次读要求的"<strong>时间快照</strong>"：Strong→看到最新、Eventually→只要够快、Bounded→容忍一点延迟。这个 ts 决定 QueryNode 要"<strong>等数据追到多新</strong>"才回答（第 30 课 MVCC 详解）。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>扇出到分片（scatter）</h4><p>一个 collection 的数据按 <strong>vchannel</strong> 分成多个<strong>分片</strong>，每个分片由一个 <strong>delegator（shard leader）</strong>负责。<span class="inline">Execute</span> 通过负载均衡策略，把"检索单 + guarantee ts"并发发往各分片的 delegator（<span class="inline">searchShard</span>）。</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>跨分片归并（reduce）</h4><p>各分片各自返回"<strong>自己最像的 topK</strong>"。<span class="inline">PostExecute</span> 把这些<strong>局部 topK</strong> 汇总、<strong>按距离重排、按主键去重</strong>，取出<strong>全局 topK</strong> 返回 SDK。这层跨分片归并的细节留到第 29 课。</p></div></div>
+</div>
+
+<p>这五步里，第 1 步的"<strong>度量</strong>"值得回头多看一眼。回忆第 4、22 课：向量的"像"由度量定义（<strong>L2</strong> 越小越像、<strong>IP/COSINE</strong> 越大/越一致越像），而且<strong>检索用的度量必须和建索引、和字段声明时一致</strong>。Proxy 在解析请求时会拿到本次检索指定的度量，并校验它和字段/索引是否对得上——这道关卡看似不起眼，却挡掉了向量检索里最隐蔽的一类错误（度量用错会让结果"<strong>系统性地不对、却不报错</strong>"）。所以你可以把 Proxy 的"解析"理解成不只是"<strong>读出参数</strong>"，还包含一层"<strong>合法性与一致性的守门</strong>"：字段存不存在、向量维度对不对、度量配不配、topK 是否超限、表达式能不能编译——任一不合法，请求会在<strong>还没扇出之前</strong>就被挡回 SDK，而不是浪费一整轮分布式检索。</p>
+
+<p>把这五步连起来看，Proxy 的角色就非常清楚了：它是一个"<strong>翻译官 + 调度员 + 收银台</strong>"。翻译（把人话的过滤条件编成计划树）、调度（决定打哪些分片、带什么时间快照）、收银（把零散结果汇成一份答案）——<strong>三件事都不碰真正的向量数据</strong>。这与第 10 课讲 Proxy "无状态网关、扇出归并"的定位完全一致；search 只是把那张"扇出—归并"的图，落到了<strong>读路径</strong>上。</p>
+
+<p>再多说一句第 2 步的<strong>检索计划</strong>，因为它是写路径里完全没有、读路径独有的一环。SDK 发来的过滤条件是一串<strong>字符串表达式</strong>（如 <span class="mono">color == "red" &amp;&amp; year &gt; 2020</span>），人能读、机器不能直接执行。Proxy 把它<strong>解析成一棵表达式树</strong>，再和"向量 ANN 检索"这件主任务拼成一个完整的 <span class="inline">planpb.PlanNode</span>：顶层是一个<strong>向量检索节点</strong>（指明在哪个向量字段上、用什么度量、取多少 topK），它下面挂着<strong>标量谓词子树</strong>（把 <span class="mono">color/year</span> 这些条件编成可被高效执行的判断）。这张计划随请求<strong>原样下发</strong>到每个分片、每个段，最终在 C++ 的执行引擎里被跑起来——"<strong>先按谓词把候选行筛小，再在筛后的子集上做 ANN</strong>"（这套"先筛后搜"的执行细节是第 28 课的主题）。Proxy 这一步只负责<strong>把计划编出来</strong>，不负责执行它。</p>
+
+<p>还有一个值得点名的细节：一次 search 请求里<strong>可以同时带多个查询向量</strong>——这叫 <strong>nq</strong>（number of queries，查询向量个数），它们装在一个 <span class="inline">placeholder group</span> 里。<span class="mono">searchTask</span> 在 <span class="inline">checkNq</span> 这一步校验它的大小。nq 的意义是"<strong>一次往返、批量问 N 个相似检索</strong>"：每个查询向量各自要它自己的 topK，扇出到分片后由 segcore 对每个查询向量分别算、分别取 topK，归并时也按查询向量<strong>分组</strong>各归各的。理解 nq 你才不会把"topK=10"和"nq=5"混为一谈——前者是"每个问题要几个答案"，后者是"一次问几个问题"，最终结果是 <strong>nq × topK</strong> 这么一张表。</p>
+
+<h2>Proxy 在搜索里"做什么"与"不做什么"</h2>
+<p>初学最容易把 Proxy 想成"搜索引擎本体"。恰恰相反——它是一个<strong>无状态的协调层</strong>，手里既没有向量数据、也没有索引。把它的"<strong>职责边界</strong>"摆清楚，整条查询链路就不会在脑子里错位：</p>
+
+<div class="cols">
+  <div class="col"><h4>✅ Proxy 负责</h4><p>校验与鉴权、把过滤表达式<strong>编译成 plan</strong>、按一致性级别<strong>算 guarantee ts</strong>、做<strong>负载均衡</strong>挑 QueryNode、把请求<strong>扇出</strong>到各分片、把各分片结果<strong>跨分片归并</strong>成最终 topK、按 offset/limit 截断后返回 SDK。一句话：<strong>翻译、调度、归并</strong>。</p></div>
+  <div class="col"><h4>❌ Proxy 不负责</h4><p>不持有向量数据、不持有索引、<strong>不在自己进程里算距离</strong>；不决定"某段数据归哪个 QueryNode"（那是 QueryCoord 的事，第 13 课）；不执行 plan（plan 下钻到 segcore 才执行，第 28 课）；不等数据追新（"等到 guarantee ts"发生在 QueryNode，第 30 课）。</p></div>
+</div>
+
+<p>这条边界为什么重要？因为它正是 Milvus "<strong>计算与协调分离</strong>"的体现：Proxy 可以<strong>无状态地水平扩容</strong>（多开几个都行、挂一个也不丢数据），因为它<strong>什么都不存</strong>；真正昂贵的"<strong>持有索引、在内存里算向量距离</strong>"的活，被推给了能<strong>按段水平扩展</strong>的 QueryNode。把"<strong>谁存数据、谁算距离、谁只协调</strong>"这三件事分开，是读懂后面第 26、27 课的前提——也是几乎所有分布式检索系统共有的设计取向：让协调层轻、让计算层重，各自独立伸缩。</p>
+
+<h2>数据怎么流：从 SDK 到结果</h2>
+<p>换一个角度，用一条横向的数据流把"谁把请求交给谁"画清楚。注意中间高亮的那一格，就是本课的主角 <span class="inline">searchTask</span>：</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">SDK</div><div class="nd">Search RPC<br>向量+topK+expr</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">Proxy · searchTask</div><div class="nd">解析→plan→guarantee-ts</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">delegator A</div><div class="nd">分片 1 局部 topK</div></div>
+  <div class="arrow">＋</div>
+  <div class="node"><div class="nt">delegator B</div><div class="nd">分片 2 局部 topK</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">reduce</div><div class="nd">归并出全局 topK</div></div>
+</div>
+
+<p>这条流里有两个"<strong>一对多</strong>"的扩散点，是理解分布式检索的关键。第一个在 <strong>Proxy → delegator</strong>：一个 collection 被切成多个分片，请求要<strong>同时</strong>打到每个分片（scatter）。第二个在每个 delegator 内部：它还要把搜索继续扇到自己管的多个段与多个 worker QueryNode 上（这是第 26 课的内容）。
+所以一次 search 是<strong>两层扇出</strong>：Proxy 扇到分片、分片再扇到段。对应地，归并也是<strong>分层</strong>的：段内取 topK、节点内合并、Proxy 跨分片再合并——这"<strong>三级 reduce</strong>"留到第 29 课系统讲。本课你只要记住<strong>最外层</strong>这一对：Proxy 扇出、Proxy 归并。</p>
+
+<p>为什么扇出要<strong>并发</strong>、而不是一个分片一个分片地问？因为一次搜索的延迟，取决于<strong>最慢的那个分片</strong>，而不是所有分片之和。若串行去问 N 个分片，总延迟≈N×单分片延迟；并发扇出后，总延迟≈单分片延迟＋一点点归并开销。这正是分布式检索"<strong>用并行换低延迟</strong>"的根本手法：把一个大问题<strong>切成互不依赖的小问题</strong>同时算，再把答案拼起来。也正因为各分片<strong>互不依赖</strong>（每个分片只看自己那部分数据），扇出才能放心地并发——这种"<strong>数据分片 + 无共享并行</strong>"的结构，是 Milvus 能横向扩展读吞吐的根本原因：分片越多、每片越小，单片越快，加机器就能线性提升整体能力。</p>
+
+<h2>一致性级别 → guarantee 时间戳</h2>
+<p>第三步那个"<strong>定时间快照</strong>"特别值得单独说，因为它是 Milvus 在<strong>"看得多新" vs "答得多快"</strong>之间给用户的旋钮。回忆第 11 课的 <strong>TSO 全局时钟</strong>：每条写入都带一个全局单调递增的时间戳。一次读则携带一个 <strong>guarantee 时间戳</strong>，含义是"<strong>我至少要看到 ts ≤ guarantee 的所有写入</strong>"。<span class="inline">parseGuaranteeTsFromConsistency</span> 就是把抽象的<strong>一致性级别</strong>翻译成这个具体 ts：</p>
+
+<table class="t">
+  <tr><th>一致性级别</th><th>guarantee ts 取值</th><th>含义 / 取舍</th></tr>
+  <tr><td><strong>Strong</strong></td><td><span class="inline">tMax</span>（当前最新）</td><td>必须看到此刻为止的<strong>所有</strong>写入；最强一致，但可能要<strong>等数据追上</strong>，延迟最高</td></tr>
+  <tr><td><strong>Bounded</strong></td><td><span class="inline">tMax − gracefulTime</span></td><td>容忍一个<strong>有界的</strong>陈旧窗口（默认几秒），换更稳的低延迟（常用默认）</td></tr>
+  <tr><td><strong>Eventually</strong></td><td><span class="inline">1</span>（极小值）</td><td>不等任何数据，<strong>能多快多快</strong>；可能读到略旧的快照，最终一致</td></tr>
+  <tr><td><strong>Session</strong> / <strong>Customized</strong></td><td>由会话 / 用户指定的 ts</td><td>Session：保证读到<strong>自己刚写</strong>的；Customized：调用方<strong>自带</strong> guarantee ts</td></tr>
+</table>
+
+<p>看这张表只需抓住一条主轴：<strong>guarantee ts 越大（越接近 tMax），看到的数据越新、但越可能要等；越小，答得越快、但可能越旧</strong>。
+<span class="inline">parseGuaranteeTsFromConsistency</span> 的实现也正是这个意思——<strong>Strong</strong> 直接把 ts 设成 <span class="inline">tMax</span>，<strong>Bounded</strong> 用 <span class="inline">tMax</span> 减去一个配置的 <span class="inline">gracefulTime</span>，<strong>Eventually</strong> 干脆设成 <span class="inline">1</span>（几乎不等）。Proxy 在这一步只是<strong>算出</strong>这个 ts 并塞进发往分片的请求里；真正"<strong>等数据追到 guarantee ts 才回答</strong>"的动作发生在 QueryNode 侧（第 30 课讲它如何用已消费的 WAL 进度 / TimeTick 与 guarantee ts 比较、不够新就<strong>等</strong>）。这条"<strong>一致性级别 → guarantee ts → 等待</strong>"的链路，是 Part 6 反复要回看的主线。</p>
+
+<p>顺带厘清一个容易混的点：guarantee ts <strong>不是</strong>"只读这一个时刻的数据"，而是"<strong>至少</strong>读到这个时刻为止的数据"——它是一条<strong>下界</strong>。配合第 30 课要讲的 <strong>MVCC</strong>（多版本：一次读看到的是 ts ≤ guarantee 的写入、且未被同样 ts 之前的删除抹掉），你就能理解为什么同一份数据、不同一致性级别下，<strong>看到的"版本"会不一样</strong>。本课先把"Proxy 在入口处算出这个 ts"这件事记牢即可。</p>
+
+<p>再补两句 <strong>Session</strong> 与 <strong>Customized</strong>，它们不在上面那段 <span class="inline">switch</span> 的三个分支里、而是走另一条路给出 ts。<strong>Session（会话一致）</strong>解决的是"<strong>读到我自己刚写的</strong>"这个最常见诉求：客户端会<strong>记住自己最近一次写入的时间戳</strong>，把它作为 guarantee ts 带进读请求，于是"写完立刻搜"一定能搜到自己那条——但不保证看到<strong>别人</strong>此刻的写入。<strong>Customized（自定义）</strong>则把这个旋钮<strong>完全交给调用方</strong>：你自己算一个 ts 传进来，系统照此等待。理解了这四到五个级别，你就握住了 Milvus 给应用层的那个核心权衡——<strong>读得多新、和答得多快，是同一条标尺上的两端，由你按业务来滑</strong>。这也是为什么默认级别是 <strong>Bounded</strong>：它把"陈旧窗口"限制在几秒内、绝大多数场景都够新，却换来了远比 Strong 稳定的低延迟。</p>
+
+<h2>把代码主干认出来</h2>
+<p>不必读懂 <span class="mono">task_search.go</span> 的每一行，但要能<strong>认出它的三段式骨架</strong>。下面是高度简化的示意——把上面五步对到方法名上：</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/proxy/task_search.go</span><span class="ln">searchTask 的三段式骨架（高度简化示意）</span></div>
+  <pre><span class="kw">type</span> <span class="nb">searchTask</span> <span class="kw">struct</span> { <span class="cm">/* request、plan、guarantee ts、结果 … */</span> }
+
+<span class="cm">// ① 解析 + 建 plan + 定 guarantee ts</span>
+<span class="kw">func</span> (t *searchTask) <span class="fn">PreExecute</span>(ctx) error {
+    <span class="cm">// 校验请求、解析向量字段 / topK / 度量 / 过滤表达式</span>
+    <span class="cm">// 把布尔过滤编译成 planpb.PlanNode（ANN 节点 + 标量谓词）</span>
+    t.GuaranteeTs = <span class="fn">parseGuaranteeTsFromConsistency</span>(ts, tMax, consistencyLevel)
+}
+<span class="cm">// ② 扇出到各分片的 delegator</span>
+<span class="kw">func</span> (t *searchTask) <span class="fn">Execute</span>(ctx) error {
+    <span class="cm">// 按负载均衡把 plan + guaranteeTs 并发发往每个分片</span>
+    <span class="cm">//   → t.searchShard(ctx, nodeID, queryNode, channel)</span>
+}
+<span class="cm">// ③ 跨分片归并出全局 topK（细节见第 29 课）</span>
+<span class="kw">func</span> (t *searchTask) <span class="fn">PostExecute</span>(ctx) error { <span class="cm">/* reduce */</span> }</pre>
+</div>
+
+<p>这套 <strong>PreExecute / Execute / PostExecute</strong> 三段式不是 search 独有的——它是 Proxy 里<strong>所有 task</strong>（insert、query、DDL……）的统一形状（回忆第 10 课的三条任务队列）。把 search 套进这个模板，你只需要记住每段<strong>填了什么</strong>：Pre 段填"plan 与 guarantee ts"，Execute 段填"扇出"，Post 段填"归并"。认出这个骨架，你读任何一个 Proxy task 都会快很多。</p>
+
+<p>顺便对照一下 search 和 <strong>query</strong>（标量查询 / <span class="mono">queryTask</span>）的区别：两者都走三段式、都要扇出到分片、都要 guarantee ts，但 <strong>search 是"按向量相似度取 topK"</strong>（核心是 ANN 检索 + 距离排序），<strong>query 是"按标量条件取出满足的行"</strong>（核心是谓词过滤，没有向量 ANN、没有 topK 距离排序）。理解了 search 这条最复杂的读路径，query 不过是把"向量 ANN 节点"从 plan 里拿掉的简化版。</p>
+
+<p>最后把本课接回主线。我们已经看清 Proxy 把一次搜索<strong>翻译成 plan、定好 guarantee ts、扇出到各分片</strong>——但请求<strong>到了分片之后会发生什么</strong>？那个接住请求的 <strong>delegator（shard leader）</strong>，要同时搜<strong>已封存的 sealed 段</strong>（带索引）和<strong>还在长的 growing 段</strong>（WAL 活跃尾部），还要把活儿继续扇到持有段的 worker QueryNode 上再合并。这正是<strong>下一课（第 26 课）</strong>要走进的世界：QueryNode 与 delegator。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>查询链路开篇</strong>：search 是写入链路的镜像，本课站在 Proxy 入口看，一路会下钻到 C++ segcore（第 27 课）。</li>
+    <li><strong>searchTask 三段式</strong>（<span class="mono">internal/proxy/task_search.go</span>）：PreExecute 解析+建 plan+定 guarantee ts；Execute 扇出；PostExecute 归并。</li>
+    <li><strong>检索计划（plan）</strong>：把布尔过滤编译成 <span class="inline">planpb.PlanNode</span>＝向量 ANN 节点（字段+度量+topK）＋标量谓词子树。</li>
+    <li><strong>guarantee ts</strong>：由一致性级别经 <span class="inline">parseGuaranteeTsFromConsistency</span>（<span class="mono">util.go</span>）算出——Strong→tMax，Bounded→tMax−gracefulTime，Eventually→1。</li>
+    <li><strong>两层扇出</strong>：Proxy 扇到分片（delegator），分片再扇到段（第 26 课）；归并也分层（三级 reduce，第 29 课）。</li>
+    <li><strong>Proxy 不碰向量数据</strong>：只做翻译 + 调度 + 归并，真正搜段在 QueryNode / segcore。</li>
+  </ul>
+</div>
+""",
+    "en": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Part 4 walked the whole life of a <strong>write</strong>: data flows from the SDK through the Proxy, into the WAL, settles into segments, gets indexed. From this lesson we walk the <strong>other road</strong> — the <strong>query path</strong>: how a <span class="inline">search</span> leaves the SDK, gets translated and scheduled by the Proxy, fans out across shards, and is reduced into a topK to return.
+This part is the <strong>mirror</strong> of the write path, and it descends all the way into the C++ <strong>segcore</strong> (Lesson 27). This lesson stands at the <strong>entrance</strong>: what exactly does the <strong>Proxy side</strong> do for one search. Master this entry layer and you hold a "<strong>table of contents for the whole read path</strong>" — every later lesson (delegator, segcore, execution engine, reduce, consistency) fills in one stage this lesson names.
+</p>
+
+<div class="card analogy">
+  <div class="tag">📮 Analogy</div>
+  You walk up to the <strong>front desk of a chain library</strong> and say, "find me a few books most like this one." The desk clerk (the <strong>Proxy</strong>) does five things in order:
+  <strong>① understand the request</strong> — by what measure is "alike" (the metric), how many (topK), any extra condition ("only published after 2020" = a scalar filter);
+  <strong>② write a standard search slip</strong> — translate the spoken request into a form every branch understands (the search plan);
+  <strong>③ fix a point-in-time snapshot</strong> — do you want "<strong>absolutely latest</strong>" (counting books just returned, not yet shelved) or "<strong>slightly older but faster</strong>"? That is the <strong>guarantee timestamp</strong> set by the consistency level;
+  <strong>④ hand the slip to each branch</strong> (shard / delegator), each finds its own most-alike few (scatter);
+  <strong>⑤ collate and rank</strong> — merge what all branches return, sort, take the most-alike few for you (reduce).
+  The desk itself <strong>never touches a shelf</strong>; it only "<strong>understands, translates, snapshots, dispatches, merges</strong>." That is exactly the Proxy's role in a search.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 The big picture</div>
+  On the Proxy side a <span class="inline">search</span> is wrapped into a <strong>searchTask</strong> (<span class="mono">internal/proxy/task_search.go</span>) following a <strong>PreExecute → Execute → PostExecute</strong> three-stage shape: <strong>PreExecute</strong> validates and parses the request, compiles the boolean filter into a <strong>search plan</strong> (vector field + metric + topK + scalar filter), and derives the <strong>guarantee timestamp</strong> from the <strong>consistency level</strong> (<span class="inline">parseGuaranteeTsFromConsistency</span>, <span class="mono">internal/proxy/util.go</span>); <strong>Execute</strong> <strong>scatters</strong> the request across the collection's shards (each vchannel's <strong>delegator</strong>); <strong>PostExecute</strong> <strong>reduces</strong> across shards into the final topK. The Proxy only does "<strong>translate + schedule + merge</strong>"; the actual segment search lives in the QueryNode (Lesson 26) and segcore (Lesson 27).
+</div>
+
+<p>Before diving in, it helps to see the <strong>mirror</strong> against the write path concretely. On a <strong>write</strong>, the Proxy splits a batch of rows by vchannel and appends them to the WAL — a <strong>scatter that writes</strong>. On a <strong>read</strong>, the Proxy sends one query to every shard and merges what comes back — a <strong>scatter that gathers</strong>. Both pivot on the same two ideas introduced back in Lesson 3: <strong>sharding by vchannel</strong> (which shards to touch) and <strong>timestamps</strong> (a write stamps its data; a read carries a guarantee ts). If you remember Part 4's write path, you already know the <strong>shape</strong> of the read path — this part just fills in the read-specific organs: the plan, the delegator, segcore, reduce, and consistency.</p>
+
+<h2>Five steps on the Proxy side of a search</h2>
+<p>Map those five desk-clerk chores onto code and you get the backbone of <span class="mono">searchTask</span>. This vertical flow lays it out step by step:</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Parse the request</h4><p>From the <span class="inline">SearchRequest</span> pull out: target collection / partitions, the vector field, <strong>topK</strong>, <strong>metric type</strong> (L2/IP/COSINE), the query vectors (placeholder group), the boolean <strong>filter expression</strong> (e.g. <span class="mono">year &gt; 2020</span>), and the <strong>consistency level</strong>. Validation and field parsing happen in <span class="inline">PreExecute</span>.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Build the search plan</h4><p>Compile the filter into a <strong><span class="inline">planpb.PlanNode</span></strong>: a plan tree with a <strong>vector ANN node</strong> (field + metric + topK) and a <strong>scalar predicate subtree</strong>. This "search slip" travels with the request to the shards and is executed once it reaches segcore (the execution engine is detailed in Lesson 28).</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Fix the guarantee timestamp</h4><p>By <strong>consistency level</strong>, call <span class="inline">parseGuaranteeTsFromConsistency</span> to compute the "<strong>snapshot</strong>" this read requires: Strong→see the latest, Eventually→just be fast, Bounded→tolerate a little staleness. This ts decides how <strong>up-to-date</strong> the QueryNode must be before it answers (MVCC in Lesson 30).</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Scatter to shards</h4><p>A collection's data is split by <strong>vchannel</strong> into <strong>shards</strong>, each owned by a <strong>delegator (shard leader)</strong>. <span class="inline">Execute</span>, via a load-balancing policy, sends "plan + guarantee ts" concurrently to each shard's delegator (<span class="inline">searchShard</span>).</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>Reduce across shards</h4><p>Each shard returns "<strong>its own topK</strong>." <span class="inline">PostExecute</span> merges these <strong>local topKs</strong>, <strong>re-sorts by distance, dedups by primary key</strong>, and takes the <strong>global topK</strong> back to the SDK. The cross-shard reduce details are saved for Lesson 29.</p></div></div>
+</div>
+
+<p>Among these five steps, step 1's "<strong>metric</strong>" deserves a second look. Recall Lessons 4 and 22: a vector's "alikeness" is defined by a metric (<strong>L2</strong> smaller is closer; <strong>IP/COSINE</strong> larger/more-aligned is closer), and <strong>the metric used for search must match the one used at index build and field declaration</strong>. While parsing, the Proxy reads the metric specified for this search and checks it against the field/index — an unglamorous gate that nonetheless blocks the most insidious class of vector-search bugs (a wrong metric makes results "<strong>systematically off, yet raises no error</strong>"). So think of the Proxy's "parse" as not merely "<strong>reading out parameters</strong>" but also a layer of "<strong>legality and consistency gatekeeping</strong>": does the field exist, is the vector dimension right, does the metric fit, is topK within limits, can the expression compile — if any is invalid, the request is bounced back to the SDK <strong>before any fan-out</strong>, rather than wasting a whole round of distributed search.</p>
+
+<p>Chained together, the Proxy's role is crystal clear: it is a "<strong>translator + dispatcher + cashier</strong>." Translate (compile a human filter into a plan tree), dispatch (decide which shards to hit with which snapshot), cash up (collate scattered results into one answer) — and <strong>none of the three touches the actual vector data</strong>. This matches Lesson 10's framing of the Proxy as a "stateless gateway that fans out and reduces"; search merely lands that fan-out/reduce picture on the <strong>read path</strong>.</p>
+
+<p>A bit more on step 2's <strong>search plan</strong>, since it is something the write path entirely lacks and the read path uniquely needs. The filter the SDK sends is a <strong>string expression</strong> (e.g. <span class="mono">color == "red" &amp;&amp; year &gt; 2020</span>) — human-readable, but not directly executable by a machine. The Proxy <strong>parses it into an expression tree</strong> and combines it with the main "vector ANN search" task into a complete <span class="inline">planpb.PlanNode</span>: at the top a <strong>vector-search node</strong> (which vector field, which metric, how large a topK) under which hangs a <strong>scalar predicate subtree</strong> (the <span class="mono">color/year</span> conditions compiled into efficiently-executable checks). This plan is <strong>passed down verbatim</strong> with the request to every shard and segment, finally run inside the C++ execution engine — "<strong>narrow the candidate rows by the predicate first, then do ANN over the filtered subset</strong>" (this filter-then-search execution detail is the subject of Lesson 28). At this step the Proxy only <strong>compiles the plan</strong>; it does not execute it.</p>
+
+<p>One more detail worth naming: a single search request <strong>may carry multiple query vectors</strong> — this is <strong>nq</strong> (number of queries), packed into one <span class="inline">placeholder group</span>. <span class="mono">searchTask</span> validates its size at the <span class="inline">checkNq</span> step. The meaning of nq is "<strong>batch N similarity searches in one round trip</strong>": each query vector wants its own topK, and after fan-out segcore computes and takes a topK for each query vector separately, with the merge also <strong>grouped</strong> per query vector. Grasping nq keeps you from conflating "topK=10" with "nq=5" — the former is "how many answers per question," the latter is "how many questions at once," and the final result is a table of <strong>nq × topK</strong>.</p>
+
+<h2>What the Proxy "does" and "does not do" in a search</h2>
+<p>Beginners most easily imagine the Proxy as "the search engine itself." Quite the opposite — it is a <strong>stateless coordination layer</strong> holding neither vector data nor indexes. Drawing its "<strong>responsibility boundary</strong>" clearly keeps the whole query path from getting muddled in your head:</p>
+
+<div class="cols">
+  <div class="col"><h4>✅ The Proxy does</h4><p>Validate and authenticate, <strong>compile the filter into a plan</strong>, <strong>compute guarantee ts</strong> from the consistency level, <strong>load-balance</strong> to pick QueryNodes, <strong>scatter</strong> the request to shards, <strong>reduce across shards</strong> into the final topK, truncate by offset/limit and return to the SDK. In one line: <strong>translate, schedule, merge</strong>.</p></div>
+  <div class="col"><h4>❌ The Proxy does not</h4><p>Hold vector data, hold indexes, or <strong>compute distances in its own process</strong>; decide "which QueryNode owns a segment" (that is QueryCoord's job, Lesson 13); execute the plan (the plan runs only once it reaches segcore, Lesson 28); wait for data to catch up ("wait until guarantee ts" happens on the QueryNode, Lesson 30).</p></div>
+</div>
+
+<p>Why does this boundary matter? Because it embodies Milvus's "<strong>separation of compute and coordination</strong>": the Proxy can <strong>scale out statelessly</strong> (run as many as you like, lose no data if one dies) precisely because it <strong>stores nothing</strong>; the genuinely expensive work — "<strong>holding indexes and computing vector distances in memory</strong>" — is pushed onto QueryNodes that <strong>scale horizontally by segment</strong>. Separating "<strong>who stores data, who computes distances, who only coordinates</strong>" is the prerequisite for understanding Lessons 26 and 27 — and a design choice shared by nearly every distributed search system: keep the coordination layer light, the compute layer heavy, each scaling independently.</p>
+
+<h2>How data flows: from SDK to result</h2>
+<p>From another angle, draw "who hands the request to whom" as a horizontal data flow. Note the highlighted cell in the middle — the star of this lesson, <span class="inline">searchTask</span>:</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">SDK</div><div class="nd">Search RPC<br>vectors+topK+expr</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">Proxy · searchTask</div><div class="nd">parse→plan→guarantee-ts</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">delegator A</div><div class="nd">shard 1 local topK</div></div>
+  <div class="arrow">＋</div>
+  <div class="node"><div class="nt">delegator B</div><div class="nd">shard 2 local topK</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">reduce</div><div class="nd">merge into global topK</div></div>
+</div>
+
+<p>This flow has two "<strong>one-to-many</strong>" spread points, the key to understanding distributed search. The first is at <strong>Proxy → delegator</strong>: a collection is cut into several shards and the request must hit each shard <strong>simultaneously</strong> (scatter). The second is inside each delegator: it further fans the search out to the several segments and worker QueryNodes it manages (that is Lesson 26's content).
+So a search is a <strong>two-level fan-out</strong>: Proxy to shards, shard to segments. Correspondingly the merge is also <strong>layered</strong>: topK within a segment, merge within a node, then a cross-shard merge on the Proxy — this "<strong>three-level reduce</strong>" is covered systematically in Lesson 29. For this lesson, just remember the <strong>outermost</strong> pair: Proxy fans out, Proxy reduces.</p>
+
+<p>Why must the fan-out be <strong>concurrent</strong> rather than asking one shard at a time? Because a search's latency is set by the <strong>slowest shard</strong>, not the sum of all shards. Querying N shards serially makes total latency ≈ N × per-shard latency; with concurrent fan-out, total latency ≈ per-shard latency + a little merge overhead. This is the fundamental trick of distributed search — "<strong>parallelism for low latency</strong>": cut one big problem into <strong>mutually-independent small problems</strong>, solve them at once, then stitch the answers. And precisely because shards are <strong>independent</strong> (each looks only at its own slice of data), the fan-out can safely go concurrent — this "<strong>data sharding + shared-nothing parallelism</strong>" structure is the root reason Milvus scales read throughput horizontally: more shards, each smaller and faster, so adding machines linearly lifts overall capacity.</p>
+
+<h2>Consistency level → guarantee timestamp</h2>
+<p>Step three, "<strong>fix the snapshot</strong>," deserves its own section, because it is the dial Milvus gives users between <strong>"how fresh you see" vs "how fast you answer."</strong> Recall Lesson 11's <strong>TSO global clock</strong>: every write carries a globally monotonic timestamp. A read carries a <strong>guarantee timestamp</strong> meaning "<strong>I must at least see every write with ts ≤ guarantee</strong>." <span class="inline">parseGuaranteeTsFromConsistency</span> translates the abstract <strong>consistency level</strong> into that concrete ts:</p>
+
+<table class="t">
+  <tr><th>Consistency level</th><th>guarantee ts value</th><th>Meaning / tradeoff</th></tr>
+  <tr><td><strong>Strong</strong></td><td><span class="inline">tMax</span> (the latest)</td><td>must see <strong>all</strong> writes up to now; strongest consistency, but may have to <strong>wait for data to catch up</strong>, highest latency</td></tr>
+  <tr><td><strong>Bounded</strong></td><td><span class="inline">tMax − gracefulTime</span></td><td>tolerate a <strong>bounded</strong> staleness window (a few seconds by default) for steadier low latency (the common default)</td></tr>
+  <tr><td><strong>Eventually</strong></td><td><span class="inline">1</span> (a tiny value)</td><td>wait for nothing, <strong>as fast as possible</strong>; may read a slightly stale snapshot, eventually consistent</td></tr>
+  <tr><td><strong>Session</strong> / <strong>Customized</strong></td><td>session- / user-supplied ts</td><td>Session: guarantees you read <strong>your own just-written</strong> data; Customized: the caller <strong>brings its own</strong> guarantee ts</td></tr>
+</table>
+
+<p>Reading the table needs only one axis: <strong>the larger the guarantee ts (closer to tMax), the fresher the data you see but the more likely you wait; the smaller, the faster you answer but the staler it may be.</strong>
+The implementation of <span class="inline">parseGuaranteeTsFromConsistency</span> says exactly this — <strong>Strong</strong> sets ts to <span class="inline">tMax</span>, <strong>Bounded</strong> subtracts a configured <span class="inline">gracefulTime</span> from <span class="inline">tMax</span>, and <strong>Eventually</strong> sets it to <span class="inline">1</span> (waits for almost nothing). At this step the Proxy merely <strong>computes</strong> the ts and stuffs it into the request sent to shards; the actual act of "<strong>wait until data catches up to guarantee ts before answering</strong>" happens on the QueryNode side (Lesson 30 shows how it compares its consumed WAL progress / TimeTick against guarantee ts and <strong>waits</strong> if not fresh enough). This "<strong>consistency level → guarantee ts → wait</strong>" chain is the through-line Part 6 keeps returning to.</p>
+
+<p>One easily-confused point to clear up: the guarantee ts is <strong>not</strong> "read only the data at this one instant" but "read <strong>at least</strong> the data up to this instant" — it is a <strong>lower bound</strong>. Together with Lesson 30's <strong>MVCC</strong> (multi-version: a read sees writes with ts ≤ guarantee, not erased by deletes with ts before it), you can see why the same data, under different consistency levels, shows a <strong>different "version."</strong> For now just nail down that the Proxy computes this ts at the entrance.</p>
+
+<p>Two more words on <strong>Session</strong> and <strong>Customized</strong>, which are not among the three branches of the <span class="inline">switch</span> above but get their ts by another route. <strong>Session</strong> solves the most common need, "<strong>read my own just-written data</strong>": the client <strong>remembers the timestamp of its most recent write</strong> and carries it as the guarantee ts on a read, so "search right after writing" is guaranteed to find your own row — though it does not promise to see <strong>others'</strong> writes at this moment. <strong>Customized</strong> hands the dial <strong>entirely to the caller</strong>: you compute a ts yourself and pass it in, and the system waits accordingly. Understanding these four-to-five levels gives you the core tradeoff Milvus exposes to the application layer — <strong>how fresh you read and how fast you answer are two ends of one ruler, and you slide it by your business needs</strong>. That is also why the default level is <strong>Bounded</strong>: it caps the staleness window to a few seconds — fresh enough for the vast majority of cases — while buying far steadier low latency than Strong.</p>
+
+<h2>Recognize the code backbone</h2>
+<p>You needn't read every line of <span class="mono">task_search.go</span>, but you should <strong>recognize its three-stage skeleton</strong>. Here is a heavily simplified sketch — mapping the five steps above onto method names:</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/proxy/task_search.go</span><span class="ln">searchTask three-stage skeleton (heavily simplified)</span></div>
+  <pre><span class="kw">type</span> <span class="nb">searchTask</span> <span class="kw">struct</span> { <span class="cm">/* request, plan, guarantee ts, results … */</span> }
+
+<span class="cm">// (1) parse + build plan + fix guarantee ts</span>
+<span class="kw">func</span> (t *searchTask) <span class="fn">PreExecute</span>(ctx) error {
+    <span class="cm">// validate request; parse vector field / topK / metric / filter expr</span>
+    <span class="cm">// compile the boolean filter into a planpb.PlanNode (ANN node + scalar predicate)</span>
+    t.GuaranteeTs = <span class="fn">parseGuaranteeTsFromConsistency</span>(ts, tMax, consistencyLevel)
+}
+<span class="cm">// (2) scatter to each shard's delegator</span>
+<span class="kw">func</span> (t *searchTask) <span class="fn">Execute</span>(ctx) error {
+    <span class="cm">// load-balance the plan + guaranteeTs concurrently to every shard</span>
+    <span class="cm">//   → t.searchShard(ctx, nodeID, queryNode, channel)</span>
+}
+<span class="cm">// (3) reduce across shards into the global topK (details in Lesson 29)</span>
+<span class="kw">func</span> (t *searchTask) <span class="fn">PostExecute</span>(ctx) error { <span class="cm">/* reduce */</span> }</pre>
+</div>
+
+<p>This <strong>PreExecute / Execute / PostExecute</strong> three-stage shape is not unique to search — it is the uniform shape of <strong>every</strong> Proxy task (insert, query, DDL…) (recall Lesson 10's three task queues). Fit search into the template and you only need to remember <strong>what each stage fills in</strong>: Pre fills "plan and guarantee ts," Execute fills "scatter," Post fills "reduce." Recognize this skeleton and you'll read any Proxy task far faster.</p>
+
+<p>For contrast, compare search with <strong>query</strong> (scalar query / <span class="mono">queryTask</span>): both follow the three stages, both scatter to shards, both carry a guarantee ts — but <strong>search "takes a topK by vector similarity"</strong> (its core is ANN search + distance sorting), whereas <strong>query "fetches rows satisfying a scalar condition"</strong> (its core is predicate filtering, with no vector ANN and no topK distance sort). Once you understand search, the most complex read path, query is just the simplified version with the "vector ANN node" removed from the plan.</p>
+
+<p>Finally, tie this lesson back to the through-line. We have seen the Proxy <strong>translate a search into a plan, fix the guarantee ts, and scatter to shards</strong> — but <strong>what happens once the request reaches a shard</strong>? The <strong>delegator (shard leader)</strong> that catches the request must search both the <strong>sealed segments</strong> (with their indexes) and the <strong>growing segments</strong> (the live tail of the WAL), and further fan the work out to worker QueryNodes holding segments before merging. That is exactly the world the <strong>next lesson (Lesson 26)</strong> steps into: the QueryNode and the delegator.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Query path begins</strong>: search mirrors the write path; this lesson stands at the Proxy entrance and will descend into C++ segcore (Lesson 27).</li>
+    <li><strong>searchTask three stages</strong> (<span class="mono">internal/proxy/task_search.go</span>): PreExecute parses + builds plan + fixes guarantee ts; Execute scatters; PostExecute reduces.</li>
+    <li><strong>Search plan</strong>: compile the boolean filter into a <span class="inline">planpb.PlanNode</span> = vector ANN node (field+metric+topK) + scalar predicate subtree.</li>
+    <li><strong>guarantee ts</strong>: derived from the consistency level via <span class="inline">parseGuaranteeTsFromConsistency</span> (<span class="mono">util.go</span>) — Strong→tMax, Bounded→tMax−gracefulTime, Eventually→1.</li>
+    <li><strong>Two-level fan-out</strong>: Proxy to shards (delegators), shard to segments (Lesson 26); the merge is layered too (three-level reduce, Lesson 29).</li>
+    <li><strong>Proxy never touches vectors</strong>: only translate + schedule + merge; the real segment search is in the QueryNode / segcore.</li>
+  </ul>
+</div>
+""",
+}
+
+LESSON_26 = {
+    "zh": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+上一课，Proxy 把一次搜索<strong>翻译成 plan、定好 guarantee ts、扇出到各个分片</strong>。可"分片"接住请求的那一刻，故事才真正进入<strong>检索引擎</strong>的地界。每个分片的<strong>接收者</strong>，是一个跑在 QueryNode 上的特殊角色——<strong>delegator（shard leader，分片首领）</strong>。
+这一课就走进 delegator：它如何同时照顾<strong>两类段</strong>（封存好的 sealed 段、还在长的 growing 段），如何把搜索<strong>再扇出</strong>到持有段的 worker QueryNode、再把结果合并，以及它怎么靠<strong>消费 WAL 尾部</strong>让"刚写进来的数据"也能被搜到。
+如果说第 25 课的 Proxy 是"<strong>把请求送到门口的快递</strong>"，那么 delegator 就是"<strong>分拣中心的现场主管</strong>"：它不亲自把每件货搬来搬去，而是清楚每件货在哪、该派谁去取、取回来怎么并成一份，并且时刻盯着"<strong>最新到的货有没有都算进来</strong>"。把这一层看懂，你就握住了 Milvus 读路径里<strong>最核心的协调者</strong>。
+</p>
+
+<div class="card analogy">
+  <div class="tag">📚 生活类比</div>
+  把一个分片想成一个<strong>城市片区的图书调度台</strong>，delegator 就是这个片区的<strong>调度主管</strong>。片区里的书分两种存法：
+  <strong>① 已编目入库的旧书</strong>——它们整整齐齐躺在片区里<strong>好几座分馆</strong>（worker QueryNode）的书架上，每本都进了<strong>检索目录</strong>（索引），查起来又快又准（这是 <strong>sealed 段</strong>）；
+  <strong>② 今天刚到、还没编目的新书</strong>——它们堆在调度台<strong>自己手边的"新到推车"</strong>上，还没进目录，但因为就在手边、数量也少，<strong>一本本翻一遍</strong>也快（这是 <strong>growing 段</strong>，靠每天的<strong>送货车</strong>＝WAL 尾部不断补货）。
+  来了一个"找最像的几本"的请求，调度主管要做三件事：<strong>把请求分发给各分馆</strong>各自在目录里查（扇出到 worker），<strong>自己顺手翻一遍新到推车</strong>（本地搜 growing），最后<strong>把分馆和推车的结果合在一起</strong>排个序交上去（节点内归并）。少看任何一边，答案都不完整——<strong>旧书新书都得查</strong>，这正是 delegator 存在的全部理由。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  一个 vchannel（分片）在副本内由一个 QueryNode 担任 <strong>shard leader</strong>，其上运行 <strong>delegator</strong>（<span class="mono">internal/querynodev2/delegator/delegator.go</span> 的 <span class="inline">ShardDelegator</span> 接口 / <span class="inline">shardDelegator</span>）。它是该分片所有读的入口，必须给出一个<strong>完整且新鲜</strong>的答案，因此要同时覆盖：<strong>sealed 段</strong>（已封存、带 Knowhere 索引，由 QueryCoord 安排加载、<strong>分布</strong>到副本内多个 worker QueryNode 上）与 <strong>growing 段</strong>（delegator 自己<strong>消费 WAL 尾部</strong>维护的、尚未封存的最新数据）。一次 <span class="inline">Search</span> 里，delegator 取一份段快照（<span class="inline">GetSegmentInfo</span> → sealed + growing），把 sealed 检索<strong>扇出</strong>到各 worker、growing 在本地搜，再把两边的部分结果<strong>节点内归并</strong>后返回 Proxy。它还维护一个 <strong>tsafe</strong>（已消费到的 WAL 进度），不够 guarantee ts 新就<strong>等</strong>（第 30 课）。
+</div>
+
+<h2>delegator 是谁：一个分片的读协调者</h2>
+<p>先把"分片"和"段"的关系理顺。回忆第 7 课：一个 collection 的数据按 <strong>vchannel</strong> 切成若干<strong>分片</strong>，每个分片里又装着许多<strong>段（segment）</strong>。再回忆第 13 课：<strong>QueryCoord</strong> 负责"<strong>把哪些段、加载到哪些 QueryNode</strong>"，并为每个 vchannel 在副本内指定一个 QueryNode 当 <strong>shard leader</strong>。这个 leader 上跑的就是 <strong>delegator</strong>——它是该分片<strong>对外的唯一读入口</strong>，Proxy 扇出过来的请求就落在它身上。</p>
+
+<p>关键在于：delegator <strong>本身不一定持有该分片所有段的数据</strong>。为了弹性与负载均衡，QueryCoord 会把这个分片的 sealed 段<strong>分散加载</strong>到副本内的<strong>多个 QueryNode（worker）</strong>上——可能有些段在 leader 自己身上，更多段在别的 worker 上。delegator 维护一张<strong>分布表（distribution）</strong>，记着"<strong>哪个段此刻在哪个 worker</strong>"。于是 delegator 的角色更像一个"<strong>知道货在谁手里的调度员</strong>"：它不亲自扛下所有段，而是<strong>把检索请求路由到持有对应段的 worker</strong>，再收集合并。这正是 Milvus 读路径能<strong>水平扩展</strong>的地方——段越多，摊到的 worker 越多，单 worker 的负担越轻，加机器就能提升整体检索吞吐。</p>
+
+<p>这里要补一个第 13 课埋下的概念：<strong>副本（replica）</strong>。为了高可用与更高吞吐，一个 collection 可以被加载<strong>多份</strong>，每一份叫一个副本；每个副本都是一套"<strong>能独立答全量数据</strong>"的 QueryNode 班子。delegator 说的"把段分布到多个 worker"，指的就是<strong>在同一个副本内部</strong>把段摊开。于是同一个分片，在不同副本里各有一个自己的 leader 与一套 worker。好处有二：其一，<strong>多副本分担读流量</strong>，请求可以被负载均衡到不同副本，吞吐随副本数增长；其二，<strong>容错</strong>——某个 worker 甚至某个副本出问题，别的副本仍能答得上来。把"<strong>分片（按数据切）</strong>"和"<strong>副本（按可用性复制）</strong>"这两个正交维度分清楚，你就理解了 Milvus 读侧扩展性的两条腿：分片让单次检索<strong>并行变快</strong>，副本让整体吞吐<strong>叠加变高</strong>、并带来冗余。delegator 始终是"<strong>某副本里某分片</strong>"这个交点上的那个协调者。</p>
+
+<h2>两类段：sealed（带索引）与 growing（WAL 尾部）</h2>
+<p>delegator 要给一个<strong>完整</strong>的答案，就必须同时搜两类段。它们一冷一热、一稳一新，差别正好成一对：</p>
+
+<div class="cols">
+  <div class="col"><h4>🧊 sealed 段（封存 · 带索引）</h4><p>已经<strong>封存、不再变化</strong>的段，建好了 <strong>Knowhere 向量索引</strong>（第 22 课），由 QueryCoord 安排从对象存储<strong>加载</strong>进内存、并<strong>分布</strong>到副本内多个 worker（第 23 课）。检索时走<strong>索引</strong>（HNSW/IVF…），<strong>又快又准</strong>。它们是数据的"<strong>主体</strong>"——大、稳、可被索引加速、可被水平摊开。</p></div>
+  <div class="col"><h4>🔥 growing 段（在长 · 无索引）</h4><p>还在<strong>持续接收新插入</strong>、尚未封存的段，<strong>没有索引</strong>。delegator <strong>自己消费该 vchannel 的 WAL 尾部</strong>（<span class="inline">ProcessInsert</span> / <span class="inline">ProcessDelete</span>），把刚写入的行维护成 growing 段。检索时只能<strong>暴力逐条算</strong>（第 27 课详述），但因为它小、就在本地，开销可控——它保证了"<strong>刚写完就能搜到</strong>"的新鲜度。</p></div>
+</div>
+
+<p>为什么非要<strong>分成两类</strong>、而不能统一处理？因为<strong>"新鲜"和"高效"是一对天然矛盾</strong>。索引（尤其图索引）<strong>建起来很贵</strong>、且建好后不便频繁改动，所以它只适合给"<strong>已经定型、不再变</strong>"的 sealed 段用；而刚写进来的数据<strong>每时每刻都在变</strong>，根本来不及建索引。Milvus 的解法就是"<strong>分而治之</strong>"：把<strong>稳定的大头</strong>交给索引（sealed，快），把<strong>易变的小尾巴</strong>交给暴力扫描（growing，新），两边结果一合并，就同时拿到了"<strong>快</strong>"和"<strong>新</strong>"。这其实是第 7 课"<strong>日志即数据 / LSM 思路</strong>"在读路径上的回响——新数据先在内存里以可变形态服务，攒够了再<strong>封存 + 建索引</strong>沉淀为高效的不可变主体。随着 growing 段不断被 flush、compaction（第 17、19 课）转成 sealed，"新尾巴"会持续变成"旧主体"，而 delegator 始终把<strong>两边的当前快照</strong>拼成一个完整视图。</p>
+
+<p>这里有个微妙却关键的问题：当一个 growing 段被封存、又作为 sealed 段被加载进来时，会不会<strong>被数到两次</strong>（一次当 growing、一次当 sealed），让结果重复？delegator 必须处理这种"<strong>交接（handoff）</strong>"。它的办法是维护一份"<strong>排除名单</strong>"——一个段一旦以 sealed 形态就绪、可被检索，它对应的 growing 形态就要<strong>从可读快照里排除掉</strong>，反之亦然，确保<strong>同一份数据在某一时刻只被一类段代表</strong>。再加上归并阶段<strong>按主键去重</strong>这道保险，delegator 才能在"数据形态不断从 growing 流向 sealed"的过程中，始终给出<strong>不重不漏</strong>的结果。理解这一点，你就明白 delegator 不只是个"分发+合并"的简单路由器，它还在<strong>维护一个随时间推移、段不断换形态的一致视图</strong>——这是它作为 shard leader 最不显眼、却最不能出错的职责。</p>
+
+<h2>一次分片内检索：扇出到 worker，再归并</h2>
+<p>把 delegator 处理一次 <span class="inline">Search</span> 的内部动作摆开，就是"<strong>取快照 → 分组扇出 → 本地搜 growing → 节点内归并</strong>"这一串：</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">delegator</div><div class="nd">取段快照<br>sealed+growing</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">worker QN-1</div><div class="nd">搜它持有的<br>sealed 段(索引)</div></div>
+  <div class="arrow">＋</div>
+  <div class="node"><div class="nt">worker QN-2</div><div class="nd">搜它持有的<br>sealed 段(索引)</div></div>
+  <div class="arrow">＋</div>
+  <div class="node"><div class="nt">本地 growing</div><div class="nd">暴力搜<br>WAL 尾部</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">节点内归并</div><div class="nd">合成本分片<br>局部 topK</div></div>
+</div>
+
+<p>逐步看：delegator 先调 <span class="inline">GetSegmentInfo(readable)</span> 拿到一份<strong>当前可读段的快照</strong>——返回 <span class="inline">sealed</span>（按 worker 分好组）与 <span class="inline">growing</span> 两份清单。然后它<strong>按"段在谁手上"把检索子任务分组</strong>（<span class="inline">organizeSubTask</span>）：在 worker A 上的那批段，打包成一个子请求发给 A；在 worker B 上的发给 B；growing 段就在 delegator <strong>本地</strong>搜。各 worker 各自在自己内存里的段上跑 segcore 检索（下一课），把<strong>各自的局部 topK</strong> 回传。delegator 收齐后，把"<strong>各 worker 的结果 + 本地 growing 的结果</strong>"做一次<strong>节点内归并</strong>（按距离排序、按主键去重、取 topK），得到<strong>这一个分片的局部 topK</strong>，交回给 Proxy。</p>
+
+<p>看出"<strong>扇出—归并</strong>"又出现了吗？第 25 课说一次 search 是<strong>两层扇出</strong>：Proxy 扇到分片、分片再扇到段。这一课正是<strong>第二层</strong>——delegator 把搜索扇到持有段的各 worker，再做<strong>节点内</strong>归并。于是整条读路径的归并是<strong>三级</strong>的：worker 上<strong>段内</strong>取 topK（segcore，第 27 课）、delegator 做<strong>节点内/分片内</strong>合并（本课）、Proxy 做<strong>跨分片</strong>合并（第 25 课）——这"<strong>三级 reduce</strong>"第 29 课会系统收束。本课你抓住中间这一级即可：<strong>delegator 把一个分片的零散段结果，合成该分片的一份局部 topK</strong>。</p>
+
+<p>为什么要在 delegator 这一层<strong>先合并一次</strong>，而不是把所有 worker 的原始结果一股脑全发回 Proxy？这背后是一个朴素却重要的工程考量：<strong>尽量减少跨网络搬运的数据量</strong>。设想一个分片摊在 5 个 worker 上、每个 worker 各返回 topK 条候选，如果不在节点内先归并，Proxy 就要接收 <strong>5 份</strong>候选再去重排序；而 delegator 先把这 5 份压成<strong>一份</strong> topK，发给 Proxy 的数据量就降到原来的五分之一。把"<strong>能在靠近数据的地方先聚合的，就别留到上游再聚合</strong>"——这正是分布式系统里"<strong>下推聚合 / 局部归并</strong>"的通用智慧，和数据库把过滤、聚合尽量下推到存储层是同一个道理。三级 reduce 的存在，本质就是让每一层都<strong>只把必要的精华往上交</strong>，逐级收窄，而不是把海量原始候选一路背到最顶。</p>
+
+<h2>谁是谁：一张角色对照表</h2>
+<p>delegator 这一层名词较多（leader、worker、副本、sealed、growing、tsafe），用一张表把"<strong>角色 → 是谁 / 在哪 / 干什么</strong>"钉牢：</p>
+
+<table class="t">
+  <tr><th>角色 / 概念</th><th>是谁 / 在哪</th><th>干什么</th></tr>
+  <tr><td><strong>delegator（shard leader）</strong></td><td>某 vchannel 在副本内被指定的那个 QueryNode 上</td><td>该分片读的<strong>唯一入口</strong>：取快照、扇出、归并、维护 tsafe</td></tr>
+  <tr><td><strong>worker QueryNode</strong></td><td>副本内持有 sealed 段的若干 QueryNode</td><td>在<strong>自己内存里的段</strong>上跑 segcore 检索，回传局部结果</td></tr>
+  <tr><td><strong>sealed 段</strong></td><td>分布在各 worker 内存（由 QueryCoord 加载）</td><td>带索引、走索引检索；数据主体，可水平摊开</td></tr>
+  <tr><td><strong>growing 段</strong></td><td>delegator 本地（消费 WAL 尾部得到）</td><td>无索引、暴力搜；保证最新写入可见</td></tr>
+  <tr><td><strong>tsafe</strong></td><td>delegator 维护的一个时间戳</td><td>已消费 WAL 到的进度；&lt; guarantee ts 就等（第 30 课）</td></tr>
+</table>
+
+<p>这张表里藏着 delegator 设计的两条主线。<strong>第一条是"协调 vs 计算"的再次分离</strong>：delegator 只<strong>协调</strong>（路由、归并、维护分布与 tsafe），真正在段上<strong>算距离</strong>的是 worker 上的 segcore——这和第 25 课"Proxy 只协调、不算"是同一种分层思想，只是下沉了一层。<strong>第二条是"新鲜度的责任在 leader"</strong>：sealed 段是别人加载的、稳定的；唯独 growing 这条"<strong>保鲜</strong>"的活，是 delegator 亲自消费 WAL 完成的。这也解释了 leader 为什么特殊——它不只是个调度员，还<strong>背着这个分片"看到最新写入"的责任</strong>。换个角度说：sealed 这一侧的"加载与分布"是 QueryCoord 在<strong>控制面</strong>统筹的（第 13 课），delegator 只是被动地<strong>知道</strong>结果；而 growing 这一侧的"消费与保鲜"则完全是 delegator 在<strong>数据面</strong>主动完成的。一个分片的"全貌"，正是这两股力量——上面控制面安排的稳定主体、与本地数据面追上来的最新尾巴——在 delegator 这个点上<strong>汇合</strong>而成。</p>
+
+<h2>新鲜从哪来：消费 WAL 尾部 + tsafe</h2>
+<p>最后把"<strong>为什么读能看到刚写的</strong>"这件事说透，它正是 Part 6 的主线之一。回忆第 16 课：所有写入都先 Append 进 <strong>WAL</strong>（流式日志）。delegator 作为 shard leader，会<strong>订阅并持续消费</strong>本 vchannel 的 WAL 尾部：每来一条新的 Insert/Delete 消息，它就 <span class="inline">ProcessInsert</span> / <span class="inline">ProcessDelete</span> 把对应改动<strong>反映进 growing 段</strong>。于是"写入落 WAL"和"读能看到"之间，只隔着 delegator 消费 WAL 的这一点点延迟——这就是数据<strong>保鲜</strong>的来源。这也正好呼应第 16 课的主题：WAL 不只是写入的"持久化保险"，它同时是读路径的"<strong>新鲜数据来源</strong>"——同一条流，写的人往里 Append，读这一侧的 delegator 在尾部 Tail，一前一后咬合得很紧。</p>
+
+<p>但"<strong>看得到</strong>"还不够，还要"<strong>看得够新</strong>"。delegator 维护一个 <strong>tsafe</strong>：它表示"<strong>我已经把 WAL 消费到了哪个时间戳</strong>"——意味着 ts ≤ tsafe 的所有写入，我都已反映进可读数据了。第 25 课算出的 <strong>guarantee ts</strong> 这时就派上用场：delegator 收到带 guarantee ts 的 search 后，会比较 <span class="inline">tsafe</span> 与 guarantee ts——若 <span class="inline">tsafe ≥ guaranteeTs</span>，说明该看到的写入都到齐了，立刻检索；若 <span class="inline">tsafe &lt; guaranteeTs</span>（自己还没追上），就<strong>等</strong>，等到 tsafe 追上再答。这一"<strong>等够新再答</strong>"的机制，把第 25 课的一致性级别真正<strong>兑现</strong>了：Strong 取 tMax，delegator 就得等到消费追平最新；Eventually 取极小值，几乎不用等——这正是"读得多新 ↔ 答得多快"那把标尺在<strong>分片这一端</strong>的落地。完整的 MVCC 与等待细节，留到第 30 课收口。</p>
+
+<p>把 delegator 的三重身份收一收，你就抓住了它的全貌：它是<strong>路由器</strong>（知道每个段在哪个 worker、把子任务分发过去）、是<strong>归并器</strong>（把零散结果合成一份局部 topK 再上交）、还是<strong>保鲜员与守门人</strong>（消费 WAL 维护 growing、用 tsafe 兑现一致性）。这三件事缺一不可：少了路由，它就得自己扛下全部段、失去水平扩展；少了归并，上游就被海量原始结果淹没；少了保鲜与守门，读要么看不到新数据、要么读到不该读的旧快照。正因为把这三件事都压在<strong>shard leader 这一个点</strong>上，Milvus 才能让"一个分片的读"既<strong>可扩展</strong>、又<strong>新鲜</strong>、还<strong>一致</strong>——这也是为什么 delegator 是整条查询链路里承上启下的枢纽。</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/querynodev2/delegator/delegator.go</span><span class="ln">ShardDelegator 接口（节选：读 + 段快照 + 数据 + tsafe）</span></div>
+  <pre><span class="kw">type</span> <span class="nb">ShardDelegator</span> <span class="kw">interface</span> {
+    <span class="cm">// 读：一次分片内检索（扇出到 worker + 本地 growing，再归并）</span>
+    <span class="fn">Search</span>(ctx, req *querypb.SearchRequest) ([]*internalpb.SearchResults, error)
+    <span class="cm">// 取当前可读段的快照：sealed（按 worker 分布）+ growing（本地）</span>
+    <span class="fn">GetSegmentInfo</span>(readable bool) (sealed []SnapshotItem, growing []SegmentEntry)
+    <span class="cm">// 数据：消费 WAL 尾部，把新写入反映进 growing 段</span>
+    <span class="fn">ProcessInsert</span>(insertRecords map[int64]*InsertData)
+    <span class="fn">ProcessDelete</span>(deleteData []*DeleteData, ts uint64)
+    <span class="cm">// tsafe：已消费 WAL 的进度；&lt; guarantee ts 则等待（第 30 课）</span>
+    <span class="fn">GetTSafe</span>() uint64
+    <span class="fn">UpdateTSafe</span>(ts uint64)
+    <span class="cm">// … Query / LoadSegments / SyncDistribution 等省略 …</span>
+}</pre>
+</div>
+
+<p>把本课接回主线：delegator 把一个分片的搜索<strong>扇到各 worker、再合成一份局部 topK</strong>——但 worker 拿到子请求后，到底是<strong>怎么在一个段里把最像的几条找出来</strong>的？sealed 段说"走索引"、growing 段说"暴力扫"，这两句话背后，是 Go 通过 <strong>cgo</strong> 调进 <strong>C++ 的 segcore</strong> 引擎。<strong>下一课（第 27 课）</strong>就跨过这道 Go↔C++ 的边界，走进单个段内部的检索。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>delegator = 分片读入口</strong>：某 vchannel 在副本内被指定的 shard leader（<span class="mono">delegator.go</span> 的 <span class="inline">ShardDelegator</span>），承接 Proxy 扇出过来的读。</li>
+    <li><strong>两类段都要搜</strong>：sealed（封存·带 Knowhere 索引·分布在多 worker·走索引）＋ growing（在长·无索引·本地·暴力），合并才完整。</li>
+    <li><strong>分布与扇出</strong>：QueryCoord 把 sealed 段分散加载到副本内多 worker；delegator 维护分布表，按"段在谁手上"扇出子任务（<span class="inline">organizeSubTask</span>）再归并。</li>
+    <li><strong>三级 reduce 的中间一级</strong>：段内 topK（segcore）→ <strong>delegator 节点内合并</strong> → Proxy 跨分片合并（第 29 课收束）。</li>
+    <li><strong>新鲜度来自 WAL</strong>：delegator 消费 vchannel 的 WAL 尾部（<span class="inline">ProcessInsert/Delete</span>）维护 growing，所以刚写就能搜到。</li>
+    <li><strong>tsafe 兑现一致性</strong>：维护已消费进度 tsafe，<span class="inline">tsafe &lt; guaranteeTs</span> 就等到追上再答（第 30 课详解）。</li>
+  </ul>
+</div>
+""",
+    "en": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Last lesson, the Proxy <strong>translated a search into a plan, fixed the guarantee ts, and scattered it across shards</strong>. But the moment a "shard" catches the request, the story truly enters the <strong>search engine's</strong> turf. Each shard's <strong>receiver</strong> is a special role running on a QueryNode — the <strong>delegator (shard leader)</strong>.
+This lesson steps into the delegator: how it tends <strong>two kinds of segments</strong> at once (the sealed segments, settled and indexed; the growing segments, still growing), how it <strong>fans the search out again</strong> to worker QueryNodes holding segments and merges the results, and how it keeps "just-written data" searchable by <strong>consuming the tail of the WAL</strong>.
+If Lesson 25's Proxy is "<strong>the courier that brings the request to the door</strong>," the delegator is "<strong>the floor supervisor of a sorting center</strong>": it doesn't haul each item itself but knows where every item is, who to send to fetch it, how to combine what comes back into one batch, and keeps an eye on "<strong>whether the newest arrivals are all counted in</strong>." Understand this layer and you hold the <strong>most central coordinator</strong> on Milvus's read path.
+</p>
+
+<div class="card analogy">
+  <div class="tag">📮 Analogy</div>
+  Picture a shard as a <strong>district library dispatch desk</strong>, and the delegator as that district's <strong>dispatch supervisor</strong>. Books in the district are stored two ways:
+  <strong>① catalogued, archived books</strong> — neatly shelved across <strong>several branch libraries</strong> (worker QueryNodes), each entered into a <strong>search catalog</strong> (an index), fast and accurate to look up (these are <strong>sealed segments</strong>);
+  <strong>② books that arrived today, not yet catalogued</strong> — piled on the <strong>"new-arrivals cart" right beside the desk</strong>, not yet in the catalog, but since they're at hand and few, <strong>flipping through them one by one</strong> is still quick (these are <strong>growing segments</strong>, restocked by the daily <strong>delivery truck</strong> = the WAL tail).
+  When a "find the few most-alike" request arrives, the supervisor does three things: <strong>dispatch the request to each branch</strong> to look it up in their catalogs (fan out to workers), <strong>flip through the new-arrivals cart itself</strong> (search growing locally), and finally <strong>merge the branch and cart results</strong>, sort, and hand them up (node-level merge). Skip either side and the answer is incomplete — <strong>old and new books both must be searched</strong>, which is the entire reason the delegator exists.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 The big picture</div>
+  Within a replica, a vchannel (shard) is served by one QueryNode acting as <strong>shard leader</strong>, running a <strong>delegator</strong> (the <span class="inline">ShardDelegator</span> interface / <span class="inline">shardDelegator</span> in <span class="mono">internal/querynodev2/delegator/delegator.go</span>). It is the entry for all reads on that shard and must produce a <strong>complete and fresh</strong> answer, so it covers both: <strong>sealed segments</strong> (settled, with a Knowhere index, loaded and <strong>distributed</strong> by QueryCoord across multiple worker QueryNodes in the replica) and <strong>growing segments</strong> (the latest, not-yet-sealed data the delegator maintains by <strong>consuming the WAL tail</strong>). In one <span class="inline">Search</span>, the delegator takes a segment snapshot (<span class="inline">GetSegmentInfo</span> → sealed + growing), <strong>fans</strong> the sealed search out to workers, searches growing locally, then <strong>merges within the node</strong> and returns to the Proxy. It also maintains a <strong>tsafe</strong> (how far it has consumed the WAL) and <strong>waits</strong> if that is not as fresh as the guarantee ts (Lesson 30).
+</div>
+
+<h2>Who the delegator is: a shard's read coordinator</h2>
+<p>First, straighten out "shard" vs "segment." Recall Lesson 7: a collection's data is cut by <strong>vchannel</strong> into several <strong>shards</strong>, and each shard holds many <strong>segments</strong>. Recall Lesson 13: <strong>QueryCoord</strong> decides "<strong>which segments load onto which QueryNodes</strong>" and designates, for each vchannel within a replica, one QueryNode as the <strong>shard leader</strong>. What runs on that leader is the <strong>delegator</strong> — the shard's <strong>single outward read entry</strong>, the landing point for requests the Proxy fans out.</p>
+
+<p>The crucial point: the delegator <strong>does not necessarily hold all of the shard's segment data itself</strong>. For elasticity and load balancing, QueryCoord <strong>spreads</strong> the shard's sealed segments across <strong>multiple QueryNodes (workers)</strong> in the replica — some segments may sit on the leader, more on other workers. The delegator keeps a <strong>distribution table</strong> recording "<strong>which segment is on which worker right now</strong>." So the delegator is more like a "<strong>dispatcher who knows who holds the goods</strong>": rather than carrying all segments itself, it <strong>routes the search to the worker holding each segment</strong> and then collects and merges. This is exactly where Milvus's read path <strong>scales horizontally</strong> — more segments spread over more workers, lighter load per worker, so adding machines lifts overall search throughput.</p>
+
+<p>Here we should fill in a concept Lesson 13 planted: the <strong>replica</strong>. For high availability and higher throughput, a collection can be loaded in <strong>several copies</strong>, each called a replica; every replica is a full crew of QueryNodes able to "<strong>answer the entire dataset independently</strong>." When the delegator "distributes segments across multiple workers," it means spreading them out <strong>within one replica</strong>. So the same shard has, in each replica, its own leader and its own set of workers. Two benefits follow: first, <strong>multiple replicas share read traffic</strong> — requests can be load-balanced across replicas and throughput grows with replica count; second, <strong>fault tolerance</strong> — if a worker or even a whole replica has trouble, other replicas can still answer. Tell apart the two orthogonal dimensions — "<strong>shards (split by data)</strong>" and "<strong>replicas (copied for availability)</strong>" — and you understand the two legs of Milvus read-side scalability: shards make a single search <strong>faster in parallel</strong>, replicas make overall throughput <strong>stack higher</strong> and add redundancy. The delegator is always the coordinator sitting at the intersection "<strong>this shard in this replica.</strong>"</p>
+
+<h2>Two kinds of segments: sealed (indexed) and growing (WAL tail)</h2>
+<p>To give a <strong>complete</strong> answer, the delegator must search both kinds. One cold, one hot; one stable, one fresh — their differences form a neat pair:</p>
+
+<div class="cols">
+  <div class="col"><h4>🧊 sealed segment (settled · indexed)</h4><p>A segment that is <strong>settled and immutable</strong>, with a built <strong>Knowhere vector index</strong> (Lesson 22), <strong>loaded</strong> from object storage into memory and <strong>distributed</strong> across workers in the replica by QueryCoord (Lesson 23). Search goes through the <strong>index</strong> (HNSW/IVF…), <strong>fast and accurate</strong>. These are the data's "<strong>bulk</strong>" — large, stable, index-accelerated, horizontally spread.</p></div>
+  <div class="col"><h4>🔥 growing segment (growing · no index)</h4><p>A segment still <strong>receiving new inserts</strong>, not yet sealed, with <strong>no index</strong>. The delegator <strong>consumes the vchannel's WAL tail itself</strong> (<span class="inline">ProcessInsert</span> / <span class="inline">ProcessDelete</span>), maintaining just-written rows as growing segments. Search can only go <strong>brute force, row by row</strong> (detailed in Lesson 27), but since it's small and local, the cost is bounded — it guarantees the freshness of "<strong>searchable right after writing</strong>."</p></div>
+</div>
+
+<p>Why insist on <strong>two kinds</strong> rather than handle them uniformly? Because <strong>"fresh" and "efficient" are a natural conflict</strong>. An index (a graph index especially) is <strong>expensive to build</strong> and awkward to mutate frequently, so it only suits "<strong>finalized, no-longer-changing</strong>" sealed segments; freshly written data <strong>changes constantly</strong> and there's no time to index it. Milvus's answer is "<strong>divide and conquer</strong>": give the <strong>stable bulk</strong> to the index (sealed, fast) and the <strong>volatile little tail</strong> to brute force (growing, fresh), then merge — getting both "<strong>fast</strong>" and "<strong>fresh</strong>" at once. This is really Lesson 7's "<strong>log-as-data / LSM idea</strong>" echoing on the read path — new data serves in memory in a mutable form first, then once enough accumulates it is <strong>sealed + indexed</strong> into an efficient immutable bulk. As growing segments are continually flushed and compacted (Lessons 17, 19) into sealed ones, the "fresh tail" keeps becoming "old bulk," and the delegator always stitches the <strong>current snapshot of both</strong> into one complete view.</p>
+
+<p>Here is a subtle yet crucial problem: when a growing segment gets sealed and is then loaded back in as a sealed segment, could it be <strong>counted twice</strong> (once as growing, once as sealed), duplicating results? The delegator must handle this "<strong>handoff</strong>." Its method is to maintain an "<strong>exclude list</strong>" — once a segment is ready and searchable in its sealed form, its growing form must be <strong>excluded from the readable snapshot</strong>, and vice versa, ensuring that <strong>the same data is represented by only one kind of segment at any instant</strong>. Plus the safety net of <strong>dedup by primary key</strong> during merge, the delegator can keep giving <strong>no-duplicate, no-miss</strong> results even as data forms keep flowing from growing to sealed. Grasp this and you see the delegator is not just a simple "dispatch + merge" router — it <strong>maintains a consistent view as segments keep changing form over time</strong>, its least conspicuous yet most error-intolerant duty as shard leader.</p>
+
+<h2>One in-shard search: fan out to workers, then merge</h2>
+<p>Lay out the delegator's internal moves for one <span class="inline">Search</span> and you get the chain "<strong>take a snapshot → group and fan out → search growing locally → merge within the node</strong>":</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">delegator</div><div class="nd">take segment snapshot<br>sealed+growing</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">worker QN-1</div><div class="nd">search its<br>sealed segs (index)</div></div>
+  <div class="arrow">＋</div>
+  <div class="node"><div class="nt">worker QN-2</div><div class="nd">search its<br>sealed segs (index)</div></div>
+  <div class="arrow">＋</div>
+  <div class="node"><div class="nt">local growing</div><div class="nd">brute-force<br>the WAL tail</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">merge in node</div><div class="nd">this shard's<br>local topK</div></div>
+</div>
+
+<p>Step by step: the delegator first calls <span class="inline">GetSegmentInfo(readable)</span> for a <strong>snapshot of currently-readable segments</strong> — returning <span class="inline">sealed</span> (already grouped by worker) and <span class="inline">growing</span>. Then it <strong>groups the search sub-tasks by "who holds the segment"</strong> (<span class="inline">organizeSubTask</span>): the batch on worker A is packed into one sub-request to A, the batch on B goes to B, and growing segments are searched <strong>locally</strong> on the delegator. Each worker runs segcore search on the segments in its own memory (next lesson) and returns <strong>its own local topK</strong>. Once collected, the delegator <strong>merges within the node</strong> "<strong>the workers' results + the local growing results</strong>" (sort by distance, dedup by primary key, take topK) into <strong>this shard's local topK</strong> and hands it back to the Proxy.</p>
+
+<p>See "<strong>fan-out / merge</strong>" appear again? Lesson 25 said a search is a <strong>two-level fan-out</strong>: Proxy to shards, shard to segments. This lesson is the <strong>second level</strong> — the delegator fans the search out to the workers holding segments, then merges <strong>within the node</strong>. So the read path's merge is <strong>three-level</strong>: <strong>within a segment</strong> topK on a worker (segcore, Lesson 27), <strong>within the node/shard</strong> on the delegator (this lesson), and <strong>across shards</strong> on the Proxy (Lesson 25) — this "<strong>three-level reduce</strong>" is tied up systematically in Lesson 29. For this lesson, just grasp the middle level: <strong>the delegator combines a shard's scattered per-segment results into one local topK for that shard</strong>.</p>
+
+<p>Why <strong>merge once</strong> at the delegator layer rather than ship all workers' raw results straight to the Proxy? Behind this is a plain but important engineering consideration: <strong>minimize the data moved across the network</strong>. Imagine a shard spread over 5 workers, each returning topK candidates; without a node-level merge, the Proxy would receive <strong>5 sets</strong> to re-sort and dedup, whereas the delegator first compresses those 5 into <strong>one</strong> topK, cutting the data sent to the Proxy to a fifth. "<strong>Whatever can be aggregated near the data, don't defer to upstream</strong>" — this is the general wisdom of "<strong>pushdown aggregation / partial merge</strong>" in distributed systems, the same reason databases push filtering and aggregation down to the storage layer. The three-level reduce exists precisely so each layer <strong>passes up only the necessary essence</strong>, narrowing stage by stage, rather than hauling a flood of raw candidates all the way to the top.</p>
+
+<h2>Who is who: a role cheat-sheet</h2>
+<p>This layer has many nouns (leader, worker, replica, sealed, growing, tsafe). A table nails "<strong>role → who / where / does what</strong>":</p>
+
+<table class="t">
+  <tr><th>Role / concept</th><th>Who / where</th><th>Does what</th></tr>
+  <tr><td><strong>delegator (shard leader)</strong></td><td>on the QueryNode designated for a vchannel within a replica</td><td>the shard's <strong>sole read entry</strong>: take snapshot, fan out, merge, maintain tsafe</td></tr>
+  <tr><td><strong>worker QueryNode</strong></td><td>the several QueryNodes holding sealed segments in the replica</td><td>run segcore search on <strong>segments in its own memory</strong>, return partial results</td></tr>
+  <tr><td><strong>sealed segment</strong></td><td>distributed across workers' memory (loaded by QueryCoord)</td><td>indexed, searched via the index; the data bulk, horizontally spread</td></tr>
+  <tr><td><strong>growing segment</strong></td><td>local to the delegator (from consuming the WAL tail)</td><td>no index, brute-force search; guarantees latest writes are visible</td></tr>
+  <tr><td><strong>tsafe</strong></td><td>a timestamp the delegator maintains</td><td>how far the WAL is consumed; &lt; guarantee ts → wait (Lesson 30)</td></tr>
+</table>
+
+<p>This table hides two through-lines of the delegator's design. <strong>One is the re-separation of "coordinate vs compute"</strong>: the delegator only <strong>coordinates</strong> (route, merge, maintain distribution and tsafe); what actually <strong>computes distances</strong> on segments is segcore on the workers — the same layering as Lesson 25's "Proxy only coordinates, never computes," just one level lower. <strong>The other is "freshness is the leader's responsibility"</strong>: sealed segments are loaded by others and stable; only the growing "<strong>keep-fresh</strong>" job is done by the delegator itself consuming the WAL. That explains why the leader is special — it is not just a dispatcher, it also <strong>bears this shard's responsibility for "seeing the latest writes."</strong> Put another way: the "load and distribute" of the sealed side is orchestrated by QueryCoord on the <strong>control plane</strong> (Lesson 13), and the delegator merely passively <strong>knows</strong> the result; whereas the "consume and keep fresh" of the growing side is done entirely by the delegator on the <strong>data plane</strong>. A shard's "whole picture" is precisely these two forces — the stable bulk arranged by the control plane above, and the latest tail caught up by the local data plane — <strong>converging</strong> at the single point of the delegator.</p>
+
+<h2>Where freshness comes from: consuming the WAL tail + tsafe</h2>
+<p>Finally, fully explain "<strong>why a read can see what was just written</strong>," a key through-line of Part 6. Recall Lesson 16: every write is first appended to the <strong>WAL</strong> (the streaming log). As shard leader, the delegator <strong>subscribes to and continuously consumes</strong> this vchannel's WAL tail: for each new Insert/Delete message, it <span class="inline">ProcessInsert</span> / <span class="inline">ProcessDelete</span> to <strong>reflect the change into growing segments</strong>. So between "the write hits the WAL" and "a read can see it" lies only the small delay of the delegator consuming the WAL — that is the source of data <strong>freshness</strong>. This neatly echoes Lesson 16's theme: the WAL is not only the write path's "durability insurance," it is at the same time the read path's "<strong>source of fresh data</strong>" — one stream, the writer appending to it and the reader-side delegator tailing it, the two meshing tightly back to back.</p>
+
+<p>But "<strong>can see</strong>" is not enough; it must also be "<strong>fresh enough</strong>." The delegator maintains a <strong>tsafe</strong>: it means "<strong>up to which timestamp I have consumed the WAL</strong>" — i.e. all writes with ts ≤ tsafe are already reflected into readable data. Now Lesson 25's <strong>guarantee ts</strong> pays off: receiving a search carrying a guarantee ts, the delegator compares <span class="inline">tsafe</span> against guarantee ts — if <span class="inline">tsafe ≥ guaranteeTs</span>, all the writes it should see have arrived, so it searches immediately; if <span class="inline">tsafe &lt; guaranteeTs</span> (it hasn't caught up), it <strong>waits</strong> until tsafe catches up before answering. This "<strong>wait until fresh enough, then answer</strong>" mechanism truly <strong>redeems</strong> Lesson 25's consistency levels: Strong takes tMax, so the delegator must wait until its consumption catches the latest; Eventually takes a tiny value, so it barely waits — exactly how the "how-fresh-you-read ↔ how-fast-you-answer" ruler lands at the <strong>shard end</strong>. The full MVCC and waiting details are tied up in Lesson 30.</p>
+
+<p>Sum up the delegator's three identities and you have the whole picture: it is a <strong>router</strong> (knows which worker holds each segment, dispatches sub-tasks there), a <strong>merger</strong> (combines scattered results into one local topK before handing up), and a <strong>freshness-keeper and gatekeeper</strong> (consumes the WAL to maintain growing, redeems consistency via tsafe). None of the three is dispensable: without routing, it would carry all segments itself and lose horizontal scaling; without merging, upstream drowns in a flood of raw results; without keeping-fresh and gatekeeping, reads either miss new data or read a stale snapshot they shouldn't. Precisely by pressing all three onto <strong>the single point of the shard leader</strong>, Milvus makes "a shard's read" at once <strong>scalable</strong>, <strong>fresh</strong>, and <strong>consistent</strong> — which is why the delegator is the linchpin connecting both ends of the whole query path.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/querynodev2/delegator/delegator.go</span><span class="ln">ShardDelegator interface (excerpt: read + snapshot + data + tsafe)</span></div>
+  <pre><span class="kw">type</span> <span class="nb">ShardDelegator</span> <span class="kw">interface</span> {
+    <span class="cm">// read: one in-shard search (fan out to workers + local growing, then merge)</span>
+    <span class="fn">Search</span>(ctx, req *querypb.SearchRequest) ([]*internalpb.SearchResults, error)
+    <span class="cm">// snapshot of currently-readable segments: sealed (by worker) + growing (local)</span>
+    <span class="fn">GetSegmentInfo</span>(readable bool) (sealed []SnapshotItem, growing []SegmentEntry)
+    <span class="cm">// data: consume the WAL tail, reflect new writes into growing segments</span>
+    <span class="fn">ProcessInsert</span>(insertRecords map[int64]*InsertData)
+    <span class="fn">ProcessDelete</span>(deleteData []*DeleteData, ts uint64)
+    <span class="cm">// tsafe: how far the WAL is consumed; &lt; guarantee ts → wait (Lesson 30)</span>
+    <span class="fn">GetTSafe</span>() uint64
+    <span class="fn">UpdateTSafe</span>(ts uint64)
+    <span class="cm">// … Query / LoadSegments / SyncDistribution etc. omitted …</span>
+}</pre>
+</div>
+
+<p>Tie this lesson back to the line: the delegator <strong>fans a shard's search out to workers, then combines a local topK</strong> — but once a worker gets a sub-request, how exactly does it <strong>find the few most-alike rows inside a segment</strong>? "Sealed says go through the index, growing says brute-force scan" — behind those two phrases, Go calls into the <strong>C++ segcore</strong> engine over <strong>cgo</strong>. The <strong>next lesson (Lesson 27)</strong> crosses that Go↔C++ boundary and steps inside the search within a single segment.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>delegator = a shard's read entry</strong>: the shard leader designated for a vchannel within a replica (<span class="inline">ShardDelegator</span> in <span class="mono">delegator.go</span>), catching reads the Proxy fans out.</li>
+    <li><strong>both kinds of segments searched</strong>: sealed (settled · Knowhere-indexed · spread over workers · via index) + growing (growing · no index · local · brute force), merged for completeness.</li>
+    <li><strong>distribution &amp; fan-out</strong>: QueryCoord spreads sealed segments over workers; the delegator keeps a distribution table, fans sub-tasks by "who holds the segment" (<span class="inline">organizeSubTask</span>), then merges.</li>
+    <li><strong>the middle of the three-level reduce</strong>: per-segment topK (segcore) → <strong>delegator node-level merge</strong> → Proxy cross-shard merge (tied up in Lesson 29).</li>
+    <li><strong>freshness from the WAL</strong>: the delegator consumes the vchannel's WAL tail (<span class="inline">ProcessInsert/Delete</span>) to maintain growing, so just-written data is searchable.</li>
+    <li><strong>tsafe redeems consistency</strong>: it tracks consumed progress; if <span class="inline">tsafe &lt; guaranteeTs</span> it waits until caught up before answering (detailed in Lesson 30).</li>
+  </ul>
+</div>
+""",
+}
+
+LESSON_27 = {
+    "zh": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+前两课，请求从 Proxy 扇到分片、再由 delegator 扇到一个个段、路由给持有段的 worker。现在我们站在<strong>最里层</strong>：worker 拿到一个段、一张检索计划，到底<strong>怎么在这一个段内部把最像的几条找出来</strong>？
+答案要跨过一道语言边界——因为真正干这件算力活的，不是 Go，而是 C++ 写的检索内核 <strong>segcore</strong>。这一课就走进 segcore：它是什么、Go 如何通过 <strong>cgo</strong> 调到它、它内部如何用一套统一接口（<span class="inline">SegmentInterface</span>）同时服务<strong>带索引的 sealed</strong> 段与<strong>靠暴力的 growing</strong> 段。
+这是整条查询链路<strong>最深的一层</strong>，也是第六部分上半段（第 25–27 课）的<strong>收尾</strong>：到了这里，那张从 Proxy 一路下发的检索计划，终于"<strong>触底</strong>"、在真实的向量数据上被执行。
+</p>
+
+<div class="card analogy">
+  <div class="tag">📚 生活类比</div>
+  想象一座研究档案馆里，有一位只会说<strong>"C++ 语"</strong>的<strong>资深检索专家</strong>（segcore），他动作极快、只管"在<strong>一个档案室</strong>里找出最像样品的几份卷宗"。而楼上发指令的<strong>调度经理</strong>只会说<strong>"Go 语"</strong>（QueryNode）。两人语言不通，怎么协作？
+  靠的是档案馆门口那个<strong>固定的翻译窗口</strong>（<strong>cgo / C API</strong>）：经理把需求写成一张<strong>标准工单</strong>递进窗口，窗口把它翻成 C++ 语交给专家；专家查完，再把结果经窗口翻回来。<strong>所有往来都必须走这个窗口</strong>，不能直接喊话——这就是 Go 与 C++ 之间的边界。
+  而专家手上的档案室也分两种：一种是<strong>早已整理好、配了卡片目录</strong>的库房（<strong>sealed + 索引</strong>），凭目录一翻就跳到对的架子，极快；另一种是<strong>今天刚收、还堆在收件筐里</strong>的散件（<strong>growing</strong>），没目录，只能<strong>一份一份过目</strong>（暴力扫描），好在量少。专家对外是<strong>同一套找卷宗的手法</strong>，对内却按"<strong>有没有目录</strong>"自动选快路或慢路——这正是 segcore 的 <span class="inline">SegmentInterface</span> 同时罩住 sealed 与 growing 的样子。无论哪种档案室，专家对外交付的都是同一句话："<strong>这是本室里最像样品的几份</strong>"——内部的快慢之别，外人不必知道。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  <strong>segcore</strong> 是 Milvus 用 <strong>C++</strong> 写的"<strong>单段检索引擎</strong>"：它只负责"<strong>在一个 segment 内部执行检索/查询</strong>"，不懂分片、副本、WAL 这些分布式概念。Go 侧的 QueryNode 通过 <strong>cgo</strong> 跨语言调用它：Go 的 <span class="inline">LocalSegment</span>（<span class="mono">internal/querynodev2/segments/segment.go</span>，第 2 课见过）持有一个指向 C++ 段对象的<strong>不透明句柄</strong>，经 <strong>C API</strong>（<span class="mono">internal/core/src/segcore/segment_c.h</span>，如 <span class="inline">NewSegment</span> / <span class="inline">AsyncSearch</span> / <span class="inline">DeleteSegment</span>）调进去。C++ 内部用一套统一接口 <strong><span class="inline">SegmentInterface</span></strong>（<span class="mono">SegmentInterface.h:81</span>）抽象"一个段"，其下有两种实现：<strong>SegmentSealed</strong>（封存段，走加载好的 <strong>Knowhere 索引</strong>检索）与 <strong>SegmentGrowing</strong>（在长段，无索引，<strong>暴力</strong>逐条算）。列式/分块存储与 mmap 的细节是第八部分的专题。
+</div>
+
+<h2>segcore 是什么：单段检索的 C++ 内核</h2>
+<p>先把 segcore 在整张地图上的位置钉死。回忆第 2 课的"三语言分工"：<strong>Go</strong> 管分布式与调度，<strong>C++</strong> 管单机的存储与计算，<strong>Rust</strong> 管全文索引。前面两课讲的 Proxy、delegator、QueryNode 调度，全在 <strong>Go</strong> 这一侧；而"<strong>在一个段里真刀真枪算向量距离、跑过滤</strong>"这件<strong>计算密集</strong>的活，落在 <strong>C++</strong> 的 segcore 上。它是 worker QueryNode "<strong>身体里</strong>"那台真正的检索发动机——上层千辛万苦地分片、路由、合并，最终都是为了把一个"在某段上检索"的请求，交到 segcore 手里执行。</p>
+
+<p>补一句 segcore 的"业务面"：它不只服务<strong>向量搜索（Search）</strong>，也服务<strong>标量查询（Query / Retrieve）</strong>——即第 25 课提过的、"按条件取出满足的行"那条路。两者在 segcore 里共用同一套段抽象与过滤机制，区别只在最后一步是"<strong>做 ANN 取最像的 topK</strong>"还是"<strong>把命中行的字段取出来</strong>"。所以你可以把 segcore 理解成一台<strong>通用的单段执行器</strong>：上层给它一份计划，它在一个段的数据上把计划<strong>跑完</strong>，至于是搜还是查，只是计划里的算子不同。这也解释了为什么 <span class="inline">SegmentInterface</span> 上既有 <span class="inline">Search</span> 又有取字段、填主键之类的方法——它要同时撑起读路径上"<strong>搜</strong>"与"<strong>查</strong>"两类需求。</p>
+
+<p>为什么这一层非要用 <strong>C++</strong>，不能像别的部分那样用 Go？因为这是<strong>性能最敏感的内循环</strong>：一次检索要在成千上万条向量上做距离计算、要紧贴 SIMD 指令与缓存、要精细管理大块内存与 mmap——这些都是 C++（以及它对接的 Knowhere、FAISS 等）的主场，而 Go 的运行时（GC、调度）在这种<strong>极致数值计算</strong>场景反而是负担。所以 Milvus 的取舍很清晰：<strong>分布式协调用 Go（开发快、并发友好），单机数值计算用 C++（榨干硬件）</strong>，两者各取所长。代价就是要在 Go 与 C++ 之间架一座桥——这座桥就是 <strong>cgo</strong>。</p>
+
+<p>顺带把 segcore 和第 22 课的 <strong>Knowhere</strong> 摆到一起，免得混淆两者的边界。segcore 是"<strong>段的引擎</strong>"：它管一个段内的<strong>全套</strong>检索流程——接计划、过滤、调度、套用删除位图与时间过滤、组织结果。而当流程走到"<strong>纯粹的向量 ANN 计算</strong>"那一步（在 sealed 段上用 HNSW/IVF 找近邻），segcore 自己<strong>并不重写算法</strong>，而是<strong>调用 Knowhere</strong> 这个上游向量内核去算。换句话说：<strong>segcore 负责"段内的编排与正确性"，Knowhere 负责"索引结构与近邻计算"</strong>，前者调后者。再加上 growing 段那条不走索引的暴力路径，你就拼出了 segcore 段内检索的全貌：<strong>过滤 → （sealed 调 Knowhere 索引 / growing 暴力）→ 取 topK</strong>。把"谁编排、谁算 ANN"分清，第 22 与本课就不会打架。</p>
+
+<p>多说一句这座桥的"<strong>窄</strong>"。Go 调 C++ 之所以要绕道一层<strong>纯 C 接口</strong>，根因是 cgo 只认 <strong>C 的 ABI</strong>（应用二进制接口）：C++ 的类、模板、命名空间、虚函数表这些，编译后名字会被"<strong>name mangling</strong>"打乱，Go 根本对不上号；而 C 函数的符号简单、稳定，是两种语言都能握手的<strong>最大公约数</strong>。所以 segcore 的对外门面 <span class="mono">segment_c.h</span> 里全是<strong>朴素的 C 函数</strong>，参数也尽量用基础类型与不透明指针——它像一道特意收窄的"<strong>闸口</strong>"，把复杂的 C++ 世界藏在身后，只留几个干净的把手给 Go 抓。理解这一点，你看 Milvus core 里大量 <span class="mono">*_c.h / *_c.cpp</span> 文件就不会困惑了：它们都是"<strong>给 Go 看的 C 门面</strong>"，背后才是真正干活的 C++ 实现。</p>
+
+<h2>那道边界：Go 如何通过 cgo 调到 segcore</h2>
+<p>把"Go 调 C++"这件事拆开看，它分四层，像剥洋葱一样从 Go 一直钻到 C++ 的段实现：</p>
+
+<div class="layers">
+  <div class="layer l-app"><span class="badge">Go</span><span class="name">LocalSegment（querynodev2/segments/segment.go）</span><span class="ld">Go 侧对"一个段"的封装；持有 C++ 段对象的不透明句柄；第 2 课见过它的 Search</span></div>
+  <div class="layer l-part"><span class="badge">cgo / C API</span><span class="name">segment_c.h（NewSegment / AsyncSearch / DeleteSegment …）</span><span class="ld">纯 C 函数签名的"翻译窗口"；所有 Go↔C++ 往来必经此处；句柄类型 CSegmentInterface = void*</span></div>
+  <div class="layer l-main"><span class="badge">C++ 接口</span><span class="name">SegmentInterface（SegmentInterface.h:81）</span><span class="ld">C API 背后真正的对象；用统一虚接口抽象"一个段"的检索/查询能力</span></div>
+  <div class="layer l-core"><span class="badge">C++ 实现</span><span class="name">SegmentSealed（走索引） / SegmentGrowing（暴力）</span><span class="ld">两种段实现；sealed 用 Knowhere 索引、growing 逐条暴力算</span></div>
+</div>
+
+<p>逐层看这趟"下钻"：最上面，Go 的 <span class="inline">LocalSegment</span>（第 2 课就出现过的那个类型）是 worker 对"一个段"的本地代表，它的 <span class="inline">Search</span> 方法<strong>并不亲自算距离</strong>，而是把检索计划、查询向量、guarantee ts 等打包，<strong>通过 cgo 调一个 C 函数</strong>。中间一层 <span class="mono">segment_c.h</span> 就是那个"<strong>翻译窗口</strong>"：它声明了一组<strong>纯 C 函数</strong>（<span class="inline">NewSegment</span> 建段、<span class="inline">AsyncSearch</span> 检索、<span class="inline">DeleteSegment</span> 释放……），因为 cgo 只能跨"<strong>C 的 ABI</strong>"，C++ 的类与模板没法直接被 Go 看见，于是必须用一层 C 函数把 C++ 能力<strong>包一层</strong>暴露出来。这些 C 函数里，Go 看到的段只是一个 <span class="inline">CSegmentInterface</span>（本质是个 <span class="inline">void*</span> 不透明句柄）——Go 不知道、也不需要知道它背后是什么 C++ 对象。</p>
+
+<p>再往里，C 函数把这个句柄<strong>转回真正的 C++ 对象</strong>——一个 <span class="inline">SegmentInterface</span>（<span class="mono">SegmentInterface.h:81</span> 那个虚接口），然后调它的 <span class="inline">Search</span> 等虚方法。到这里，控制权才真正进入 segcore 的算法世界。这趟跨语言调用的代价不可忽视：每次 cgo 调用都有固定开销，数据要在 Go 与 C++ 的内存表示间小心传递（不能让 Go 的 GC 动了 C++ 还在用的内存）。所以 Milvus 的设计有意让 cgo 边界<strong>粗粒度</strong>——一次调用就交给 C++ 一整段的检索，而不是在热循环里频繁来回穿越边界。<strong>记住这条边界的形状</strong>：Go 负责"<strong>调度与拼装</strong>"，C++ 负责"<strong>段内的真正计算</strong>"，中间隔着一道窄窄的、纯 C 的 <span class="mono">segment_c.h</span> 窗口。</p>
+
+<h2>统一接口下的两副面孔：sealed vs growing</h2>
+<p>跨过边界进了 C++，segcore 用<strong>同一套接口</strong>（<span class="inline">SegmentInterface</span>，及其内部接口）抽象"一个段"，但底下有<strong>两种实现</strong>，对应第 26 课那对老朋友——sealed 与 growing。它们检索的<strong>路子完全不同</strong>：</p>
+
+<div class="cols">
+  <div class="col"><h4>🧊 SegmentSealed → 走索引</h4><p>封存段已建好 <strong>Knowhere 向量索引</strong>（第 22 课，如 HNSW/IVF），并加载进内存。检索时<strong>不逐条扫</strong>，而是让索引带路——图索引几跳、或 IVF 只探最近几桶，<strong>跳过绝大多数向量</strong>，直接逼近最像的那一小撮。这是"<strong>快</strong>"的来源，也是数据主体的常态路径。</p></div>
+  <div class="col"><h4>🔥 SegmentGrowing → 暴力扫</h4><p>在长段还<strong>没有索引</strong>（数据每刻在变，来不及建）。检索时只能<strong>暴力（brute force）</strong>：把查询向量和段内<strong>每一条</strong>向量都算一遍距离，再排序取 topK。因为 growing 段<strong>小</strong>、就在本地，这点暴力开销可以接受——它换来的是"<strong>刚写就能搜到</strong>"的新鲜。</p></div>
+</div>
+
+<p>这"<strong>同一接口、两种实现</strong>"的设计妙在哪？它让<strong>上层（delegator、worker 的调度代码）完全不必关心一个段到底带不带索引</strong>——它只管对每个段调同一个 <span class="inline">Search</span>，segcore 内部会按段的实际类型<strong>自动选择快路（索引）或慢路（暴力）</strong>。这是面向对象"<strong>多态</strong>"在系统设计里的经典用法：把"<strong>变化的部分</strong>"（怎么搜）封在实现里，对外只暴露"<strong>不变的契约</strong>"（给我一个段一张计划、还我段内 topK）。也正因如此，第 26 课 delegator 才能云淡风轻地说"把 sealed 和 growing 的结果合并"——在它眼里两者长得一样，差异被 segcore 这层<strong>悄悄吸收</strong>了。</p>
+
+<p>还有一件 segcore 在段内默默替你做的事，常被忽略却很关键：<strong>剔除"不该看到的行"</strong>。一个段里的数据不是只有"插入"——还有<strong>删除</strong>（第 20 课）和<strong>时间戳</strong>（第 11 课）。segcore 检索时会<strong>结合两层过滤</strong>：一是<strong>删除位图</strong>，把已被删除的行标掉、不计入候选；二是 <strong>guarantee ts</strong> 带来的<strong>时间过滤</strong>，只让 ts ≤ guarantee 的那一版数据可见。换句话说，<strong>MVCC（多版本可见性）最终落地的执行点，就在 segcore 这一层</strong>：上层把 guarantee ts 一路传下来，真正"按这个时间快照决定每一行可不可见"的判定，是在段内、贴着数据完成的。所以你不会搜到"刚被删的"或"晚于你时间快照才写入的"行——这层正确性，正是 sealed/growing 之外，segcore 段内逻辑的另一半职责（完整的一致性与 MVCC 第 30 课收口）。</p>
+
+<h2>一次段内检索：从计划到段内 topK</h2>
+<p>把 segcore 在<strong>一个段里</strong>处理一次检索的动作摆开（以带过滤的 sealed 段为例），就是下面这条短链。注意它正是第 25 课那张 plan 在最底层被<strong>真正执行</strong>的地方：</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>接收计划与查询向量</h4><p>经 C API 进来一份 <strong>检索计划</strong>（plan：向量字段 + 度量 + topK + 标量谓词）、<strong>查询向量</strong>（placeholder）、以及 <strong>guarantee ts</strong>。segcore 在这一个段的范围内执行它。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>标量过滤 → bitset</h4><p>先按计划里的<strong>标量谓词</strong>（如 <span class="mono">year &gt; 2020</span>）在段内算出一张<strong>位掩码（bitset）</strong>：标出"哪些行合格"。这一步把候选范围<strong>先缩小</strong>（第 24 课的"先筛后搜"、第 28 课详述执行引擎）。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>向量检索（索引 / 暴力）</h4><p>在合格子集上做 ANN：<strong>sealed</strong> 让 <strong>Knowhere 索引</strong>带路、跳过大半；<strong>growing</strong> 则对合格行<strong>逐条暴力</strong>算距离。按度量（L2/IP/COSINE）算出相似度。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>段内取 topK 回传</h4><p>把本段算出的候选<strong>排序、取最像的 topK</strong>，作为<strong>段内局部结果</strong>经 C API 交回 Go 侧。它将参与 delegator 的节点内归并（第 26 课）——这就是"<strong>三级 reduce</strong>"最底下那一级。</p></div></div>
+</div>
+
+<p>这条链把整条查询链路<strong>收口</strong>了：第 25 课 Proxy 编出的那张 plan，一路下发、穿过 delegator、跨过 cgo 边界，<strong>终于在 segcore 这里被真正跑起来</strong>。而 segcore 吐出的"段内 topK"，又会反向<strong>逐级归并</strong>上去——段内 topK（这里）→ delegator 节点内合并（第 26 课）→ Proxy 跨分片合并（第 25 课）。你现在应该能把一次 search 的"<strong>下行扇出</strong>"和"<strong>上行归并</strong>"完整地在脑子里画一遍了。其中第 2、3 步"<strong>先用谓词筛出 bitset、再在子集上做 ANN</strong>"的执行细节（计划树、表达式、向量化算子），是第 28 课"执行引擎"的主题；而段内数据为什么是<strong>列式、分块、可 mmap</strong> 的，则留到第八部分深挖。本课你只要牢牢记住这一层的边界与分工。</p>
+
+<p>最后留一个"<strong>往下看</strong>"的钩子。本课刻意没展开两件事，它们各有专属篇章。其一是"<strong>计划到底怎么在段内执行</strong>"：那张 plan 进了 segcore 后，标量谓词会被编成一棵<strong>表达式树</strong>、由一套<strong>向量化执行引擎</strong>逐算子跑出来（先过滤、再向量检索），这是第 28 课的主题。其二是"<strong>段内的数据长什么样</strong>"：为什么向量与标量在段里是<strong>列式、分块</strong>存放的，为什么可以 <strong>mmap</strong>（把磁盘文件映射成内存、按需换入）从而服务远超内存的数据——这套存储细节是第八部分的专题。本课把"<strong>谁在算、隔着哪道边界、两类段各走什么路</strong>"立住，后面两处深挖才有地基。</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/core/src/segcore/SegmentInterface.h</span><span class="ln">第 81 行起：C API 背后统一的段接口（节选示意）</span></div>
+  <pre><span class="cm">// 被 C API 使用的、SegmentSealed 与 SegmentGrowing 的公共接口</span>
+<span class="kw">class</span> <span class="nb">SegmentInterface</span> {
+ <span class="kw">public</span>:
+    <span class="kw">virtual</span> ~SegmentInterface() = <span class="kw">default</span>;
+    <span class="cm">// 在“这一个段”内执行检索：吃一份 plan + 查询向量，吐段内结果</span>
+    <span class="kw">virtual</span> std::unique_ptr&lt;SearchResult&gt;
+    <span class="fn">Search</span>(<span class="kw">const</span> query::Plan* plan,
+           <span class="kw">const</span> query::PlaceholderGroup* placeholder, ...) <span class="kw">const</span> = <span class="nb">0</span>;
+    <span class="cm">// … FillPrimaryKeys / FillTargetEntry 等省略 …</span>
+};
+<span class="cm">// 两种实现：SegmentSealed（走 Knowhere 索引）/ SegmentGrowing（暴力逐条）</span>
+<span class="cm">// Go 经 cgo 调入：segment_c.h 的 NewSegment / AsyncSearch / DeleteSegment</span>
+<span class="cm">//                 ←→ Go 侧 LocalSegment（querynodev2/segments/segment.go）</span></pre>
+</div>
+
+<p>把整个第六部分上半段串起来：第 25 课，Proxy 把搜索<strong>翻译成 plan、定好 guarantee ts、扇到各分片</strong>；第 26 课，delegator 在分片内<strong>覆盖 sealed+growing、扇到 worker、节点内归并</strong>；这一课，worker 通过 <strong>cgo</strong> 把"段内检索"交给 C++ 的 <strong>segcore</strong>，由它用<strong>统一接口</strong>对 sealed 走索引、对 growing 走暴力，算出<strong>段内 topK</strong>。下半段（第 28–30 课，后续派发）会接着深挖：plan 在 segcore 里<strong>具体怎么执行</strong>（执行引擎）、三级 reduce <strong>怎么归并</strong>、以及 guarantee ts 与 MVCC <strong>如何兑现一致性</strong>。把这上半段连成一句话记牢：<strong>一次搜索，就是一张计划从 Proxy 出发、经 delegator 扇到段、跨 cgo 进 segcore 被执行，再把段内 topK 逐级归并回来的旅程</strong>——而 segcore，就是这趟旅程<strong>最深处那台真正干活的发动机</strong>。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>segcore = C++ 单段检索引擎</strong>：只在"一个 segment 内部"执行检索/查询，不懂分片/副本/WAL；是 worker 体内真正算向量的发动机。</li>
+    <li><strong>cgo 边界</strong>：Go 的 <span class="inline">LocalSegment</span>（<span class="mono">segments/segment.go</span>）经纯 C 的 <span class="mono">segment_c.h</span>（<span class="inline">NewSegment/AsyncSearch/DeleteSegment</span>）调进 C++；段在 Go 侧只是个不透明句柄。</li>
+    <li><strong>统一接口</strong>：<span class="inline">SegmentInterface</span>（<span class="mono">SegmentInterface.h:81</span>）抽象"一个段"，下有 <strong>SegmentSealed</strong> 与 <strong>SegmentGrowing</strong> 两种实现（多态）。</li>
+    <li><strong>sealed = 索引、growing = 暴力</strong>：封存段走加载好的 Knowhere 索引（快）；在长段无索引、逐条暴力算（保新鲜）。</li>
+    <li><strong>段内一次检索</strong>：收 plan → 标量过滤出 bitset → 子集上做 ANN（索引/暴力）→ 取段内 topK 回传，是三级 reduce 最底层。</li>
+    <li><strong>为什么用 C++</strong>：性能敏感的内循环（SIMD/缓存/mmap）是 C++ 主场；Go 管调度、C++ 管计算，cgo 边界刻意粗粒度。列式/分块/mmap 见第八部分。</li>
+  </ul>
+</div>
+""",
+    "en": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+The last two lessons sent the request from the Proxy out to shards, then from the delegator out to individual segments, routed to the worker holding each. Now we stand at the <strong>innermost layer</strong>: a worker has one segment and one search plan — how exactly does it <strong>find the few most-alike rows inside this one segment</strong>?
+The answer crosses a language boundary, because the engine that actually does this compute-heavy work is not Go but a C++ search kernel, <strong>segcore</strong>. This lesson steps into segcore: what it is, how Go calls it over <strong>cgo</strong>, and how it uses one unified interface (<span class="inline">SegmentInterface</span>) to serve both the <strong>indexed sealed</strong> segments and the <strong>brute-force growing</strong> segments.
+This is the <strong>deepest layer</strong> of the whole query path and the <strong>finale</strong> of Part 6's first half (Lessons 25-27): here, the search plan handed down all the way from the Proxy finally "<strong>hits bottom</strong>" and is executed on real vector data.
+</p>
+
+<div class="card analogy">
+  <div class="tag">📮 Analogy</div>
+  Picture a research archive with a <strong>senior retrieval specialist</strong> who only speaks <strong>"C++"</strong> (segcore), extremely fast, whose sole job is "find the few files most like a sample <strong>within one archive room</strong>." But the <strong>dispatch manager</strong> upstairs who issues orders only speaks <strong>"Go"</strong> (the QueryNode). They don't share a language — how do they cooperate?
+  Through a <strong>fixed translation window</strong> at the archive's entrance (<strong>cgo / the C API</strong>): the manager writes the request as a <strong>standard work order</strong> and slips it through the window, which translates it into C++ for the specialist; the specialist searches and the result comes back out through the window. <strong>All exchange must go through this window</strong>, never by shouting directly — that is the Go↔C++ boundary.
+  And the specialist's rooms come in two kinds: one is a stockroom <strong>long since organized with a card catalog</strong> (<strong>sealed + index</strong>), where the catalog jumps you straight to the right shelf, blazing fast; the other is loose material <strong>that arrived today, still piled in the inbox</strong> (<strong>growing</strong>), with no catalog, so you must <strong>read each sheet one by one</strong> (brute-force scan), though luckily it's small. Outwardly the specialist offers <strong>one and the same retrieval method</strong>, but internally picks the fast or slow path by "<strong>is there a catalog</strong>" — exactly how segcore's <span class="inline">SegmentInterface</span> covers both sealed and growing. Whichever room, the specialist delivers the same sentence: "<strong>here are the few in this room most like your sample</strong>" — the inner fast/slow difference need not concern the outsider.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 The big picture</div>
+  <strong>segcore</strong> is Milvus's "<strong>single-segment search engine</strong>" written in <strong>C++</strong>: it only "<strong>executes search/query inside one segment</strong>," knowing nothing of shards, replicas, or the WAL. The Go-side QueryNode calls it across languages via <strong>cgo</strong>: Go's <span class="inline">LocalSegment</span> (<span class="mono">internal/querynodev2/segments/segment.go</span>, seen in Lesson 2) holds an <strong>opaque handle</strong> to a C++ segment object and calls in through a <strong>C API</strong> (<span class="mono">internal/core/src/segcore/segment_c.h</span>, e.g. <span class="inline">NewSegment</span> / <span class="inline">AsyncSearch</span> / <span class="inline">DeleteSegment</span>). Inside C++, a unified interface <strong><span class="inline">SegmentInterface</span></strong> (<span class="mono">SegmentInterface.h:81</span>) abstracts "a segment," with two implementations: <strong>SegmentSealed</strong> (sealed, searches via the loaded <strong>Knowhere index</strong>) and <strong>SegmentGrowing</strong> (growing, no index, <strong>brute-force</strong> per row). Columnar/chunked storage and mmap are a Part 8 topic.
+</div>
+
+<h2>What segcore is: the C++ kernel of single-segment search</h2>
+<p>First, pin segcore's place on the map. Recall Lesson 2's "three-language split": <strong>Go</strong> handles distribution and scheduling, <strong>C++</strong> handles single-machine storage and compute, <strong>Rust</strong> handles full-text indexing. The Proxy, delegator, and QueryNode scheduling of the past two lessons all live on the <strong>Go</strong> side; the <strong>compute-intensive</strong> work of "<strong>actually computing vector distances and running filters within a segment</strong>" lands on C++'s segcore. It is the real search engine "<strong>inside the body</strong>" of a worker QueryNode — all the painstaking sharding, routing, and merging upstream ultimately exists to hand a "search on some segment" request to segcore to execute.</p>
+
+<p>One more "business face" of segcore: it serves not only <strong>vector search (Search)</strong> but also <strong>scalar query (Query / Retrieve)</strong> — the "fetch rows satisfying a condition" path mentioned in Lesson 25. Both share the same segment abstraction and filtering machinery in segcore; they differ only in the last step: "<strong>do ANN and take the most-alike topK</strong>" versus "<strong>pull out the fields of the matched rows</strong>." So you can think of segcore as a <strong>general single-segment executor</strong>: upstream hands it a plan and it <strong>runs the plan to completion</strong> on one segment's data; whether it searches or queries is just a different operator in the plan. That is also why <span class="inline">SegmentInterface</span> has both <span class="inline">Search</span> and methods to fetch fields and fill primary keys — it must hold up both "<strong>search</strong>" and "<strong>query</strong>" needs on the read path.</p>
+
+<p>Why must this layer be <strong>C++</strong> rather than Go like the rest? Because this is the <strong>most performance-sensitive inner loop</strong>: a search computes distances over thousands upon thousands of vectors, hugs SIMD instructions and the cache, and finely manages large memory blocks and mmap — all home turf for C++ (and the Knowhere/FAISS it wraps), whereas Go's runtime (GC, scheduling) is a burden in such <strong>extreme numerical computing</strong>. So Milvus's tradeoff is clear: <strong>distributed coordination in Go (fast to develop, concurrency-friendly), single-machine numerical compute in C++ (squeeze the hardware)</strong>, each playing to its strength. The price is a bridge between Go and C++ — that bridge is <strong>cgo</strong>.</p>
+
+<p>While we're here, set segcore beside Lesson 22's <strong>Knowhere</strong> so their boundary isn't blurred. segcore is the "<strong>segment engine</strong>": it runs the <strong>whole</strong> in-segment retrieval flow — take the plan, filter, schedule, apply the delete bitmap and time filter, organize results. But when the flow reaches "<strong>the pure vector ANN compute</strong>" step (finding neighbors with HNSW/IVF on a sealed segment), segcore does <strong>not</strong> reimplement the algorithm; it <strong>calls Knowhere</strong>, the upstream vector kernel, to compute. In other words: <strong>segcore owns "in-segment orchestration and correctness," Knowhere owns "index structures and neighbor computation,"</strong> the former calling the latter. Add the no-index brute-force path of growing segments and you have the full picture of segcore's in-segment search: <strong>filter → (sealed calls the Knowhere index / growing brute-forces) → take topK</strong>. Tell apart "who orchestrates, who computes ANN" and Lessons 22 and 27 won't clash.</p>
+
+<h2>That boundary: how Go calls segcore over cgo</h2>
+<p>Unpack "Go calls C++" and it has four layers, peeling like an onion from Go all the way down to the C++ segment implementation:</p>
+
+<div class="layers">
+  <div class="layer l-app"><span class="badge">Go</span><span class="name">LocalSegment (querynodev2/segments/segment.go)</span><span class="ld">Go's wrapper for "a segment"; holds an opaque handle to the C++ segment object; its Search appeared in Lesson 2</span></div>
+  <div class="layer l-part"><span class="badge">cgo / C API</span><span class="name">segment_c.h (NewSegment / AsyncSearch / DeleteSegment …)</span><span class="ld">a "translation window" of pure-C signatures; all Go↔C++ exchange passes here; handle type CSegmentInterface = void*</span></div>
+  <div class="layer l-main"><span class="badge">C++ interface</span><span class="name">SegmentInterface (SegmentInterface.h:81)</span><span class="ld">the real object behind the C API; a unified virtual interface abstracting a segment's search/query ability</span></div>
+  <div class="layer l-core"><span class="badge">C++ impls</span><span class="name">SegmentSealed (via index) / SegmentGrowing (brute force)</span><span class="ld">two segment impls; sealed uses the Knowhere index, growing computes per row</span></div>
+</div>
+
+<p>Layer by layer down this "descent": at the top, Go's <span class="inline">LocalSegment</span> (the type that appeared back in Lesson 2) is the worker's local stand-in for "a segment," and its <span class="inline">Search</span> method <strong>does not compute distances itself</strong> — it packs the plan, query vectors, guarantee ts, etc. and <strong>calls a C function over cgo</strong>. The middle layer <span class="mono">segment_c.h</span> is that "<strong>translation window</strong>": it declares a set of <strong>pure-C functions</strong> (<span class="inline">NewSegment</span> to build, <span class="inline">AsyncSearch</span> to search, <span class="inline">DeleteSegment</span> to release…), because cgo can only cross "<strong>C's ABI</strong>" — C++ classes and templates are invisible to Go, so C++ ability must be <strong>wrapped</strong> in a layer of C functions. In these C functions, the segment Go sees is merely a <span class="inline">CSegmentInterface</span> (essentially a <span class="inline">void*</span> opaque handle) — Go neither knows nor needs to know what C++ object backs it.</p>
+
+<p>One more word on how <strong>narrow</strong> this bridge is. Go calls C++ by detouring through a <strong>pure-C interface</strong> fundamentally because cgo only recognizes <strong>C's ABI</strong> (application binary interface): C++ classes, templates, namespaces, and vtables get their names scrambled by <strong>name mangling</strong> after compilation, which Go cannot match; whereas C function symbols are simple and stable, the <strong>greatest common denominator</strong> both languages can shake hands on. So segcore's outward facade <span class="mono">segment_c.h</span> is all <strong>plain C functions</strong>, with parameters kept to basic types and opaque pointers — like a deliberately narrowed "<strong>sluice gate</strong>" that hides the complex C++ world behind it and leaves Go only a few clean handles to grab. Grasp this and the many <span class="mono">*_c.h / *_c.cpp</span> files in Milvus core stop being confusing: they are all "<strong>C facades for Go to see</strong>," with the real working C++ implementation behind them.</p>
+
+<p>Deeper still, the C function <strong>casts the handle back into the real C++ object</strong> — a <span class="inline">SegmentInterface</span> (that virtual interface at <span class="mono">SegmentInterface.h:81</span>) — and calls its <span class="inline">Search</span> and other virtual methods. Only here does control truly enter segcore's algorithmic world. The cost of this cross-language call is not negligible: every cgo call has a fixed overhead, and data must be passed carefully between Go's and C++'s memory representations (Go's GC must not move memory C++ is still using). So Milvus deliberately keeps the cgo boundary <strong>coarse-grained</strong> — one call hands C++ a whole segment's search, rather than crossing the boundary repeatedly in a hot loop. <strong>Remember the shape of this boundary</strong>: Go handles "<strong>scheduling and assembly</strong>," C++ handles "<strong>the real in-segment compute</strong>," with a narrow, pure-C <span class="mono">segment_c.h</span> window between them.</p>
+
+<h2>Two faces under one interface: sealed vs growing</h2>
+<p>Across the boundary and into C++, segcore abstracts "a segment" with <strong>one interface</strong> (<span class="inline">SegmentInterface</span> and its internal interface), but underneath there are <strong>two implementations</strong>, matching the old friends from Lesson 26 — sealed and growing. Their retrieval <strong>routes differ completely</strong>:</p>
+
+<div class="cols">
+  <div class="col"><h4>🧊 SegmentSealed → via index</h4><p>A sealed segment has a built <strong>Knowhere vector index</strong> (Lesson 22, e.g. HNSW/IVF) loaded into memory. Search does <strong>not scan row by row</strong> but lets the index lead — a few graph hops, or IVF probing only the nearest buckets, <strong>skipping the vast majority</strong> of vectors to home in on the most-alike few. This is the source of "<strong>fast</strong>," the normal path for the data bulk.</p></div>
+  <div class="col"><h4>🔥 SegmentGrowing → brute force</h4><p>A growing segment has <strong>no index yet</strong> (data changes every moment, no time to index). Search can only go <strong>brute force</strong>: compute distance between the query vector and <strong>every</strong> vector in the segment, then sort and take topK. Since growing segments are <strong>small</strong> and local, this brute-force cost is acceptable — in return for the freshness of "<strong>searchable right after writing</strong>."</p></div>
+</div>
+
+<p>What makes this "<strong>one interface, two implementations</strong>" design clever? It lets <strong>the upper layers (the delegator's and worker's scheduling code) be wholly unconcerned with whether a segment has an index</strong> — they just call the same <span class="inline">Search</span> on each segment, and segcore internally <strong>picks the fast path (index) or slow path (brute force) by the segment's actual type</strong>. This is the classic use of object-oriented "<strong>polymorphism</strong>" in systems design: seal "<strong>what varies</strong>" (how to search) inside the implementations and expose only "<strong>the unchanging contract</strong>" (give me a segment and a plan, get back the segment's topK). Precisely because of this, Lesson 26's delegator could airily say "merge the sealed and growing results" — in its eyes the two look alike, the difference <strong>quietly absorbed</strong> by the segcore layer.</p>
+
+<p>There's one more thing segcore silently does for you inside a segment, often overlooked yet crucial: <strong>excluding "rows you shouldn't see."</strong> A segment's data isn't only "inserts" — there are also <strong>deletes</strong> (Lesson 20) and <strong>timestamps</strong> (Lesson 11). When searching, segcore <strong>applies two filters</strong>: one, a <strong>delete bitmap</strong> marking out already-deleted rows so they don't count as candidates; two, the <strong>time filter</strong> brought by the <strong>guarantee ts</strong>, making visible only the version with ts ≤ guarantee. In other words, <strong>the execution point where MVCC (multi-version visibility) finally lands is this segcore layer</strong>: upper layers pass the guarantee ts all the way down, and the actual judgment of "per this snapshot, is each row visible" happens in the segment, hugging the data. So you won't search up "just-deleted" rows or rows "written later than your snapshot" — this correctness is, beyond sealed/growing, the other half of segcore's in-segment logic (full consistency and MVCC are tied up in Lesson 30).</p>
+
+<h2>One in-segment search: from plan to a segment's topK</h2>
+<p>Lay out segcore's moves for one search <strong>inside a segment</strong> (take a filtered sealed segment) and you get this short chain. Note it is exactly where Lesson 25's plan is <strong>actually executed</strong> at the bottom:</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Receive plan and query vectors</h4><p>In through the C API come a <strong>search plan</strong> (plan: vector field + metric + topK + scalar predicate), the <strong>query vectors</strong> (placeholder), and the <strong>guarantee ts</strong>. segcore executes it within the scope of this one segment.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Scalar filter → bitset</h4><p>First, by the plan's <strong>scalar predicate</strong> (e.g. <span class="mono">year &gt; 2020</span>), compute a <strong>bitset</strong> within the segment marking "which rows qualify." This <strong>narrows</strong> the candidate set first (Lesson 24's filter-then-search; the execution engine is detailed in Lesson 28).</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Vector search (index / brute force)</h4><p>Do ANN over the qualifying subset: <strong>sealed</strong> lets the <strong>Knowhere index</strong> lead and skip most; <strong>growing</strong> <strong>brute-forces</strong> distances over the qualifying rows. Compute similarity by the metric (L2/IP/COSINE).</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Take the segment's topK, return</h4><p><strong>Sort the candidates computed in this segment and take the most-alike topK</strong>, returning it as the <strong>segment's local result</strong> through the C API to Go. It joins the delegator's node-level merge (Lesson 26) — the bottom level of the "<strong>three-level reduce</strong>."</p></div></div>
+</div>
+
+<p>This chain <strong>ties off</strong> the whole query path: the plan the Proxy compiled in Lesson 25, handed down, through the delegator, across the cgo boundary, is <strong>finally run for real here in segcore</strong>. And the "segment topK" segcore emits is then <strong>merged level by level</strong> back up — segment topK (here) → delegator node-level merge (Lesson 26) → Proxy cross-shard merge (Lesson 25). You should now be able to picture a search's "<strong>downward fan-out</strong>" and "<strong>upward merge</strong>" end to end in your head. The execution detail of steps 2-3 "<strong>filter into a bitset, then do ANN over the subset</strong>" (the plan tree, expressions, vectorized operators) is the subject of Lesson 28's "execution engine"; why in-segment data is <strong>columnar, chunked, and mmap-able</strong> is dug into in Part 8. For this lesson, just firmly remember this layer's boundary and division of labor.</p>
+
+<p>Finally, leave a hook to "<strong>look further down.</strong>" This lesson deliberately left two things unexpanded, each with its own chapter. One is "<strong>how the plan actually executes in a segment</strong>": once the plan enters segcore, the scalar predicate is compiled into an <strong>expression tree</strong> and run operator by operator by a <strong>vectorized execution engine</strong> (filter first, then vector search) — the subject of Lesson 28. The other is "<strong>what in-segment data looks like</strong>": why vectors and scalars are stored <strong>columnar and chunked</strong> in a segment, and why they can be <strong>mmap</strong>-ed (mapping disk files as memory, paged in on demand) to serve data far larger than RAM — these storage details are a Part 8 topic. This lesson establishes "<strong>who computes, across which boundary, and what path each kind of segment takes</strong>"; only then do those two deep dives have a foundation.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/core/src/segcore/SegmentInterface.h</span><span class="ln">from line 81: the unified segment interface behind the C API (sketch)</span></div>
+  <pre><span class="cm">// common interface of SegmentSealed and SegmentGrowing used by the C API</span>
+<span class="kw">class</span> <span class="nb">SegmentInterface</span> {
+ <span class="kw">public</span>:
+    <span class="kw">virtual</span> ~SegmentInterface() = <span class="kw">default</span>;
+    <span class="cm">// run a search within "this one segment": eat a plan + query vectors, emit the segment's result</span>
+    <span class="kw">virtual</span> std::unique_ptr&lt;SearchResult&gt;
+    <span class="fn">Search</span>(<span class="kw">const</span> query::Plan* plan,
+           <span class="kw">const</span> query::PlaceholderGroup* placeholder, ...) <span class="kw">const</span> = <span class="nb">0</span>;
+    <span class="cm">// … FillPrimaryKeys / FillTargetEntry etc. omitted …</span>
+};
+<span class="cm">// two impls: SegmentSealed (via Knowhere index) / SegmentGrowing (brute force per row)</span>
+<span class="cm">// Go calls in over cgo: segment_c.h's NewSegment / AsyncSearch / DeleteSegment</span>
+<span class="cm">//                 ←→ Go-side LocalSegment (querynodev2/segments/segment.go)</span></pre>
+</div>
+
+<p>Stitch the whole first half of Part 6 together: in Lesson 25, the Proxy <strong>translated the search into a plan, fixed the guarantee ts, and fanned it to shards</strong>; in Lesson 26, the delegator, within a shard, <strong>covered sealed+growing, fanned to workers, and merged within the node</strong>; in this lesson, the worker, over <strong>cgo</strong>, handed "in-segment search" to C++'s <strong>segcore</strong>, which uses a <strong>unified interface</strong> to take the index route for sealed and the brute-force route for growing, computing a <strong>segment topK</strong>. The second half (Lessons 28-30, dispatched later) digs deeper: how the plan <strong>actually executes</strong> inside segcore (the execution engine), how the three-level reduce <strong>merges</strong>, and how guarantee ts and MVCC <strong>redeem consistency</strong>. Remember this first half as one sentence: <strong>a search is the journey of one plan setting out from the Proxy, fanned through the delegator to segments, crossing cgo into segcore to be executed, then merged level by level back as segment topKs</strong> — and segcore is <strong>the real working engine at the deepest point of that journey.</strong></p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>segcore = the C++ single-segment search engine</strong>: executes search/query only "inside one segment," knowing nothing of shards/replicas/WAL; the real vector-computing engine inside a worker.</li>
+    <li><strong>the cgo boundary</strong>: Go's <span class="inline">LocalSegment</span> (<span class="mono">segments/segment.go</span>) calls into C++ through pure-C <span class="mono">segment_c.h</span> (<span class="inline">NewSegment/AsyncSearch/DeleteSegment</span>); a segment is just an opaque handle on the Go side.</li>
+    <li><strong>unified interface</strong>: <span class="inline">SegmentInterface</span> (<span class="mono">SegmentInterface.h:81</span>) abstracts "a segment," with <strong>SegmentSealed</strong> and <strong>SegmentGrowing</strong> implementations (polymorphism).</li>
+    <li><strong>sealed = index, growing = brute force</strong>: sealed searches via the loaded Knowhere index (fast); growing has no index and computes per row (keeps fresh).</li>
+    <li><strong>one in-segment search</strong>: receive plan → scalar-filter into a bitset → ANN over the subset (index/brute force) → take the segment's topK and return; the bottom of the three-level reduce.</li>
+    <li><strong>why C++</strong>: the performance-sensitive inner loop (SIMD/cache/mmap) is C++'s turf; Go schedules, C++ computes, the cgo boundary kept deliberately coarse. Columnar/chunked/mmap in Part 8.</li>
+  </ul>
+</div>
+""",
+}

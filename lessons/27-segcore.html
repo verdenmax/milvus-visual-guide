@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>27 · Segcore（C++） / Segcore (C++) - Milvus 图解教程</title>
+<meta name="description" content="第六部分 · 查询链路｜Segcore（C++） - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="27 · Segcore（C++） / Segcore (C++) - Milvus 图解教程">
+<meta property="og:description" content="第六部分 · 查询链路｜Segcore（C++） - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="27 · Segcore（C++） / Segcore (C++) - Milvus 图解教程">
+<meta name="twitter:description" content="第六部分 · 查询链路｜Segcore（C++） - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.timeline .tl-row { display: flex; align-items: flex-start; gap: .6rem; padding: .12rem 0; }
+.timeline .tl-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: .45rem; }
+.timeline .tl-t { font-family: ui-monospace, monospace; font-weight: 700; color: var(--accent-ink); min-width: 2.4rem; font-size: .82rem; flex-shrink: 0; margin-top: .18rem; }
+.timeline .tl-c { font-size: .9rem; color: var(--muted); }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第六部分 · 查询链路</span><span class="lang-en">Part 6 · The query path</span></span>
+    <span class="pill">27 / 27</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:100%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第六部分 · 查询链路</span><span class="lang-en">Part 6 · The query path</span></div>
+    <h1><span class="lang-zh">Segcore（C++）</span><span class="lang-en">Segcore (C++)</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+前两课，请求从 Proxy 扇到分片、再由 delegator 扇到一个个段、路由给持有段的 worker。现在我们站在<strong>最里层</strong>：worker 拿到一个段、一张检索计划，到底<strong>怎么在这一个段内部把最像的几条找出来</strong>？
+答案要跨过一道语言边界——因为真正干这件算力活的，不是 Go，而是 C++ 写的检索内核 <strong>segcore</strong>。这一课就走进 segcore：它是什么、Go 如何通过 <strong>cgo</strong> 调到它、它内部如何用一套统一接口（<span class="inline">SegmentInterface</span>）同时服务<strong>带索引的 sealed</strong> 段与<strong>靠暴力的 growing</strong> 段。
+这是整条查询链路<strong>最深的一层</strong>，也是第六部分上半段（第 25–27 课）的<strong>收尾</strong>：到了这里，那张从 Proxy 一路下发的检索计划，终于"<strong>触底</strong>"、在真实的向量数据上被执行。
+</p>
+
+<div class="card analogy">
+  <div class="tag">📚 生活类比</div>
+  想象一座研究档案馆里，有一位只会说<strong>"C++ 语"</strong>的<strong>资深检索专家</strong>（segcore），他动作极快、只管"在<strong>一个档案室</strong>里找出最像样品的几份卷宗"。而楼上发指令的<strong>调度经理</strong>只会说<strong>"Go 语"</strong>（QueryNode）。两人语言不通，怎么协作？
+  靠的是档案馆门口那个<strong>固定的翻译窗口</strong>（<strong>cgo / C API</strong>）：经理把需求写成一张<strong>标准工单</strong>递进窗口，窗口把它翻成 C++ 语交给专家；专家查完，再把结果经窗口翻回来。<strong>所有往来都必须走这个窗口</strong>，不能直接喊话——这就是 Go 与 C++ 之间的边界。
+  而专家手上的档案室也分两种：一种是<strong>早已整理好、配了卡片目录</strong>的库房（<strong>sealed + 索引</strong>），凭目录一翻就跳到对的架子，极快；另一种是<strong>今天刚收、还堆在收件筐里</strong>的散件（<strong>growing</strong>），没目录，只能<strong>一份一份过目</strong>（暴力扫描），好在量少。专家对外是<strong>同一套找卷宗的手法</strong>，对内却按"<strong>有没有目录</strong>"自动选快路或慢路——这正是 segcore 的 <span class="inline">SegmentInterface</span> 同时罩住 sealed 与 growing 的样子。无论哪种档案室，专家对外交付的都是同一句话："<strong>这是本室里最像样品的几份</strong>"——内部的快慢之别，外人不必知道。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  <strong>segcore</strong> 是 Milvus 用 <strong>C++</strong> 写的"<strong>单段检索引擎</strong>"：它只负责"<strong>在一个 segment 内部执行检索/查询</strong>"，不懂分片、副本、WAL 这些分布式概念。Go 侧的 QueryNode 通过 <strong>cgo</strong> 跨语言调用它：Go 的 <span class="inline">LocalSegment</span>（<span class="mono">internal/querynodev2/segments/segment.go</span>，第 2 课见过）持有一个指向 C++ 段对象的<strong>不透明句柄</strong>，经 <strong>C API</strong>（<span class="mono">internal/core/src/segcore/segment_c.h</span>，如 <span class="inline">NewSegment</span> / <span class="inline">AsyncSearch</span> / <span class="inline">DeleteSegment</span>）调进去。C++ 内部用一套统一接口 <strong><span class="inline">SegmentInterface</span></strong>（<span class="mono">SegmentInterface.h:81</span>）抽象"一个段"，其下有两种实现：<strong>SegmentSealed</strong>（封存段，走加载好的 <strong>Knowhere 索引</strong>检索）与 <strong>SegmentGrowing</strong>（在长段，无索引，<strong>暴力</strong>逐条算）。列式/分块存储与 mmap 的细节是第八部分的专题。
+</div>
+
+<h2>segcore 是什么：单段检索的 C++ 内核</h2>
+<p>先把 segcore 在整张地图上的位置钉死。回忆第 2 课的"三语言分工"：<strong>Go</strong> 管分布式与调度，<strong>C++</strong> 管单机的存储与计算，<strong>Rust</strong> 管全文索引。前面两课讲的 Proxy、delegator、QueryNode 调度，全在 <strong>Go</strong> 这一侧；而"<strong>在一个段里真刀真枪算向量距离、跑过滤</strong>"这件<strong>计算密集</strong>的活，落在 <strong>C++</strong> 的 segcore 上。它是 worker QueryNode "<strong>身体里</strong>"那台真正的检索发动机——上层千辛万苦地分片、路由、合并，最终都是为了把一个"在某段上检索"的请求，交到 segcore 手里执行。</p>
+
+<p>补一句 segcore 的"业务面"：它不只服务<strong>向量搜索（Search）</strong>，也服务<strong>标量查询（Query / Retrieve）</strong>——即第 25 课提过的、"按条件取出满足的行"那条路。两者在 segcore 里共用同一套段抽象与过滤机制，区别只在最后一步是"<strong>做 ANN 取最像的 topK</strong>"还是"<strong>把命中行的字段取出来</strong>"。所以你可以把 segcore 理解成一台<strong>通用的单段执行器</strong>：上层给它一份计划，它在一个段的数据上把计划<strong>跑完</strong>，至于是搜还是查，只是计划里的算子不同。这也解释了为什么 <span class="inline">SegmentInterface</span> 上既有 <span class="inline">Search</span> 又有取字段、填主键之类的方法——它要同时撑起读路径上"<strong>搜</strong>"与"<strong>查</strong>"两类需求。</p>
+
+<p>为什么这一层非要用 <strong>C++</strong>，不能像别的部分那样用 Go？因为这是<strong>性能最敏感的内循环</strong>：一次检索要在成千上万条向量上做距离计算、要紧贴 SIMD 指令与缓存、要精细管理大块内存与 mmap——这些都是 C++（以及它对接的 Knowhere、FAISS 等）的主场，而 Go 的运行时（GC、调度）在这种<strong>极致数值计算</strong>场景反而是负担。所以 Milvus 的取舍很清晰：<strong>分布式协调用 Go（开发快、并发友好），单机数值计算用 C++（榨干硬件）</strong>，两者各取所长。代价就是要在 Go 与 C++ 之间架一座桥——这座桥就是 <strong>cgo</strong>。</p>
+
+<p>顺带把 segcore 和第 22 课的 <strong>Knowhere</strong> 摆到一起，免得混淆两者的边界。segcore 是"<strong>段的引擎</strong>"：它管一个段内的<strong>全套</strong>检索流程——接计划、过滤、调度、套用删除位图与时间过滤、组织结果。而当流程走到"<strong>纯粹的向量 ANN 计算</strong>"那一步（在 sealed 段上用 HNSW/IVF 找近邻），segcore 自己<strong>并不重写算法</strong>，而是<strong>调用 Knowhere</strong> 这个上游向量内核去算。换句话说：<strong>segcore 负责"段内的编排与正确性"，Knowhere 负责"索引结构与近邻计算"</strong>，前者调后者。再加上 growing 段那条不走索引的暴力路径，你就拼出了 segcore 段内检索的全貌：<strong>过滤 → （sealed 调 Knowhere 索引 / growing 暴力）→ 取 topK</strong>。把"谁编排、谁算 ANN"分清，第 22 与本课就不会打架。</p>
+
+<p>多说一句这座桥的"<strong>窄</strong>"。Go 调 C++ 之所以要绕道一层<strong>纯 C 接口</strong>，根因是 cgo 只认 <strong>C 的 ABI</strong>（应用二进制接口）：C++ 的类、模板、命名空间、虚函数表这些，编译后名字会被"<strong>name mangling</strong>"打乱，Go 根本对不上号；而 C 函数的符号简单、稳定，是两种语言都能握手的<strong>最大公约数</strong>。所以 segcore 的对外门面 <span class="mono">segment_c.h</span> 里全是<strong>朴素的 C 函数</strong>，参数也尽量用基础类型与不透明指针——它像一道特意收窄的"<strong>闸口</strong>"，把复杂的 C++ 世界藏在身后，只留几个干净的把手给 Go 抓。理解这一点，你看 Milvus core 里大量 <span class="mono">*_c.h / *_c.cpp</span> 文件就不会困惑了：它们都是"<strong>给 Go 看的 C 门面</strong>"，背后才是真正干活的 C++ 实现。</p>
+
+<h2>那道边界：Go 如何通过 cgo 调到 segcore</h2>
+<p>把"Go 调 C++"这件事拆开看，它分四层，像剥洋葱一样从 Go 一直钻到 C++ 的段实现：</p>
+
+<div class="layers">
+  <div class="layer l-app"><span class="badge">Go</span><span class="name">LocalSegment（querynodev2/segments/segment.go）</span><span class="ld">Go 侧对"一个段"的封装；持有 C++ 段对象的不透明句柄；第 2 课见过它的 Search</span></div>
+  <div class="layer l-part"><span class="badge">cgo / C API</span><span class="name">segment_c.h（NewSegment / AsyncSearch / DeleteSegment …）</span><span class="ld">纯 C 函数签名的"翻译窗口"；所有 Go↔C++ 往来必经此处；句柄类型 CSegmentInterface = void*</span></div>
+  <div class="layer l-main"><span class="badge">C++ 接口</span><span class="name">SegmentInterface（SegmentInterface.h:81）</span><span class="ld">C API 背后真正的对象；用统一虚接口抽象"一个段"的检索/查询能力</span></div>
+  <div class="layer l-core"><span class="badge">C++ 实现</span><span class="name">SegmentSealed（走索引） / SegmentGrowing（暴力）</span><span class="ld">两种段实现；sealed 用 Knowhere 索引、growing 逐条暴力算</span></div>
+</div>
+
+<p>逐层看这趟"下钻"：最上面，Go 的 <span class="inline">LocalSegment</span>（第 2 课就出现过的那个类型）是 worker 对"一个段"的本地代表，它的 <span class="inline">Search</span> 方法<strong>并不亲自算距离</strong>，而是把检索计划、查询向量、guarantee ts 等打包，<strong>通过 cgo 调一个 C 函数</strong>。中间一层 <span class="mono">segment_c.h</span> 就是那个"<strong>翻译窗口</strong>"：它声明了一组<strong>纯 C 函数</strong>（<span class="inline">NewSegment</span> 建段、<span class="inline">AsyncSearch</span> 检索、<span class="inline">DeleteSegment</span> 释放……），因为 cgo 只能跨"<strong>C 的 ABI</strong>"，C++ 的类与模板没法直接被 Go 看见，于是必须用一层 C 函数把 C++ 能力<strong>包一层</strong>暴露出来。这些 C 函数里，Go 看到的段只是一个 <span class="inline">CSegmentInterface</span>（本质是个 <span class="inline">void*</span> 不透明句柄）——Go 不知道、也不需要知道它背后是什么 C++ 对象。</p>
+
+<p>再往里，C 函数把这个句柄<strong>转回真正的 C++ 对象</strong>——一个 <span class="inline">SegmentInterface</span>（<span class="mono">SegmentInterface.h:81</span> 那个虚接口），然后调它的 <span class="inline">Search</span> 等虚方法。到这里，控制权才真正进入 segcore 的算法世界。这趟跨语言调用的代价不可忽视：每次 cgo 调用都有固定开销，数据要在 Go 与 C++ 的内存表示间小心传递（不能让 Go 的 GC 动了 C++ 还在用的内存）。所以 Milvus 的设计有意让 cgo 边界<strong>粗粒度</strong>——一次调用就交给 C++ 一整段的检索，而不是在热循环里频繁来回穿越边界。<strong>记住这条边界的形状</strong>：Go 负责"<strong>调度与拼装</strong>"，C++ 负责"<strong>段内的真正计算</strong>"，中间隔着一道窄窄的、纯 C 的 <span class="mono">segment_c.h</span> 窗口。</p>
+
+<h2>统一接口下的两副面孔：sealed vs growing</h2>
+<p>跨过边界进了 C++，segcore 用<strong>同一套接口</strong>（<span class="inline">SegmentInterface</span>，及其内部接口）抽象"一个段"，但底下有<strong>两种实现</strong>，对应第 26 课那对老朋友——sealed 与 growing。它们检索的<strong>路子完全不同</strong>：</p>
+
+<div class="cols">
+  <div class="col"><h4>🧊 SegmentSealed → 走索引</h4><p>封存段已建好 <strong>Knowhere 向量索引</strong>（第 22 课，如 HNSW/IVF），并加载进内存。检索时<strong>不逐条扫</strong>，而是让索引带路——图索引几跳、或 IVF 只探最近几桶，<strong>跳过绝大多数向量</strong>，直接逼近最像的那一小撮。这是"<strong>快</strong>"的来源，也是数据主体的常态路径。</p></div>
+  <div class="col"><h4>🔥 SegmentGrowing → 暴力扫</h4><p>在长段还<strong>没有索引</strong>（数据每刻在变，来不及建）。检索时只能<strong>暴力（brute force）</strong>：把查询向量和段内<strong>每一条</strong>向量都算一遍距离，再排序取 topK。因为 growing 段<strong>小</strong>、就在本地，这点暴力开销可以接受——它换来的是"<strong>刚写就能搜到</strong>"的新鲜。</p></div>
+</div>
+
+<p>这"<strong>同一接口、两种实现</strong>"的设计妙在哪？它让<strong>上层（delegator、worker 的调度代码）完全不必关心一个段到底带不带索引</strong>——它只管对每个段调同一个 <span class="inline">Search</span>，segcore 内部会按段的实际类型<strong>自动选择快路（索引）或慢路（暴力）</strong>。这是面向对象"<strong>多态</strong>"在系统设计里的经典用法：把"<strong>变化的部分</strong>"（怎么搜）封在实现里，对外只暴露"<strong>不变的契约</strong>"（给我一个段一张计划、还我段内 topK）。也正因如此，第 26 课 delegator 才能云淡风轻地说"把 sealed 和 growing 的结果合并"——在它眼里两者长得一样，差异被 segcore 这层<strong>悄悄吸收</strong>了。</p>
+
+<p>还有一件 segcore 在段内默默替你做的事，常被忽略却很关键：<strong>剔除"不该看到的行"</strong>。一个段里的数据不是只有"插入"——还有<strong>删除</strong>（第 20 课）和<strong>时间戳</strong>（第 11 课）。segcore 检索时会<strong>结合两层过滤</strong>：一是<strong>删除位图</strong>，把已被删除的行标掉、不计入候选；二是 <strong>guarantee ts</strong> 带来的<strong>时间过滤</strong>，只让 ts ≤ guarantee 的那一版数据可见。换句话说，<strong>MVCC（多版本可见性）最终落地的执行点，就在 segcore 这一层</strong>：上层把 guarantee ts 一路传下来，真正"按这个时间快照决定每一行可不可见"的判定，是在段内、贴着数据完成的。所以你不会搜到"刚被删的"或"晚于你时间快照才写入的"行——这层正确性，正是 sealed/growing 之外，segcore 段内逻辑的另一半职责（完整的一致性与 MVCC 第 30 课收口）。</p>
+
+<h2>一次段内检索：从计划到段内 topK</h2>
+<p>把 segcore 在<strong>一个段里</strong>处理一次检索的动作摆开（以带过滤的 sealed 段为例），就是下面这条短链。注意它正是第 25 课那张 plan 在最底层被<strong>真正执行</strong>的地方：</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>接收计划与查询向量</h4><p>经 C API 进来一份 <strong>检索计划</strong>（plan：向量字段 + 度量 + topK + 标量谓词）、<strong>查询向量</strong>（placeholder）、以及 <strong>guarantee ts</strong>。segcore 在这一个段的范围内执行它。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>标量过滤 → bitset</h4><p>先按计划里的<strong>标量谓词</strong>（如 <span class="mono">year &gt; 2020</span>）在段内算出一张<strong>位掩码（bitset）</strong>：标出"哪些行合格"。这一步把候选范围<strong>先缩小</strong>（第 24 课的"先筛后搜"、第 28 课详述执行引擎）。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>向量检索（索引 / 暴力）</h4><p>在合格子集上做 ANN：<strong>sealed</strong> 让 <strong>Knowhere 索引</strong>带路、跳过大半；<strong>growing</strong> 则对合格行<strong>逐条暴力</strong>算距离。按度量（L2/IP/COSINE）算出相似度。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>段内取 topK 回传</h4><p>把本段算出的候选<strong>排序、取最像的 topK</strong>，作为<strong>段内局部结果</strong>经 C API 交回 Go 侧。它将参与 delegator 的节点内归并（第 26 课）——这就是"<strong>三级 reduce</strong>"最底下那一级。</p></div></div>
+</div>
+
+<p>这条链把整条查询链路<strong>收口</strong>了：第 25 课 Proxy 编出的那张 plan，一路下发、穿过 delegator、跨过 cgo 边界，<strong>终于在 segcore 这里被真正跑起来</strong>。而 segcore 吐出的"段内 topK"，又会反向<strong>逐级归并</strong>上去——段内 topK（这里）→ delegator 节点内合并（第 26 课）→ Proxy 跨分片合并（第 25 课）。你现在应该能把一次 search 的"<strong>下行扇出</strong>"和"<strong>上行归并</strong>"完整地在脑子里画一遍了。其中第 2、3 步"<strong>先用谓词筛出 bitset、再在子集上做 ANN</strong>"的执行细节（计划树、表达式、向量化算子），是第 28 课"执行引擎"的主题；而段内数据为什么是<strong>列式、分块、可 mmap</strong> 的，则留到第八部分深挖。本课你只要牢牢记住这一层的边界与分工。</p>
+
+<p>最后留一个"<strong>往下看</strong>"的钩子。本课刻意没展开两件事，它们各有专属篇章。其一是"<strong>计划到底怎么在段内执行</strong>"：那张 plan 进了 segcore 后，标量谓词会被编成一棵<strong>表达式树</strong>、由一套<strong>向量化执行引擎</strong>逐算子跑出来（先过滤、再向量检索），这是第 28 课的主题。其二是"<strong>段内的数据长什么样</strong>"：为什么向量与标量在段里是<strong>列式、分块</strong>存放的，为什么可以 <strong>mmap</strong>（把磁盘文件映射成内存、按需换入）从而服务远超内存的数据——这套存储细节是第八部分的专题。本课把"<strong>谁在算、隔着哪道边界、两类段各走什么路</strong>"立住，后面两处深挖才有地基。</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/core/src/segcore/SegmentInterface.h</span><span class="ln">第 81 行起：C API 背后统一的段接口（节选示意）</span></div>
+  <pre><span class="cm">// 被 C API 使用的、SegmentSealed 与 SegmentGrowing 的公共接口</span>
+<span class="kw">class</span> <span class="nb">SegmentInterface</span> {
+ <span class="kw">public</span>:
+    <span class="kw">virtual</span> ~SegmentInterface() = <span class="kw">default</span>;
+    <span class="cm">// 在“这一个段”内执行检索：吃一份 plan + 查询向量，吐段内结果</span>
+    <span class="kw">virtual</span> std::unique_ptr&lt;SearchResult&gt;
+    <span class="fn">Search</span>(<span class="kw">const</span> query::Plan* plan,
+           <span class="kw">const</span> query::PlaceholderGroup* placeholder, ...) <span class="kw">const</span> = <span class="nb">0</span>;
+    <span class="cm">// … FillPrimaryKeys / FillTargetEntry 等省略 …</span>
+};
+<span class="cm">// 两种实现：SegmentSealed（走 Knowhere 索引）/ SegmentGrowing（暴力逐条）</span>
+<span class="cm">// Go 经 cgo 调入：segment_c.h 的 NewSegment / AsyncSearch / DeleteSegment</span>
+<span class="cm">//                 ←→ Go 侧 LocalSegment（querynodev2/segments/segment.go）</span></pre>
+</div>
+
+<p>把整个第六部分上半段串起来：第 25 课，Proxy 把搜索<strong>翻译成 plan、定好 guarantee ts、扇到各分片</strong>；第 26 课，delegator 在分片内<strong>覆盖 sealed+growing、扇到 worker、节点内归并</strong>；这一课，worker 通过 <strong>cgo</strong> 把"段内检索"交给 C++ 的 <strong>segcore</strong>，由它用<strong>统一接口</strong>对 sealed 走索引、对 growing 走暴力，算出<strong>段内 topK</strong>。下半段（第 28–30 课，后续派发）会接着深挖：plan 在 segcore 里<strong>具体怎么执行</strong>（执行引擎）、三级 reduce <strong>怎么归并</strong>、以及 guarantee ts 与 MVCC <strong>如何兑现一致性</strong>。把这上半段连成一句话记牢：<strong>一次搜索，就是一张计划从 Proxy 出发、经 delegator 扇到段、跨 cgo 进 segcore 被执行，再把段内 topK 逐级归并回来的旅程</strong>——而 segcore，就是这趟旅程<strong>最深处那台真正干活的发动机</strong>。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>segcore = C++ 单段检索引擎</strong>：只在"一个 segment 内部"执行检索/查询，不懂分片/副本/WAL；是 worker 体内真正算向量的发动机。</li>
+    <li><strong>cgo 边界</strong>：Go 的 <span class="inline">LocalSegment</span>（<span class="mono">segments/segment.go</span>）经纯 C 的 <span class="mono">segment_c.h</span>（<span class="inline">NewSegment/AsyncSearch/DeleteSegment</span>）调进 C++；段在 Go 侧只是个不透明句柄。</li>
+    <li><strong>统一接口</strong>：<span class="inline">SegmentInterface</span>（<span class="mono">SegmentInterface.h:81</span>）抽象"一个段"，下有 <strong>SegmentSealed</strong> 与 <strong>SegmentGrowing</strong> 两种实现（多态）。</li>
+    <li><strong>sealed = 索引、growing = 暴力</strong>：封存段走加载好的 Knowhere 索引（快）；在长段无索引、逐条暴力算（保新鲜）。</li>
+    <li><strong>段内一次检索</strong>：收 plan → 标量过滤出 bitset → 子集上做 ANN（索引/暴力）→ 取段内 topK 回传，是三级 reduce 最底层。</li>
+    <li><strong>为什么用 C++</strong>：性能敏感的内循环（SIMD/缓存/mmap）是 C++ 主场；Go 管调度、C++ 管计算，cgo 边界刻意粗粒度。列式/分块/mmap 见第八部分。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. segcore 是用什么语言写的、负责什么？Go 侧的 QueryNode 如何调用它？</div>
+  <ol class="opts">
+    <li>segcore 是 Rust 写的全文检索引擎</li>
+    <li>segcore 是 C++ 写的“单段检索引擎”，只在一个 segment 内部执行检索/查询；Go 的 LocalSegment 经纯 C 的 segment_c.h（NewSegment/AsyncSearch/DeleteSegment）通过 cgo 调进 C++，段在 Go 侧只是个不透明句柄</li>
+    <li>segcore 是 Go 写的，直接在 QueryNode 进程里以 Go 代码运行</li>
+    <li>segcore 由 Proxy 直接调用，不经过 QueryNode</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。segcore 是 C++ 单段引擎（不懂分片/副本/WAL）。cgo 只认 C 的 ABI，所以要用纯 C 的 segment_c.h 把 C++ 能力包一层暴露给 Go；段在 Go 侧是 void* 不透明句柄。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. segcore 用同一套 SegmentInterface 抽象“一个段”，下有两种实现。sealed 与 growing 的检索路径分别是什么？</div>
+  <ol class="opts">
+    <li>sealed 和 growing 必须由不同的 Proxy 分别调用</li>
+    <li>SegmentSealed 走加载好的 Knowhere 索引（HNSW/IVF…，跳过大半向量，快）；SegmentGrowing 无索引、对每条向量暴力算距离（小、新）。上层只调同一个 Search，由多态自动选快路/慢路</li>
+    <li>两者都不计算距离，只返回行号</li>
+    <li>sealed 暴力扫、growing 走索引，正好相反</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。“同一接口、两种实现”是多态：上层不必关心段带不带索引，segcore 按段的实际类型自动选索引（sealed，快）或暴力（growing，新）。这也是 delegator 能云淡风轻合并两者的原因。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 为什么 Milvus 要在 Go 与 C++ 之间隔一层纯 C 的 segment_c.h，而不让 Go 直接调 C++ 的类与方法？</div>
+  <ol class="opts">
+    <li>纯属历史包袱，没有技术原因</li>
+    <li>因为 C 比 C++ 运行得更快</li>
+    <li>因为 Go 不允许调用任何非 Go 代码</li>
+    <li>因为 cgo 只认 C 的 ABI：C++ 的类/模板/虚表经 name mangling 后 Go 对不上号，而 C 函数符号简单稳定，是两种语言的最大公约数；所以要用纯 C 函数把 C++ 能力包一层暴露</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。cgo 跨的是 C 的 ABI。C++ 的 name mangling 让 Go 对不上符号，于是 Milvus core 里大量 *_c.h/*_c.cpp 都是“给 Go 看的 C 门面”，背后才是真正干活的 C++。边界还刻意粗粒度以摊薄 cgo 调用开销。</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>本课强调 segcore 在段内还默默做 MVCC：结合删除位图与 guarantee ts 的时间过滤，只让“该看到”的那一版数据可见。请思考：为什么把这层可见性判定放在“最贴近数据的段内”执行，而不是在 Proxy 或 delegator 统一过滤？这对正确性和性能各有什么意义？（可结合第 20 课删除、第 30 课一致性。）</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+The last two lessons sent the request from the Proxy out to shards, then from the delegator out to individual segments, routed to the worker holding each. Now we stand at the <strong>innermost layer</strong>: a worker has one segment and one search plan — how exactly does it <strong>find the few most-alike rows inside this one segment</strong>?
+The answer crosses a language boundary, because the engine that actually does this compute-heavy work is not Go but a C++ search kernel, <strong>segcore</strong>. This lesson steps into segcore: what it is, how Go calls it over <strong>cgo</strong>, and how it uses one unified interface (<span class="inline">SegmentInterface</span>) to serve both the <strong>indexed sealed</strong> segments and the <strong>brute-force growing</strong> segments.
+This is the <strong>deepest layer</strong> of the whole query path and the <strong>finale</strong> of Part 6's first half (Lessons 25-27): here, the search plan handed down all the way from the Proxy finally "<strong>hits bottom</strong>" and is executed on real vector data.
+</p>
+
+<div class="card analogy">
+  <div class="tag">📮 Analogy</div>
+  Picture a research archive with a <strong>senior retrieval specialist</strong> who only speaks <strong>"C++"</strong> (segcore), extremely fast, whose sole job is "find the few files most like a sample <strong>within one archive room</strong>." But the <strong>dispatch manager</strong> upstairs who issues orders only speaks <strong>"Go"</strong> (the QueryNode). They don't share a language — how do they cooperate?
+  Through a <strong>fixed translation window</strong> at the archive's entrance (<strong>cgo / the C API</strong>): the manager writes the request as a <strong>standard work order</strong> and slips it through the window, which translates it into C++ for the specialist; the specialist searches and the result comes back out through the window. <strong>All exchange must go through this window</strong>, never by shouting directly — that is the Go↔C++ boundary.
+  And the specialist's rooms come in two kinds: one is a stockroom <strong>long since organized with a card catalog</strong> (<strong>sealed + index</strong>), where the catalog jumps you straight to the right shelf, blazing fast; the other is loose material <strong>that arrived today, still piled in the inbox</strong> (<strong>growing</strong>), with no catalog, so you must <strong>read each sheet one by one</strong> (brute-force scan), though luckily it's small. Outwardly the specialist offers <strong>one and the same retrieval method</strong>, but internally picks the fast or slow path by "<strong>is there a catalog</strong>" — exactly how segcore's <span class="inline">SegmentInterface</span> covers both sealed and growing. Whichever room, the specialist delivers the same sentence: "<strong>here are the few in this room most like your sample</strong>" — the inner fast/slow difference need not concern the outsider.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 The big picture</div>
+  <strong>segcore</strong> is Milvus's "<strong>single-segment search engine</strong>" written in <strong>C++</strong>: it only "<strong>executes search/query inside one segment</strong>," knowing nothing of shards, replicas, or the WAL. The Go-side QueryNode calls it across languages via <strong>cgo</strong>: Go's <span class="inline">LocalSegment</span> (<span class="mono">internal/querynodev2/segments/segment.go</span>, seen in Lesson 2) holds an <strong>opaque handle</strong> to a C++ segment object and calls in through a <strong>C API</strong> (<span class="mono">internal/core/src/segcore/segment_c.h</span>, e.g. <span class="inline">NewSegment</span> / <span class="inline">AsyncSearch</span> / <span class="inline">DeleteSegment</span>). Inside C++, a unified interface <strong><span class="inline">SegmentInterface</span></strong> (<span class="mono">SegmentInterface.h:81</span>) abstracts "a segment," with two implementations: <strong>SegmentSealed</strong> (sealed, searches via the loaded <strong>Knowhere index</strong>) and <strong>SegmentGrowing</strong> (growing, no index, <strong>brute-force</strong> per row). Columnar/chunked storage and mmap are a Part 8 topic.
+</div>
+
+<h2>What segcore is: the C++ kernel of single-segment search</h2>
+<p>First, pin segcore's place on the map. Recall Lesson 2's "three-language split": <strong>Go</strong> handles distribution and scheduling, <strong>C++</strong> handles single-machine storage and compute, <strong>Rust</strong> handles full-text indexing. The Proxy, delegator, and QueryNode scheduling of the past two lessons all live on the <strong>Go</strong> side; the <strong>compute-intensive</strong> work of "<strong>actually computing vector distances and running filters within a segment</strong>" lands on C++'s segcore. It is the real search engine "<strong>inside the body</strong>" of a worker QueryNode — all the painstaking sharding, routing, and merging upstream ultimately exists to hand a "search on some segment" request to segcore to execute.</p>
+
+<p>One more "business face" of segcore: it serves not only <strong>vector search (Search)</strong> but also <strong>scalar query (Query / Retrieve)</strong> — the "fetch rows satisfying a condition" path mentioned in Lesson 25. Both share the same segment abstraction and filtering machinery in segcore; they differ only in the last step: "<strong>do ANN and take the most-alike topK</strong>" versus "<strong>pull out the fields of the matched rows</strong>." So you can think of segcore as a <strong>general single-segment executor</strong>: upstream hands it a plan and it <strong>runs the plan to completion</strong> on one segment's data; whether it searches or queries is just a different operator in the plan. That is also why <span class="inline">SegmentInterface</span> has both <span class="inline">Search</span> and methods to fetch fields and fill primary keys — it must hold up both "<strong>search</strong>" and "<strong>query</strong>" needs on the read path.</p>
+
+<p>Why must this layer be <strong>C++</strong> rather than Go like the rest? Because this is the <strong>most performance-sensitive inner loop</strong>: a search computes distances over thousands upon thousands of vectors, hugs SIMD instructions and the cache, and finely manages large memory blocks and mmap — all home turf for C++ (and the Knowhere/FAISS it wraps), whereas Go's runtime (GC, scheduling) is a burden in such <strong>extreme numerical computing</strong>. So Milvus's tradeoff is clear: <strong>distributed coordination in Go (fast to develop, concurrency-friendly), single-machine numerical compute in C++ (squeeze the hardware)</strong>, each playing to its strength. The price is a bridge between Go and C++ — that bridge is <strong>cgo</strong>.</p>
+
+<p>While we're here, set segcore beside Lesson 22's <strong>Knowhere</strong> so their boundary isn't blurred. segcore is the "<strong>segment engine</strong>": it runs the <strong>whole</strong> in-segment retrieval flow — take the plan, filter, schedule, apply the delete bitmap and time filter, organize results. But when the flow reaches "<strong>the pure vector ANN compute</strong>" step (finding neighbors with HNSW/IVF on a sealed segment), segcore does <strong>not</strong> reimplement the algorithm; it <strong>calls Knowhere</strong>, the upstream vector kernel, to compute. In other words: <strong>segcore owns "in-segment orchestration and correctness," Knowhere owns "index structures and neighbor computation,"</strong> the former calling the latter. Add the no-index brute-force path of growing segments and you have the full picture of segcore's in-segment search: <strong>filter → (sealed calls the Knowhere index / growing brute-forces) → take topK</strong>. Tell apart "who orchestrates, who computes ANN" and Lessons 22 and 27 won't clash.</p>
+
+<h2>That boundary: how Go calls segcore over cgo</h2>
+<p>Unpack "Go calls C++" and it has four layers, peeling like an onion from Go all the way down to the C++ segment implementation:</p>
+
+<div class="layers">
+  <div class="layer l-app"><span class="badge">Go</span><span class="name">LocalSegment (querynodev2/segments/segment.go)</span><span class="ld">Go's wrapper for "a segment"; holds an opaque handle to the C++ segment object; its Search appeared in Lesson 2</span></div>
+  <div class="layer l-part"><span class="badge">cgo / C API</span><span class="name">segment_c.h (NewSegment / AsyncSearch / DeleteSegment …)</span><span class="ld">a "translation window" of pure-C signatures; all Go↔C++ exchange passes here; handle type CSegmentInterface = void*</span></div>
+  <div class="layer l-main"><span class="badge">C++ interface</span><span class="name">SegmentInterface (SegmentInterface.h:81)</span><span class="ld">the real object behind the C API; a unified virtual interface abstracting a segment's search/query ability</span></div>
+  <div class="layer l-core"><span class="badge">C++ impls</span><span class="name">SegmentSealed (via index) / SegmentGrowing (brute force)</span><span class="ld">two segment impls; sealed uses the Knowhere index, growing computes per row</span></div>
+</div>
+
+<p>Layer by layer down this "descent": at the top, Go's <span class="inline">LocalSegment</span> (the type that appeared back in Lesson 2) is the worker's local stand-in for "a segment," and its <span class="inline">Search</span> method <strong>does not compute distances itself</strong> — it packs the plan, query vectors, guarantee ts, etc. and <strong>calls a C function over cgo</strong>. The middle layer <span class="mono">segment_c.h</span> is that "<strong>translation window</strong>": it declares a set of <strong>pure-C functions</strong> (<span class="inline">NewSegment</span> to build, <span class="inline">AsyncSearch</span> to search, <span class="inline">DeleteSegment</span> to release…), because cgo can only cross "<strong>C's ABI</strong>" — C++ classes and templates are invisible to Go, so C++ ability must be <strong>wrapped</strong> in a layer of C functions. In these C functions, the segment Go sees is merely a <span class="inline">CSegmentInterface</span> (essentially a <span class="inline">void*</span> opaque handle) — Go neither knows nor needs to know what C++ object backs it.</p>
+
+<p>One more word on how <strong>narrow</strong> this bridge is. Go calls C++ by detouring through a <strong>pure-C interface</strong> fundamentally because cgo only recognizes <strong>C's ABI</strong> (application binary interface): C++ classes, templates, namespaces, and vtables get their names scrambled by <strong>name mangling</strong> after compilation, which Go cannot match; whereas C function symbols are simple and stable, the <strong>greatest common denominator</strong> both languages can shake hands on. So segcore's outward facade <span class="mono">segment_c.h</span> is all <strong>plain C functions</strong>, with parameters kept to basic types and opaque pointers — like a deliberately narrowed "<strong>sluice gate</strong>" that hides the complex C++ world behind it and leaves Go only a few clean handles to grab. Grasp this and the many <span class="mono">*_c.h / *_c.cpp</span> files in Milvus core stop being confusing: they are all "<strong>C facades for Go to see</strong>," with the real working C++ implementation behind them.</p>
+
+<p>Deeper still, the C function <strong>casts the handle back into the real C++ object</strong> — a <span class="inline">SegmentInterface</span> (that virtual interface at <span class="mono">SegmentInterface.h:81</span>) — and calls its <span class="inline">Search</span> and other virtual methods. Only here does control truly enter segcore's algorithmic world. The cost of this cross-language call is not negligible: every cgo call has a fixed overhead, and data must be passed carefully between Go's and C++'s memory representations (Go's GC must not move memory C++ is still using). So Milvus deliberately keeps the cgo boundary <strong>coarse-grained</strong> — one call hands C++ a whole segment's search, rather than crossing the boundary repeatedly in a hot loop. <strong>Remember the shape of this boundary</strong>: Go handles "<strong>scheduling and assembly</strong>," C++ handles "<strong>the real in-segment compute</strong>," with a narrow, pure-C <span class="mono">segment_c.h</span> window between them.</p>
+
+<h2>Two faces under one interface: sealed vs growing</h2>
+<p>Across the boundary and into C++, segcore abstracts "a segment" with <strong>one interface</strong> (<span class="inline">SegmentInterface</span> and its internal interface), but underneath there are <strong>two implementations</strong>, matching the old friends from Lesson 26 — sealed and growing. Their retrieval <strong>routes differ completely</strong>:</p>
+
+<div class="cols">
+  <div class="col"><h4>🧊 SegmentSealed → via index</h4><p>A sealed segment has a built <strong>Knowhere vector index</strong> (Lesson 22, e.g. HNSW/IVF) loaded into memory. Search does <strong>not scan row by row</strong> but lets the index lead — a few graph hops, or IVF probing only the nearest buckets, <strong>skipping the vast majority</strong> of vectors to home in on the most-alike few. This is the source of "<strong>fast</strong>," the normal path for the data bulk.</p></div>
+  <div class="col"><h4>🔥 SegmentGrowing → brute force</h4><p>A growing segment has <strong>no index yet</strong> (data changes every moment, no time to index). Search can only go <strong>brute force</strong>: compute distance between the query vector and <strong>every</strong> vector in the segment, then sort and take topK. Since growing segments are <strong>small</strong> and local, this brute-force cost is acceptable — in return for the freshness of "<strong>searchable right after writing</strong>."</p></div>
+</div>
+
+<p>What makes this "<strong>one interface, two implementations</strong>" design clever? It lets <strong>the upper layers (the delegator's and worker's scheduling code) be wholly unconcerned with whether a segment has an index</strong> — they just call the same <span class="inline">Search</span> on each segment, and segcore internally <strong>picks the fast path (index) or slow path (brute force) by the segment's actual type</strong>. This is the classic use of object-oriented "<strong>polymorphism</strong>" in systems design: seal "<strong>what varies</strong>" (how to search) inside the implementations and expose only "<strong>the unchanging contract</strong>" (give me a segment and a plan, get back the segment's topK). Precisely because of this, Lesson 26's delegator could airily say "merge the sealed and growing results" — in its eyes the two look alike, the difference <strong>quietly absorbed</strong> by the segcore layer.</p>
+
+<p>There's one more thing segcore silently does for you inside a segment, often overlooked yet crucial: <strong>excluding "rows you shouldn't see."</strong> A segment's data isn't only "inserts" — there are also <strong>deletes</strong> (Lesson 20) and <strong>timestamps</strong> (Lesson 11). When searching, segcore <strong>applies two filters</strong>: one, a <strong>delete bitmap</strong> marking out already-deleted rows so they don't count as candidates; two, the <strong>time filter</strong> brought by the <strong>guarantee ts</strong>, making visible only the version with ts ≤ guarantee. In other words, <strong>the execution point where MVCC (multi-version visibility) finally lands is this segcore layer</strong>: upper layers pass the guarantee ts all the way down, and the actual judgment of "per this snapshot, is each row visible" happens in the segment, hugging the data. So you won't search up "just-deleted" rows or rows "written later than your snapshot" — this correctness is, beyond sealed/growing, the other half of segcore's in-segment logic (full consistency and MVCC are tied up in Lesson 30).</p>
+
+<h2>One in-segment search: from plan to a segment's topK</h2>
+<p>Lay out segcore's moves for one search <strong>inside a segment</strong> (take a filtered sealed segment) and you get this short chain. Note it is exactly where Lesson 25's plan is <strong>actually executed</strong> at the bottom:</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Receive plan and query vectors</h4><p>In through the C API come a <strong>search plan</strong> (plan: vector field + metric + topK + scalar predicate), the <strong>query vectors</strong> (placeholder), and the <strong>guarantee ts</strong>. segcore executes it within the scope of this one segment.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Scalar filter → bitset</h4><p>First, by the plan's <strong>scalar predicate</strong> (e.g. <span class="mono">year &gt; 2020</span>), compute a <strong>bitset</strong> within the segment marking "which rows qualify." This <strong>narrows</strong> the candidate set first (Lesson 24's filter-then-search; the execution engine is detailed in Lesson 28).</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Vector search (index / brute force)</h4><p>Do ANN over the qualifying subset: <strong>sealed</strong> lets the <strong>Knowhere index</strong> lead and skip most; <strong>growing</strong> <strong>brute-forces</strong> distances over the qualifying rows. Compute similarity by the metric (L2/IP/COSINE).</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Take the segment's topK, return</h4><p><strong>Sort the candidates computed in this segment and take the most-alike topK</strong>, returning it as the <strong>segment's local result</strong> through the C API to Go. It joins the delegator's node-level merge (Lesson 26) — the bottom level of the "<strong>three-level reduce</strong>."</p></div></div>
+</div>
+
+<p>This chain <strong>ties off</strong> the whole query path: the plan the Proxy compiled in Lesson 25, handed down, through the delegator, across the cgo boundary, is <strong>finally run for real here in segcore</strong>. And the "segment topK" segcore emits is then <strong>merged level by level</strong> back up — segment topK (here) → delegator node-level merge (Lesson 26) → Proxy cross-shard merge (Lesson 25). You should now be able to picture a search's "<strong>downward fan-out</strong>" and "<strong>upward merge</strong>" end to end in your head. The execution detail of steps 2-3 "<strong>filter into a bitset, then do ANN over the subset</strong>" (the plan tree, expressions, vectorized operators) is the subject of Lesson 28's "execution engine"; why in-segment data is <strong>columnar, chunked, and mmap-able</strong> is dug into in Part 8. For this lesson, just firmly remember this layer's boundary and division of labor.</p>
+
+<p>Finally, leave a hook to "<strong>look further down.</strong>" This lesson deliberately left two things unexpanded, each with its own chapter. One is "<strong>how the plan actually executes in a segment</strong>": once the plan enters segcore, the scalar predicate is compiled into an <strong>expression tree</strong> and run operator by operator by a <strong>vectorized execution engine</strong> (filter first, then vector search) — the subject of Lesson 28. The other is "<strong>what in-segment data looks like</strong>": why vectors and scalars are stored <strong>columnar and chunked</strong> in a segment, and why they can be <strong>mmap</strong>-ed (mapping disk files as memory, paged in on demand) to serve data far larger than RAM — these storage details are a Part 8 topic. This lesson establishes "<strong>who computes, across which boundary, and what path each kind of segment takes</strong>"; only then do those two deep dives have a foundation.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/core/src/segcore/SegmentInterface.h</span><span class="ln">from line 81: the unified segment interface behind the C API (sketch)</span></div>
+  <pre><span class="cm">// common interface of SegmentSealed and SegmentGrowing used by the C API</span>
+<span class="kw">class</span> <span class="nb">SegmentInterface</span> {
+ <span class="kw">public</span>:
+    <span class="kw">virtual</span> ~SegmentInterface() = <span class="kw">default</span>;
+    <span class="cm">// run a search within "this one segment": eat a plan + query vectors, emit the segment's result</span>
+    <span class="kw">virtual</span> std::unique_ptr&lt;SearchResult&gt;
+    <span class="fn">Search</span>(<span class="kw">const</span> query::Plan* plan,
+           <span class="kw">const</span> query::PlaceholderGroup* placeholder, ...) <span class="kw">const</span> = <span class="nb">0</span>;
+    <span class="cm">// … FillPrimaryKeys / FillTargetEntry etc. omitted …</span>
+};
+<span class="cm">// two impls: SegmentSealed (via Knowhere index) / SegmentGrowing (brute force per row)</span>
+<span class="cm">// Go calls in over cgo: segment_c.h's NewSegment / AsyncSearch / DeleteSegment</span>
+<span class="cm">//                 ←→ Go-side LocalSegment (querynodev2/segments/segment.go)</span></pre>
+</div>
+
+<p>Stitch the whole first half of Part 6 together: in Lesson 25, the Proxy <strong>translated the search into a plan, fixed the guarantee ts, and fanned it to shards</strong>; in Lesson 26, the delegator, within a shard, <strong>covered sealed+growing, fanned to workers, and merged within the node</strong>; in this lesson, the worker, over <strong>cgo</strong>, handed "in-segment search" to C++'s <strong>segcore</strong>, which uses a <strong>unified interface</strong> to take the index route for sealed and the brute-force route for growing, computing a <strong>segment topK</strong>. The second half (Lessons 28-30, dispatched later) digs deeper: how the plan <strong>actually executes</strong> inside segcore (the execution engine), how the three-level reduce <strong>merges</strong>, and how guarantee ts and MVCC <strong>redeem consistency</strong>. Remember this first half as one sentence: <strong>a search is the journey of one plan setting out from the Proxy, fanned through the delegator to segments, crossing cgo into segcore to be executed, then merged level by level back as segment topKs</strong> — and segcore is <strong>the real working engine at the deepest point of that journey.</strong></p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>segcore = the C++ single-segment search engine</strong>: executes search/query only "inside one segment," knowing nothing of shards/replicas/WAL; the real vector-computing engine inside a worker.</li>
+    <li><strong>the cgo boundary</strong>: Go's <span class="inline">LocalSegment</span> (<span class="mono">segments/segment.go</span>) calls into C++ through pure-C <span class="mono">segment_c.h</span> (<span class="inline">NewSegment/AsyncSearch/DeleteSegment</span>); a segment is just an opaque handle on the Go side.</li>
+    <li><strong>unified interface</strong>: <span class="inline">SegmentInterface</span> (<span class="mono">SegmentInterface.h:81</span>) abstracts "a segment," with <strong>SegmentSealed</strong> and <strong>SegmentGrowing</strong> implementations (polymorphism).</li>
+    <li><strong>sealed = index, growing = brute force</strong>: sealed searches via the loaded Knowhere index (fast); growing has no index and computes per row (keeps fresh).</li>
+    <li><strong>one in-segment search</strong>: receive plan → scalar-filter into a bitset → ANN over the subset (index/brute force) → take the segment's topK and return; the bottom of the three-level reduce.</li>
+    <li><strong>why C++</strong>: the performance-sensitive inner loop (SIMD/cache/mmap) is C++'s turf; Go schedules, C++ computes, the cgo boundary kept deliberately coarse. Columnar/chunked/mmap in Part 8.</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. What language is segcore written in and what does it do? How does the Go-side QueryNode call it?</div>
+  <ol class="opts">
+    <li>segcore is a Rust full-text search engine</li>
+    <li>segcore is a C++ 'single-segment search engine' that executes search/query only inside one segment; Go's LocalSegment calls into C++ over cgo through pure-C segment_c.h (NewSegment/AsyncSearch/DeleteSegment), where a segment is just an opaque handle on the Go side</li>
+    <li>segcore is written in Go and runs as Go code directly in the QueryNode process</li>
+    <li>segcore is called directly by the Proxy, bypassing the QueryNode</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. segcore is a C++ single-segment engine (ignorant of shards/replicas/WAL). cgo only recognizes C's ABI, so pure-C segment_c.h wraps C++ ability for Go; a segment is a void* opaque handle on the Go side.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. segcore abstracts 'a segment' with one SegmentInterface, with two implementations. What are the retrieval paths of sealed vs growing?</div>
+  <ol class="opts">
+    <li>sealed and growing must be called by different Proxies separately</li>
+    <li>SegmentSealed goes through the loaded Knowhere index (HNSW/IVF…, skipping most vectors, fast); SegmentGrowing has no index and brute-forces distances over every vector (small, fresh). The upper layer just calls the same Search, and polymorphism picks the fast/slow path</li>
+    <li>Neither computes distances; they only return row numbers</li>
+    <li>sealed brute-forces and growing uses the index, exactly reversed</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. 'One interface, two implementations' is polymorphism: the upper layer needn't care whether a segment is indexed; segcore picks index (sealed, fast) or brute force (growing, fresh) by the segment's actual type. That is why the delegator can airily merge both.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Why does Milvus interpose a layer of pure-C segment_c.h between Go and C++, instead of letting Go call C++ classes and methods directly?</div>
+  <ol class="opts">
+    <li>Purely historical baggage, no technical reason</li>
+    <li>Because C runs faster than C++</li>
+    <li>Because Go forbids calling any non-Go code</li>
+    <li>Because cgo only recognizes C's ABI: C++ classes/templates/vtables are name-mangled and unmatchable to Go, while C function symbols are simple and stable, the greatest common denominator of both languages; so pure-C functions wrap and expose the C++ ability</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. cgo crosses C's ABI. C++ name mangling makes symbols unmatchable to Go, so the many *_c.h/*_c.cpp files in Milvus core are 'C facades for Go,' with the real working C++ behind. The boundary is also kept coarse to amortize cgo call overhead.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson stressed that segcore silently does MVCC inside a segment: combining the delete bitmap and the guarantee-ts time filter so only the 'should-be-seen' version is visible. Consider: why perform this visibility judgment 'inside the segment, closest to the data' rather than filtering uniformly at the Proxy or delegator? What does this mean for correctness and for performance? (Tie in Lesson 20 deletes and Lesson 30 consistency.)</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="26-querynode-and-delegator.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">QueryNode 与 delegator</span><span class="lang-en">QueryNode &amp;amp; the delegator</span></div></a><a class="next" href="../index.html"><div class="dir"><span class="lang-zh">完成 →</span><span class="lang-en">Done →</span></div><div class="ttl"><span class="lang-zh">返回目录</span><span class="lang-en">Back to index</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>

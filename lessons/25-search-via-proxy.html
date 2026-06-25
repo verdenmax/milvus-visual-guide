@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>25 · 经 Proxy 的搜索 / Search via Proxy - Milvus 图解教程</title>
+<meta name="description" content="第六部分 · 查询链路｜经 Proxy 的搜索 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="25 · 经 Proxy 的搜索 / Search via Proxy - Milvus 图解教程">
+<meta property="og:description" content="第六部分 · 查询链路｜经 Proxy 的搜索 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="25 · 经 Proxy 的搜索 / Search via Proxy - Milvus 图解教程">
+<meta name="twitter:description" content="第六部分 · 查询链路｜经 Proxy 的搜索 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.timeline .tl-row { display: flex; align-items: flex-start; gap: .6rem; padding: .12rem 0; }
+.timeline .tl-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: .45rem; }
+.timeline .tl-t { font-family: ui-monospace, monospace; font-weight: 700; color: var(--accent-ink); min-width: 2.4rem; font-size: .82rem; flex-shrink: 0; margin-top: .18rem; }
+.timeline .tl-c { font-size: .9rem; color: var(--muted); }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第六部分 · 查询链路</span><span class="lang-en">Part 6 · The query path</span></span>
+    <span class="pill">25 / 27</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:92%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第六部分 · 查询链路</span><span class="lang-en">Part 6 · The query path</span></div>
+    <h1><span class="lang-zh">经 Proxy 的搜索</span><span class="lang-en">Search via Proxy</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+第四部分我们把<strong>写入</strong>的一生走完了：数据从 SDK 经 Proxy、写进 WAL、落成段、建好索引。从这一课起，我们走<strong>另一条路</strong>——<strong>查询链路</strong>：一次 <span class="inline">search</span> 是怎么从 SDK 出发、被 Proxy 翻译与调度、扇出到各个分片、最后归并出 topK 返回的。
+这一部分是写入链路的"<strong>镜像</strong>"，并且会一路下钻到 C++ 的 <strong>segcore</strong>（第 27 课）。本课先站在<strong>入口</strong>看：<strong>Proxy 这一侧</strong>到底为一次搜索做了哪些事。把入口这一层吃透，你就有了一张"<strong>读路径全景的目录</strong>"——后面每一课（delegator、segcore、执行引擎、reduce、一致性）都是在补全本课提到的某一个环节。
+</p>
+
+<div class="card analogy">
+  <div class="tag">📚 生活类比</div>
+  你走进一家<strong>连锁图书馆的总服务台</strong>，说："帮我找几本和这本书最像的。"总台职员（<strong>Proxy</strong>）要依次做五件事：
+  <strong>① 听懂需求</strong>——按什么标准"像"（度量）、要几本（topK）、有没有附加条件（"只要 2020 年后出版的"=标量过滤）；
+  <strong>② 写成标准检索单</strong>——把口头需求翻译成一张分馆都看得懂的表格（search plan）；
+  <strong>③ 定一个时间快照</strong>——你要"<strong>绝对最新</strong>"（连刚还回、还没上架的也得算）还是"<strong>稍旧但更快</strong>"？这就是一致性级别决定的 <strong>guarantee 时间戳</strong>；
+  <strong>④ 把检索单分发给各分馆</strong>（shard / delegator），各分馆各自找出自己最像的几本（scatter）；
+  <strong>⑤ 汇总排序</strong>——把所有分馆交回的候选合在一起、排序、取最像的前几本给你（reduce）。
+  总台自己<strong>不翻书架</strong>，它只负责"<strong>听懂、翻译、定快照、分发、归并</strong>"。这正是 Proxy 在一次搜索里的角色。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  一次 <span class="inline">search</span> 在 Proxy 侧被封装成一个 <strong>searchTask</strong>（<span class="mono">internal/proxy/task_search.go</span>），走 <strong>PreExecute → Execute → PostExecute</strong> 三段式：<strong>PreExecute</strong> 校验并解析请求、把布尔过滤表达式编译成<strong>检索计划</strong>（plan：向量字段 + 度量 + topK + 标量过滤）、并由<strong>一致性级别</strong>推出 <strong>guarantee 时间戳</strong>（<span class="inline">parseGuaranteeTsFromConsistency</span>，<span class="mono">internal/proxy/util.go</span>）；<strong>Execute</strong> 把请求<strong>扇出（scatter）</strong>到该 collection 的各个分片（vchannel 的 <strong>delegator</strong>）；<strong>PostExecute</strong> 把各分片回来的结果<strong>跨分片归并（reduce）</strong>成最终 topK。Proxy 只做"<strong>翻译 + 调度 + 归并</strong>"，真正搜段的活在 QueryNode（第 26 课）和 segcore（第 27 课）。
+</div>
+
+<p>开讲之前，先把和写路径的"<strong>镜像</strong>"关系看具体。<strong>写</strong>的时候，Proxy 把一批行按 vchannel 切开、追加进 WAL——这是一次"<strong>会写入的扇出</strong>"；<strong>读</strong>的时候，Proxy 把同一个查询发往每个分片、再把回来的结果归并——这是一次"<strong>会收集的扇出</strong>"。两者都绕着第 3 课就埋下的同一对概念转：<strong>按 vchannel 分片</strong>（决定打哪些分片）与<strong>时间戳</strong>（写入给数据盖戳、读取携带 guarantee ts）。如果你还记得第四部分的写路径，其实已经掌握了读路径的<strong>骨架形状</strong>——这一部分只是往里填读路径特有的几个"器官"：plan、delegator、segcore、reduce、一致性。</p>
+
+<h2>一次搜索在 Proxy 侧的五步</h2>
+<p>把总台职员那五件事落到代码上，就是 <span class="mono">searchTask</span> 的主干流程。下面这条竖流把它一步步摆开：</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>解析请求（parse）</h4><p>从 <span class="inline">SearchRequest</span> 取出：要搜的 collection / 分区、向量字段、<strong>topK</strong>、<strong>度量类型</strong>（L2/IP/COSINE）、查询向量（placeholder group）、布尔<strong>过滤表达式</strong>（如 <span class="mono">year &gt; 2020</span>）、以及<strong>一致性级别</strong>。在 <span class="inline">PreExecute</span> 里完成校验与字段解析。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>构建检索计划（plan）</h4><p>把过滤表达式<strong>编译成 <span class="inline">planpb.PlanNode</span></strong>：一棵带<strong>向量 ANN 节点</strong>（字段 + 度量 + topK）和<strong>标量谓词子树</strong>的计划树。这张"检索单"会随请求一起发给分片，下钻到 segcore 时被执行（第 28 课详述执行引擎）。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>定 guarantee 时间戳</h4><p>按<strong>一致性级别</strong>调用 <span class="inline">parseGuaranteeTsFromConsistency</span> 算出本次读要求的"<strong>时间快照</strong>"：Strong→看到最新、Eventually→只要够快、Bounded→容忍一点延迟。这个 ts 决定 QueryNode 要"<strong>等数据追到多新</strong>"才回答（第 30 课 MVCC 详解）。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>扇出到分片（scatter）</h4><p>一个 collection 的数据按 <strong>vchannel</strong> 分成多个<strong>分片</strong>，每个分片由一个 <strong>delegator（shard leader）</strong>负责。<span class="inline">Execute</span> 通过负载均衡策略，把"检索单 + guarantee ts"并发发往各分片的 delegator（<span class="inline">searchShard</span>）。</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>跨分片归并（reduce）</h4><p>各分片各自返回"<strong>自己最像的 topK</strong>"。<span class="inline">PostExecute</span> 把这些<strong>局部 topK</strong> 汇总、<strong>按距离重排、按主键去重</strong>，取出<strong>全局 topK</strong> 返回 SDK。这层跨分片归并的细节留到第 29 课。</p></div></div>
+</div>
+
+<p>这五步里，第 1 步的"<strong>度量</strong>"值得回头多看一眼。回忆第 4、22 课：向量的"像"由度量定义（<strong>L2</strong> 越小越像、<strong>IP/COSINE</strong> 越大/越一致越像），而且<strong>检索用的度量必须和建索引、和字段声明时一致</strong>。Proxy 在解析请求时会拿到本次检索指定的度量，并校验它和字段/索引是否对得上——这道关卡看似不起眼，却挡掉了向量检索里最隐蔽的一类错误（度量用错会让结果"<strong>系统性地不对、却不报错</strong>"）。所以你可以把 Proxy 的"解析"理解成不只是"<strong>读出参数</strong>"，还包含一层"<strong>合法性与一致性的守门</strong>"：字段存不存在、向量维度对不对、度量配不配、topK 是否超限、表达式能不能编译——任一不合法，请求会在<strong>还没扇出之前</strong>就被挡回 SDK，而不是浪费一整轮分布式检索。</p>
+
+<p>把这五步连起来看，Proxy 的角色就非常清楚了：它是一个"<strong>翻译官 + 调度员 + 收银台</strong>"。翻译（把人话的过滤条件编成计划树）、调度（决定打哪些分片、带什么时间快照）、收银（把零散结果汇成一份答案）——<strong>三件事都不碰真正的向量数据</strong>。这与第 10 课讲 Proxy "无状态网关、扇出归并"的定位完全一致；search 只是把那张"扇出—归并"的图，落到了<strong>读路径</strong>上。</p>
+
+<p>再多说一句第 2 步的<strong>检索计划</strong>，因为它是写路径里完全没有、读路径独有的一环。SDK 发来的过滤条件是一串<strong>字符串表达式</strong>（如 <span class="mono">color == "red" &amp;&amp; year &gt; 2020</span>），人能读、机器不能直接执行。Proxy 把它<strong>解析成一棵表达式树</strong>，再和"向量 ANN 检索"这件主任务拼成一个完整的 <span class="inline">planpb.PlanNode</span>：顶层是一个<strong>向量检索节点</strong>（指明在哪个向量字段上、用什么度量、取多少 topK），它下面挂着<strong>标量谓词子树</strong>（把 <span class="mono">color/year</span> 这些条件编成可被高效执行的判断）。这张计划随请求<strong>原样下发</strong>到每个分片、每个段，最终在 C++ 的执行引擎里被跑起来——"<strong>先按谓词把候选行筛小，再在筛后的子集上做 ANN</strong>"（这套"先筛后搜"的执行细节是第 28 课的主题）。Proxy 这一步只负责<strong>把计划编出来</strong>，不负责执行它。</p>
+
+<p>还有一个值得点名的细节：一次 search 请求里<strong>可以同时带多个查询向量</strong>——这叫 <strong>nq</strong>（number of queries，查询向量个数），它们装在一个 <span class="inline">placeholder group</span> 里。<span class="mono">searchTask</span> 在 <span class="inline">checkNq</span> 这一步校验它的大小。nq 的意义是"<strong>一次往返、批量问 N 个相似检索</strong>"：每个查询向量各自要它自己的 topK，扇出到分片后由 segcore 对每个查询向量分别算、分别取 topK，归并时也按查询向量<strong>分组</strong>各归各的。理解 nq 你才不会把"topK=10"和"nq=5"混为一谈——前者是"每个问题要几个答案"，后者是"一次问几个问题"，最终结果是 <strong>nq × topK</strong> 这么一张表。</p>
+
+<h2>Proxy 在搜索里"做什么"与"不做什么"</h2>
+<p>初学最容易把 Proxy 想成"搜索引擎本体"。恰恰相反——它是一个<strong>无状态的协调层</strong>，手里既没有向量数据、也没有索引。把它的"<strong>职责边界</strong>"摆清楚，整条查询链路就不会在脑子里错位：</p>
+
+<div class="cols">
+  <div class="col"><h4>✅ Proxy 负责</h4><p>校验与鉴权、把过滤表达式<strong>编译成 plan</strong>、按一致性级别<strong>算 guarantee ts</strong>、做<strong>负载均衡</strong>挑 QueryNode、把请求<strong>扇出</strong>到各分片、把各分片结果<strong>跨分片归并</strong>成最终 topK、按 offset/limit 截断后返回 SDK。一句话：<strong>翻译、调度、归并</strong>。</p></div>
+  <div class="col"><h4>❌ Proxy 不负责</h4><p>不持有向量数据、不持有索引、<strong>不在自己进程里算距离</strong>；不决定"某段数据归哪个 QueryNode"（那是 QueryCoord 的事，第 13 课）；不执行 plan（plan 下钻到 segcore 才执行，第 28 课）；不等数据追新（"等到 guarantee ts"发生在 QueryNode，第 30 课）。</p></div>
+</div>
+
+<p>这条边界为什么重要？因为它正是 Milvus "<strong>计算与协调分离</strong>"的体现：Proxy 可以<strong>无状态地水平扩容</strong>（多开几个都行、挂一个也不丢数据），因为它<strong>什么都不存</strong>；真正昂贵的"<strong>持有索引、在内存里算向量距离</strong>"的活，被推给了能<strong>按段水平扩展</strong>的 QueryNode。把"<strong>谁存数据、谁算距离、谁只协调</strong>"这三件事分开，是读懂后面第 26、27 课的前提——也是几乎所有分布式检索系统共有的设计取向：让协调层轻、让计算层重，各自独立伸缩。</p>
+
+<h2>数据怎么流：从 SDK 到结果</h2>
+<p>换一个角度，用一条横向的数据流把"谁把请求交给谁"画清楚。注意中间高亮的那一格，就是本课的主角 <span class="inline">searchTask</span>：</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">SDK</div><div class="nd">Search RPC<br>向量+topK+expr</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">Proxy · searchTask</div><div class="nd">解析→plan→guarantee-ts</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">delegator A</div><div class="nd">分片 1 局部 topK</div></div>
+  <div class="arrow">＋</div>
+  <div class="node"><div class="nt">delegator B</div><div class="nd">分片 2 局部 topK</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">reduce</div><div class="nd">归并出全局 topK</div></div>
+</div>
+
+<p>这条流里有两个"<strong>一对多</strong>"的扩散点，是理解分布式检索的关键。第一个在 <strong>Proxy → delegator</strong>：一个 collection 被切成多个分片，请求要<strong>同时</strong>打到每个分片（scatter）。第二个在每个 delegator 内部：它还要把搜索继续扇到自己管的多个段与多个 worker QueryNode 上（这是第 26 课的内容）。
+所以一次 search 是<strong>两层扇出</strong>：Proxy 扇到分片、分片再扇到段。对应地，归并也是<strong>分层</strong>的：段内取 topK、节点内合并、Proxy 跨分片再合并——这"<strong>三级 reduce</strong>"留到第 29 课系统讲。本课你只要记住<strong>最外层</strong>这一对：Proxy 扇出、Proxy 归并。</p>
+
+<p>为什么扇出要<strong>并发</strong>、而不是一个分片一个分片地问？因为一次搜索的延迟，取决于<strong>最慢的那个分片</strong>，而不是所有分片之和。若串行去问 N 个分片，总延迟≈N×单分片延迟；并发扇出后，总延迟≈单分片延迟＋一点点归并开销。这正是分布式检索"<strong>用并行换低延迟</strong>"的根本手法：把一个大问题<strong>切成互不依赖的小问题</strong>同时算，再把答案拼起来。也正因为各分片<strong>互不依赖</strong>（每个分片只看自己那部分数据），扇出才能放心地并发——这种"<strong>数据分片 + 无共享并行</strong>"的结构，是 Milvus 能横向扩展读吞吐的根本原因：分片越多、每片越小，单片越快，加机器就能线性提升整体能力。</p>
+
+<h2>一致性级别 → guarantee 时间戳</h2>
+<p>第三步那个"<strong>定时间快照</strong>"特别值得单独说，因为它是 Milvus 在<strong>"看得多新" vs "答得多快"</strong>之间给用户的旋钮。回忆第 11 课的 <strong>TSO 全局时钟</strong>：每条写入都带一个全局单调递增的时间戳。一次读则携带一个 <strong>guarantee 时间戳</strong>，含义是"<strong>我至少要看到 ts ≤ guarantee 的所有写入</strong>"。<span class="inline">parseGuaranteeTsFromConsistency</span> 就是把抽象的<strong>一致性级别</strong>翻译成这个具体 ts：</p>
+
+<table class="t">
+  <tr><th>一致性级别</th><th>guarantee ts 取值</th><th>含义 / 取舍</th></tr>
+  <tr><td><strong>Strong</strong></td><td><span class="inline">tMax</span>（当前最新）</td><td>必须看到此刻为止的<strong>所有</strong>写入；最强一致，但可能要<strong>等数据追上</strong>，延迟最高</td></tr>
+  <tr><td><strong>Bounded</strong></td><td><span class="inline">tMax − gracefulTime</span></td><td>容忍一个<strong>有界的</strong>陈旧窗口（默认几秒），换更稳的低延迟（常用默认）</td></tr>
+  <tr><td><strong>Eventually</strong></td><td><span class="inline">1</span>（极小值）</td><td>不等任何数据，<strong>能多快多快</strong>；可能读到略旧的快照，最终一致</td></tr>
+  <tr><td><strong>Session</strong> / <strong>Customized</strong></td><td>由会话 / 用户指定的 ts</td><td>Session：保证读到<strong>自己刚写</strong>的；Customized：调用方<strong>自带</strong> guarantee ts</td></tr>
+</table>
+
+<p>看这张表只需抓住一条主轴：<strong>guarantee ts 越大（越接近 tMax），看到的数据越新、但越可能要等；越小，答得越快、但可能越旧</strong>。
+<span class="inline">parseGuaranteeTsFromConsistency</span> 的实现也正是这个意思——<strong>Strong</strong> 直接把 ts 设成 <span class="inline">tMax</span>，<strong>Bounded</strong> 用 <span class="inline">tMax</span> 减去一个配置的 <span class="inline">gracefulTime</span>，<strong>Eventually</strong> 干脆设成 <span class="inline">1</span>（几乎不等）。Proxy 在这一步只是<strong>算出</strong>这个 ts 并塞进发往分片的请求里；真正"<strong>等数据追到 guarantee ts 才回答</strong>"的动作发生在 QueryNode 侧（第 30 课讲它如何用已消费的 WAL 进度 / TimeTick 与 guarantee ts 比较、不够新就<strong>等</strong>）。这条"<strong>一致性级别 → guarantee ts → 等待</strong>"的链路，是 Part 6 反复要回看的主线。</p>
+
+<p>顺带厘清一个容易混的点：guarantee ts <strong>不是</strong>"只读这一个时刻的数据"，而是"<strong>至少</strong>读到这个时刻为止的数据"——它是一条<strong>下界</strong>。配合第 30 课要讲的 <strong>MVCC</strong>（多版本：一次读看到的是 ts ≤ guarantee 的写入、且未被同样 ts 之前的删除抹掉），你就能理解为什么同一份数据、不同一致性级别下，<strong>看到的"版本"会不一样</strong>。本课先把"Proxy 在入口处算出这个 ts"这件事记牢即可。</p>
+
+<p>再补两句 <strong>Session</strong> 与 <strong>Customized</strong>，它们不在上面那段 <span class="inline">switch</span> 的三个分支里、而是走另一条路给出 ts。<strong>Session（会话一致）</strong>解决的是"<strong>读到我自己刚写的</strong>"这个最常见诉求：客户端会<strong>记住自己最近一次写入的时间戳</strong>，把它作为 guarantee ts 带进读请求，于是"写完立刻搜"一定能搜到自己那条——但不保证看到<strong>别人</strong>此刻的写入。<strong>Customized（自定义）</strong>则把这个旋钮<strong>完全交给调用方</strong>：你自己算一个 ts 传进来，系统照此等待。理解了这四到五个级别，你就握住了 Milvus 给应用层的那个核心权衡——<strong>读得多新、和答得多快，是同一条标尺上的两端，由你按业务来滑</strong>。这也是为什么默认级别是 <strong>Bounded</strong>：它把"陈旧窗口"限制在几秒内、绝大多数场景都够新，却换来了远比 Strong 稳定的低延迟。</p>
+
+<h2>把代码主干认出来</h2>
+<p>不必读懂 <span class="mono">task_search.go</span> 的每一行，但要能<strong>认出它的三段式骨架</strong>。下面是高度简化的示意——把上面五步对到方法名上：</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/proxy/task_search.go</span><span class="ln">searchTask 的三段式骨架（高度简化示意）</span></div>
+  <pre><span class="kw">type</span> <span class="nb">searchTask</span> <span class="kw">struct</span> { <span class="cm">/* request、plan、guarantee ts、结果 … */</span> }
+
+<span class="cm">// ① 解析 + 建 plan + 定 guarantee ts</span>
+<span class="kw">func</span> (t *searchTask) <span class="fn">PreExecute</span>(ctx) error {
+    <span class="cm">// 校验请求、解析向量字段 / topK / 度量 / 过滤表达式</span>
+    <span class="cm">// 把布尔过滤编译成 planpb.PlanNode（ANN 节点 + 标量谓词）</span>
+    t.GuaranteeTs = <span class="fn">parseGuaranteeTsFromConsistency</span>(ts, tMax, consistencyLevel)
+}
+<span class="cm">// ② 扇出到各分片的 delegator</span>
+<span class="kw">func</span> (t *searchTask) <span class="fn">Execute</span>(ctx) error {
+    <span class="cm">// 按负载均衡把 plan + guaranteeTs 并发发往每个分片</span>
+    <span class="cm">//   → t.searchShard(ctx, nodeID, queryNode, channel)</span>
+}
+<span class="cm">// ③ 跨分片归并出全局 topK（细节见第 29 课）</span>
+<span class="kw">func</span> (t *searchTask) <span class="fn">PostExecute</span>(ctx) error { <span class="cm">/* reduce */</span> }</pre>
+</div>
+
+<p>这套 <strong>PreExecute / Execute / PostExecute</strong> 三段式不是 search 独有的——它是 Proxy 里<strong>所有 task</strong>（insert、query、DDL……）的统一形状（回忆第 10 课的三条任务队列）。把 search 套进这个模板，你只需要记住每段<strong>填了什么</strong>：Pre 段填"plan 与 guarantee ts"，Execute 段填"扇出"，Post 段填"归并"。认出这个骨架，你读任何一个 Proxy task 都会快很多。</p>
+
+<p>顺便对照一下 search 和 <strong>query</strong>（标量查询 / <span class="mono">queryTask</span>）的区别：两者都走三段式、都要扇出到分片、都要 guarantee ts，但 <strong>search 是"按向量相似度取 topK"</strong>（核心是 ANN 检索 + 距离排序），<strong>query 是"按标量条件取出满足的行"</strong>（核心是谓词过滤，没有向量 ANN、没有 topK 距离排序）。理解了 search 这条最复杂的读路径，query 不过是把"向量 ANN 节点"从 plan 里拿掉的简化版。</p>
+
+<p>最后把本课接回主线。我们已经看清 Proxy 把一次搜索<strong>翻译成 plan、定好 guarantee ts、扇出到各分片</strong>——但请求<strong>到了分片之后会发生什么</strong>？那个接住请求的 <strong>delegator（shard leader）</strong>，要同时搜<strong>已封存的 sealed 段</strong>（带索引）和<strong>还在长的 growing 段</strong>（WAL 活跃尾部），还要把活儿继续扇到持有段的 worker QueryNode 上再合并。这正是<strong>下一课（第 26 课）</strong>要走进的世界：QueryNode 与 delegator。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>查询链路开篇</strong>：search 是写入链路的镜像，本课站在 Proxy 入口看，一路会下钻到 C++ segcore（第 27 课）。</li>
+    <li><strong>searchTask 三段式</strong>（<span class="mono">internal/proxy/task_search.go</span>）：PreExecute 解析+建 plan+定 guarantee ts；Execute 扇出；PostExecute 归并。</li>
+    <li><strong>检索计划（plan）</strong>：把布尔过滤编译成 <span class="inline">planpb.PlanNode</span>＝向量 ANN 节点（字段+度量+topK）＋标量谓词子树。</li>
+    <li><strong>guarantee ts</strong>：由一致性级别经 <span class="inline">parseGuaranteeTsFromConsistency</span>（<span class="mono">util.go</span>）算出——Strong→tMax，Bounded→tMax−gracefulTime，Eventually→1。</li>
+    <li><strong>两层扇出</strong>：Proxy 扇到分片（delegator），分片再扇到段（第 26 课）；归并也分层（三级 reduce，第 29 课）。</li>
+    <li><strong>Proxy 不碰向量数据</strong>：只做翻译 + 调度 + 归并，真正搜段在 QueryNode / segcore。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. Proxy 侧的 searchTask 在 PreExecute 阶段，从“一致性级别”推出 guarantee 时间戳。下面哪条最准确地描述了它的作用与取舍？</div>
+  <ol class="opts">
+    <li>guarantee ts 决定 topK 的大小</li>
+    <li>guarantee ts 只在写入时使用，与搜索无关</li>
+    <li>guarantee ts 是一条“至少读到此刻为止数据”的下界：越接近 tMax（如 Strong）看到的越新但可能要等，越小（如 Eventually）答得越快但可能越旧；它由 parseGuaranteeTsFromConsistency 算出并随请求下发，真正“等够新再答”发生在 QueryNode 侧</li>
+    <li>guarantee ts 指定“只读这一个时刻的数据”，是一个精确的等值快照</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：C</strong>。Strong→tMax、Bounded→tMax−gracefulTime、Eventually→1。它是“看得多新 ↔ 答得多快”的旋钮，是下界而非等值；Proxy 只算出并下发，等待在 QueryNode（第 30 课）。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. 关于 Proxy 在一次搜索里的职责，下面哪条是对的？</div>
+  <ol class="opts">
+    <li>Proxy 在自己进程内加载索引并直接计算 ANN</li>
+    <li>Proxy 把布尔过滤编译成 planpb.PlanNode（向量 ANN 节点+标量谓词子树）、扇出到各分片的 delegator、再跨分片归并 topK；它本身不持有向量数据、不算距离、不执行 plan</li>
+    <li>Proxy 串行逐个查询分片以保证顺序</li>
+    <li>Proxy 决定每个段归哪个 QueryNode 持有</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。Proxy 是无状态的“翻译+调度+归并”层：编 plan、定 guarantee ts、并发扇出、跨分片 reduce。算距离在 segcore，段分布由 QueryCoord（第 13 课）决定，plan 在 segcore 才执行（第 28 课）。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 一次 search 被描述为“两层扇出”。这两层分别是什么？</div>
+  <ol class="opts">
+    <li>第一层扇到 etcd，第二层扇到对象存储</li>
+    <li>第一层 Proxy 扇到各分片（delegator），第二层每个 delegator 再扇到它管的多个段/worker；对应地归并也分层（段内→节点内→跨分片，即三级 reduce）</li>
+    <li>第一层是写、第二层是读</li>
+    <li>两层都在 SDK 客户端完成</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。Proxy→分片 是第一层，delegator→段/worker 是第二层（第 26 课）。归并对称分三级：segcore 段内、delegator 节点内、Proxy 跨分片（第 29 课收束）。</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>本课把 Proxy 定位成“翻译+调度+归并”的无状态层，自己不碰向量数据。请思考：为什么把“算距离”推给 QueryNode、而让 Proxy 保持无状态，对系统的弹性扩容与容错有什么好处？如果让 Proxy 直接持有索引、就地计算，会带来哪些问题？（可结合第 10 课 Proxy、第 9 课控制面/数据面。）</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Part 4 walked the whole life of a <strong>write</strong>: data flows from the SDK through the Proxy, into the WAL, settles into segments, gets indexed. From this lesson we walk the <strong>other road</strong> — the <strong>query path</strong>: how a <span class="inline">search</span> leaves the SDK, gets translated and scheduled by the Proxy, fans out across shards, and is reduced into a topK to return.
+This part is the <strong>mirror</strong> of the write path, and it descends all the way into the C++ <strong>segcore</strong> (Lesson 27). This lesson stands at the <strong>entrance</strong>: what exactly does the <strong>Proxy side</strong> do for one search. Master this entry layer and you hold a "<strong>table of contents for the whole read path</strong>" — every later lesson (delegator, segcore, execution engine, reduce, consistency) fills in one stage this lesson names.
+</p>
+
+<div class="card analogy">
+  <div class="tag">📮 Analogy</div>
+  You walk up to the <strong>front desk of a chain library</strong> and say, "find me a few books most like this one." The desk clerk (the <strong>Proxy</strong>) does five things in order:
+  <strong>① understand the request</strong> — by what measure is "alike" (the metric), how many (topK), any extra condition ("only published after 2020" = a scalar filter);
+  <strong>② write a standard search slip</strong> — translate the spoken request into a form every branch understands (the search plan);
+  <strong>③ fix a point-in-time snapshot</strong> — do you want "<strong>absolutely latest</strong>" (counting books just returned, not yet shelved) or "<strong>slightly older but faster</strong>"? That is the <strong>guarantee timestamp</strong> set by the consistency level;
+  <strong>④ hand the slip to each branch</strong> (shard / delegator), each finds its own most-alike few (scatter);
+  <strong>⑤ collate and rank</strong> — merge what all branches return, sort, take the most-alike few for you (reduce).
+  The desk itself <strong>never touches a shelf</strong>; it only "<strong>understands, translates, snapshots, dispatches, merges</strong>." That is exactly the Proxy's role in a search.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 The big picture</div>
+  On the Proxy side a <span class="inline">search</span> is wrapped into a <strong>searchTask</strong> (<span class="mono">internal/proxy/task_search.go</span>) following a <strong>PreExecute → Execute → PostExecute</strong> three-stage shape: <strong>PreExecute</strong> validates and parses the request, compiles the boolean filter into a <strong>search plan</strong> (vector field + metric + topK + scalar filter), and derives the <strong>guarantee timestamp</strong> from the <strong>consistency level</strong> (<span class="inline">parseGuaranteeTsFromConsistency</span>, <span class="mono">internal/proxy/util.go</span>); <strong>Execute</strong> <strong>scatters</strong> the request across the collection's shards (each vchannel's <strong>delegator</strong>); <strong>PostExecute</strong> <strong>reduces</strong> across shards into the final topK. The Proxy only does "<strong>translate + schedule + merge</strong>"; the actual segment search lives in the QueryNode (Lesson 26) and segcore (Lesson 27).
+</div>
+
+<p>Before diving in, it helps to see the <strong>mirror</strong> against the write path concretely. On a <strong>write</strong>, the Proxy splits a batch of rows by vchannel and appends them to the WAL — a <strong>scatter that writes</strong>. On a <strong>read</strong>, the Proxy sends one query to every shard and merges what comes back — a <strong>scatter that gathers</strong>. Both pivot on the same two ideas introduced back in Lesson 3: <strong>sharding by vchannel</strong> (which shards to touch) and <strong>timestamps</strong> (a write stamps its data; a read carries a guarantee ts). If you remember Part 4's write path, you already know the <strong>shape</strong> of the read path — this part just fills in the read-specific organs: the plan, the delegator, segcore, reduce, and consistency.</p>
+
+<h2>Five steps on the Proxy side of a search</h2>
+<p>Map those five desk-clerk chores onto code and you get the backbone of <span class="mono">searchTask</span>. This vertical flow lays it out step by step:</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Parse the request</h4><p>From the <span class="inline">SearchRequest</span> pull out: target collection / partitions, the vector field, <strong>topK</strong>, <strong>metric type</strong> (L2/IP/COSINE), the query vectors (placeholder group), the boolean <strong>filter expression</strong> (e.g. <span class="mono">year &gt; 2020</span>), and the <strong>consistency level</strong>. Validation and field parsing happen in <span class="inline">PreExecute</span>.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Build the search plan</h4><p>Compile the filter into a <strong><span class="inline">planpb.PlanNode</span></strong>: a plan tree with a <strong>vector ANN node</strong> (field + metric + topK) and a <strong>scalar predicate subtree</strong>. This "search slip" travels with the request to the shards and is executed once it reaches segcore (the execution engine is detailed in Lesson 28).</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Fix the guarantee timestamp</h4><p>By <strong>consistency level</strong>, call <span class="inline">parseGuaranteeTsFromConsistency</span> to compute the "<strong>snapshot</strong>" this read requires: Strong→see the latest, Eventually→just be fast, Bounded→tolerate a little staleness. This ts decides how <strong>up-to-date</strong> the QueryNode must be before it answers (MVCC in Lesson 30).</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Scatter to shards</h4><p>A collection's data is split by <strong>vchannel</strong> into <strong>shards</strong>, each owned by a <strong>delegator (shard leader)</strong>. <span class="inline">Execute</span>, via a load-balancing policy, sends "plan + guarantee ts" concurrently to each shard's delegator (<span class="inline">searchShard</span>).</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>Reduce across shards</h4><p>Each shard returns "<strong>its own topK</strong>." <span class="inline">PostExecute</span> merges these <strong>local topKs</strong>, <strong>re-sorts by distance, dedups by primary key</strong>, and takes the <strong>global topK</strong> back to the SDK. The cross-shard reduce details are saved for Lesson 29.</p></div></div>
+</div>
+
+<p>Among these five steps, step 1's "<strong>metric</strong>" deserves a second look. Recall Lessons 4 and 22: a vector's "alikeness" is defined by a metric (<strong>L2</strong> smaller is closer; <strong>IP/COSINE</strong> larger/more-aligned is closer), and <strong>the metric used for search must match the one used at index build and field declaration</strong>. While parsing, the Proxy reads the metric specified for this search and checks it against the field/index — an unglamorous gate that nonetheless blocks the most insidious class of vector-search bugs (a wrong metric makes results "<strong>systematically off, yet raises no error</strong>"). So think of the Proxy's "parse" as not merely "<strong>reading out parameters</strong>" but also a layer of "<strong>legality and consistency gatekeeping</strong>": does the field exist, is the vector dimension right, does the metric fit, is topK within limits, can the expression compile — if any is invalid, the request is bounced back to the SDK <strong>before any fan-out</strong>, rather than wasting a whole round of distributed search.</p>
+
+<p>Chained together, the Proxy's role is crystal clear: it is a "<strong>translator + dispatcher + cashier</strong>." Translate (compile a human filter into a plan tree), dispatch (decide which shards to hit with which snapshot), cash up (collate scattered results into one answer) — and <strong>none of the three touches the actual vector data</strong>. This matches Lesson 10's framing of the Proxy as a "stateless gateway that fans out and reduces"; search merely lands that fan-out/reduce picture on the <strong>read path</strong>.</p>
+
+<p>A bit more on step 2's <strong>search plan</strong>, since it is something the write path entirely lacks and the read path uniquely needs. The filter the SDK sends is a <strong>string expression</strong> (e.g. <span class="mono">color == "red" &amp;&amp; year &gt; 2020</span>) — human-readable, but not directly executable by a machine. The Proxy <strong>parses it into an expression tree</strong> and combines it with the main "vector ANN search" task into a complete <span class="inline">planpb.PlanNode</span>: at the top a <strong>vector-search node</strong> (which vector field, which metric, how large a topK) under which hangs a <strong>scalar predicate subtree</strong> (the <span class="mono">color/year</span> conditions compiled into efficiently-executable checks). This plan is <strong>passed down verbatim</strong> with the request to every shard and segment, finally run inside the C++ execution engine — "<strong>narrow the candidate rows by the predicate first, then do ANN over the filtered subset</strong>" (this filter-then-search execution detail is the subject of Lesson 28). At this step the Proxy only <strong>compiles the plan</strong>; it does not execute it.</p>
+
+<p>One more detail worth naming: a single search request <strong>may carry multiple query vectors</strong> — this is <strong>nq</strong> (number of queries), packed into one <span class="inline">placeholder group</span>. <span class="mono">searchTask</span> validates its size at the <span class="inline">checkNq</span> step. The meaning of nq is "<strong>batch N similarity searches in one round trip</strong>": each query vector wants its own topK, and after fan-out segcore computes and takes a topK for each query vector separately, with the merge also <strong>grouped</strong> per query vector. Grasping nq keeps you from conflating "topK=10" with "nq=5" — the former is "how many answers per question," the latter is "how many questions at once," and the final result is a table of <strong>nq × topK</strong>.</p>
+
+<h2>What the Proxy "does" and "does not do" in a search</h2>
+<p>Beginners most easily imagine the Proxy as "the search engine itself." Quite the opposite — it is a <strong>stateless coordination layer</strong> holding neither vector data nor indexes. Drawing its "<strong>responsibility boundary</strong>" clearly keeps the whole query path from getting muddled in your head:</p>
+
+<div class="cols">
+  <div class="col"><h4>✅ The Proxy does</h4><p>Validate and authenticate, <strong>compile the filter into a plan</strong>, <strong>compute guarantee ts</strong> from the consistency level, <strong>load-balance</strong> to pick QueryNodes, <strong>scatter</strong> the request to shards, <strong>reduce across shards</strong> into the final topK, truncate by offset/limit and return to the SDK. In one line: <strong>translate, schedule, merge</strong>.</p></div>
+  <div class="col"><h4>❌ The Proxy does not</h4><p>Hold vector data, hold indexes, or <strong>compute distances in its own process</strong>; decide "which QueryNode owns a segment" (that is QueryCoord's job, Lesson 13); execute the plan (the plan runs only once it reaches segcore, Lesson 28); wait for data to catch up ("wait until guarantee ts" happens on the QueryNode, Lesson 30).</p></div>
+</div>
+
+<p>Why does this boundary matter? Because it embodies Milvus's "<strong>separation of compute and coordination</strong>": the Proxy can <strong>scale out statelessly</strong> (run as many as you like, lose no data if one dies) precisely because it <strong>stores nothing</strong>; the genuinely expensive work — "<strong>holding indexes and computing vector distances in memory</strong>" — is pushed onto QueryNodes that <strong>scale horizontally by segment</strong>. Separating "<strong>who stores data, who computes distances, who only coordinates</strong>" is the prerequisite for understanding Lessons 26 and 27 — and a design choice shared by nearly every distributed search system: keep the coordination layer light, the compute layer heavy, each scaling independently.</p>
+
+<h2>How data flows: from SDK to result</h2>
+<p>From another angle, draw "who hands the request to whom" as a horizontal data flow. Note the highlighted cell in the middle — the star of this lesson, <span class="inline">searchTask</span>:</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">SDK</div><div class="nd">Search RPC<br>vectors+topK+expr</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">Proxy · searchTask</div><div class="nd">parse→plan→guarantee-ts</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">delegator A</div><div class="nd">shard 1 local topK</div></div>
+  <div class="arrow">＋</div>
+  <div class="node"><div class="nt">delegator B</div><div class="nd">shard 2 local topK</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">reduce</div><div class="nd">merge into global topK</div></div>
+</div>
+
+<p>This flow has two "<strong>one-to-many</strong>" spread points, the key to understanding distributed search. The first is at <strong>Proxy → delegator</strong>: a collection is cut into several shards and the request must hit each shard <strong>simultaneously</strong> (scatter). The second is inside each delegator: it further fans the search out to the several segments and worker QueryNodes it manages (that is Lesson 26's content).
+So a search is a <strong>two-level fan-out</strong>: Proxy to shards, shard to segments. Correspondingly the merge is also <strong>layered</strong>: topK within a segment, merge within a node, then a cross-shard merge on the Proxy — this "<strong>three-level reduce</strong>" is covered systematically in Lesson 29. For this lesson, just remember the <strong>outermost</strong> pair: Proxy fans out, Proxy reduces.</p>
+
+<p>Why must the fan-out be <strong>concurrent</strong> rather than asking one shard at a time? Because a search's latency is set by the <strong>slowest shard</strong>, not the sum of all shards. Querying N shards serially makes total latency ≈ N × per-shard latency; with concurrent fan-out, total latency ≈ per-shard latency + a little merge overhead. This is the fundamental trick of distributed search — "<strong>parallelism for low latency</strong>": cut one big problem into <strong>mutually-independent small problems</strong>, solve them at once, then stitch the answers. And precisely because shards are <strong>independent</strong> (each looks only at its own slice of data), the fan-out can safely go concurrent — this "<strong>data sharding + shared-nothing parallelism</strong>" structure is the root reason Milvus scales read throughput horizontally: more shards, each smaller and faster, so adding machines linearly lifts overall capacity.</p>
+
+<h2>Consistency level → guarantee timestamp</h2>
+<p>Step three, "<strong>fix the snapshot</strong>," deserves its own section, because it is the dial Milvus gives users between <strong>"how fresh you see" vs "how fast you answer."</strong> Recall Lesson 11's <strong>TSO global clock</strong>: every write carries a globally monotonic timestamp. A read carries a <strong>guarantee timestamp</strong> meaning "<strong>I must at least see every write with ts ≤ guarantee</strong>." <span class="inline">parseGuaranteeTsFromConsistency</span> translates the abstract <strong>consistency level</strong> into that concrete ts:</p>
+
+<table class="t">
+  <tr><th>Consistency level</th><th>guarantee ts value</th><th>Meaning / tradeoff</th></tr>
+  <tr><td><strong>Strong</strong></td><td><span class="inline">tMax</span> (the latest)</td><td>must see <strong>all</strong> writes up to now; strongest consistency, but may have to <strong>wait for data to catch up</strong>, highest latency</td></tr>
+  <tr><td><strong>Bounded</strong></td><td><span class="inline">tMax − gracefulTime</span></td><td>tolerate a <strong>bounded</strong> staleness window (a few seconds by default) for steadier low latency (the common default)</td></tr>
+  <tr><td><strong>Eventually</strong></td><td><span class="inline">1</span> (a tiny value)</td><td>wait for nothing, <strong>as fast as possible</strong>; may read a slightly stale snapshot, eventually consistent</td></tr>
+  <tr><td><strong>Session</strong> / <strong>Customized</strong></td><td>session- / user-supplied ts</td><td>Session: guarantees you read <strong>your own just-written</strong> data; Customized: the caller <strong>brings its own</strong> guarantee ts</td></tr>
+</table>
+
+<p>Reading the table needs only one axis: <strong>the larger the guarantee ts (closer to tMax), the fresher the data you see but the more likely you wait; the smaller, the faster you answer but the staler it may be.</strong>
+The implementation of <span class="inline">parseGuaranteeTsFromConsistency</span> says exactly this — <strong>Strong</strong> sets ts to <span class="inline">tMax</span>, <strong>Bounded</strong> subtracts a configured <span class="inline">gracefulTime</span> from <span class="inline">tMax</span>, and <strong>Eventually</strong> sets it to <span class="inline">1</span> (waits for almost nothing). At this step the Proxy merely <strong>computes</strong> the ts and stuffs it into the request sent to shards; the actual act of "<strong>wait until data catches up to guarantee ts before answering</strong>" happens on the QueryNode side (Lesson 30 shows how it compares its consumed WAL progress / TimeTick against guarantee ts and <strong>waits</strong> if not fresh enough). This "<strong>consistency level → guarantee ts → wait</strong>" chain is the through-line Part 6 keeps returning to.</p>
+
+<p>One easily-confused point to clear up: the guarantee ts is <strong>not</strong> "read only the data at this one instant" but "read <strong>at least</strong> the data up to this instant" — it is a <strong>lower bound</strong>. Together with Lesson 30's <strong>MVCC</strong> (multi-version: a read sees writes with ts ≤ guarantee, not erased by deletes with ts before it), you can see why the same data, under different consistency levels, shows a <strong>different "version."</strong> For now just nail down that the Proxy computes this ts at the entrance.</p>
+
+<p>Two more words on <strong>Session</strong> and <strong>Customized</strong>, which are not among the three branches of the <span class="inline">switch</span> above but get their ts by another route. <strong>Session</strong> solves the most common need, "<strong>read my own just-written data</strong>": the client <strong>remembers the timestamp of its most recent write</strong> and carries it as the guarantee ts on a read, so "search right after writing" is guaranteed to find your own row — though it does not promise to see <strong>others'</strong> writes at this moment. <strong>Customized</strong> hands the dial <strong>entirely to the caller</strong>: you compute a ts yourself and pass it in, and the system waits accordingly. Understanding these four-to-five levels gives you the core tradeoff Milvus exposes to the application layer — <strong>how fresh you read and how fast you answer are two ends of one ruler, and you slide it by your business needs</strong>. That is also why the default level is <strong>Bounded</strong>: it caps the staleness window to a few seconds — fresh enough for the vast majority of cases — while buying far steadier low latency than Strong.</p>
+
+<h2>Recognize the code backbone</h2>
+<p>You needn't read every line of <span class="mono">task_search.go</span>, but you should <strong>recognize its three-stage skeleton</strong>. Here is a heavily simplified sketch — mapping the five steps above onto method names:</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/proxy/task_search.go</span><span class="ln">searchTask three-stage skeleton (heavily simplified)</span></div>
+  <pre><span class="kw">type</span> <span class="nb">searchTask</span> <span class="kw">struct</span> { <span class="cm">/* request, plan, guarantee ts, results … */</span> }
+
+<span class="cm">// (1) parse + build plan + fix guarantee ts</span>
+<span class="kw">func</span> (t *searchTask) <span class="fn">PreExecute</span>(ctx) error {
+    <span class="cm">// validate request; parse vector field / topK / metric / filter expr</span>
+    <span class="cm">// compile the boolean filter into a planpb.PlanNode (ANN node + scalar predicate)</span>
+    t.GuaranteeTs = <span class="fn">parseGuaranteeTsFromConsistency</span>(ts, tMax, consistencyLevel)
+}
+<span class="cm">// (2) scatter to each shard's delegator</span>
+<span class="kw">func</span> (t *searchTask) <span class="fn">Execute</span>(ctx) error {
+    <span class="cm">// load-balance the plan + guaranteeTs concurrently to every shard</span>
+    <span class="cm">//   → t.searchShard(ctx, nodeID, queryNode, channel)</span>
+}
+<span class="cm">// (3) reduce across shards into the global topK (details in Lesson 29)</span>
+<span class="kw">func</span> (t *searchTask) <span class="fn">PostExecute</span>(ctx) error { <span class="cm">/* reduce */</span> }</pre>
+</div>
+
+<p>This <strong>PreExecute / Execute / PostExecute</strong> three-stage shape is not unique to search — it is the uniform shape of <strong>every</strong> Proxy task (insert, query, DDL…) (recall Lesson 10's three task queues). Fit search into the template and you only need to remember <strong>what each stage fills in</strong>: Pre fills "plan and guarantee ts," Execute fills "scatter," Post fills "reduce." Recognize this skeleton and you'll read any Proxy task far faster.</p>
+
+<p>For contrast, compare search with <strong>query</strong> (scalar query / <span class="mono">queryTask</span>): both follow the three stages, both scatter to shards, both carry a guarantee ts — but <strong>search "takes a topK by vector similarity"</strong> (its core is ANN search + distance sorting), whereas <strong>query "fetches rows satisfying a scalar condition"</strong> (its core is predicate filtering, with no vector ANN and no topK distance sort). Once you understand search, the most complex read path, query is just the simplified version with the "vector ANN node" removed from the plan.</p>
+
+<p>Finally, tie this lesson back to the through-line. We have seen the Proxy <strong>translate a search into a plan, fix the guarantee ts, and scatter to shards</strong> — but <strong>what happens once the request reaches a shard</strong>? The <strong>delegator (shard leader)</strong> that catches the request must search both the <strong>sealed segments</strong> (with their indexes) and the <strong>growing segments</strong> (the live tail of the WAL), and further fan the work out to worker QueryNodes holding segments before merging. That is exactly the world the <strong>next lesson (Lesson 26)</strong> steps into: the QueryNode and the delegator.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Query path begins</strong>: search mirrors the write path; this lesson stands at the Proxy entrance and will descend into C++ segcore (Lesson 27).</li>
+    <li><strong>searchTask three stages</strong> (<span class="mono">internal/proxy/task_search.go</span>): PreExecute parses + builds plan + fixes guarantee ts; Execute scatters; PostExecute reduces.</li>
+    <li><strong>Search plan</strong>: compile the boolean filter into a <span class="inline">planpb.PlanNode</span> = vector ANN node (field+metric+topK) + scalar predicate subtree.</li>
+    <li><strong>guarantee ts</strong>: derived from the consistency level via <span class="inline">parseGuaranteeTsFromConsistency</span> (<span class="mono">util.go</span>) — Strong→tMax, Bounded→tMax−gracefulTime, Eventually→1.</li>
+    <li><strong>Two-level fan-out</strong>: Proxy to shards (delegators), shard to segments (Lesson 26); the merge is layered too (three-level reduce, Lesson 29).</li>
+    <li><strong>Proxy never touches vectors</strong>: only translate + schedule + merge; the real segment search is in the QueryNode / segcore.</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. On the Proxy side, searchTask in PreExecute derives a guarantee timestamp from the consistency level. Which best describes its role and tradeoff?</div>
+  <ol class="opts">
+    <li>The guarantee ts decides the size of topK</li>
+    <li>The guarantee ts is used only on writes and is unrelated to search</li>
+    <li>The guarantee ts is a lower bound 'read at least the data up to this instant': closer to tMax (e.g. Strong) is fresher but may wait, smaller (e.g. Eventually) answers faster but may be staler; parseGuaranteeTsFromConsistency computes it and it travels with the request, while the actual 'wait until fresh enough' happens on the QueryNode</li>
+    <li>The guarantee ts specifies 'read only the data at this one instant', an exact equality snapshot</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. Strong→tMax, Bounded→tMax−gracefulTime, Eventually→1. It is the 'how fresh ↔ how fast' dial, a lower bound not an equality; the Proxy only computes and forwards it, the waiting is on the QueryNode (Lesson 30).</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Regarding the Proxy's responsibilities in one search, which is correct?</div>
+  <ol class="opts">
+    <li>The Proxy loads indexes in its own process and computes ANN directly</li>
+    <li>The Proxy compiles the boolean filter into a planpb.PlanNode (vector ANN node + scalar predicate subtree), scatters to each shard's delegator, then reduces topK across shards; it holds no vector data, computes no distances, and does not execute the plan itself</li>
+    <li>The Proxy queries shards serially one by one to preserve order</li>
+    <li>The Proxy decides which QueryNode holds each segment</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. The Proxy is a stateless 'translate+schedule+merge' layer: compile the plan, fix guarantee ts, fan out concurrently, reduce across shards. Distance compute is in segcore, segment distribution is QueryCoord's (Lesson 13), and the plan runs only in segcore (Lesson 28).</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. A search is described as a 'two-level fan-out'. What are the two levels?</div>
+  <ol class="opts">
+    <li>Level one fans out to etcd, level two to object storage</li>
+    <li>Level one: Proxy fans out to shards (delegators); level two: each delegator fans out to the multiple segments/workers it manages; correspondingly the merge is layered too (per-segment → per-node → cross-shard, the three-level reduce)</li>
+    <li>Level one is the write, level two is the read</li>
+    <li>Both levels happen in the SDK client</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. Proxy→shards is level one, delegator→segments/workers is level two (Lesson 26). The merge is symmetrically three-level: segcore per-segment, delegator per-node, Proxy cross-shard (tied up in Lesson 29).</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson frames the Proxy as a stateless 'translate+schedule+merge' layer that never touches vector data. Consider: why does pushing 'distance compute' to the QueryNode while keeping the Proxy stateless help elastic scaling and fault tolerance? What problems would arise if the Proxy held indexes and computed in place? (Tie in Lesson 10 Proxy and Lesson 9 control/data plane.)</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="24-scalar-and-fulltext.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">标量与全文索引</span><span class="lang-en">Scalar &amp;amp; full-text</span></div></a><a class="next" href="26-querynode-and-delegator.html"><div class="dir"><span class="lang-zh">下一课 →</span><span class="lang-en">Next →</span></div><div class="ttl"><span class="lang-zh">QueryNode 与 delegator</span><span class="lang-en">QueryNode &amp;amp; the delegator</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>

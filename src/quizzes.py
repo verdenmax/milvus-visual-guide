@@ -1665,6 +1665,216 @@ QUIZZES = {
             },
         ],
     },
+    "25-search-via-proxy.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "Proxy 侧的 searchTask 在 PreExecute 阶段，从“一致性级别”推出 guarantee 时间戳。下面哪条最准确地描述了它的作用与取舍？",
+                    "en": "On the Proxy side, searchTask in PreExecute derives a guarantee timestamp from the consistency level. Which best describes its role and tradeoff?",
+                },
+                "opts": [
+                    {
+                        "zh": "guarantee ts 是一条“至少读到此刻为止数据”的下界：越接近 tMax（如 Strong）看到的越新但可能要等，越小（如 Eventually）答得越快但可能越旧；它由 parseGuaranteeTsFromConsistency 算出并随请求下发，真正“等够新再答”发生在 QueryNode 侧",
+                        "en": "The guarantee ts is a lower bound 'read at least the data up to this instant': closer to tMax (e.g. Strong) is fresher but may wait, smaller (e.g. Eventually) answers faster but may be staler; parseGuaranteeTsFromConsistency computes it and it travels with the request, while the actual 'wait until fresh enough' happens on the QueryNode",
+                    },
+                    {"zh": "guarantee ts 指定“只读这一个时刻的数据”，是一个精确的等值快照", "en": "The guarantee ts specifies 'read only the data at this one instant', an exact equality snapshot"},
+                    {"zh": "guarantee ts 决定 topK 的大小", "en": "The guarantee ts decides the size of topK"},
+                    {"zh": "guarantee ts 只在写入时使用，与搜索无关", "en": "The guarantee ts is used only on writes and is unrelated to search"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "Strong→tMax、Bounded→tMax−gracefulTime、Eventually→1。它是“看得多新 ↔ 答得多快”的旋钮，是下界而非等值；Proxy 只算出并下发，等待在 QueryNode（第 30 课）。",
+                    "en": "Strong→tMax, Bounded→tMax−gracefulTime, Eventually→1. It is the 'how fresh ↔ how fast' dial, a lower bound not an equality; the Proxy only computes and forwards it, the waiting is on the QueryNode (Lesson 30).",
+                },
+            },
+            {
+                "q": {
+                    "zh": "关于 Proxy 在一次搜索里的职责，下面哪条是对的？",
+                    "en": "Regarding the Proxy's responsibilities in one search, which is correct?",
+                },
+                "opts": [
+                    {
+                        "zh": "Proxy 把布尔过滤编译成 planpb.PlanNode（向量 ANN 节点+标量谓词子树）、扇出到各分片的 delegator、再跨分片归并 topK；它本身不持有向量数据、不算距离、不执行 plan",
+                        "en": "The Proxy compiles the boolean filter into a planpb.PlanNode (vector ANN node + scalar predicate subtree), scatters to each shard's delegator, then reduces topK across shards; it holds no vector data, computes no distances, and does not execute the plan itself",
+                    },
+                    {"zh": "Proxy 在自己进程内加载索引并直接计算 ANN", "en": "The Proxy loads indexes in its own process and computes ANN directly"},
+                    {"zh": "Proxy 决定每个段归哪个 QueryNode 持有", "en": "The Proxy decides which QueryNode holds each segment"},
+                    {"zh": "Proxy 串行逐个查询分片以保证顺序", "en": "The Proxy queries shards serially one by one to preserve order"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "Proxy 是无状态的“翻译+调度+归并”层：编 plan、定 guarantee ts、并发扇出、跨分片 reduce。算距离在 segcore，段分布由 QueryCoord（第 13 课）决定，plan 在 segcore 才执行（第 28 课）。",
+                    "en": "The Proxy is a stateless 'translate+schedule+merge' layer: compile the plan, fix guarantee ts, fan out concurrently, reduce across shards. Distance compute is in segcore, segment distribution is QueryCoord's (Lesson 13), and the plan runs only in segcore (Lesson 28).",
+                },
+            },
+            {
+                "q": {
+                    "zh": "一次 search 被描述为“两层扇出”。这两层分别是什么？",
+                    "en": "A search is described as a 'two-level fan-out'. What are the two levels?",
+                },
+                "opts": [
+                    {
+                        "zh": "第一层 Proxy 扇到各分片（delegator），第二层每个 delegator 再扇到它管的多个段/worker；对应地归并也分层（段内→节点内→跨分片，即三级 reduce）",
+                        "en": "Level one: Proxy fans out to shards (delegators); level two: each delegator fans out to the multiple segments/workers it manages; correspondingly the merge is layered too (per-segment → per-node → cross-shard, the three-level reduce)",
+                    },
+                    {"zh": "第一层扇到 etcd，第二层扇到对象存储", "en": "Level one fans out to etcd, level two to object storage"},
+                    {"zh": "第一层是写、第二层是读", "en": "Level one is the write, level two is the read"},
+                    {"zh": "两层都在 SDK 客户端完成", "en": "Both levels happen in the SDK client"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "Proxy→分片 是第一层，delegator→段/worker 是第二层（第 26 课）。归并对称分三级：segcore 段内、delegator 节点内、Proxy 跨分片（第 29 课收束）。",
+                    "en": "Proxy→shards is level one, delegator→segments/workers is level two (Lesson 26). The merge is symmetrically three-level: segcore per-segment, delegator per-node, Proxy cross-shard (tied up in Lesson 29).",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课把 Proxy 定位成“翻译+调度+归并”的无状态层，自己不碰向量数据。请思考：为什么把“算距离”推给 QueryNode、而让 Proxy 保持无状态，对系统的弹性扩容与容错有什么好处？如果让 Proxy 直接持有索引、就地计算，会带来哪些问题？（可结合第 10 课 Proxy、第 9 课控制面/数据面。）",
+                "en": "This lesson frames the Proxy as a stateless 'translate+schedule+merge' layer that never touches vector data. Consider: why does pushing 'distance compute' to the QueryNode while keeping the Proxy stateless help elastic scaling and fault tolerance? What problems would arise if the Proxy held indexes and computed in place? (Tie in Lesson 10 Proxy and Lesson 9 control/data plane.)",
+            },
+        ],
+    },
+    "26-querynode-and-delegator.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "delegator（shard leader）为了给出一个“完整且新鲜”的答案，必须同时搜哪两类段？它们的检索方式有何不同？",
+                    "en": "To give a 'complete and fresh' answer, which two kinds of segments must the delegator (shard leader) search, and how do their retrieval methods differ?",
+                },
+                "opts": [
+                    {
+                        "zh": "sealed 段（已封存、带 Knowhere 索引、由 QueryCoord 分布到多 worker、走索引检索）+ growing 段（在长、无索引、delegator 消费 WAL 尾部维护、暴力逐条算）；两边结果合并才完整",
+                        "en": "sealed segments (settled, with a Knowhere index, distributed across workers by QueryCoord, searched via the index) + growing segments (growing, no index, maintained by the delegator consuming the WAL tail, brute-forced per row); merging both is what makes the answer complete",
+                    },
+                    {"zh": "只搜 sealed 段即可，growing 段不参与检索", "en": "Search only sealed segments; growing segments don't participate"},
+                    {"zh": "sealed 和 growing 都走暴力扫描，没有区别", "en": "Both sealed and growing use brute force, no difference"},
+                    {"zh": "growing 段也建好了索引，和 sealed 一样快", "en": "Growing segments are also indexed, as fast as sealed"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "“新鲜”和“高效”是一对矛盾：稳定大头交给索引（sealed，快），易变小尾巴交给暴力（growing，新）。delegator 消费 WAL 维护 growing，保证刚写就能搜到；两边合并兼得快与新。",
+                    "en": "'Fresh' and 'efficient' conflict: give the stable bulk to the index (sealed, fast) and the volatile tail to brute force (growing, fresh). The delegator consumes the WAL to maintain growing so just-written data is searchable; merging both gets fast and fresh at once.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "delegator 维护一个 tsafe。收到一个带 guarantee ts 的 search 时，它如何用 tsafe？",
+                    "en": "The delegator maintains a tsafe. When it receives a search carrying a guarantee ts, how does it use tsafe?",
+                },
+                "opts": [
+                    {
+                        "zh": "tsafe 表示“已把 WAL 消费到的时间戳”。若 tsafe ≥ guaranteeTs 则该看到的写入已到齐、立即检索；若 tsafe < guaranteeTs（还没追上）就等到 tsafe 追上再答——这把一致性级别真正兑现",
+                        "en": "tsafe is 'up to which timestamp the WAL has been consumed'. If tsafe ≥ guaranteeTs, the writes it should see have arrived, so it searches immediately; if tsafe < guaranteeTs (not caught up), it waits until tsafe catches up before answering — this redeems the consistency level",
+                    },
+                    {"zh": "tsafe 用来决定 topK 的大小", "en": "tsafe decides the size of topK"},
+                    {"zh": "tsafe 是对象存储的版本号，与等待无关", "en": "tsafe is an object-storage version number, unrelated to waiting"},
+                    {"zh": "tsafe 总是等于 tMax，所以从不需要等待", "en": "tsafe always equals tMax, so no waiting is ever needed"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "tsafe 是 delegator 已消费 WAL 的进度。Strong 取 tMax 就得等到消费追平最新；Eventually 取极小值几乎不等——这正是“看得多新↔答得多快”在分片端的落地（第 30 课详解 MVCC）。",
+                    "en": "tsafe is the delegator's WAL-consumption progress. Strong takes tMax so it must wait until consumption catches the latest; Eventually takes a tiny value so it barely waits — exactly the 'how fresh ↔ how fast' ruler at the shard end (MVCC detailed in Lesson 30).",
+                },
+            },
+            {
+                "q": {
+                    "zh": "为什么 delegator 要先在“节点内”把各 worker 的结果归并一次，再交给 Proxy，而不是把所有原始结果直接上交？",
+                    "en": "Why does the delegator first merge the workers' results 'within the node' before handing them to the Proxy, instead of forwarding all raw results?",
+                },
+                "opts": [
+                    {
+                        "zh": "为了尽量减少跨网络搬运的数据量：把 N 份 topK 压成一份再上交，Proxy 接收的数据降到 1/N；这是分布式里“局部归并/下推聚合”的通用做法，逐级收窄而非把海量候选背到最顶",
+                        "en": "To minimize data moved across the network: compress N topK sets into one before forwarding, cutting what the Proxy receives to 1/N; this is the general 'partial merge / pushdown aggregation' practice in distributed systems, narrowing stage by stage rather than hauling masses of candidates to the top",
+                    },
+                    {"zh": "因为 Proxy 没有能力做归并", "en": "Because the Proxy is incapable of merging"},
+                    {"zh": "因为 worker 之间必须互相通信", "en": "Because workers must communicate with each other"},
+                    {"zh": "节点内归并是多余的，纯属浪费", "en": "Node-level merge is redundant and pure waste"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "三级 reduce 让每一层只把必要精华往上交。delegator 先压成一份 topK，大幅减少发往 Proxy 的数据——和数据库把过滤/聚合下推到存储层是同一智慧。",
+                    "en": "The three-level reduce makes each layer pass up only the essence. The delegator compresses to one topK first, greatly reducing data sent to the Proxy — the same wisdom as databases pushing filtering/aggregation down to storage.",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课区分了两个正交维度：分片（按数据切，让单次检索并行变快）与副本（按可用性复制，让吞吐叠加并容错）。请思考：如果某个 collection 读 QPS 很高但数据量不大，你会优先加分片还是加副本？如果数据量巨大、单机放不下呢？delegator 在这两种扩展里各扮演什么角色？（可结合第 13 课 QueryCoord。）",
+                "en": "This lesson distinguished two orthogonal dimensions: shards (split by data, making a single search faster in parallel) and replicas (copied for availability, stacking throughput and tolerating faults). Consider: if a collection has very high read QPS but modest data size, would you add shards or replicas first? What if the data is huge and won't fit on one machine? What role does the delegator play in each kind of scaling? (Tie in Lesson 13 QueryCoord.)",
+            },
+        ],
+    },
+    "27-segcore.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "segcore 是用什么语言写的、负责什么？Go 侧的 QueryNode 如何调用它？",
+                    "en": "What language is segcore written in and what does it do? How does the Go-side QueryNode call it?",
+                },
+                "opts": [
+                    {
+                        "zh": "segcore 是 C++ 写的“单段检索引擎”，只在一个 segment 内部执行检索/查询；Go 的 LocalSegment 经纯 C 的 segment_c.h（NewSegment/AsyncSearch/DeleteSegment）通过 cgo 调进 C++，段在 Go 侧只是个不透明句柄",
+                        "en": "segcore is a C++ 'single-segment search engine' that executes search/query only inside one segment; Go's LocalSegment calls into C++ over cgo through pure-C segment_c.h (NewSegment/AsyncSearch/DeleteSegment), where a segment is just an opaque handle on the Go side",
+                    },
+                    {"zh": "segcore 是 Go 写的，直接在 QueryNode 进程里以 Go 代码运行", "en": "segcore is written in Go and runs as Go code directly in the QueryNode process"},
+                    {"zh": "segcore 是 Rust 写的全文检索引擎", "en": "segcore is a Rust full-text search engine"},
+                    {"zh": "segcore 由 Proxy 直接调用，不经过 QueryNode", "en": "segcore is called directly by the Proxy, bypassing the QueryNode"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "segcore 是 C++ 单段引擎（不懂分片/副本/WAL）。cgo 只认 C 的 ABI，所以要用纯 C 的 segment_c.h 把 C++ 能力包一层暴露给 Go；段在 Go 侧是 void* 不透明句柄。",
+                    "en": "segcore is a C++ single-segment engine (ignorant of shards/replicas/WAL). cgo only recognizes C's ABI, so pure-C segment_c.h wraps C++ ability for Go; a segment is a void* opaque handle on the Go side.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "segcore 用同一套 SegmentInterface 抽象“一个段”，下有两种实现。sealed 与 growing 的检索路径分别是什么？",
+                    "en": "segcore abstracts 'a segment' with one SegmentInterface, with two implementations. What are the retrieval paths of sealed vs growing?",
+                },
+                "opts": [
+                    {
+                        "zh": "SegmentSealed 走加载好的 Knowhere 索引（HNSW/IVF…，跳过大半向量，快）；SegmentGrowing 无索引、对每条向量暴力算距离（小、新）。上层只调同一个 Search，由多态自动选快路/慢路",
+                        "en": "SegmentSealed goes through the loaded Knowhere index (HNSW/IVF…, skipping most vectors, fast); SegmentGrowing has no index and brute-forces distances over every vector (small, fresh). The upper layer just calls the same Search, and polymorphism picks the fast/slow path",
+                    },
+                    {"zh": "sealed 暴力扫、growing 走索引，正好相反", "en": "sealed brute-forces and growing uses the index, exactly reversed"},
+                    {"zh": "两者都不计算距离，只返回行号", "en": "Neither computes distances; they only return row numbers"},
+                    {"zh": "sealed 和 growing 必须由不同的 Proxy 分别调用", "en": "sealed and growing must be called by different Proxies separately"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "“同一接口、两种实现”是多态：上层不必关心段带不带索引，segcore 按段的实际类型自动选索引（sealed，快）或暴力（growing，新）。这也是 delegator 能云淡风轻合并两者的原因。",
+                    "en": "'One interface, two implementations' is polymorphism: the upper layer needn't care whether a segment is indexed; segcore picks index (sealed, fast) or brute force (growing, fresh) by the segment's actual type. That is why the delegator can airily merge both.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "为什么 Milvus 要在 Go 与 C++ 之间隔一层纯 C 的 segment_c.h，而不让 Go 直接调 C++ 的类与方法？",
+                    "en": "Why does Milvus interpose a layer of pure-C segment_c.h between Go and C++, instead of letting Go call C++ classes and methods directly?",
+                },
+                "opts": [
+                    {
+                        "zh": "因为 cgo 只认 C 的 ABI：C++ 的类/模板/虚表经 name mangling 后 Go 对不上号，而 C 函数符号简单稳定，是两种语言的最大公约数；所以要用纯 C 函数把 C++ 能力包一层暴露",
+                        "en": "Because cgo only recognizes C's ABI: C++ classes/templates/vtables are name-mangled and unmatchable to Go, while C function symbols are simple and stable, the greatest common denominator of both languages; so pure-C functions wrap and expose the C++ ability",
+                    },
+                    {"zh": "因为 C 比 C++ 运行得更快", "en": "Because C runs faster than C++"},
+                    {"zh": "因为 Go 不允许调用任何非 Go 代码", "en": "Because Go forbids calling any non-Go code"},
+                    {"zh": "纯属历史包袱，没有技术原因", "en": "Purely historical baggage, no technical reason"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "cgo 跨的是 C 的 ABI。C++ 的 name mangling 让 Go 对不上符号，于是 Milvus core 里大量 *_c.h/*_c.cpp 都是“给 Go 看的 C 门面”，背后才是真正干活的 C++。边界还刻意粗粒度以摊薄 cgo 调用开销。",
+                    "en": "cgo crosses C's ABI. C++ name mangling makes symbols unmatchable to Go, so the many *_c.h/*_c.cpp files in Milvus core are 'C facades for Go,' with the real working C++ behind. The boundary is also kept coarse to amortize cgo call overhead.",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课强调 segcore 在段内还默默做 MVCC：结合删除位图与 guarantee ts 的时间过滤，只让“该看到”的那一版数据可见。请思考：为什么把这层可见性判定放在“最贴近数据的段内”执行，而不是在 Proxy 或 delegator 统一过滤？这对正确性和性能各有什么意义？（可结合第 20 课删除、第 30 课一致性。）",
+                "en": "This lesson stressed that segcore silently does MVCC inside a segment: combining the delete bitmap and the guarantee-ts time filter so only the 'should-be-seen' version is visible. Consider: why perform this visibility judgment 'inside the segment, closest to the data' rather than filtering uniformly at the Proxy or delegator? What does this mean for correctness and for performance? (Tie in Lesson 20 deletes and Lesson 30 consistency.)",
+            },
+        ],
+    },
 }
 
 
