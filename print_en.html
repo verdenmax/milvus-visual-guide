@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 41 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 42 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
@@ -369,6 +369,7 @@ details[open] > summary { list-style: none; }
   <li>Observability: logs/metrics/traces</li>
   <li>Configuration: paramtable & milvus.yaml</li>
   <li>Deployment & operations</li>
+  <li>Build & run</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -8155,6 +8156,120 @@ Lesson 8 told you what Milvus <strong>depends on</strong> (etcd, object storage,
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
     <li>This lesson likens deployment to 'choosing a home' and says cluster mode cashes the compute/storage-separation dividend. Please: (1) recommend a deployment method for each of three scenarios (local learning / a small team's steady-traffic production / a large-scale search service with surging read traffic) and justify each; (2) explain why 'going cluster' isn't always better — it brings elasticity, but at what cost? (3) Tying to Lessons 16/31, explain why the MQ is a 'key deployment decision': making the log backend pluggable (rocksmq/Pulsar/Woodpecker) reflects which recurring design philosophy of this guide (relate to Lesson 22 Knowhere, Lesson 39 Prometheus/OTel)?</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Build & run</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Across the first nine parts you've seen Milvus inside out. The final part (Part 10) is hands-on: <strong>how to build and run it from source, how to test, what conventions to follow, and how to submit your first PR</strong>. First, the most practical gate — <strong>build and run</strong>. A guide-wide thread matters here: because Milvus is <strong>Go + C++ glued by cgo</strong> (Lessons 2, 34), its build is inherently <strong>two-stage</strong> — and that fact decides almost every "why" of compiling it.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Building a Go+C++ project is like <strong>assembling a device with both a metal chassis and an electronics board</strong>. The <strong>C++ core</strong> is the <strong>metal chassis</strong>: first into the "<strong>machine shop</strong>" (the cmake + conan C++ toolchain) to be cast and machined. The <strong>Go part</strong> is the <strong>electronics board</strong>: made with its own toolchain, then <strong>bolted onto the chassis</strong> (that bolting is cgo).
+  The order <strong>can't be reversed</strong>: without a chassis, the board has nowhere to mount. So you <strong>can't just <span class="mono">go build</span></strong> — that's "making the board with no chassis", bolting into thin air. You must forge the C++ chassis first, then Go can cgo-link onto it. <span class="mono">make milvus</span> is the <strong>master assembler</strong> who runs the two stages in the right order.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong><span class="mono">make milvus</span> = first <span class="mono">build-cpp</span> (cmake/conan compiles the C++ core, including <span class="mono">generated-proto</span>) then <span class="mono">build-go</span> (a <span class="mono">CGO_ENABLED=1</span> go build links the C++ libs, compiling <span class="mono">cmd/main.go</span>); the product is <strong>one milvus binary</strong> that can play any role; deps install via <span class="mono">scripts/install_deps.sh</span>, run via <span class="mono">scripts/start_standalone.sh</span> / <span class="mono">start_cluster.sh</span></strong>. Two stages, born of the Go+C++ nature.
+</div>
+
+<h2>Why you can't just go build: the two-stage build</h2>
+<p>Someone trying to build Milvus for the first time often reflexively types <span class="mono">go build</span> — and hits a wall. The reason is exactly what Lessons 2 and 34 kept stressing: Milvus's <strong>compute core is C++</strong>, and the Go part must <strong>cgo</strong>-link to those C++ libs to run. So a lone <span class="mono">go build</span> can't find the <strong>not-yet-compiled C++ libs</strong> and must fail. The right move is <span class="mono">make milvus</span>, defined in the Makefile as an <strong>ordered pipeline</strong>: <span class="mono">milvus: build-cpp print-build-info build-go</span> — <strong>C++ first, Go second</strong>, the order hard-wired.</p>
+<p>Unpack the two stages. <strong>Stage one, <span class="mono">build-cpp</span></strong>: uses <strong>cmake + conan</strong> (C++ build and package tools) to compile the whole C++ core under <span class="inline">internal/core</span> (segment engine, index, exec, mmap… all of Part 8), also depending on <span class="mono">generated-proto</span> (generate the proto first). This stage yields a set of <strong>C++ static/dynamic libs</strong>. <strong>Stage two, <span class="mono">build-go</span></strong>: runs <span class="mono">go build</span> with <span class="mono">CGO_ENABLED=1</span>, <strong>linking in</strong> the previous stage's C++ libs via <span class="mono">CGO_LDFLAGS</span> / <span class="mono">CGO_CFLAGS</span>, finally compiling the entrypoint <span class="inline">cmd/main.go</span>. The two run back-to-back, meshed at the seam by cgo, neither dispensable. This is why building Milvus needs <strong>two toolchains</strong>: Go's, plus C++'s cmake/conan — whereas a pure-Go project needs only the former. The two stages compared:</p>
+
+<div class="cols">
+  <div class="col"><h4>Stage 1: build-cpp (C++ chassis)</h4><p>cmake + conan compile <span class="inline">internal/core</span> (segment engine/index/exec/mmap), depending on <span class="mono">generated-proto</span>. Yields C++ libs. <strong>A pure-Go project has no such step.</strong></p></div>
+  <div class="col"><h4>Stage 2: build-go (Go board)</h4><p><span class="mono">CGO_ENABLED=1</span> go build, linking the stage-1 C++ libs via <span class="mono">CGO_LDFLAGS/CFLAGS</span>, compiling <span class="mono">cmd/main.go</span>. <strong>cgo meshes the two stages here.</strong></p></div>
+</div>
+
+<h2>One command, one binary: make milvus</h2>
+<p>With deps installed and the two stages chained, what you finally get is <strong>one</strong> executable named <span class="mono">milvus</span> — note, <strong>one</strong>, not a dozen. This is intriguing: Milvus clearly has a dozen roles (Proxy, coordinators, various nodes), yet compiles to <strong>a single binary</strong>. The secret is the entrypoint <span class="inline">cmd/main.go</span>: the same program <strong>decides "which role to play this time" by launch arguments</strong>. To start a Proxy, launch it in the "proxy" role; for a QueryNode, the "querynode" role.</p>
+<p>This "<strong>one binary, many roles</strong>" design has real benefits. <strong>Simple builds</strong>: compile once, deploy everywhere, no per-role packaging. <strong>Version consistency</strong>: all roles are inherently same-source, same-version, ruling out "Proxy new, QueryNode old" mismatches. <strong>Flexible deployment</strong>: in standalone mode one process can bring up all roles <strong>together</strong> (a key reason Lesson 41's "embedded single-node" can be so light); in cluster mode the same binary is launched <strong>in different roles</strong> on different machines. The full build flow, from installing deps to producing the binary, as one line:</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Install deps</h4><p><span class="mono">scripts/install_deps.sh</span>: cmake, conan (C++), the Go toolchain, all at once.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Generate proto</h4><p><span class="mono">make generated-proto</span>: generate per-language/per-module code from milvus-proto.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Compile the C++ core</h4><p><span class="mono">build-cpp</span>: cmake/conan compile <span class="inline">internal/core</span>, yielding C++ libs.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Compile Go &amp; cgo-link</h4><p><span class="mono">build-go</span>: CGO links the C++ libs, compiling the single <span class="mono">milvus</span> binary (cmd/main.go).</p></div></div>
+</div>
+
+<h2>Run it: standalone and cluster scripts</h2>
+<p>Binary built, how to run it? Milvus ships a set of launch scripts under <span class="inline">scripts/</span>, matching Lesson 41's deployment shapes. The easiest is <span class="mono">scripts/standalone_embed.sh</span>: <strong>embedded single-node</strong>, even etcd embedded, messaging via local rocksmq, near-zero external deps — one command starts a complete Milvus, ideal for <strong>local learning and development</strong>. For something closer to the real shape, use <span class="mono">scripts/start_standalone.sh</span> (standalone, but deps started separately) or <span class="mono">scripts/start_cluster.sh</span> (cluster, components launched separately). To stop, use <span class="mono">scripts/stop_graceful.sh</span> — note "<strong>graceful</strong>", letting in-flight writes/flushes finish rather than brutally killing the process.</p>
+
+<table class="t">
+  <tr><th>Command</th><th>What it does</th></tr>
+  <tr><td class="mono">scripts/install_deps.sh</td><td>install build deps at once (cmake/conan/Go, etc.)</td></tr>
+  <tr><td class="mono">make generated-proto</td><td>regenerate code from milvus-proto</td></tr>
+  <tr><td class="mono">make milvus</td><td>two-stage build of the CPU <span class="mono">milvus</span> binary</td></tr>
+  <tr><td class="mono">make milvus-gpu</td><td>build the GPU variant (Lesson 37, links CUDA/RAFT)</td></tr>
+  <tr><td class="mono">standalone_embed.sh</td><td>start a zero-dep embedded single-node (learning/dev)</td></tr>
+  <tr><td class="mono">start_standalone.sh / start_cluster.sh</td><td>start standalone (separate deps) / start a cluster</td></tr>
+  <tr><td class="mono">stop_graceful.sh</td><td>graceful stop, letting writes/flushes finish</td></tr>
+</table>
+
+<p>A word on why "<strong>graceful stop</strong>" deserves its own script rather than a plain kill. While Milvus runs, memory often holds <strong>data not yet flushed</strong> (growing segments, unpersisted WAL consume progress, Lesson 17). Brutally killing the process may leave this in-flight state <strong>without a clean finish</strong>, so a restart must recover via log replay — slower and riskier. A graceful stop first <strong>tells components to "prepare to close"</strong>: flush what should be flushed, record checkpoints, settle in-flight requests, then exit. This is the same production care as Lesson 41's Operator <strong>rolling upgrade</strong> — <strong>how a system shuts down matters as much as how it starts</strong>; careless shutdowns are a frequent source of weird data problems. Building the habit of "<span class="mono">stop_graceful.sh</span>, not kill" is a small step from toy mindset to production mindset.</p>
+<p>To wrap up: Milvus's build is "<strong>not just go build</strong>" at root because of its <strong>Go + C++</strong> bilingual nature — you must forge the C++ core chassis first, then bolt Go on via cgo; <span class="mono">make milvus</span> orchestrates both stages into one binary that plays all roles, which launch scripts then run in the shape you want. Grasp this chain and you not only can build Milvus but <strong>truly understand the cost and reward of the "Go+C++ bilingual architecture" in engineering terms</strong> — it buys peak performance and demands this extra build step. Next lesson: how to write tests for this bilingual system (especially the special rule of "must carry <span class="mono">-tags dynamic,test</span>").</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Two-stage build</strong>: because Go+C++ are glued by cgo, <span class="mono">make milvus = build-cpp (cmake/conan compile the C++ core + generated-proto) → build-go (CGO_ENABLED=1 links the C++ libs)</span>; you can't just <span class="mono">go build</span>.</li>
+    <li><strong>Two toolchains</strong>: besides Go you need C++'s cmake/conan, installed at once via <span class="mono">scripts/install_deps.sh</span>.</li>
+    <li><strong>One binary, many roles</strong>: the product is a single <span class="mono">milvus</span> (<span class="inline">cmd/main.go</span>) that plays Proxy/coordinator/nodes by launch args; simple builds, version consistency, flexible deployment.</li>
+    <li><strong>Run</strong>: launch via <span class="mono">standalone_embed.sh</span> (zero-dep learning) / <span class="mono">start_standalone.sh</span> / <span class="mono">start_cluster.sh</span>; stop gracefully via <span class="mono">stop_graceful.sh</span>.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Why can't you build Milvus with just go build — why use make milvus?</div>
+  <ol class="opts">
+    <li>Because go build is unavailable on Linux</li>
+    <li>make milvus is just an alias of go build, no difference</li>
+    <li>Because Milvus is pure C++ with no Go</li>
+    <li>Milvus is Go+C++ glued by cgo: you must build-cpp first (cmake/conan compile the C++ core into libs), then build-go (CGO_ENABLED=1) links them; a lone go build can't find the not-yet-built C++ libs and fails</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. Milvus's compute core is C++, and the Go part must cgo-link those C++ libs to run. The Makefile defines milvus: build-cpp print-build-info build-go — order hard-wired, C++ first, Go second. build-cpp uses cmake/conan to compile internal/core (also needing generated-proto) into C++ libs; build-go runs with CGO_ENABLED=1, linking them via CGO_LDFLAGS/CFLAGS to compile cmd/main.go. A lone go build fails because those libs don't exist yet. Hence two toolchains (Go + C++'s cmake/conan).</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. What form does make milvus produce?</div>
+  <ol class="opts">
+    <li>One milvus binary (cmd/main.go) that plays any role — Proxy/coordinator/nodes — by launch arguments; simple builds, version consistency, flexible deployment</li>
+    <li>A binary that can only act as a Proxy</li>
+    <li>A dozen binaries, one per role, each needing version sync</li>
+    <li>A set of Python scripts</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. Though Milvus has a dozen roles (Proxy, coordinators, nodes), it compiles to one milvus binary. The secret is cmd/main.go: the same program picks its role this run by launch args (proxy/querynode…). Benefits: compile once deploy everywhere (simple builds), all roles same-source/same-version (no mismatch), one process brings up all roles in standalone while the same binary launches in different roles across machines in cluster (flexible). That's 'one binary + role dispatch'.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Which statement about Milvus build/run commands is correct?</div>
+  <ol class="opts">
+    <li>GPU and CPU builds use the same make target</li>
+    <li>You should kill the process directly — safer than a graceful stop</li>
+    <li>install_deps.sh installs deps; make generated-proto generates proto; make milvus(-gpu) builds the binary; standalone_embed.sh/start_*.sh launch; stop_graceful.sh stops gracefully, letting writes/flushes finish</li>
+    <li>make generated-proto must run after make milvus</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. Full chain: install_deps.sh installs cmake/conan/Go at once; make generated-proto generates code from milvus-proto (must precede compilation since C++/Go both include/import these types); make milvus (CPU)/make milvus-gpu (GPU, links CUDA/RAFT) two-stage build the binary; launch via standalone_embed.sh (zero-dep)/start_standalone.sh/start_cluster.sh; stop_graceful.sh stops gracefully — flush, checkpoint, settle in-flight requests, then exit. A careless kill may lose unflushed state, forcing replay recovery on restart.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson says Milvus's build is 'not just go build', rooted in its Go+C++ bilingual nature. Please: (1) in your own words explain what make milvus's two stages (build-cpp / build-go) each do, where cgo meshes, and why the order can't reverse; (2) why does building Milvus need the cmake/conan C++ toolchain while a pure-Go project doesn't? (3) what does 'one binary, many roles (cmd/main.go)' buy for builds, version management, and standalone/cluster deployment? Tying to Lessons 2 and 34, discuss how the 'Go+C++ bilingual architecture' trades off performance against build complexity.</li>
   </ul>
 </div>
 </div>

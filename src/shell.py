@@ -129,6 +129,8 @@ PAGES = [
      "第九部分 · API、工具与运维", "Part 9 · API, tools & ops"),
     ("41-deployment.html", "部署与运维", "Deployment & operations",
      "第九部分 · API、工具与运维", "Part 9 · API, tools & ops"),
+    ("42-build-and-run.html", "构建与运行", "Build & run",
+     "第十部分 · 实践与贡献", "Part 10 · Practice & contributing"),
 ]
 
 
@@ -652,6 +654,8 @@ SUBTITLES = {
                               "ParamItem (Key/Default/Doc + GetAsInt/Bool type-safe); layered sources file&lt;env&lt;etcd merged by priority; config.Manager; hot reload vs Immutable"),
     "41-deployment.html": ("部署阶梯：内嵌单机→compose→Helm/Operator · 集群按需独立伸缩 · MQ 即 WAL 后端(rocksmq/Pulsar/Kafka/Woodpecker) · 配置/可观测/滚动升级合流",
                            "deployment ladder: embedded→compose→Helm/Operator; cluster scales independently; MQ is the WAL backend (rocksmq/Pulsar/Kafka/Woodpecker); config/observability/rolling-upgrade converge"),
+    "42-build-and-run.html": ("两段式构建 make milvus = build-cpp(cmake/conan)→build-go(CGO 链接) · 一个二进制多角色(cmd/main.go) · install_deps/start_*/stop_graceful 脚本",
+                              "two-stage build: make milvus = build-cpp(cmake/conan)→build-go(CGO link); one binary, many roles (cmd/main.go); install_deps/start_*/stop_graceful scripts"),
 }
 
 

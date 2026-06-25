@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>42 · 构建与运行 / Build &amp; run - Milvus 图解教程</title>
+<meta name="description" content="第十部分 · 实践与贡献｜构建与运行 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="42 · 构建与运行 / Build &amp; run - Milvus 图解教程">
+<meta property="og:description" content="第十部分 · 实践与贡献｜构建与运行 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="42 · 构建与运行 / Build &amp; run - Milvus 图解教程">
+<meta name="twitter:description" content="第十部分 · 实践与贡献｜构建与运行 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.timeline .tl-row { display: flex; align-items: flex-start; gap: .6rem; padding: .12rem 0; }
+.timeline .tl-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: .45rem; }
+.timeline .tl-t { font-family: ui-monospace, monospace; font-weight: 700; color: var(--accent-ink); min-width: 2.4rem; font-size: .82rem; flex-shrink: 0; margin-top: .18rem; }
+.timeline .tl-c { font-size: .9rem; color: var(--muted); }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第十部分 · 实践与贡献</span><span class="lang-en">Part 10 · Practice &amp; contributing</span></span>
+    <span class="pill">42 / 42</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:100%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第十部分 · 实践与贡献</span><span class="lang-en">Part 10 · Practice &amp; contributing</span></div>
+    <h1><span class="lang-zh">构建与运行</span><span class="lang-en">Build &amp; run</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+前九部分，你已把 Milvus 从里到外看了个遍。最后一部分（第十部分），我们动手：<strong>怎么从源码把它编出来、跑起来，怎么测试、守哪些约定，又怎么提交你的第一个 PR</strong>。第一课先过最实际的一关——<strong>构建与运行</strong>。这里有个贯穿全书的关键：因为 Milvus 是 <strong>Go + C++ 经 cgo 黏合</strong>（第 2、34 课），它的构建天然是<strong>两段式</strong>的——这一点，决定了你编译它时几乎所有的"为什么"。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 类比</div>
+  编译一个 Go+C++ 项目，像<strong>组装一台既有金属底盘、又有电子板的设备</strong>。<strong>C++ 内核</strong>是那副<strong>金属底盘</strong>：要先进"<strong>机加工车间</strong>"（cmake + conan 这套 C++ 工具链）把它铸造、打磨出来。<strong>Go 部分</strong>是<strong>电子板</strong>：用它自己的工具链制作，再<strong>螺丝拧到底盘上</strong>（这道"拧合"就是 cgo）。
+  顺序<strong>不能颠倒</strong>：没有底盘，电子板没处安装。所以你<strong>不能只 <span class="mono">go build</span></strong>——那等于"光做电子板、没造底盘"，一拧就空。必须先把 C++ 底盘铸好，Go 才能 cgo 链接上去。<span class="mono">make milvus</span> 就是那位<strong>统筹全场的总装师傅</strong>，按正确顺序把两段串起来。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观视角</div>
+  一句话：<strong><span class="mono">make milvus</span> = 先 <span class="mono">build-cpp</span>（cmake/conan 编 C++ 内核，含 <span class="mono">generated-proto</span>）再 <span class="mono">build-go</span>（<span class="mono">CGO_ENABLED=1</span> 的 go build 链接 C++ 库，编出 <span class="mono">cmd/main.go</span>）；产物是<strong>一个 milvus 二进制</strong>，能扮演任意角色；依赖用 <span class="mono">scripts/install_deps.sh</span> 装，运行用 <span class="mono">scripts/start_standalone.sh</span> / <span class="mono">start_cluster.sh</span></strong>。两段式，源于 Go+C++ 的本质。
+</div>
+
+<p class="lead" style="font-size:1rem;color:var(--muted)">先别急着敲命令——理解了"为什么是两段"，你才知道每一步在做什么、卡住时该往哪查。下面就从这条最容易踩的坑讲起。</p>
+
+<h2>为什么不能只 go build：两段式构建</h2>
+<p>初次想编 Milvus 的人，常会下意识地敲一句 <span class="mono">go build</span>——然后撞一鼻子灰。原因正是第 2、34 课反复讲的：Milvus 的<strong>计算内核是 C++</strong>，Go 那部分要靠 <strong>cgo</strong> 链接到这些 C++ 库才能跑。所以 <span class="mono">go build</span> 单独执行时，找不到那些<strong>还没被编译出来的 C++ 库</strong>，必然失败。正确的姿势是 <span class="mono">make milvus</span>，它在 Makefile 里被定义成一条<strong>有序的流水线</strong>：<span class="mono">milvus: build-cpp print-build-info build-go</span>——<strong>先 C++、后 Go</strong>，次序写死。</p>
+
+<p>为什么"<strong>用 make、而不是直接敲编译命令</strong>"在这种项目里几乎是必须的？因为这条流水线背后藏着一大堆<strong>你不该手动操心的细节</strong>：C++ 库编到哪个目录、Go 这边的 <span class="mono">CGO_LDFLAGS</span> 要指向哪里才能找到它们、要传哪些编译标记、链接哪些系统库、设什么 <span class="mono">RPATH</span> 让运行时找得到动态库……这些参数又长又容易写错。Makefile 把它们<strong>固化成一条可复现的命令</strong>，你只敲 <span class="mono">make milvus</span>，剩下的脏活它替你拼好。这就是<strong>构建系统</strong>存在的意义：把"<strong>怎么正确地把这堆东西编到一起</strong>"这件极易出错的事，沉淀成一份<strong>谁来执行都一样的脚本</strong>。所以当你看到 Milvus（以及几乎所有正经 C/C++/混合项目）都用 Makefile 而非让你裸敲 <span class="mono">go build</span>/<span class="mono">cmake</span>，要明白这不是繁琐，而是<strong>把复杂度收拢到一处、让构建变得可复现</strong>——这与第 40 课"把配置收口到 paramtable"是同一种"<strong>把易错的事统一管起来</strong>"的智慧。</p>
+<p>拆开看这两段。<strong>第一段 <span class="mono">build-cpp</span></strong>：用 <strong>cmake + conan</strong>（C++ 的构建与包管理工具）编译 <span class="inline">internal/core</span> 那一整套 C++ 内核（段引擎、索引、执行、mmap……第 8 部分讲的全部），它还依赖 <span class="mono">generated-proto</span>（先把 proto 生成出来）。这一段产出一批 <strong>C++ 静态/动态库</strong>。<strong>第二段 <span class="mono">build-go</span></strong>：开着 <span class="mono">CGO_ENABLED=1</span> 跑 <span class="mono">go build</span>，通过 <span class="mono">CGO_LDFLAGS</span> / <span class="mono">CGO_CFLAGS</span> 把上一段那些 C++ 库<strong>链接进来</strong>，最终编出入口 <span class="inline">cmd/main.go</span>。两段一前一后、由 cgo 在接缝处咬合，缺一不可。这也解释了为什么编 Milvus 要装<strong>两套工具链</strong>：Go 一套、外加 C++ 的 cmake/conan 一套——而纯 Go 项目只需要前者。下面用对比把两段看清。</p>
+
+<p>很多新人第一次构建 Milvus 时会卡在<strong>第一段</strong>——C++ 那部分，因为它要拉取并编译一大堆 C++ 依赖（FAISS/Knowhere、各种数学与存储库……），耗时长、对环境也挑剔。这正是 <span class="mono">conan</span> 这个工具的价值所在：它是 C++ 世界的"包管理器"，负责把这些第三方库<strong>按版本拉下来、编好、管好</strong>，免去你手动一个个 <span class="mono">make install</span> 的折磨。<span class="mono">cmake</span> 则是 C++ 的"构建编排器"，把成百上千个源文件按依赖关系组织、调用编译器产出库。理解这两件工具的分工，你遇到构建报错时就有了方向：是<strong>依赖没拉对</strong>（conan 的事），还是<strong>编译/链接配置不对</strong>（cmake 的事）。顺带提一句，第一段还内嵌了 <span class="mono">generated-proto</span>——也就是第 38 课说的"从 milvus-proto 生成代码"必须先于编译发生，因为 C++ 和 Go 的代码里都要 <span class="mono">#include</span> / import 这些生成出来的 proto 类型。这条<strong>"先生成、再编译"</strong>的依赖顺序，是所有用 protobuf 的项目共同的规矩。</p>
+
+<div class="cols">
+  <div class="col"><h4>第一段：build-cpp（C++ 底盘）</h4><p>cmake + conan 编 <span class="inline">internal/core</span>（段引擎/索引/执行/mmap），依赖 <span class="mono">generated-proto</span>。产出 C++ 库。<strong>这一步纯 Go 项目没有。</strong></p></div>
+  <div class="col"><h4>第二段：build-go（Go 电子板）</h4><p><span class="mono">CGO_ENABLED=1</span> 的 go build，用 <span class="mono">CGO_LDFLAGS/CFLAGS</span> 链接上一段的 C++ 库，编出 <span class="mono">cmd/main.go</span>。<strong>cgo 在此咬合两段。</strong></p></div>
+</div>
+
+<h2>一条命令编出一个二进制：make milvus</h2>
+<p>把依赖装齐、两段串好，最终你得到的是<strong>一个</strong>叫 <span class="mono">milvus</span> 的可执行文件——注意，是<strong>一个</strong>，不是十几个。这件事很有意思：Milvus 明明有 Proxy、各协调器、各类节点十几种角色，编出来却<strong>只有一个二进制</strong>。秘密在入口 <span class="inline">cmd/main.go</span>：同一个程序，<strong>靠启动参数决定"这次扮演哪个角色"</strong>。要起一个 Proxy，就用"proxy"角色启动它；要起 QueryNode，就用"querynode"角色启动它。</p>
+
+<p>这种"一个二进制扮演多角色"的玩法，技术上靠的是<strong>启动时的角色分发</strong>：<span class="inline">cmd/main.go</span> 解析命令行（要扮演哪个角色），再去初始化对应组件的服务。你可以把它想成一个<strong>"多面手演员"</strong>：剧本（代码）里写好了所有角色的台词，开演前导演（启动参数）告诉他"今晚演 Proxy"，他就只把 Proxy 那套演出来。这种设计在分布式系统里相当常见，因为它把"<strong>构建产物</strong>"和"<strong>运行角色</strong>"解耦了——<strong>编译期只管产出一个全能二进制，运行期才决定它当什么用</strong>。对比另一种思路（每个角色编一个独立二进制），单二进制的好处在运维上尤其明显：你的镜像仓库里只需要<strong>一个</strong>镜像、升级时只需替换<strong>一个</strong>制品，而不必同步十几个版本号。当然代价是这个二进制会大一些（它包含了所有角色的代码），但对一个反正要靠 cgo 链接整个 C++ 内核的程序来说，这点体积不值一提。理解了"单二进制 + 角色分发"，你再看第 41 课"同一个二进制在不同机器上以不同角色启动"，就会觉得顺理成章。</p>
+<p>这种"<strong>一个二进制、多种角色</strong>"的设计，好处不少。<strong>构建简单</strong>：一次编译，到处部署，不必为每种角色单独打包。<strong>版本一致</strong>：所有角色天然同源同版本，杜绝"Proxy 是新版、QueryNode 是旧版"的错配。<strong>部署灵活</strong>：单机模式下，一个进程里就能把所有角色<strong>一起拉起</strong>（这正是第 41 课"内嵌单机"能那么轻的原因之一）；集群模式下，同一个二进制在不同机器上<strong>以不同角色</strong>分别启动。完整的构建流程，从装依赖到产出二进制，串成一条线就是下面这样。</p>
+
+<p>第一次完整编译 Milvus 往往要<strong>等上不短的时间</strong>（C++ 那一大坨依赖与内核，初次编译动辄几十分钟），这很正常，别以为卡住了。好在<strong>增量编译</strong>会快很多：改了 Go 代码只重跑 <span class="mono">build-go</span>、改了 C++ 才需要重编对应的 C++ 部分。一个实用建议是：<strong>日常只改 Go 时，不必每次都从头 <span class="mono">make milvus</span></strong>——C++ 库没变的话，重链接一次 Go 即可，能省下大量等待。也正因为初次构建重，社区才提供了<strong>现成的 docker 镜像</strong>（第 41 课的 compose/Helm 拉的就是它们）：大多数只想"用" Milvus 的人，根本不需要自己编，直接拉镜像跑即可；只有当你要<strong>改它的源码、给它贡献代码</strong>时，才真正需要这条从源码构建的链路。这也顺势点出了第 10 部分的主题转变——从这一课起，我们的身份从"<strong>使用者</strong>"悄悄转向了"<strong>贡献者</strong>"：会从源码构建，是参与一个开源项目的<strong>第一道门槛</strong>，迈过它，你才谈得上改代码、跑测试、提 PR。</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>装依赖</h4><p><span class="mono">scripts/install_deps.sh</span>：cmake、conan（C++）、Go 工具链等一次装齐。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>生成 proto</h4><p><span class="mono">make generated-proto</span>：由 milvus-proto 生成各语言/各模块代码。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>编 C++ 内核</h4><p><span class="mono">build-cpp</span>：cmake/conan 编 <span class="inline">internal/core</span>，产出 C++ 库。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>编 Go 并 cgo 链接</h4><p><span class="mono">build-go</span>：CGO 链接 C++ 库，编出唯一的 <span class="mono">milvus</span> 二进制（cmd/main.go）。</p></div></div>
+</div>
+
+<h2>把它跑起来：standalone 与 cluster 脚本</h2>
+<p>编好了二进制，怎么跑？Milvus 在 <span class="inline">scripts/</span> 下备好了一组启动脚本，对应第 41 课讲的部署形态。最省事的是 <span class="mono">scripts/standalone_embed.sh</span>：<strong>内嵌单机</strong>，连 etcd 都用嵌入式、消息用本地 rocksmq，几乎零外部依赖，一条命令就能起一个完整 Milvus，最适合<strong>本地学习与开发</strong>。想要更接近真实形态，用 <span class="mono">scripts/start_standalone.sh</span>（单机，但依赖独立起）或 <span class="mono">scripts/start_cluster.sh</span>（集群，各组件分别启动）。停的时候用 <span class="mono">scripts/stop_graceful.sh</span>——注意是"<strong>优雅</strong>"停止，让正在进行的写入/刷盘有机会收尾，而不是粗暴杀进程。</p>
+
+<p>这里值得停一下，体会这组脚本背后"<strong>由简到繁、平滑过渡</strong>"的用心。<span class="mono">standalone_embed.sh</span> 把一切都内嵌、藏起复杂度，让你"<strong>几分钟跑起一个能搜的 Milvus</strong>"，先建立信心、把玩起来；当你想看看"真实的它"长什么样，<span class="mono">start_standalone.sh</span> 让依赖（etcd、存储、MQ）变成独立进程，你能亲眼看到第 8 课说的"<strong>三大外部依赖</strong>"真的被一个个拉起；再进一步，<span class="mono">start_cluster.sh</span> 把各组件拆成独立角色分别启动，让你在本地就能<strong>摸到集群的形态</strong>。这条"脚本阶梯"和第 41 课的"部署阶梯"<strong>遥相呼应</strong>——它们都在传递同一个理念：<strong>让新手有最平缓的入口，让进阶者有逐级深入的路径</strong>。一个开源项目是否友好，很大程度就看它有没有把"<strong>第一次跑起来</strong>"这件事做得足够顺。Milvus 在这件事上的用心，本身就是一种值得学习的工程素养。</p>
+
+<table class="t">
+  <tr><th>命令</th><th>作用</th></tr>
+  <tr><td class="mono">scripts/install_deps.sh</td><td>一次装齐构建依赖（cmake/conan/Go 等）</td></tr>
+  <tr><td class="mono">make generated-proto</td><td>由 milvus-proto 重新生成代码</td></tr>
+  <tr><td class="mono">make milvus</td><td>两段式编出 CPU 版 <span class="mono">milvus</span> 二进制</td></tr>
+  <tr><td class="mono">make milvus-gpu</td><td>编出 GPU 版（第 37 课，链接 CUDA/RAFT）</td></tr>
+  <tr><td class="mono">standalone_embed.sh</td><td>零依赖起一个内嵌单机（学习/开发）</td></tr>
+  <tr><td class="mono">start_standalone.sh / start_cluster.sh</td><td>起单机（依赖独立）/ 起集群</td></tr>
+  <tr><td class="mono">stop_graceful.sh</td><td>优雅停止，让写入/刷盘收尾</td></tr>
+</table>
+
+<p>顺带说说"<strong>优雅停止</strong>"为什么值得单独有个脚本，而不是直接 kill。Milvus 运行时，内存里往往攒着<strong>还没刷盘的数据</strong>（growing 段、未落盘的 WAL 消费进度等，第 17 课）。如果粗暴地一刀杀掉进程，这些在途状态可能<strong>来不及妥善收尾</strong>，重启后就得靠日志重放去恢复，既慢又徒增风险。优雅停止则会先<strong>通知各组件"准备打烊"</strong>：把该刷的刷掉、该记的检查点记好、把正在处理的请求做个了断，再退出。这和第 41 课 Operator 的"<strong>滚动升级</strong>"是同一种对生产的体贴——<strong>系统的"关"和"开"一样重要</strong>，草率地关机，常常是诡异数据问题的源头。养成"用 <span class="mono">stop_graceful.sh</span> 而非 kill"的习惯，是把玩具心态升级成生产心态的一小步。</p>
+<p>把这一课收束一下：Milvus 的构建之所以"<strong>不只是 go build</strong>"，根子在它 <strong>Go + C++</strong> 的双语本质——你得先用 C++ 工具链铸好内核底盘、再用 Go 经 cgo 拧上来，<span class="mono">make milvus</span> 替你统筹这两段，产出一个能扮演所有角色的二进制，再由启动脚本按你要的形态把它跑起来。理解了这条链，你不仅会编 Milvus，更<strong>真正读懂了"Go+C++ 双语架构"在工程上的代价与回报</strong>——它换来了极致性能，也要求构建多走这一步。下一课，我们看怎么给这套双语系统写测试（尤其是那条"必须带 <span class="mono">-tags dynamic,test</span>"的特殊规矩）。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>两段式构建</strong>：因 Go+C++ 经 cgo 黏合，<span class="mono">make milvus = build-cpp（cmake/conan 编 C++ 内核 + generated-proto）→ build-go（CGO_ENABLED=1 链接 C++ 库）</span>；不能只 <span class="mono">go build</span>。</li>
+    <li><strong>两套工具链</strong>：除 Go 外还需 C++ 的 cmake/conan，用 <span class="mono">scripts/install_deps.sh</span> 一次装齐。</li>
+    <li><strong>一个二进制、多角色</strong>：产物是单个 <span class="mono">milvus</span>（<span class="inline">cmd/main.go</span>），靠启动参数决定扮演 Proxy/协调器/各节点；构建简单、版本一致、部署灵活。</li>
+    <li><strong>运行</strong>：<span class="mono">standalone_embed.sh</span>(零依赖学习) / <span class="mono">start_standalone.sh</span> / <span class="mono">start_cluster.sh</span> 启动，<span class="mono">stop_graceful.sh</span> 优雅停止。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. 为什么编译 Milvus 不能只敲 go build，而要用 make milvus？</div>
+  <ol class="opts">
+    <li>因为 go build 在 Linux 上不可用</li>
+    <li>make milvus 只是 go build 的别名，没区别</li>
+    <li>因为 Milvus 是纯 C++ 项目，没有 Go</li>
+    <li>Milvus 是 Go+C++ 经 cgo 黏合，必须先 build-cpp(cmake/conan 编 C++ 内核)产出库，再 build-go(CGO_ENABLED=1)链接它们；go build 找不到还没编出的 C++ 库会失败</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。Milvus 的计算内核是 C++，Go 部分靠 cgo 链接这些 C++ 库才能跑。Makefile 里 milvus: build-cpp print-build-info build-go——次序写死、先 C++ 后 Go。build-cpp 用 cmake/conan 编 internal/core(还依赖 generated-proto)产出 C++ 库；build-go 开 CGO_ENABLED=1，用 CGO_LDFLAGS/CFLAGS 链接这些库编出 cmd/main.go。单独 go build 时这些库还不存在，必然失败。所以要装两套工具链(Go + C++ 的 cmake/conan)。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. make milvus 编出的产物是什么形态？</div>
+  <ol class="opts">
+    <li>一个 milvus 二进制(cmd/main.go)，靠启动参数决定扮演 Proxy/协调器/各节点等任意角色；构建简单、版本一致、部署灵活</li>
+    <li>一个只能当 Proxy 用的二进制</li>
+    <li>十几个二进制，每个角色一个，需各自同步版本</li>
+    <li>一组 Python 脚本</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：A</strong>。尽管 Milvus 有 Proxy、各协调器、各类节点十几种角色，编出来却只有一个 milvus 二进制。秘密在入口 cmd/main.go：同一程序靠启动参数决定本次扮演哪个角色(proxy/querynode…)。好处：一次编译到处部署(构建简单)、所有角色同源同版本(杜绝错配)、单机一个进程拉起所有角色而集群同一二进制在不同机器以不同角色启动(部署灵活)。这就是“单二进制+角色分发”。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 下面关于 Milvus 构建/运行命令的说法，哪个正确？</div>
+  <ol class="opts">
+    <li>GPU 版和 CPU 版用同一个 make 目标</li>
+    <li>应该用 kill 直接杀进程，比优雅停止更安全</li>
+    <li>install_deps.sh 装依赖；make generated-proto 生成 proto；make milvus(-gpu) 编二进制；standalone_embed.sh/start_*.sh 启动；stop_graceful.sh 优雅停止让写入/刷盘收尾</li>
+    <li>make generated-proto 必须在 make milvus 之后运行</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：C</strong>。完整链路：install_deps.sh 一次装齐 cmake/conan/Go；make generated-proto 由 milvus-proto 生成代码(必须先于编译，因 C++/Go 都要 include/import 这些类型)；make milvus(CPU)/make milvus-gpu(GPU，链接 CUDA/RAFT)两段式编出二进制；用 standalone_embed.sh(零依赖)/start_standalone.sh/start_cluster.sh 启动；stop_graceful.sh 优雅停止，先刷盘、记检查点、了断在途请求再退出——草率 kill 可能丢失未刷盘状态、重启要靠重放恢复。</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>本课说 Milvus 的构建“不只是 go build”，根子在它 Go+C++ 的双语本质。请：(1) 用自己的话解释 make milvus 的两段(build-cpp / build-go)各做什么、cgo 在哪里咬合、为什么次序不能反；(2) 为什么编 Milvus 要装 cmake/conan 这套 C++ 工具链，而纯 Go 项目不用？(3) “一个二进制扮演多角色(cmd/main.go)”对构建、版本管理、单机/集群部署各带来什么好处？再联系第 2、34 课，谈谈“Go+C++ 双语架构”在性能与构建复杂度之间是怎样取舍的。</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Across the first nine parts you've seen Milvus inside out. The final part (Part 10) is hands-on: <strong>how to build and run it from source, how to test, what conventions to follow, and how to submit your first PR</strong>. First, the most practical gate — <strong>build and run</strong>. A guide-wide thread matters here: because Milvus is <strong>Go + C++ glued by cgo</strong> (Lessons 2, 34), its build is inherently <strong>two-stage</strong> — and that fact decides almost every "why" of compiling it.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Building a Go+C++ project is like <strong>assembling a device with both a metal chassis and an electronics board</strong>. The <strong>C++ core</strong> is the <strong>metal chassis</strong>: first into the "<strong>machine shop</strong>" (the cmake + conan C++ toolchain) to be cast and machined. The <strong>Go part</strong> is the <strong>electronics board</strong>: made with its own toolchain, then <strong>bolted onto the chassis</strong> (that bolting is cgo).
+  The order <strong>can't be reversed</strong>: without a chassis, the board has nowhere to mount. So you <strong>can't just <span class="mono">go build</span></strong> — that's "making the board with no chassis", bolting into thin air. You must forge the C++ chassis first, then Go can cgo-link onto it. <span class="mono">make milvus</span> is the <strong>master assembler</strong> who runs the two stages in the right order.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong><span class="mono">make milvus</span> = first <span class="mono">build-cpp</span> (cmake/conan compiles the C++ core, including <span class="mono">generated-proto</span>) then <span class="mono">build-go</span> (a <span class="mono">CGO_ENABLED=1</span> go build links the C++ libs, compiling <span class="mono">cmd/main.go</span>); the product is <strong>one milvus binary</strong> that can play any role; deps install via <span class="mono">scripts/install_deps.sh</span>, run via <span class="mono">scripts/start_standalone.sh</span> / <span class="mono">start_cluster.sh</span></strong>. Two stages, born of the Go+C++ nature.
+</div>
+
+<h2>Why you can't just go build: the two-stage build</h2>
+<p>Someone trying to build Milvus for the first time often reflexively types <span class="mono">go build</span> — and hits a wall. The reason is exactly what Lessons 2 and 34 kept stressing: Milvus's <strong>compute core is C++</strong>, and the Go part must <strong>cgo</strong>-link to those C++ libs to run. So a lone <span class="mono">go build</span> can't find the <strong>not-yet-compiled C++ libs</strong> and must fail. The right move is <span class="mono">make milvus</span>, defined in the Makefile as an <strong>ordered pipeline</strong>: <span class="mono">milvus: build-cpp print-build-info build-go</span> — <strong>C++ first, Go second</strong>, the order hard-wired.</p>
+<p>Unpack the two stages. <strong>Stage one, <span class="mono">build-cpp</span></strong>: uses <strong>cmake + conan</strong> (C++ build and package tools) to compile the whole C++ core under <span class="inline">internal/core</span> (segment engine, index, exec, mmap… all of Part 8), also depending on <span class="mono">generated-proto</span> (generate the proto first). This stage yields a set of <strong>C++ static/dynamic libs</strong>. <strong>Stage two, <span class="mono">build-go</span></strong>: runs <span class="mono">go build</span> with <span class="mono">CGO_ENABLED=1</span>, <strong>linking in</strong> the previous stage's C++ libs via <span class="mono">CGO_LDFLAGS</span> / <span class="mono">CGO_CFLAGS</span>, finally compiling the entrypoint <span class="inline">cmd/main.go</span>. The two run back-to-back, meshed at the seam by cgo, neither dispensable. This is why building Milvus needs <strong>two toolchains</strong>: Go's, plus C++'s cmake/conan — whereas a pure-Go project needs only the former. The two stages compared:</p>
+
+<div class="cols">
+  <div class="col"><h4>Stage 1: build-cpp (C++ chassis)</h4><p>cmake + conan compile <span class="inline">internal/core</span> (segment engine/index/exec/mmap), depending on <span class="mono">generated-proto</span>. Yields C++ libs. <strong>A pure-Go project has no such step.</strong></p></div>
+  <div class="col"><h4>Stage 2: build-go (Go board)</h4><p><span class="mono">CGO_ENABLED=1</span> go build, linking the stage-1 C++ libs via <span class="mono">CGO_LDFLAGS/CFLAGS</span>, compiling <span class="mono">cmd/main.go</span>. <strong>cgo meshes the two stages here.</strong></p></div>
+</div>
+
+<h2>One command, one binary: make milvus</h2>
+<p>With deps installed and the two stages chained, what you finally get is <strong>one</strong> executable named <span class="mono">milvus</span> — note, <strong>one</strong>, not a dozen. This is intriguing: Milvus clearly has a dozen roles (Proxy, coordinators, various nodes), yet compiles to <strong>a single binary</strong>. The secret is the entrypoint <span class="inline">cmd/main.go</span>: the same program <strong>decides "which role to play this time" by launch arguments</strong>. To start a Proxy, launch it in the "proxy" role; for a QueryNode, the "querynode" role.</p>
+<p>This "<strong>one binary, many roles</strong>" design has real benefits. <strong>Simple builds</strong>: compile once, deploy everywhere, no per-role packaging. <strong>Version consistency</strong>: all roles are inherently same-source, same-version, ruling out "Proxy new, QueryNode old" mismatches. <strong>Flexible deployment</strong>: in standalone mode one process can bring up all roles <strong>together</strong> (a key reason Lesson 41's "embedded single-node" can be so light); in cluster mode the same binary is launched <strong>in different roles</strong> on different machines. The full build flow, from installing deps to producing the binary, as one line:</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Install deps</h4><p><span class="mono">scripts/install_deps.sh</span>: cmake, conan (C++), the Go toolchain, all at once.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Generate proto</h4><p><span class="mono">make generated-proto</span>: generate per-language/per-module code from milvus-proto.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Compile the C++ core</h4><p><span class="mono">build-cpp</span>: cmake/conan compile <span class="inline">internal/core</span>, yielding C++ libs.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Compile Go &amp; cgo-link</h4><p><span class="mono">build-go</span>: CGO links the C++ libs, compiling the single <span class="mono">milvus</span> binary (cmd/main.go).</p></div></div>
+</div>
+
+<h2>Run it: standalone and cluster scripts</h2>
+<p>Binary built, how to run it? Milvus ships a set of launch scripts under <span class="inline">scripts/</span>, matching Lesson 41's deployment shapes. The easiest is <span class="mono">scripts/standalone_embed.sh</span>: <strong>embedded single-node</strong>, even etcd embedded, messaging via local rocksmq, near-zero external deps — one command starts a complete Milvus, ideal for <strong>local learning and development</strong>. For something closer to the real shape, use <span class="mono">scripts/start_standalone.sh</span> (standalone, but deps started separately) or <span class="mono">scripts/start_cluster.sh</span> (cluster, components launched separately). To stop, use <span class="mono">scripts/stop_graceful.sh</span> — note "<strong>graceful</strong>", letting in-flight writes/flushes finish rather than brutally killing the process.</p>
+
+<table class="t">
+  <tr><th>Command</th><th>What it does</th></tr>
+  <tr><td class="mono">scripts/install_deps.sh</td><td>install build deps at once (cmake/conan/Go, etc.)</td></tr>
+  <tr><td class="mono">make generated-proto</td><td>regenerate code from milvus-proto</td></tr>
+  <tr><td class="mono">make milvus</td><td>two-stage build of the CPU <span class="mono">milvus</span> binary</td></tr>
+  <tr><td class="mono">make milvus-gpu</td><td>build the GPU variant (Lesson 37, links CUDA/RAFT)</td></tr>
+  <tr><td class="mono">standalone_embed.sh</td><td>start a zero-dep embedded single-node (learning/dev)</td></tr>
+  <tr><td class="mono">start_standalone.sh / start_cluster.sh</td><td>start standalone (separate deps) / start a cluster</td></tr>
+  <tr><td class="mono">stop_graceful.sh</td><td>graceful stop, letting writes/flushes finish</td></tr>
+</table>
+
+<p>A word on why "<strong>graceful stop</strong>" deserves its own script rather than a plain kill. While Milvus runs, memory often holds <strong>data not yet flushed</strong> (growing segments, unpersisted WAL consume progress, Lesson 17). Brutally killing the process may leave this in-flight state <strong>without a clean finish</strong>, so a restart must recover via log replay — slower and riskier. A graceful stop first <strong>tells components to "prepare to close"</strong>: flush what should be flushed, record checkpoints, settle in-flight requests, then exit. This is the same production care as Lesson 41's Operator <strong>rolling upgrade</strong> — <strong>how a system shuts down matters as much as how it starts</strong>; careless shutdowns are a frequent source of weird data problems. Building the habit of "<span class="mono">stop_graceful.sh</span>, not kill" is a small step from toy mindset to production mindset.</p>
+<p>To wrap up: Milvus's build is "<strong>not just go build</strong>" at root because of its <strong>Go + C++</strong> bilingual nature — you must forge the C++ core chassis first, then bolt Go on via cgo; <span class="mono">make milvus</span> orchestrates both stages into one binary that plays all roles, which launch scripts then run in the shape you want. Grasp this chain and you not only can build Milvus but <strong>truly understand the cost and reward of the "Go+C++ bilingual architecture" in engineering terms</strong> — it buys peak performance and demands this extra build step. Next lesson: how to write tests for this bilingual system (especially the special rule of "must carry <span class="mono">-tags dynamic,test</span>").</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Two-stage build</strong>: because Go+C++ are glued by cgo, <span class="mono">make milvus = build-cpp (cmake/conan compile the C++ core + generated-proto) → build-go (CGO_ENABLED=1 links the C++ libs)</span>; you can't just <span class="mono">go build</span>.</li>
+    <li><strong>Two toolchains</strong>: besides Go you need C++'s cmake/conan, installed at once via <span class="mono">scripts/install_deps.sh</span>.</li>
+    <li><strong>One binary, many roles</strong>: the product is a single <span class="mono">milvus</span> (<span class="inline">cmd/main.go</span>) that plays Proxy/coordinator/nodes by launch args; simple builds, version consistency, flexible deployment.</li>
+    <li><strong>Run</strong>: launch via <span class="mono">standalone_embed.sh</span> (zero-dep learning) / <span class="mono">start_standalone.sh</span> / <span class="mono">start_cluster.sh</span>; stop gracefully via <span class="mono">stop_graceful.sh</span>.</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Why can't you build Milvus with just go build — why use make milvus?</div>
+  <ol class="opts">
+    <li>Because go build is unavailable on Linux</li>
+    <li>make milvus is just an alias of go build, no difference</li>
+    <li>Because Milvus is pure C++ with no Go</li>
+    <li>Milvus is Go+C++ glued by cgo: you must build-cpp first (cmake/conan compile the C++ core into libs), then build-go (CGO_ENABLED=1) links them; a lone go build can't find the not-yet-built C++ libs and fails</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. Milvus's compute core is C++, and the Go part must cgo-link those C++ libs to run. The Makefile defines milvus: build-cpp print-build-info build-go — order hard-wired, C++ first, Go second. build-cpp uses cmake/conan to compile internal/core (also needing generated-proto) into C++ libs; build-go runs with CGO_ENABLED=1, linking them via CGO_LDFLAGS/CFLAGS to compile cmd/main.go. A lone go build fails because those libs don't exist yet. Hence two toolchains (Go + C++'s cmake/conan).</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. What form does make milvus produce?</div>
+  <ol class="opts">
+    <li>One milvus binary (cmd/main.go) that plays any role — Proxy/coordinator/nodes — by launch arguments; simple builds, version consistency, flexible deployment</li>
+    <li>A binary that can only act as a Proxy</li>
+    <li>A dozen binaries, one per role, each needing version sync</li>
+    <li>A set of Python scripts</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. Though Milvus has a dozen roles (Proxy, coordinators, nodes), it compiles to one milvus binary. The secret is cmd/main.go: the same program picks its role this run by launch args (proxy/querynode…). Benefits: compile once deploy everywhere (simple builds), all roles same-source/same-version (no mismatch), one process brings up all roles in standalone while the same binary launches in different roles across machines in cluster (flexible). That's 'one binary + role dispatch'.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Which statement about Milvus build/run commands is correct?</div>
+  <ol class="opts">
+    <li>GPU and CPU builds use the same make target</li>
+    <li>You should kill the process directly — safer than a graceful stop</li>
+    <li>install_deps.sh installs deps; make generated-proto generates proto; make milvus(-gpu) builds the binary; standalone_embed.sh/start_*.sh launch; stop_graceful.sh stops gracefully, letting writes/flushes finish</li>
+    <li>make generated-proto must run after make milvus</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. Full chain: install_deps.sh installs cmake/conan/Go at once; make generated-proto generates code from milvus-proto (must precede compilation since C++/Go both include/import these types); make milvus (CPU)/make milvus-gpu (GPU, links CUDA/RAFT) two-stage build the binary; launch via standalone_embed.sh (zero-dep)/start_standalone.sh/start_cluster.sh; stop_graceful.sh stops gracefully — flush, checkpoint, settle in-flight requests, then exit. A careless kill may lose unflushed state, forcing replay recovery on restart.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson says Milvus's build is 'not just go build', rooted in its Go+C++ bilingual nature. Please: (1) in your own words explain what make milvus's two stages (build-cpp / build-go) each do, where cgo meshes, and why the order can't reverse; (2) why does building Milvus need the cmake/conan C++ toolchain while a pure-Go project doesn't? (3) what does 'one binary, many roles (cmd/main.go)' buy for builds, version management, and standalone/cluster deployment? Tying to Lessons 2 and 34, discuss how the 'Go+C++ bilingual architecture' trades off performance against build complexity.</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="41-deployment.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">部署与运维</span><span class="lang-en">Deployment &amp; operations</span></div></a><a class="next" href="../index.html"><div class="dir"><span class="lang-zh">完成 →</span><span class="lang-en">Done →</span></div><div class="ttl"><span class="lang-zh">返回目录</span><span class="lang-en">Back to index</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>

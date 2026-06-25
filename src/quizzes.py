@@ -2729,6 +2729,67 @@ QUIZZES = {
             },
         ],
     },
+    "42-build-and-run.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "为什么编译 Milvus 不能只敲 go build，而要用 make milvus？",
+                    "en": "Why can't you build Milvus with just go build — why use make milvus?",
+                },
+                "opts": [
+                    {"zh": "Milvus 是 Go+C++ 经 cgo 黏合，必须先 build-cpp(cmake/conan 编 C++ 内核)产出库，再 build-go(CGO_ENABLED=1)链接它们；go build 找不到还没编出的 C++ 库会失败", "en": "Milvus is Go+C++ glued by cgo: you must build-cpp first (cmake/conan compile the C++ core into libs), then build-go (CGO_ENABLED=1) links them; a lone go build can't find the not-yet-built C++ libs and fails"},
+                    {"zh": "因为 go build 在 Linux 上不可用", "en": "Because go build is unavailable on Linux"},
+                    {"zh": "因为 Milvus 是纯 C++ 项目，没有 Go", "en": "Because Milvus is pure C++ with no Go"},
+                    {"zh": "make milvus 只是 go build 的别名，没区别", "en": "make milvus is just an alias of go build, no difference"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "Milvus 的计算内核是 C++，Go 部分靠 cgo 链接这些 C++ 库才能跑。Makefile 里 milvus: build-cpp print-build-info build-go——次序写死、先 C++ 后 Go。build-cpp 用 cmake/conan 编 internal/core(还依赖 generated-proto)产出 C++ 库；build-go 开 CGO_ENABLED=1，用 CGO_LDFLAGS/CFLAGS 链接这些库编出 cmd/main.go。单独 go build 时这些库还不存在，必然失败。所以要装两套工具链(Go + C++ 的 cmake/conan)。",
+                    "en": "Milvus's compute core is C++, and the Go part must cgo-link those C++ libs to run. The Makefile defines milvus: build-cpp print-build-info build-go — order hard-wired, C++ first, Go second. build-cpp uses cmake/conan to compile internal/core (also needing generated-proto) into C++ libs; build-go runs with CGO_ENABLED=1, linking them via CGO_LDFLAGS/CFLAGS to compile cmd/main.go. A lone go build fails because those libs don't exist yet. Hence two toolchains (Go + C++'s cmake/conan).",
+                },
+            },
+            {
+                "q": {
+                    "zh": "make milvus 编出的产物是什么形态？",
+                    "en": "What form does make milvus produce?",
+                },
+                "opts": [
+                    {"zh": "一个 milvus 二进制(cmd/main.go)，靠启动参数决定扮演 Proxy/协调器/各节点等任意角色；构建简单、版本一致、部署灵活", "en": "One milvus binary (cmd/main.go) that plays any role — Proxy/coordinator/nodes — by launch arguments; simple builds, version consistency, flexible deployment"},
+                    {"zh": "十几个二进制，每个角色一个，需各自同步版本", "en": "A dozen binaries, one per role, each needing version sync"},
+                    {"zh": "一个只能当 Proxy 用的二进制", "en": "A binary that can only act as a Proxy"},
+                    {"zh": "一组 Python 脚本", "en": "A set of Python scripts"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "尽管 Milvus 有 Proxy、各协调器、各类节点十几种角色，编出来却只有一个 milvus 二进制。秘密在入口 cmd/main.go：同一程序靠启动参数决定本次扮演哪个角色(proxy/querynode…)。好处：一次编译到处部署(构建简单)、所有角色同源同版本(杜绝错配)、单机一个进程拉起所有角色而集群同一二进制在不同机器以不同角色启动(部署灵活)。这就是“单二进制+角色分发”。",
+                    "en": "Though Milvus has a dozen roles (Proxy, coordinators, nodes), it compiles to one milvus binary. The secret is cmd/main.go: the same program picks its role this run by launch args (proxy/querynode…). Benefits: compile once deploy everywhere (simple builds), all roles same-source/same-version (no mismatch), one process brings up all roles in standalone while the same binary launches in different roles across machines in cluster (flexible). That's 'one binary + role dispatch'.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "下面关于 Milvus 构建/运行命令的说法，哪个正确？",
+                    "en": "Which statement about Milvus build/run commands is correct?",
+                },
+                "opts": [
+                    {"zh": "install_deps.sh 装依赖；make generated-proto 生成 proto；make milvus(-gpu) 编二进制；standalone_embed.sh/start_*.sh 启动；stop_graceful.sh 优雅停止让写入/刷盘收尾", "en": "install_deps.sh installs deps; make generated-proto generates proto; make milvus(-gpu) builds the binary; standalone_embed.sh/start_*.sh launch; stop_graceful.sh stops gracefully, letting writes/flushes finish"},
+                    {"zh": "应该用 kill 直接杀进程，比优雅停止更安全", "en": "You should kill the process directly — safer than a graceful stop"},
+                    {"zh": "make generated-proto 必须在 make milvus 之后运行", "en": "make generated-proto must run after make milvus"},
+                    {"zh": "GPU 版和 CPU 版用同一个 make 目标", "en": "GPU and CPU builds use the same make target"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "完整链路：install_deps.sh 一次装齐 cmake/conan/Go；make generated-proto 由 milvus-proto 生成代码(必须先于编译，因 C++/Go 都要 include/import 这些类型)；make milvus(CPU)/make milvus-gpu(GPU，链接 CUDA/RAFT)两段式编出二进制；用 standalone_embed.sh(零依赖)/start_standalone.sh/start_cluster.sh 启动；stop_graceful.sh 优雅停止，先刷盘、记检查点、了断在途请求再退出——草率 kill 可能丢失未刷盘状态、重启要靠重放恢复。",
+                    "en": "Full chain: install_deps.sh installs cmake/conan/Go at once; make generated-proto generates code from milvus-proto (must precede compilation since C++/Go both include/import these types); make milvus (CPU)/make milvus-gpu (GPU, links CUDA/RAFT) two-stage build the binary; launch via standalone_embed.sh (zero-dep)/start_standalone.sh/start_cluster.sh; stop_graceful.sh stops gracefully — flush, checkpoint, settle in-flight requests, then exit. A careless kill may lose unflushed state, forcing replay recovery on restart.",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课说 Milvus 的构建“不只是 go build”，根子在它 Go+C++ 的双语本质。请：(1) 用自己的话解释 make milvus 的两段(build-cpp / build-go)各做什么、cgo 在哪里咬合、为什么次序不能反；(2) 为什么编 Milvus 要装 cmake/conan 这套 C++ 工具链，而纯 Go 项目不用？(3) “一个二进制扮演多角色(cmd/main.go)”对构建、版本管理、单机/集群部署各带来什么好处？再联系第 2、34 课，谈谈“Go+C++ 双语架构”在性能与构建复杂度之间是怎样取舍的。",
+                "en": "This lesson says Milvus's build is 'not just go build', rooted in its Go+C++ bilingual nature. Please: (1) in your own words explain what make milvus's two stages (build-cpp / build-go) each do, where cgo meshes, and why the order can't reverse; (2) why does building Milvus need the cmake/conan C++ toolchain while a pure-Go project doesn't? (3) what does 'one binary, many roles (cmd/main.go)' buy for builds, version management, and standalone/cluster deployment? Tying to Lessons 2 and 34, discuss how the 'Go+C++ bilingual architecture' trades off performance against build complexity.",
+            },
+        ],
+    },
 }
 
 
