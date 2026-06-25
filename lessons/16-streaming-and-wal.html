@@ -431,6 +431,14 @@ StreamingNode 会周期性地往 WAL 里插入特殊的 <strong>TimeTick 消息<
 还有一点容易被忽略：StreamingClient 是<strong>进程内</strong>的（in-process），意味着调用 <span class="mono">Append</span> 不是一次裸的网络 RPC，而是先经过这层本地客户端，由它来做批量、寻址、重试。
 这让写入侧的代码既简单又健壮：业务只表达"我要写这批消息"，至于"写到哪台机器、失败了重试几次"，都被这层悄悄兜住了。</p>
 
+<div class="flow">
+  <div class="node"><div class="nt">Proxy 写入</div><div class="nd">RawAppend / AppendMessages</div></div>
+  <div class="arrow">按 VChannel</div>
+  <div class="node hl"><div class="nt">WAL（PChannel）</div><div class="nd">事务地追加进日志（单一事实源）</div></div>
+  <div class="arrow">Read 消费</div>
+  <div class="node"><div class="nt">StreamingNode flusher</div><div class="nd">Tail 日志 → growing 段 → 落盘</div></div>
+</div>
+
 <div class="codefile">
   <div class="cf-head"><span class="dot"></span><span class="path">internal/distributed/streaming/streaming.go</span><span class="ln">WALAccesser 接口（节选）</span></div>
   <pre><span class="kw">type</span> WALAccesser <span class="kw">interface</span> {
@@ -642,6 +650,14 @@ that wraps all the complexity of facing the WAL backend — addressing, connecti
 never needing to know which messaging system is underneath, what its client API looks like, or how to reconnect on a drop. To swap backends you just replace the implementation under this layer, and the upper layers <strong>change not a single line</strong> — exactly the "isolate replaceable backends behind an interface" recurring in Lessons 8 and 14.
 One more easily-missed point: the StreamingClient is <strong>in-process</strong>, meaning a call to <span class="mono">Append</span> is not a raw network RPC but goes through this local client first, which handles batching, addressing, and retries.
 That keeps the write-side code both simple and robust: the business only expresses "I want to write this batch of messages," while "which machine to write to, how many times to retry on failure" is quietly absorbed by this layer.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">Proxy write</div><div class="nd">RawAppend / AppendMessages</div></div>
+  <div class="arrow">by VChannel</div>
+  <div class="node hl"><div class="nt">WAL (PChannel)</div><div class="nd">transactionally appended to the log (single source of truth)</div></div>
+  <div class="arrow">Read consume</div>
+  <div class="node"><div class="nt">StreamingNode flusher</div><div class="nd">tail the log → growing segment → flush</div></div>
+</div>
 
 <div class="codefile">
   <div class="cf-head"><span class="dot"></span><span class="path">internal/distributed/streaming/streaming.go</span><span class="ln">the WALAccesser interface (excerpt)</span></div>

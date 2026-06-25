@@ -364,6 +364,14 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 <strong>第三层在 Proxy</strong>：Proxy 收到所有分片各自的 topK，做<strong>最后一次跨分片归并</strong>（参见 <span class="mono">docs/developer_guides/proxy-reduce.md</span>），
 排出全局 topK，连同需要的标量字段一起返回给客户端。</p>
 
+<div class="flow">
+  <div class="node"><div class="nt">段内 topK</div><div class="nd">segcore Reduce.cpp（每段只留 K）</div></div>
+  <div class="arrow">归并</div>
+  <div class="node"><div class="nt">分片 topK</div><div class="nd">delegator 合并本节点各段（sealed+growing）</div></div>
+  <div class="arrow">归并</div>
+  <div class="node hl"><div class="nt">全局 topK</div><div class="nd">Proxy 跨分片最终归并 → 返回客户端</div></div>
+</div>
+
 <p>这三层不是随意切的，而是<strong>顺着数据的物理分布自然分出来的</strong>：数据天然按段存放、段按分片归属、分片散在不同节点，所以"先在最小单位（段）里收敛、再逐级向上"是最省力的路径。
 还有一个容易忽略的细节：在节点这一层，delegator 要把 <strong>sealed 段</strong>（已建索引、不可变）和 <strong>growing 段</strong>（还在消费 WAL、可变）的结果<strong>一起归并</strong>——
 前者来自索引检索、后者来自暴力检索（第 27 课），但它们产出的都是"距离 + 主键"的有序小份，归并时一视同仁。正因为如此，<strong>刚写入还没建索引的新数据，也能立刻参与搜索并出现在结果里</strong>——
@@ -548,6 +556,14 @@ a QueryNode (delegator/shard leader) holds many segments of this shard (sealed +
 <strong>shard's</strong> topK". <strong>Level three, at the Proxy</strong>: the Proxy receives every shard's topK and does the <strong>final
 cross-shard merge</strong> (see <span class="mono">docs/developer_guides/proxy-reduce.md</span>), producing the global topK, and returns it —
 with the requested scalar fields — to the client.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">segment topK</div><div class="nd">segcore Reduce.cpp (keep K per segment)</div></div>
+  <div class="arrow">merge</div>
+  <div class="node"><div class="nt">shard topK</div><div class="nd">delegator merges this node's segments (sealed+growing)</div></div>
+  <div class="arrow">merge</div>
+  <div class="node hl"><div class="nt">global topK</div><div class="nd">Proxy's final cross-shard merge → return to client</div></div>
+</div>
 
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>Segment reduce (segcore)</h4><p>each segment computes candidate distances and locally selects its topK, sending up only that slice. <span class="mono">Reduce.cpp</span></p></div></div>

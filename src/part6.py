@@ -351,6 +351,13 @@ LESSON_26 = {
 
 <p>但"<strong>看得到</strong>"还不够，还要"<strong>看得够新</strong>"。delegator 维护一个 <strong>tsafe</strong>：它表示"<strong>我已经把 WAL 消费到了哪个时间戳</strong>"——意味着 ts ≤ tsafe 的所有写入，我都已反映进可读数据了。第 25 课算出的 <strong>guarantee ts</strong> 这时就派上用场：delegator 收到带 guarantee ts 的 search 后，会比较 <span class="inline">tsafe</span> 与 guarantee ts——若 <span class="inline">tsafe ≥ guaranteeTs</span>，说明该看到的写入都到齐了，立刻检索；若 <span class="inline">tsafe &lt; guaranteeTs</span>（自己还没追上），就<strong>等</strong>，等到 tsafe 追上再答。这一"<strong>等够新再答</strong>"的机制，把第 25 课的一致性级别真正<strong>兑现</strong>了：Strong 取 tMax，delegator 就得等到消费追平最新；Eventually 取极小值，几乎不用等——这正是"读得多新 ↔ 答得多快"那把标尺在<strong>分片这一端</strong>的落地。完整的 MVCC 与等待细节，留到第 30 课收口。</p>
 
+<div class="timeline">
+  <div class="lane"><span class="lane-label">写入流 (WAL)</span><span class="tslot">ts=10 批A</span><span class="tslot">ts=20 批B</span><span class="tslot">ts=30 批C</span><span class="tslot span">…持续追加…</span></div>
+  <div class="lane"><span class="lane-label">delegator 消费</span><span class="tslot">已消费到 ts=20</span><span class="tslot now">tsafe = 20（A·B 可读）</span></div>
+  <div class="lane"><span class="lane-label">读 (Strong, Tg=30)</span><span class="tslot">tsafe&lt;30</span><span class="tslot now">等 → 待 tsafe 追到 30 才答</span></div>
+  <div class="lane"><span class="lane-label">读 (Eventually)</span><span class="tslot">Tg≈很小</span><span class="tslot now">tsafe≥Tg → 立即答</span></div>
+</div>
+
 <p>把 delegator 的三重身份收一收，你就抓住了它的全貌：它是<strong>路由器</strong>（知道每个段在哪个 worker、把子任务分发过去）、是<strong>归并器</strong>（把零散结果合成一份局部 topK 再上交）、还是<strong>保鲜员与守门人</strong>（消费 WAL 维护 growing、用 tsafe 兑现一致性）。这三件事缺一不可：少了路由，它就得自己扛下全部段、失去水平扩展；少了归并，上游就被海量原始结果淹没；少了保鲜与守门，读要么看不到新数据、要么读到不该读的旧快照。正因为把这三件事都压在<strong>shard leader 这一个点</strong>上，Milvus 才能让"一个分片的读"既<strong>可扩展</strong>、又<strong>新鲜</strong>、还<strong>一致</strong>——这也是为什么 delegator 是整条查询链路里承上启下的枢纽。</p>
 
 <div class="codefile">
@@ -462,6 +469,13 @@ If Lesson 25's Proxy is "<strong>the courier that brings the request to the door
 <p>Finally, fully explain "<strong>why a read can see what was just written</strong>," a key through-line of Part 6. Recall Lesson 16: every write is first appended to the <strong>WAL</strong> (the streaming log). As shard leader, the delegator <strong>subscribes to and continuously consumes</strong> this vchannel's WAL tail: for each new Insert/Delete message, it <span class="inline">ProcessInsert</span> / <span class="inline">ProcessDelete</span> to <strong>reflect the change into growing segments</strong>. So between "the write hits the WAL" and "a read can see it" lies only the small delay of the delegator consuming the WAL — that is the source of data <strong>freshness</strong>. This neatly echoes Lesson 16's theme: the WAL is not only the write path's "durability insurance," it is at the same time the read path's "<strong>source of fresh data</strong>" — one stream, the writer appending to it and the reader-side delegator tailing it, the two meshing tightly back to back.</p>
 
 <p>But "<strong>can see</strong>" is not enough; it must also be "<strong>fresh enough</strong>." The delegator maintains a <strong>tsafe</strong>: it means "<strong>up to which timestamp I have consumed the WAL</strong>" — i.e. all writes with ts ≤ tsafe are already reflected into readable data. Now Lesson 25's <strong>guarantee ts</strong> pays off: receiving a search carrying a guarantee ts, the delegator compares <span class="inline">tsafe</span> against guarantee ts — if <span class="inline">tsafe ≥ guaranteeTs</span>, all the writes it should see have arrived, so it searches immediately; if <span class="inline">tsafe &lt; guaranteeTs</span> (it hasn't caught up), it <strong>waits</strong> until tsafe catches up before answering. This "<strong>wait until fresh enough, then answer</strong>" mechanism truly <strong>redeems</strong> Lesson 25's consistency levels: Strong takes tMax, so the delegator must wait until its consumption catches the latest; Eventually takes a tiny value, so it barely waits — exactly how the "how-fresh-you-read ↔ how-fast-you-answer" ruler lands at the <strong>shard end</strong>. The full MVCC and waiting details are tied up in Lesson 30.</p>
+
+<div class="timeline">
+  <div class="lane"><span class="lane-label">write stream (WAL)</span><span class="tslot">ts=10 A</span><span class="tslot">ts=20 B</span><span class="tslot">ts=30 C</span><span class="tslot span">…keeps appending…</span></div>
+  <div class="lane"><span class="lane-label">delegator consumes</span><span class="tslot">consumed up to ts=20</span><span class="tslot now">tsafe = 20 (A·B readable)</span></div>
+  <div class="lane"><span class="lane-label">read (Strong, Tg=30)</span><span class="tslot">tsafe&lt;30</span><span class="tslot now">wait → answer when tsafe reaches 30</span></div>
+  <div class="lane"><span class="lane-label">read (Eventually)</span><span class="tslot">Tg≈tiny</span><span class="tslot now">tsafe≥Tg → answer at once</span></div>
+</div>
 
 <p>Sum up the delegator's three identities and you have the whole picture: it is a <strong>router</strong> (knows which worker holds each segment, dispatches sub-tasks there), a <strong>merger</strong> (combines scattered results into one local topK before handing up), and a <strong>freshness-keeper and gatekeeper</strong> (consumes the WAL to maintain growing, redeems consistency via tsafe). None of the three is dispensable: without routing, it would carry all segments itself and lose horizontal scaling; without merging, upstream drowns in a flood of raw results; without keeping-fresh and gatekeeping, reads either miss new data or read a stale snapshot they shouldn't. Precisely by pressing all three onto <strong>the single point of the shard leader</strong>, Milvus makes "a shard's read" at once <strong>scalable</strong>, <strong>fresh</strong>, and <strong>consistent</strong> — which is why the delegator is the linchpin connecting both ends of the whole query path.</p>
 
@@ -1021,6 +1035,14 @@ LESSON_29 = {
 <strong>第三层在 Proxy</strong>：Proxy 收到所有分片各自的 topK，做<strong>最后一次跨分片归并</strong>（参见 <span class="mono">docs/developer_guides/proxy-reduce.md</span>），
 排出全局 topK，连同需要的标量字段一起返回给客户端。</p>
 
+<div class="flow">
+  <div class="node"><div class="nt">段内 topK</div><div class="nd">segcore Reduce.cpp（每段只留 K）</div></div>
+  <div class="arrow">归并</div>
+  <div class="node"><div class="nt">分片 topK</div><div class="nd">delegator 合并本节点各段（sealed+growing）</div></div>
+  <div class="arrow">归并</div>
+  <div class="node hl"><div class="nt">全局 topK</div><div class="nd">Proxy 跨分片最终归并 → 返回客户端</div></div>
+</div>
+
 <p>这三层不是随意切的，而是<strong>顺着数据的物理分布自然分出来的</strong>：数据天然按段存放、段按分片归属、分片散在不同节点，所以"先在最小单位（段）里收敛、再逐级向上"是最省力的路径。
 还有一个容易忽略的细节：在节点这一层，delegator 要把 <strong>sealed 段</strong>（已建索引、不可变）和 <strong>growing 段</strong>（还在消费 WAL、可变）的结果<strong>一起归并</strong>——
 前者来自索引检索、后者来自暴力检索（第 27 课），但它们产出的都是"距离 + 主键"的有序小份，归并时一视同仁。正因为如此，<strong>刚写入还没建索引的新数据，也能立刻参与搜索并出现在结果里</strong>——
@@ -1158,6 +1180,14 @@ a QueryNode (delegator/shard leader) holds many segments of this shard (sealed +
 <strong>shard's</strong> topK". <strong>Level three, at the Proxy</strong>: the Proxy receives every shard's topK and does the <strong>final
 cross-shard merge</strong> (see <span class="mono">docs/developer_guides/proxy-reduce.md</span>), producing the global topK, and returns it —
 with the requested scalar fields — to the client.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">segment topK</div><div class="nd">segcore Reduce.cpp (keep K per segment)</div></div>
+  <div class="arrow">merge</div>
+  <div class="node"><div class="nt">shard topK</div><div class="nd">delegator merges this node's segments (sealed+growing)</div></div>
+  <div class="arrow">merge</div>
+  <div class="node hl"><div class="nt">global topK</div><div class="nd">Proxy's final cross-shard merge → return to client</div></div>
+</div>
 
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>Segment reduce (segcore)</h4><p>each segment computes candidate distances and locally selects its topK, sending up only that slice. <span class="mono">Reduce.cpp</span></p></div></div>

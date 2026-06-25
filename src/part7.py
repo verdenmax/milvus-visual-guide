@@ -328,6 +328,16 @@ LESSON_32 = {
 把这次变更涉及的资源（比如某个集合）"锁住"，防止两个并发 DDL 同时改同一个对象造成冲突；然后把这条 DDL 消息<strong>分发到所有相关的 PChannel</strong>（每条 PChannel 各自把它当成一条日志写下）；
 最后<strong>追踪每条 PChannel 的 ACK</strong>——只有当所有相关 PChannel 都确认"我已经把这条 DDL 写进我的日志"了，这次广播才算成功、锁才释放。<strong>锁 + 全员 ACK</strong>，共同保证了"原子地、一致地"生效。</p>
 
+<div class="flow">
+  <div class="node"><div class="nt">DDL 请求</div><div class="nd">StreamingClient.Broadcast</div></div>
+  <div class="arrow">①锁</div>
+  <div class="node hl"><div class="nt">Broadcaster</div><div class="nd">锁住涉及的资源(如某集合)</div></div>
+  <div class="arrow">②广播</div>
+  <div class="node"><div class="nt">多条 PChannel</div><div class="nd">各自把 DDL 写进自己的 WAL</div></div>
+  <div class="arrow">③收齐 ACK</div>
+  <div class="node hl"><div class="nt">原子生效</div><div class="nd">全员 ACK → 成功 → 释放锁</div></div>
+</div>
+
 <p>这里有几个细节值得品味。其一，<strong>资源锁的粒度</strong>：Broadcaster 锁的是"<strong>这次变更涉及的资源</strong>"（如某个具体集合），而不是把整个集群锁死——这样不相干的 DDL（改 A 集合 vs 改 B 集合）可以并行，只有真正冲突的才互斥，
 既保正确又不牺牲并发。其二，<strong>失败怎么办</strong>：如果广播过程中某条 PChannel 迟迟不 ACK（比如负责它的节点挂了），这次广播就不会被当成成功；配合上一课的"节点失联→PChannel 重新分配→从检查点重放"，新接手的节点会把这条 DDL 一并恢复出来，
 最终仍能收敛到一致。其三，<strong>ACK 的意义</strong>：它确认的不是"消息送达网络"，而是"<strong>这条 DDL 已经被写进了那条 PChannel 的 WAL</strong>"——也就是说，一旦广播成功，这次变更就已经<strong>持久地、可重放地</strong>记在了每条相关日志里，崩溃也丢不了。
@@ -448,6 +458,16 @@ resource this change touches (say a collection) so two concurrent DDLs can't con
 relevant PChannels</strong> (each writes it as a log entry); finally it <strong>tracks the ACK from each PChannel</strong> — only when all relevant PChannels
 confirm "I've written this DDL into my log" does the broadcast succeed and the lock release. <strong>Lock + all-acks</strong> together guarantee "atomic,
 consistent" effect.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">DDL request</div><div class="nd">StreamingClient.Broadcast</div></div>
+  <div class="arrow">①lock</div>
+  <div class="node hl"><div class="nt">Broadcaster</div><div class="nd">lock the involved resource (e.g. a collection)</div></div>
+  <div class="arrow">②broadcast</div>
+  <div class="node"><div class="nt">many PChannels</div><div class="nd">each writes the DDL into its own WAL</div></div>
+  <div class="arrow">③collect acks</div>
+  <div class="node hl"><div class="nt">atomic effect</div><div class="nd">all acked → success → release lock</div></div>
+</div>
 
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>Broadcast initiated</h4><p>the Proxy calls <span class="mono">StreamingClient.Broadcast</span>; the DDL message goes to StreamingCoord's Broadcaster.</p></div></div>

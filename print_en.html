@@ -3643,6 +3643,13 @@ Below Catalog sits the <strong>kv layer</strong> — serializing "a Collection o
     <div class="ld">Small, critical metadata goes to etcd (strongly consistent, watchable); bulky vector/index files go to object storage, with metadata keeping only a reference path.</div></div>
 </div>
 
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Receive DDL</h4><p>RootCoord gets <span class="mono">CreateCollection</span>, validates the schema, allocates a collectionID.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Call a business verb</h4><p>calls <span class="mono">Catalog.CreateCollection</span> — it only says "create a collection", untouched by storage details.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Lower to kv primitives</h4><p>Catalog serializes the object into key/values and calls <span class="mono">kv.Save/MultiSave</span>.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Real landing</h4><p>kv writes the bytes into <strong>etcd</strong> (strongly consistent, watchable); bulky files go to object storage, keeping only a reference.</p></div></div>
+</div>
+
 <p>The essence of this picture is one line: <strong>coordinators speak "business language," Catalog translates to "key-value language," and kv writes it into etcd</strong>. Each layer down is more generic and cares less about business meaning.
 Because Catalog is that translator, RootCoord never needs to know "how many keys a collection is split into in etcd"; and when the storage backend is swapped (say etcd for TiKV), the upper layers change not a single line. That is <strong>layered decoupling</strong> applied to the metadata system.</p>
 
@@ -4169,6 +4176,14 @@ never needing to know which messaging system is underneath, what its client API 
 One more easily-missed point: the StreamingClient is <strong>in-process</strong>, meaning a call to <span class="mono">Append</span> is not a raw network RPC but goes through this local client first, which handles batching, addressing, and retries.
 That keeps the write-side code both simple and robust: the business only expresses "I want to write this batch of messages," while "which machine to write to, how many times to retry on failure" is quietly absorbed by this layer.</p>
 
+<div class="flow">
+  <div class="node"><div class="nt">Proxy write</div><div class="nd">RawAppend / AppendMessages</div></div>
+  <div class="arrow">by VChannel</div>
+  <div class="node hl"><div class="nt">WAL (PChannel)</div><div class="nd">transactionally appended to the log (single source of truth)</div></div>
+  <div class="arrow">Read consume</div>
+  <div class="node"><div class="nt">StreamingNode flusher</div><div class="nd">tail the log → growing segment → flush</div></div>
+</div>
+
 <div class="codefile">
   <div class="cf-head"><span class="dot"></span><span class="path">internal/distributed/streaming/streaming.go</span><span class="ln">the WALAccesser interface (excerpt)</span></div>
   <pre><span class="kw">type</span> WALAccesser <span class="kw">interface</span> {
@@ -4324,6 +4339,16 @@ The growing segment pools this <strong>torrential write stream</strong> into "re
 
 <h2>flush: when to seal and persist into a binlog</h2>
 <p>A growing segment doesn't grow forever. When it meets a <strong>trigger condition</strong> it is <strong>sealed</strong> and then <strong>flushed</strong> to object storage. Two common trigger kinds:</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">WAL</div><div class="nd">write log (single source of truth)</div></div>
+  <div class="arrow">consume &amp; buffer</div>
+  <div class="node hl"><div class="nt">growing segment</div><div class="nd">memory buffer: coalesce small writes into batches</div></div>
+  <div class="arrow">trigger→seal</div>
+  <div class="node"><div class="nt">sealed segment</div><div class="nd">fixed, never changes</div></div>
+  <div class="arrow">flush</div>
+  <div class="node"><div class="nt">binlog</div><div class="nd">big files to object storage</div></div>
+</div>
 
 <ul>
   <li><strong>By size</strong>: the segment reached the configured capacity cap (row count or bytes) — "the box is full," so seal it.</li>
@@ -5971,6 +5996,13 @@ If Lesson 25's Proxy is "<strong>the courier that brings the request to the door
 
 <p>But "<strong>can see</strong>" is not enough; it must also be "<strong>fresh enough</strong>." The delegator maintains a <strong>tsafe</strong>: it means "<strong>up to which timestamp I have consumed the WAL</strong>" — i.e. all writes with ts ≤ tsafe are already reflected into readable data. Now Lesson 25's <strong>guarantee ts</strong> pays off: receiving a search carrying a guarantee ts, the delegator compares <span class="inline">tsafe</span> against guarantee ts — if <span class="inline">tsafe ≥ guaranteeTs</span>, all the writes it should see have arrived, so it searches immediately; if <span class="inline">tsafe &lt; guaranteeTs</span> (it hasn't caught up), it <strong>waits</strong> until tsafe catches up before answering. This "<strong>wait until fresh enough, then answer</strong>" mechanism truly <strong>redeems</strong> Lesson 25's consistency levels: Strong takes tMax, so the delegator must wait until its consumption catches the latest; Eventually takes a tiny value, so it barely waits — exactly how the "how-fresh-you-read ↔ how-fast-you-answer" ruler lands at the <strong>shard end</strong>. The full MVCC and waiting details are tied up in Lesson 30.</p>
 
+<div class="timeline">
+  <div class="lane"><span class="lane-label">write stream (WAL)</span><span class="tslot">ts=10 A</span><span class="tslot">ts=20 B</span><span class="tslot">ts=30 C</span><span class="tslot span">…keeps appending…</span></div>
+  <div class="lane"><span class="lane-label">delegator consumes</span><span class="tslot">consumed up to ts=20</span><span class="tslot now">tsafe = 20 (A·B readable)</span></div>
+  <div class="lane"><span class="lane-label">read (Strong, Tg=30)</span><span class="tslot">tsafe&lt;30</span><span class="tslot now">wait → answer when tsafe reaches 30</span></div>
+  <div class="lane"><span class="lane-label">read (Eventually)</span><span class="tslot">Tg≈tiny</span><span class="tslot now">tsafe≥Tg → answer at once</span></div>
+</div>
+
 <p>Sum up the delegator's three identities and you have the whole picture: it is a <strong>router</strong> (knows which worker holds each segment, dispatches sub-tasks there), a <strong>merger</strong> (combines scattered results into one local topK before handing up), and a <strong>freshness-keeper and gatekeeper</strong> (consumes the WAL to maintain growing, redeems consistency via tsafe). None of the three is dispensable: without routing, it would carry all segments itself and lose horizontal scaling; without merging, upstream drowns in a flood of raw results; without keeping-fresh and gatekeeping, reads either miss new data or read a stale snapshot they shouldn't. Precisely by pressing all three onto <strong>the single point of the shard leader</strong>, Milvus makes "a shard's read" at once <strong>scalable</strong>, <strong>fresh</strong>, and <strong>consistent</strong> — which is why the delegator is the linchpin connecting both ends of the whole query path.</p>
 
 <div class="codefile">
@@ -6406,6 +6438,14 @@ a QueryNode (delegator/shard leader) holds many segments of this shard (sealed +
 <strong>shard's</strong> topK". <strong>Level three, at the Proxy</strong>: the Proxy receives every shard's topK and does the <strong>final
 cross-shard merge</strong> (see <span class="mono">docs/developer_guides/proxy-reduce.md</span>), producing the global topK, and returns it —
 with the requested scalar fields — to the client.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">segment topK</div><div class="nd">segcore Reduce.cpp (keep K per segment)</div></div>
+  <div class="arrow">merge</div>
+  <div class="node"><div class="nt">shard topK</div><div class="nd">delegator merges this node's segments (sealed+growing)</div></div>
+  <div class="arrow">merge</div>
+  <div class="node hl"><div class="nt">global topK</div><div class="nd">Proxy's final cross-shard merge → return to client</div></div>
+</div>
 
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>Segment reduce (segcore)</h4><p>each segment computes candidate distances and locally selects its topK, sending up only that slice. <span class="mono">Reduce.cpp</span></p></div></div>
@@ -6940,6 +6980,16 @@ relevant PChannels</strong> (each writes it as a log entry); finally it <strong>
 confirm "I've written this DDL into my log" does the broadcast succeed and the lock release. <strong>Lock + all-acks</strong> together guarantee "atomic,
 consistent" effect.</p>
 
+<div class="flow">
+  <div class="node"><div class="nt">DDL request</div><div class="nd">StreamingClient.Broadcast</div></div>
+  <div class="arrow">①lock</div>
+  <div class="node hl"><div class="nt">Broadcaster</div><div class="nd">lock the involved resource (e.g. a collection)</div></div>
+  <div class="arrow">②broadcast</div>
+  <div class="node"><div class="nt">many PChannels</div><div class="nd">each writes the DDL into its own WAL</div></div>
+  <div class="arrow">③collect acks</div>
+  <div class="node hl"><div class="nt">atomic effect</div><div class="nd">all acked → success → release lock</div></div>
+</div>
+
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>Broadcast initiated</h4><p>the Proxy calls <span class="mono">StreamingClient.Broadcast</span>; the DDL message goes to StreamingCoord's Broadcaster.</p></div></div>
   <div class="step"><div class="num">2</div><div class="sc"><h4>Resource lock</h4><p>lock the resource this change touches, preventing concurrent-DDL conflicts.</p></div></div>
@@ -7284,6 +7334,18 @@ map</strong>" — wherever you drill in later, you can locate it here:</p>
 <strong>storage/mmap own "how data is laid out"</strong>, <strong>index owns "how to build retrieval structures"</strong>, <strong>expr/exec/query own "how one query computes"</strong>, and
 <strong>segcore stitches them together and exposes (to Go) the single entry for "search/query within a segment"</strong>. Map in hand, the many directories gain a backbone.</p>
 
+<div class="flow">
+ <div class="node"><div class="nt">common</div><div class="nd">shared types</div></div>
+ <div class="arrow">→</div>
+ <div class="node"><div class="nt">storage</div><div class="nd">binlog I/O</div></div>
+ <div class="arrow">→</div>
+ <div class="node"><div class="nt">mmap</div><div class="nd">columnar chunk layout</div></div>
+ <div class="arrow">→</div>
+ <div class="node"><div class="nt">expr/exec · index</div><div class="nd">filter + vector search</div></div>
+ <div class="arrow">→</div>
+ <div class="node hl"><div class="nt">segcore</div><div class="nd">orchestrate + cgo entry</div></div>
+</div>
+
 <h2>The cgo bridge: how Go and C++ shake hands</h2>
 <p>Go can't call C++ directly; it goes through the <strong>cgo</strong> bridge. The way: the C++ core wraps the capabilities it exposes to Go into a set of <strong>C-style interfaces</strong> —
 files often ending in <span class="mono">_c.h</span> / <span class="mono">_c.cpp</span> (like the <span class="mono">segment_c.h</span> from Lesson 27). Why C, not C++? Because cgo can only cross the
@@ -7418,6 +7480,11 @@ Last lesson handed us the whole map of the C++ core. Now we zoom into one piece 
 
 <h2>mmap: data larger than memory</h2>
 <p>Now the best trick. A segment's raw data ultimately lands on disk as <strong>binlog files</strong> (Lesson 18). When a QueryNode loads a segment, there are two ways to bring these columns into memory. The first is a plain <span class="mono">read()</span>: copy the file contents <strong>wholesale into heap</strong>. Simple and direct, but with a hard ceiling — <strong>the data a machine can load is capped by physical RAM</strong>. With 64GB you can't hold a 100GB segment.</p>
+
+<div class="cols">
+  <div class="col"><h4>read(): copy wholesale into heap</h4><p>copy all binlog contents <strong>into heap RAM</strong>. Simple, zero access latency; but <strong>loadable data is capped by physical RAM</strong> — 64GB can't hold a 100GB segment.</p></div>
+  <div class="col"><h4>mmap: map + fault in on demand</h4><p><strong>map the file into virtual addresses</strong>; pages fault into the page cache on access, cold pages evicted by the OS. <strong>Loadable data can far exceed RAM</strong>; the cost is cold-page first-access disk latency.</p></div>
+</div>
 <p>The second is <strong>mmap</strong>: don't copy; <strong>map</strong> the binlog file into the process's <strong>virtual address space</strong>. Once mapped, the data looks like ordinary memory and C++ accesses it by address as usual — but <strong>the real data isn't in physical RAM yet</strong>. Only when code first touches a page does the CPU raise a <strong>page fault</strong>, and the OS reads that page from disk into the <strong>page cache</strong>. Hot pages already touched stay cached and hit next time; cold pages long untouched get <strong>quietly evicted</strong> when memory is tight.</p>
 <p>This breaks the "data must be ≤ RAM" shackle: a node can load segments whose <strong>total far exceeds physical RAM</strong> — cold data rests on disk taking no memory, only the hot data actually queried occupies page cache, and all swap-in/out is handled automatically by the OS, that seasoned housekeeper, with Milvus writing <strong>not one line of paging logic</strong>. The cost, of course: touching a cold page waits one disk I/O (page-fault latency), so mmap suits <strong>clearly hot/cold, doesn't-fit-in-RAM</strong> workloads — a shrewd trade of "a little latency for huge capacity". Whether to mmap a given field is <strong>configurable</strong> — the cgo entry <span class="mono">EnableMmap(...)</span> in <span class="inline">internal/core/src/segcore/load_field_data_c.h</span> is the switch the Go side flips when loading field data. The flow below walks "load a column with mmap and access it".</p>
 
@@ -7541,6 +7608,16 @@ Lesson 28 followed one query as it turned a filter string into an expression tre
 <h2>How one query flows through the pipeline</h2>
 <p>Wire the parts together and watch a filtered vector search actually run. Step 1, <strong>build the pipeline</strong>: from the query plan, assemble a chain like "<span class="mono">FilterBitsNode</span> → <span class="mono">VectorSearchNode</span>" under a <span class="mono">Task</span>, driven by a <span class="mono">Driver</span>. Step 2, <strong>filter first</strong>: <span class="mono">FilterBitsNode</span> takes the lowered physical expression and calls <span class="mono">Eval</span> over the segment's columnar chunks chunk by chunk, computing "which rows qualify" <strong>batch by batch</strong> into a bitset. Step 3, <strong>then search</strong>: <span class="mono">VectorSearchNode</span> takes that bitset and runs ANN only over the <strong>survivors</strong> (exactly Lesson 28's "filter-then-search"). Step 4, results flow up the pipeline and the <span class="mono">Task</span> moves to <span class="mono">kFinished</span>.</p>
 
+<div class="flow">
+  <div class="node"><div class="nt">columnar chunks</div><div class="nd">mmap data (L35)</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">FilterBitsNode</div><div class="nd">eval physical expr by batch → bitset</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">VectorSearchNode</div><div class="nd">ANN over survivors only</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">segment topK</div><div class="nd">back to Go via cgo</div></div>
+</div>
+
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>Build the pipeline</h4><p>from the plan, assemble a <span class="mono">FilterBitsNode</span> → <span class="mono">VectorSearchNode</span> chain under one <span class="mono">Task</span>, driven by a <span class="mono">Driver</span>.</p></div></div>
   <div class="step"><div class="num">2</div><div class="sc"><h4>Filter emits a bitset</h4><p><span class="mono">FilterBitsNode</span> calls the physical expression's <span class="mono">Eval</span> over columnar chunks batch by batch — "which rows pass".</p></div></div>
@@ -7645,6 +7722,12 @@ In Lesson 36 we squeezed the CPU dry — vectorization and SIMD let one instruct
 <h2>Which GPU indexes Milvus offers (and where they live)</h2>
 <p>Here's a <strong>boundary you must get straight</strong>, easily confused early on: <strong>the GPU indexes' "algorithms" are not in Milvus's C++ core, but in Knowhere (and its NVIDIA RAFT/cuVS dependency)</strong>. Milvus <strong>does not hand-write CUDA kernels</strong>; it does "<strong>exposure and integration</strong>" — offering a few GPU index <strong>type names</strong> outward and <strong>routing</strong> requests inward to Knowhere to actually drive the GPU. In code, you can see the <strong>param checkers</strong> for these types under <span class="inline">internal/util/indexparamcheck</span>: <span class="mono">GPU_CAGRA</span> (cagra_checker), <span class="mono">GPU_IVF_FLAT</span>, <span class="mono">GPU_IVF_PQ</span> (raft_ivf_* checker), <span class="mono">GPU_BRUTE_FORCE</span> (raft_brute_force_checker). These checkers verify "<strong>whether the params a user gives this GPU index are valid</strong>", not the algorithm itself.</p>
 <p>The most notable is <span class="mono">GPU_CAGRA</span>. CAGRA is a <strong>GPU-oriented graph index</strong> implemented by NVIDIA in <strong>RAFT/cuVS</strong> — think of it as "<strong>HNSW redesigned for the GPU</strong>" (recall Lesson 5's graph indexes): same "greedily walk toward neighbors on a proximity graph", but graph construction and traversal reworked for the GPU's massive parallelism. Among the rest, <span class="mono">GPU_IVF_FLAT</span> / <span class="mono">GPU_IVF_PQ</span> bring Lesson 5's IVF (inverted lists + clustering) onto the GPU, and <span class="mono">GPU_BRUTE_FORCE</span> is "<strong>compute everything by force</strong>" — no index, just GPU brawn over all distances, which is simple and effective for not-too-large data demanding <strong>top recall</strong>. The table sorts them. Remember the red line: <strong>type names and param checks are in Milvus; algorithms are in Knowhere/RAFT</strong> — don't credit CUDA's work to the Milvus core.</p>
+
+<div class="layers">
+  <div class="layer l-main"><div class="lh"><span class="badge">Milvus</span><span class="name">exposes types + param checks</span></div><div class="ld">GPU_CAGRA/IVF/BRUTE type names; indexparamcheck checkers; schedules &amp; routes</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">Knowhere</span><span class="name">unified index engine</span></div><div class="ld">routes the request to a concrete index impl (CPU or GPU) — the same door as Lesson 22</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">RAFT/cuVS</span><span class="name">NVIDIA GPU algorithms</span></div><div class="ld">the real implementation of CAGRA etc., with CUDA kernels underneath</div></div>
+</div>
 
 <table class="t">
   <tr><th>GPU index type</th><th>Essence (CPU-side analog)</th><th>Best for</th></tr>
@@ -7872,6 +7955,14 @@ Last lesson, a request came in through the API. But once it runs through Milvus'
 <p>First the pillar you deal with most — logs. Milvus has an <strong>iron rule</strong>: logging may only use <span class="mono">pkg/mlog</span> — not the standard <span class="mono">log</span>, not bare <span class="mono">fmt.Println</span>, not raw zap. Why so strict? Because <span class="mono">mlog</span> shoulders the hardest parts of distributed logging for you, and its design is thoughtful throughout.</p>
 <p>First touch: <strong>every log must carry ctx</strong>. You write <span class="mono">mlog.Info(ctx, "message", mlog.String("field", value))</span> — the first argument is always the context. Why mandatory? Because ctx can <strong>carry "identity" accumulated along the way</strong>. Second touch: <strong>structured fields</strong>. Not splicing variables into a sentence (<span class="mono">"user " + id + " failed"</span>) but typed key-value pairs like <span class="mono">mlog.String</span>, <span class="mono">mlog.Int64</span>. Structured logs are <strong>machine-queryable</strong>: a log system can filter precisely by "field = value" instead of grepping text. Third and most elegant: <strong>fields can propagate across nodes</strong>. Attach fields to ctx with <span class="mono">mlog.WithFields(ctx, ...)</span> and child contexts inherit them; further, mark a field with <span class="mono">mlog.OptPropagated()</span> (e.g. collection name, collection ID) and, via gRPC interceptors (<span class="mono">mlog.UnaryServerInterceptor</span> / <span class="mono">UnaryClientInterceptor</span>), those fields <strong>"fly" with the RPC to downstream nodes</strong>. So a marker stamped on a request at the Proxy reappears verbatim in the QueryNode and DataNode logs it triggers — <strong>one ID nets every related log across the whole cluster</strong>. That's the most precious ability when debugging distributed systems. The two styles compared:</p>
 
+<div class="flow">
+  <div class="node hl"><div class="nt">Proxy</div><div class="nd">stamp req_id=abc + OptPropagated fields</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">QueryNode</div><div class="nd">interceptor inherits → logs carry req_id=abc</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">DataNode</div><div class="nd">inherits too → logs carry req_id=abc</div></div>
+</div>
+
 <div class="cols">
   <div class="col"><h4>❌ String-spliced logs</h4><p><span class="mono">log.Printf("user %d search failed", id)</span>. Info buried in text; each node logs its own, unmatchable; filtering by user means regex guessing; cross a node and the trail breaks.</p></div>
   <div class="col"><h4>✅ mlog: structured + propagatable</h4><p><span class="mono">mlog.Info(ctx, "search failed", mlog.Int64("user", id))</span>. Typed fields, precisely filterable; via ctx + <span class="mono">OptPropagated</span> + interceptors, the marker <strong>flows with the request across nodes</strong>, one ID stitching the whole cluster.</p></div>
@@ -7985,6 +8076,16 @@ A distributed system like Milvus hides <strong>hundreds of knobs</strong>: timeo
 <h2>Where config comes from: layered sources and priority</h2>
 <p>Now the lower layer — where values actually come from. The <span class="mono">config</span> package (<span class="inline">pkg/config</span>) defines several <strong>sources</strong>, each with a <strong>priority</strong>. The most basic is <strong>FileSource</strong>: reading <span class="inline">configs/milvus.yaml</span>, the <strong>human-readable default config file</strong> and the "<strong>catalog of every knob</strong>" — to learn which configs exist and their defaults, look here. Above it is <strong>EnvSource</strong>: environment variables, handy for <strong>temporary overrides</strong> in containers/CI without editing files. Highest is <strong>EtcdSource</strong>: config in etcd, for <strong>cluster-wide, runtime</strong> distribution and modification.</p>
 <p>Multiple sources require deciding <strong>who wins</strong>. <span class="mono">config.Manager</span> (<span class="inline">pkg/config/manager.go</span>) <strong>merges</strong> the sources by priority: the source defines <span class="mono">HighPriority=1</span>, <span class="mono">NormalPriority=11</span>, <span class="mono">LowPriority=21</span>, noting "<strong>lesser value = higher priority</strong>". Intuitively, "<strong>the more personal and dynamic source wins</strong>": etcd (runtime) beats env vars, env vars beat file defaults. This "<strong>layered override</strong>" pattern is surely familiar — the same play as most mature config systems: <strong>give sensible defaults, then allow precise layered overrides</strong>, both out-of-the-box and tunable per environment. The three sources side by side:</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">milvus.yaml</div><div class="nd">file default (low)</div></div>
+  <div class="arrow">＜</div>
+  <div class="node"><div class="nt">env vars</div><div class="nd">deploy override (mid)</div></div>
+  <div class="arrow">＜</div>
+  <div class="node hl"><div class="nt">etcd</div><div class="nd">runtime push (high)</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">config.Manager</div><div class="nd">merge by priority → ParamItem.GetAsInt()</div></div>
+</div>
 
 <table class="t">
   <tr><th>Source</th><th>Where from</th><th>Typical use</th><th>Priority</th></tr>
@@ -8115,6 +8216,12 @@ Lesson 8 told you what Milvus <strong>depends on</strong> (etcd, object storage,
 
 <h2>Ops trio as one: config, observability, smooth upgrades</h2>
 <p>Tie Part 9 together and you'll see these lessons are <strong>different facets of one thing</strong> — how to make Milvus, in production, <strong>run stable, be seen, be tunable, upgrade smoothly</strong>. <strong>Tunable</strong>, via Lesson 40's config system: push via etcd, hot-reload rate limits and log levels, adapting to traffic without restart. <strong>Seen</strong>, via Lesson 39's observability: logs, metrics, traces three-pronged, tracing that one request out of the whole cluster when something breaks. <strong>Smooth upgrades</strong>, via Lesson 37's <strong>index-engine version coordination</strong> (take the minimum version across nodes) plus the Operator's <strong>rolling upgrade</strong>: replace node by node, old and new coexisting without interrupting service.</p>
+<div class="layers">
+  <div class="layer l-main"><div class="lh"><span class="badge">compute</span><span class="name">Milvus roles (scale independently in cluster mode)</span></div><div class="ld">Proxy / coordinators / QueryNode (reads) / streaming·DataNode (writes)</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">dependencies</span><span class="name">three external pillars</span></div><div class="ld">etcd (consistency/metadata) · object storage (durability) · MQ (ordered log = WAL backend)</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">deploy host</span><span class="name">from one process to a cluster</span></div><div class="ld">embedded single-node / docker-compose / k8s Pods (Helm · Operator)</div></div>
+</div>
+
 <p>This is the full picture of truly <strong>operating</strong> a distributed vector database: <strong>deployment</strong> decides what shape it grows into, <strong>dependencies</strong> shoulder the hardest distributed problems for it (consistency to etcd, durability to object storage, ordered logging to the MQ), <strong>independent scaling</strong> lets you pour compute precisely at the bottleneck, and <strong>config + observability</strong> let you see and adjust it without downtime. Looking back over all of Part 9 — from the API contract, to observability, to config, to deployment — we've actually walked "<strong>the entire outer ring a user/operator really touches</strong>". By now you not only understand how Milvus works inside, but how to use and run it. Next (Part 10), the final leg: <strong>practice and contributing</strong> — how to build and run, how to test, what code conventions exist, and how to submit your first PR to Milvus.</p>
 
 <div class="card key">
@@ -8205,6 +8312,12 @@ Across the first nine parts you've seen Milvus inside out. The final part (Part 
 
 <h2>One command, one binary: make milvus</h2>
 <p>With deps installed and the two stages chained, what you finally get is <strong>one</strong> executable named <span class="mono">milvus</span> — note, <strong>one</strong>, not a dozen. This is intriguing: Milvus clearly has a dozen roles (Proxy, coordinators, various nodes), yet compiles to <strong>a single binary</strong>. The secret is the entrypoint <span class="inline">cmd/main.go</span>: the same program <strong>decides "which role to play this time" by launch arguments</strong>. To start a Proxy, launch it in the "proxy" role; for a QueryNode, the "querynode" role.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">milvus binary</div><div class="nd">the one product of a single build</div></div>
+  <div class="arrow">--role→</div>
+  <div class="node hl"><div class="nt">play one role</div><div class="nd">proxy / coordinator / querynode / datanode / streamingnode</div></div>
+</div>
 <p>This "<strong>one binary, many roles</strong>" design has real benefits. <strong>Simple builds</strong>: compile once, deploy everywhere, no per-role packaging. <strong>Version consistency</strong>: all roles are inherently same-source, same-version, ruling out "Proxy new, QueryNode old" mismatches. <strong>Flexible deployment</strong>: in standalone mode one process can bring up all roles <strong>together</strong> (a key reason Lesson 41's "embedded single-node" can be so light); in cluster mode the same binary is launched <strong>in different roles</strong> on different machines. The full build flow, from installing deps to producing the binary, as one line:</p>
 
 <div class="vflow">
@@ -8346,6 +8459,11 @@ You can build Milvus; next is to <strong>write and run its tests</strong>. But y
 </div>
 <p>During development, to run just <strong>one test function</strong>, you can use go test directly, but <strong>not one of those flags may be missing</strong>: <span class="mono">go test -tags dynamic,test -gcflags="all=-N -l" ./internal/proxy/... -run TestXxx</span>. Committing this to muscle memory is daily life writing Milvus code. To wrap up: the "specialness" of testing Milvus all stems from its <strong>Go+C++ + runtime-mock</strong> nature — <span class="mono">dynamic,test</span> for cgo and test code, <span class="mono">-N -l</span> for mockey's patching; two mock kinds cover interfaces and functions; the Makefile wraps this complexity into one-command <span class="mono">make test-*</span>. Next lesson: the <strong>conventions</strong> to follow when writing code — error handling (merr), generated files, import order — the invisible bar your code must clear to be merged.</p>
 
+<div class="cols">
+  <div class="col"><h4>❌ go test ./...</h4><p>missing the flag string: <strong>can't find the not-yet-built C++ libs</strong> (dynamic), <strong>mockey can't patch</strong> (no -N -l) → compile failure or baffling panic.</p></div>
+  <div class="col"><h4>✅ go test -tags dynamic,test -gcflags="all=-N -l"</h4><p>dynamic-link C++ + enable test code + keep replaceable entries → mockery/mockey in place, <strong>tests run normally</strong>. <span class="mono">make test-*</span> carries them all.</p></div>
+</div>
+
 <div class="card key">
   <div class="tag">📌 Key points</div>
   <ul>
@@ -8435,6 +8553,14 @@ You can build and test; one gate remains before "<strong>your code can be merged
 <h2>Why this distinction matters: it decides "to retry or not"</h2>
 <p>You might ask: why split so finely? Because — <strong>an error's classification directly decides the system's retry behavior, and getting it slightly wrong causes big problems</strong>. Many places inside Milvus <strong>auto-retry</strong> failed operations (typically calls wrapped in <span class="mono">retry.Do</span>). If a transient error that <strong>should be retried</strong> (System, e.g. "node not ready") is mislabeled Input and becomes non-retriable, then an operation that <strong>would have succeeded after a brief wait</strong> gets <strong>condemned on the spot</strong> and fails outright — a false alarm you turned real with your own hands.</p>
 <p>The reverse is worse: if a <strong>doomed</strong> Input error (e.g. "collection doesn't exist") is mislabeled a retriable System error, the system will <strong>foolishly retry over and over</strong> an operation that can never succeed, burning resources and possibly dragging down the caller. So merr has careful designs: <span class="mono">ErrCollectionNotFound</span> defaults to a <strong>System error</strong> (because internal paths in datacoord etc. need to treat "temporarily not found" as retriable during recovery/retry), and <strong>only at the user-facing proxy boundary</strong> is it "flipped" via <span class="mono">WrapErrAsInputErrorWhen</span> into an Input error for the user. This subtlety — "<strong>the same error is retriable internally, classified as user error only at the boundary</strong>" — is the essence of merr. Two companion iron rules to remember: to add context to an existing error, <strong>use only <span class="mono">merr.Wrap/Wrapf</span></strong> (not <span class="mono">WrapErrXxxErr(err,…)</span>, which masks the inner code); before turning an error Input, grep whether any <span class="mono">retry.Do</span> depends on its retriability — <strong>mislabeling one classification can quietly break a retry chain</strong>.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">an error occurs</div><div class="nd">a branch returns err</div></div>
+  <div class="arrow">blame test</div>
+  <div class="node"><div class="nt">whose fault?</div><div class="nd">request forces it=Input; internal/transient=System</div></div>
+  <div class="arrow">decides</div>
+  <div class="node hl"><div class="nt">retry.Do</div><div class="nd">System→retry (may succeed); Input→return to user</div></div>
+</div>
 
 <h2>Other hard conventions: logging, import order, generated files</h2>
 <p>Beyond merr, a few unglamorous conventions can also block your PR — luckily most are <strong>linter-checked</strong>, so you needn't memorize them; violations are flagged on the spot. <strong>Log only via mlog</strong>: as Lesson 39 covered, Milvus's <span class="inline">.golangci.yml</span> uses depguard to <strong>explicitly forbid</strong> <span class="mono">pkg/v3/log</span>, the standard <span class="mono">log</span>, raw <span class="mono">zap</span> — all must become <span class="mono">pkg/v3/mlog</span>, every log carrying ctx. <strong>Import order</strong>: <span class="mono">gci</span> enforces three sections — <strong>stdlib → third-party → <span class="mono">github.com/milvus-io</span></strong>, this project's packages always last; <span class="mono">make</span> has a gci fix to sort them automatically. <strong>Don't hand-edit generated files</strong>: mockery-generated mocks (Lesson 43) and proto-generated <span class="mono">.pb.go</span> must be changed at the "source" and regenerated, not at the artifact. The conventions, with "who enforces", as a cheatsheet:</p>
@@ -8538,6 +8664,14 @@ You can build, test, and follow conventions — one step remains: <strong>turn y
 
 <h2>fork-and-pull: the standard contribution flow</h2>
 <p>Milvus (like most open-source projects) uses <strong>fork-and-pull</strong>. The core idea: <strong>you don't have write access to the official repo, so you work on your own copy and request to "pull" the result back</strong>. The flow is a fixed few steps. First, <strong>fork</strong>: on GitHub, copy <span class="mono">milvus-io/milvus</span> into your own account. Second, <strong>clone and set upstream</strong>: clone your fork locally, then add the official repo as the <span class="mono">upstream</span> remote (<span class="mono">git remote add upstream git@github.com:milvus-io/milvus.git</span>) so you can always <strong>sync the latest official code</strong>.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">local repo</div><div class="nd">write code + commit -s</div></div>
+  <div class="arrow">push</div>
+  <div class="node"><div class="nt">origin (your fork)</div><div class="nd">you have write access</div></div>
+  <div class="arrow">PR</div>
+  <div class="node hl"><div class="nt">upstream (official master)</div><div class="nd">fetch-only to sync, never push directly</div></div>
+</div>
 <p>Third, <strong>branch and work</strong>: cut a <strong>topic branch</strong> from the latest <span class="mono">upstream/master</span> (<span class="mono">git checkout upstream/master -b my-topic-branch</span>), change code and commit on it. Fourth, <strong>sync and push</strong>: before committing, <span class="mono">git fetch upstream</span>, rebase to resolve conflicts if needed, then push to your own fork (origin). Fifth, <strong>open a PR</strong>: on GitHub, file a Pull Request from your branch to <span class="mono">milvus-io/milvus</span>'s master. Then comes <strong>CI auto-running + maintainer review</strong>; once approved, your code is <strong>merged to master</strong> — congratulations, you're a contributor. This "<strong>everyone revises on a copy, converging via PRs</strong>" model lets thousands of strangers collaborate on one project <strong>without stepping on each other</strong>. The main path, drawn:</p>
 
 <div class="vflow">
