@@ -412,6 +412,15 @@ DataCoord 管"数据怎么写进去、怎么存好"，这一课的 <strong>Query
 <p>加载一个集合时，你可以让它有<strong>多个副本（replica）</strong>——也就是把同一个集合的段，在<strong>不同的 QueryNode 上各加载一份</strong>。副本一举换来两样好东西。其一是<strong>高可用（HA）</strong>：某个副本所在的节点挂了，
 另一个副本还在别处好端端地服务，查询不中断、数据不丢可用性。其二是<strong>高吞吐</strong>：多个副本可以<strong>并行分担</strong>查询流量，同样一个集合，两个副本理论上能扛近两倍的并发查询。冗余在这里不是浪费，而是<strong>稳与快</strong>的来源。</p>
 
+<div class="flow">
+  <div class="node"><div class="nt">一个集合</div><div class="nd">加载 N 个副本</div></div>
+  <div class="arrow">各加载一份</div>
+  <div class="node hl"><div class="nt">副本 1（节点 A·B）</div><div class="nd">同一批段的一份拷贝</div></div>
+  <div class="node hl"><div class="nt">副本 2（节点 C·D）</div><div class="nd">另一份拷贝，独立服务</div></div>
+  <div class="arrow">并行分担</div>
+  <div class="node"><div class="nt">高可用 + 高吞吐</div><div class="nd">一个挂了另一个顶上；查询翻倍</div></div>
+</div>
+
 <p>当然副本不是免费的：N 个副本就要 N 倍的查询内存。所以副本数是用户根据"这个集合多重要、查询量多大"来权衡的旋钮——核心业务、超高并发的集合多开几个副本，冷僻的集合一个就够。QueryCoord 的 <span class="mono">ReplicaManager</span> 统一管理这些副本：每个副本里有哪些节点、各自承载哪些段，都记在它这本账上。
 这呼应了第 9 课"协调者持有真相、节点执行"的分工——副本怎么排布是 QueryCoord 决定并记账的，QueryNode 只管把分到自己头上的段加载好、查好。</p>
 
@@ -592,6 +601,15 @@ So the balancer can't frantically shuffle at the slightest imbalance — that wo
 <h2>Replicas: trading redundancy for HA and throughput</h2>
 <p>When loading a collection, you can give it <strong>multiple replicas</strong> — that is, load the same collection's segments <strong>once each on different QueryNodes</strong>. Replicas buy two good things at once. First, <strong>high availability (HA)</strong>: if a node holding one replica dies,
 another replica is still serving fine elsewhere, queries uninterrupted, availability preserved. Second, <strong>high throughput</strong>: multiple replicas can <strong>share query traffic in parallel</strong>; for the same collection, two replicas can in theory handle nearly twice the concurrent queries. Redundancy here is no waste but the source of <strong>steadiness and speed</strong>.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">one collection</div><div class="nd">loaded with N replicas</div></div>
+  <div class="arrow">load once each</div>
+  <div class="node hl"><div class="nt">replica 1 (nodes A·B)</div><div class="nd">one copy of the same segments</div></div>
+  <div class="node hl"><div class="nt">replica 2 (nodes C·D)</div><div class="nd">another copy, serving independently</div></div>
+  <div class="arrow">share in parallel</div>
+  <div class="node"><div class="nt">HA + throughput</div><div class="nd">one dies, another takes over; ~2× queries</div></div>
+</div>
 
 <p>Of course replicas aren't free: N replicas cost N times the query memory. So replica count is a knob the user weighs by "how important this collection is, how heavy its query load" — core, ultra-concurrent collections get more replicas, obscure ones need just one. QueryCoord's <span class="mono">ReplicaManager</span> uniformly manages these replicas: which nodes are in each replica and which segments each carries are all kept on its ledger.
 This echoes Lesson 9's "coordinators hold the truth, nodes execute" division — how replicas are laid out is decided and booked by QueryCoord, while QueryNodes just load and search the segments assigned to them.</p>

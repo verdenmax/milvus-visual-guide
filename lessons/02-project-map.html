@@ -426,6 +426,11 @@ QueryNode（也是 Go）找出该搜哪些段后，把"段内的相似度计算"
 这些<strong>决策与元数据</strong>都归 MixCoord 这个大脑。而<strong>数据面（data plane）</strong>管的是"<strong>真正把数据搬动、计算出来</strong>"：
 写入的字节、刷盘的 binlog、检索时一条条算出来的距离——这些<strong>重活</strong>全在工作节点和 C++ 内核里发生。</p>
 
+<div class="cols">
+  <div class="col"><h4>控制面（control plane）</h4><p>管"<strong>谁该做什么</strong>"：结构、分片分配、刷盘决策、查询路由——决策与元数据归 <strong>MixCoord/协调器</strong>。要的是<strong>正确、一致</strong>，走 etcd 强一致，宁可慢一点。</p></div>
+  <div class="col"><h4>数据面（data plane）</h4><p>管"<strong>真正搬动与计算</strong>"：写字节、刷 binlog、逐条算距离——重活在 <strong>DataNode/QueryNode + C++ 内核</strong>。要的是<strong>快、可并行、能水平扩展</strong>，机器不够就加。</p></div>
+</div>
+
 <p>为什么要这么分？因为<strong>这两件事的脾气完全不同</strong>。控制面要的是"<strong>正确、一致、别出错</strong>"——元数据错一点，整个集群就乱套，所以它宁可慢一点、走 etcd 做强一致；
 数据面要的是"<strong>快、能并行、能水平扩展</strong>"——它可以容忍"近似"、可以多副本并发，机器不够就加机器。<strong>把这两种诉求拆开</strong>，
 各自用最合适的技术去满足，正是分布式系统反复验证过的智慧。所以你会看到一句反复出现的口诀：<strong>"协调器管调度、节点管执行"</strong>——
@@ -662,6 +667,11 @@ understanding Milvus, and nearly every lesson returns to it. The <strong>control
 which shard sits on which machine, whether a segment should flush, which replica a query routes to — these <strong>decisions and metadata</strong> belong to the
 MixCoord brain. The <strong>data plane</strong> governs "<strong>actually moving and computing the data</strong>": the written bytes, the flushed binlogs, the distances
 computed one by one at search time — that <strong>heavy lifting</strong> all happens in the worker nodes and the C++ kernel.</p>
+
+<div class="cols">
+  <div class="col"><h4>Control plane</h4><p>governs "<strong>who should do what</strong>": structure, shard assignment, flush decisions, query routing — decisions and metadata belong to <strong>MixCoord/coordinators</strong>. Wants <strong>correct, consistent</strong>; uses etcd's strong consistency, slower is fine.</p></div>
+  <div class="col"><h4>Data plane</h4><p>governs "<strong>actually moving and computing</strong>": writing bytes, flushing binlogs, computing distances one by one — heavy lifting in <strong>DataNode/QueryNode + the C++ core</strong>. Wants <strong>fast, parallel, horizontally scalable</strong>; add machines if short.</p></div>
+</div>
 
 <p>Why split this way? Because <strong>the two have completely different temperaments</strong>. The control plane wants "<strong>correct, consistent, never wrong</strong>" —
 one bad metadata write and the whole cluster goes haywire, so it would rather be a bit slow and go through etcd for strong consistency; the data plane wants

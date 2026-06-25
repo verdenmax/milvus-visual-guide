@@ -359,6 +359,12 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 <p>为什么要把算法<strong>单独抽成一个库</strong>，而不是和 Milvus core 混写在一起？因为向量检索是一个<strong>飞速演进、又高度专业</strong>的领域：今天 HNSW 当红、明天 DiskANN、后天 GPU 上的 CAGRA，底层还要对接 FAISS、cuVS 等一堆各有所长的实现。把这些<strong>算法细节封装进 Knowhere</strong>，让它专注"如何又快又准地建索引、搜向量"，Milvus core 则只需通过<strong>统一的接口</strong>说"给我用 X 索引、Y 度量、建/搜"，两边<strong>各自独立演进</strong>。
 这正是良好分层的价值：Milvus 不必为了引入一种新索引就改动分布式调度，Knowhere 也不必关心段、WAL、副本这些分布式概念。本课接下来讲的所有索引家族，都是 Knowhere 这一侧暴露给 Milvus 的"<strong>能力清单</strong>"。</p>
 
+<div class="layers">
+  <div class="layer l-main"><div class="lh"><span class="badge">Milvus core</span><span class="name">建索引 / 向量检索的调用方</span></div><div class="ld">只通过统一接口说"用 X 索引、Y 度量、建/搜"，不碰算法细节</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">Knowhere</span><span class="name">统一的向量计算引擎（独立上游库）</span></div><div class="ld">封装各种索引算法，对上暴露"能力清单"、对下对接多种实现</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">底层实现</span><span class="name">FAISS · HNSWlib · DiskANN · cuVS …</span></div><div class="ld">各有所长的具体算法库，由 Knowhere 统一对接与封装</div></div>
+</div>
+
 <p>这带来一个对<strong>读代码很重要</strong>的事实，也是本课<strong>反复强调</strong>的引用纪律：因为索引算法住在 Knowhere（上游库）里，绝大多数<strong>索引类型名是 Knowhere 的 <span class="inline">IndexEnum</span> 常量，而不是 Milvus core 里的符号</strong>。
 在 Milvus 仓库里，你能看到的是 core 代码<strong>引用</strong>这些 Knowhere 枚举的地方——例如 <span class="mono">internal/core/src/index/Utils.cpp</span> 里引用了 <span class="inline">knowhere::IndexEnum::INDEX_FAISS_IVFFLAT</span>、<span class="inline">INDEX_SPARSE_INVERTED_INDEX</span>、<span class="inline">INDEX_SPARSE_WAND</span> 等，<span class="mono">internal/core/src/common/Utils.h</span> 里引用了 <span class="inline">INDEX_DISKANN</span>。
 但像 HNSW、IVF_SQ8、IVF_PQ、SCANN、GPU_CAGRA 这些名字，<strong>不要</strong>去 Milvus core 里找它们的"定义"——它们的定义在 Knowhere 上游库里。<strong>本课提到这些名字时，一律按"Knowhere 索引名"来讲，绝不硬安到某个不含它的 Milvus 文件上。</strong></p>
@@ -516,6 +522,12 @@ Recall Lesson 2's "three-language split": Go handles distribution and scheduling
 
 <p>Why factor the algorithms into a <strong>separate library</strong> instead of intermixing them with Milvus core? Because vector search is a <strong>fast-evolving yet highly specialized</strong> field: HNSW is hot today, DiskANN tomorrow, GPU CAGRA the day after, with FAISS, cuVS and a dozen other implementations underneath, each with its own strengths. <strong>Encapsulating those algorithm details inside Knowhere</strong> lets it focus on "how to build and search vectors fast and accurately," while Milvus core only says, through a <strong>unified interface</strong>, "use index X with metric Y, build/search"; the two <strong>evolve independently</strong>.
 That is the value of clean layering: Milvus need not touch distributed scheduling to add a new index, and Knowhere need not know about segments, the WAL, or replicas. Every index family this lesson covers is part of the "<strong>capability menu</strong>" Knowhere exposes to Milvus.</p>
+
+<div class="layers">
+  <div class="layer l-main"><div class="lh"><span class="badge">Milvus core</span><span class="name">caller of index-build / vector-search</span></div><div class="ld">just says "use index X, metric Y, build/search" via a unified interface, untouched by algorithm details</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">Knowhere</span><span class="name">the unified vector-compute engine (separate upstream lib)</span></div><div class="ld">wraps various index algorithms, exposing a "capability menu" up and adapting many impls below</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">implementations</span><span class="name">FAISS · HNSWlib · DiskANN · cuVS …</span></div><div class="ld">concrete algorithm libraries, each with its strengths, unified and wrapped by Knowhere</div></div>
+</div>
 
 <p>This yields a fact <strong>important for reading code</strong>, and the citation discipline this lesson <strong>keeps stressing</strong>: because the index algorithms live in Knowhere (the upstream library), most <strong>index-type names are Knowhere <span class="inline">IndexEnum</span> constants, not symbols in Milvus core</strong>.
 In the Milvus repo, what you can see are the spots where core code <strong>references</strong> these Knowhere enums — e.g. <span class="mono">internal/core/src/index/Utils.cpp</span> references <span class="inline">knowhere::IndexEnum::INDEX_FAISS_IVFFLAT</span>, <span class="inline">INDEX_SPARSE_INVERTED_INDEX</span>, <span class="inline">INDEX_SPARSE_WAND</span>, and <span class="mono">internal/core/src/common/Utils.h</span> references <span class="inline">INDEX_DISKANN</span>.

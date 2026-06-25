@@ -763,6 +763,11 @@ which shard sits on which machine, whether a segment should flush, which replica
 MixCoord brain. The <strong>data plane</strong> governs "<strong>actually moving and computing the data</strong>": the written bytes, the flushed binlogs, the distances
 computed one by one at search time — that <strong>heavy lifting</strong> all happens in the worker nodes and the C++ kernel.</p>
 
+<div class="cols">
+  <div class="col"><h4>Control plane</h4><p>governs "<strong>who should do what</strong>": structure, shard assignment, flush decisions, query routing — decisions and metadata belong to <strong>MixCoord/coordinators</strong>. Wants <strong>correct, consistent</strong>; uses etcd's strong consistency, slower is fine.</p></div>
+  <div class="col"><h4>Data plane</h4><p>governs "<strong>actually moving and computing</strong>": writing bytes, flushing binlogs, computing distances one by one — heavy lifting in <strong>DataNode/QueryNode + the C++ core</strong>. Wants <strong>fast, parallel, horizontally scalable</strong>; add machines if short.</p></div>
+</div>
+
 <p>Why split this way? Because <strong>the two have completely different temperaments</strong>. The control plane wants "<strong>correct, consistent, never wrong</strong>" —
 one bad metadata write and the whole cluster goes haywire, so it would rather be a bit slow and go through etcd for strong consistency; the data plane wants
 "<strong>fast, parallel, horizontally scalable</strong>" — it can tolerate "approximate", run many replicas concurrently, and add machines when short. <strong>Separating these
@@ -2334,6 +2339,11 @@ Storing metadata needs <strong>strong consistency and change-watching</strong>�
 recording the write log needs <strong>ordered, durable, replayable</strong>—exactly a message queue's job. Milvus <strong>outsources</strong> these three "hard and generic" capabilities and focuses on its core: vector search.
 Building everything itself would mean reinventing many mature wheels and worrying about each wheel's reliability and scalability separately—clearly not worth it. Besides, systems like etcd, S3, and Kafka are battle-tested with mature ecosystems; reusing them directly is both easier and safer.</p>
 
+<div class="cols">
+  <div class="col"><h4>❌ Build everything yourself</h4><p>reinvent consistency storage, massive object storage, ordered logs — <strong>mature wheels</strong> — and worry about each one's reliability, scalability, DR separately. Heavy, hard, and unlikely to beat the specialists.</p></div>
+  <div class="col"><h4>✅ Reuse mature components</h4><p>metadata→<strong>etcd</strong> (strong consistency/watchable), data→<strong>object storage</strong> (cheap/near-infinite), log→<strong>message queue</strong> (ordered/replayable). Outsource the "hard and generic", focus on <strong>vector search</strong>.</p></div>
+</div>
+
 <p>This <strong>storage-compute separation</strong> architecture brings a huge benefit: Milvus's own nodes become <strong>stateless</strong> or nearly so—the real "state" all settles into these three external systems.
 So compute nodes can be <strong>added/removed at will, restarted after crashes, scaled elastically</strong> while the data stays intact. This is the standard cloud-native database practice and the foundation of Milvus's horizontal scaling.
 In other words, when query pressure rises, just add a few stateless QueryNodes—each pulls data from object storage, reads topology from etcd, consumes the log from MQ, and immediately shares the load;
@@ -2849,6 +2859,12 @@ This is a "rather slow a few requests than crash the whole cluster" trade-off �
 <h2>The task scheduler: three queues, three lanes</h2>
 <p>Past the gates, requests don't all execute in a stampede — each is wrapped into a <strong>task</strong> and placed into the <strong>task scheduler</strong>.
 This is the Proxy's "scheduling brain," holding three <strong>independent queues</strong> that split traffic by request kind:</p>
+
+<div class="cols">
+  <div class="col"><h4>ddQueue (DDL)</h4><p>data definition: create/drop collection, build index. Executed <strong>serially</strong>, keeping structural changes ordered and conflict-free.</p></div>
+  <div class="col"><h4>dmQueue (DML)</h4><p>data writes: insert/delete/upsert. Must preserve <strong>order within a shard</strong>; concurrent but ordered.</p></div>
+  <div class="col"><h4>dqQueue (DQL)</h4><p>data queries: search/query. <strong>Read-heavy, highly concurrent</strong>, not blocking writes — each runs its own way.</p></div>
+</div>
 
 <p>This "a queue per kind" design rests on a plain yet deep observation: <strong>different requests demand fundamentally different things from the system, and mixing them only drags everyone down</strong>.
 Creating a table (DDL) might happen a few times a year but must be flawless and strictly ordered; inserting data (DML) happens thousands of times a second and wants high throughput and durability;
@@ -3511,6 +3527,15 @@ So the balancer can't frantically shuffle at the slightest imbalance — that wo
 <p>When loading a collection, you can give it <strong>multiple replicas</strong> — that is, load the same collection's segments <strong>once each on different QueryNodes</strong>. Replicas buy two good things at once. First, <strong>high availability (HA)</strong>: if a node holding one replica dies,
 another replica is still serving fine elsewhere, queries uninterrupted, availability preserved. Second, <strong>high throughput</strong>: multiple replicas can <strong>share query traffic in parallel</strong>; for the same collection, two replicas can in theory handle nearly twice the concurrent queries. Redundancy here is no waste but the source of <strong>steadiness and speed</strong>.</p>
 
+<div class="flow">
+  <div class="node"><div class="nt">one collection</div><div class="nd">loaded with N replicas</div></div>
+  <div class="arrow">load once each</div>
+  <div class="node hl"><div class="nt">replica 1 (nodes A·B)</div><div class="nd">one copy of the same segments</div></div>
+  <div class="node hl"><div class="nt">replica 2 (nodes C·D)</div><div class="nd">another copy, serving independently</div></div>
+  <div class="arrow">share in parallel</div>
+  <div class="node"><div class="nt">HA + throughput</div><div class="nd">one dies, another takes over; ~2× queries</div></div>
+</div>
+
 <p>Of course replicas aren't free: N replicas cost N times the query memory. So replica count is a knob the user weighs by "how important this collection is, how heavy its query load" — core, ultra-concurrent collections get more replicas, obscure ones need just one. QueryCoord's <span class="mono">ReplicaManager</span> uniformly manages these replicas: which nodes are in each replica and which segments each carries are all kept on its ledger.
 This echoes Lesson 9's "coordinators hold the truth, nodes execute" division — how replicas are laid out is decided and booked by QueryCoord, while QueryNodes just load and search the segments assigned to them.</p>
 
@@ -3863,6 +3888,13 @@ watch it gate or schedule; we focus on what "processing" it does on the <strong>
 <span class="inline">checkPrimaryFieldData</span>: it confirms the batch's <strong>primary-key column</strong> is valid and consistent with the schema. If the collection uses <strong>auto-ID</strong>,
 the client never sends a primary key, so this step <strong>assigns a globally unique key to every row</strong> and fills it in; with a user-supplied key it checks non-null, uniqueness, and type. Only
 after this does the batch's primary-key <span class="mono">IDs</span> become settled.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Wrap into an insertTask</h4><p>the insert enters the Proxy; <span class="mono">PreExecute</span> runs data-correctness checks.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Validate the PK column</h4><p><span class="mono">checkPrimaryFieldData</span>: is the primary key valid and consistent with the schema?</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>autoID? allocate : validate</h4><p>auto → <strong>allocate a globally unique PK</strong> per row and fill it in; user-supplied → check non-null/unique/type.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>PK IDs settled</h4><p>with PKs fixed, they can <strong>route to a shard</strong> (the next gate).</p></div></div>
+</div>
 
 <p>Why settle the primary key <strong>so early</strong>? Because the next step — "which row goes to which shard" — depends entirely on it. The key is not just an identity card, it is the
 <strong>routing basis</strong>; without a settled key, no later step can proceed. Think of it as "stamp a unique tracking number on every parcel before you can sort by it." It is also the
@@ -4228,6 +4260,14 @@ The division to remember is clean: <strong>StreamingCoord decides (assignment, c
 <h2>Log as data: other shapes catch up by replaying</h2>
 <p>Put it together and you get the most central sentence of Milvus's write architecture: <strong>the WAL is the truth; everything else is its "projection"</strong>. A segment is the columnar file produced by accumulating insert messages from the WAL and persisting them;
 an index is an acceleration structure built atop a segment; the searchable data in a QueryNode's memory is what it got by <strong>consuming the WAL and replaying messages</strong>. Different shapes, but all doing one thing: <strong>following the WAL forward, "translating" the log into the form each needs</strong>.</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">WAL (the truth)</div><div class="nd">ordered append-only insert/delete log</div></div>
+  <div class="arrow">replay</div>
+  <div class="node"><div class="nt">growing/sealed segments</div><div class="nd">accumulate messages, flush to columnar binlog</div></div>
+  <div class="node"><div class="nt">indexes</div><div class="nd">acceleration structures built atop segments</div></div>
+  <div class="node"><div class="nt">QueryNode memory</div><div class="nd">searchable data from consuming the WAL</div></div>
+</div>
 
 <p>This "<strong>log as data</strong>" design pays off in enormous <strong>decoupling and elasticity</strong>. Add a QueryNode? Let it start consuming from some WAL position and gradually catch up — no downtime, no data hauling.
 A consumer fell behind? It accelerates its own replay along the WAL to catch up, affecting no one else. The write side just <strong>reliably appends messages in order</strong>; the read, persist, and index sides each <strong>consume independently</strong> —
@@ -5293,6 +5333,12 @@ Recall Lesson 2's "three-language split": Go handles distribution and scheduling
 
 <p>Why factor the algorithms into a <strong>separate library</strong> instead of intermixing them with Milvus core? Because vector search is a <strong>fast-evolving yet highly specialized</strong> field: HNSW is hot today, DiskANN tomorrow, GPU CAGRA the day after, with FAISS, cuVS and a dozen other implementations underneath, each with its own strengths. <strong>Encapsulating those algorithm details inside Knowhere</strong> lets it focus on "how to build and search vectors fast and accurately," while Milvus core only says, through a <strong>unified interface</strong>, "use index X with metric Y, build/search"; the two <strong>evolve independently</strong>.
 That is the value of clean layering: Milvus need not touch distributed scheduling to add a new index, and Knowhere need not know about segments, the WAL, or replicas. Every index family this lesson covers is part of the "<strong>capability menu</strong>" Knowhere exposes to Milvus.</p>
+
+<div class="layers">
+  <div class="layer l-main"><div class="lh"><span class="badge">Milvus core</span><span class="name">caller of index-build / vector-search</span></div><div class="ld">just says "use index X, metric Y, build/search" via a unified interface, untouched by algorithm details</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">Knowhere</span><span class="name">the unified vector-compute engine (separate upstream lib)</span></div><div class="ld">wraps various index algorithms, exposing a "capability menu" up and adapting many impls below</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">implementations</span><span class="name">FAISS · HNSWlib · DiskANN · cuVS …</span></div><div class="ld">concrete algorithm libraries, each with its strengths, unified and wrapped by Knowhere</div></div>
+</div>
 
 <p>This yields a fact <strong>important for reading code</strong>, and the citation discipline this lesson <strong>keeps stressing</strong>: because the index algorithms live in Knowhere (the upstream library), most <strong>index-type names are Knowhere <span class="inline">IndexEnum</span> constants, not symbols in Milvus core</strong>.
 In the Milvus repo, what you can see are the spots where core code <strong>references</strong> these Knowhere enums — e.g. <span class="mono">internal/core/src/index/Utils.cpp</span> references <span class="inline">knowhere::IndexEnum::INDEX_FAISS_IVFFLAT</span>, <span class="inline">INDEX_SPARSE_INVERTED_INDEX</span>, <span class="inline">INDEX_SPARSE_WAND</span>, and <span class="mono">internal/core/src/common/Utils.h</span> references <span class="inline">INDEX_DISKANN</span>.
@@ -7197,6 +7243,12 @@ another region tracking the primary; if the primary's data center fails entirely
 go to the primary, reads are offloaded nearby. <strong>(3) Smooth migration</strong>: to move data to a new cluster/version, first let the new cluster, as a secondary, catch up
 on the primary's full history and increments; after catching up, switch once, <strong>with almost no downtime</strong>. These three look different but are the same underneath:
 <strong>let another cluster have the same data by replaying the same log</strong>. That is the power of "log as data" at <strong>cross-cluster</strong> scale.</p>
+
+<div class="cols">
+  <div class="col"><h4>① Disaster recovery (DR)</h4><p>keep a hot standby in another region tracking the primary; on a full primary-DC failure, <strong>promote the standby</strong> to keep serving, with near-zero data loss.</p></div>
+  <div class="col"><h4>② Cross-region reads</h4><p>a standby near users serves <strong>local reads</strong>, cutting cross-region latency; writes still go to the primary, reads shared locally.</p></div>
+  <div class="col"><h4>③ Smooth migration</h4><p>moving to a new cluster/version, let the new one stand by and <strong>catch up</strong> all history + increment, then switch once — <strong>near-zero downtime</strong>.</p></div>
+</div>
 
 <h2>Why it's so clean</h2>
 <p>Step back: cross-cluster data sync is notoriously hard in many systems — change capture, ordering, conflicts, resumable transfer, consistency… Why does Milvus's look so

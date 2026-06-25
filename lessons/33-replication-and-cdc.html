@@ -419,6 +419,12 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 数据几乎不丢（取决于复制延迟）。<strong>② 跨地域只读</strong>：让离用户更近的备集群承接本地读请求，降低跨域延迟——写仍走主集群，读就近分担。<strong>③ 平滑迁移</strong>：要把数据搬到新集群/新版本时，先让新集群作为备追平主集群的全部历史与增量，
 追平后一次切换，<strong>几乎无停机</strong>。这三类需求看似不同，底层却是同一件事：<strong>让另一个集群通过重放同一条日志，拥有同一份数据</strong>。这就是"日志即数据"在<strong>跨集群</strong>尺度上的威力。</p>
 
+<div class="cols">
+  <div class="col"><h4>① 异地容灾 DR</h4><p>异地维持一个热备、时刻跟随主集群；主集群机房整体故障时，把热备<strong>提升为主</strong>继续服务，数据几乎不丢。</p></div>
+  <div class="col"><h4>② 跨地域只读</h4><p>离用户近的备集群承接<strong>本地读</strong>，降低跨域延迟；写仍走主集群，读就近分担。</p></div>
+  <div class="col"><h4>③ 平滑迁移</h4><p>搬到新集群/新版本时，让新集群作备<strong>追平</strong>全部历史与增量，追平后一次切换，<strong>几乎无停机</strong>。</p></div>
+</div>
+
 <p>这里有个绕不开的现实因素：<strong>复制延迟</strong>。主集群盖戳、转发、备集群再重放，整条链路需要时间，所以备集群的数据总是比主集群<strong>稍微滞后一点点</strong>（落后的量取决于网络与负载）。
 这个延迟决定了容灾时的"<strong>能丢多少数据</strong>"：如果主集群在某一刻整体崩溃，那些"已写进主集群、但还没复制到备集群"的最新变更，就有丢失风险——这正是衡量容灾能力的 <strong>RPO（恢复点目标）</strong>。
 好在因为复制的是<strong>有序日志</strong>，备集群很清楚自己"重放到了哪个 TimeTick"，断点续传、追平进度都有据可依，不会出现"复制到一半、状态错乱"的情况。要把 RPO 压到很小，就尽量降低复制延迟；要绝对不丢，则需更强的同步复制语义——
@@ -585,6 +591,12 @@ another region tracking the primary; if the primary's data center fails entirely
 go to the primary, reads are offloaded nearby. <strong>(3) Smooth migration</strong>: to move data to a new cluster/version, first let the new cluster, as a secondary, catch up
 on the primary's full history and increments; after catching up, switch once, <strong>with almost no downtime</strong>. These three look different but are the same underneath:
 <strong>let another cluster have the same data by replaying the same log</strong>. That is the power of "log as data" at <strong>cross-cluster</strong> scale.</p>
+
+<div class="cols">
+  <div class="col"><h4>① Disaster recovery (DR)</h4><p>keep a hot standby in another region tracking the primary; on a full primary-DC failure, <strong>promote the standby</strong> to keep serving, with near-zero data loss.</p></div>
+  <div class="col"><h4>② Cross-region reads</h4><p>a standby near users serves <strong>local reads</strong>, cutting cross-region latency; writes still go to the primary, reads shared locally.</p></div>
+  <div class="col"><h4>③ Smooth migration</h4><p>moving to a new cluster/version, let the new one stand by and <strong>catch up</strong> all history + increment, then switch once — <strong>near-zero downtime</strong>.</p></div>
+</div>
 
 <h2>Why it's so clean</h2>
 <p>Step back: cross-cluster data sync is notoriously hard in many systems — change capture, ordering, conflicts, resumable transfer, consistency… Why does Milvus's look so

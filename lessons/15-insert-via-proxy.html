@@ -354,6 +354,13 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 <span class="inline">checkPrimaryFieldData</span>：它要确认这批数据里的<strong>主键列</strong>是否合法、是否与 schema 声明一致。如果集合开了<strong>主键自增（autoID）</strong>，
 客户端根本不会传主键，这一步就负责<strong>为每一行分配一个全局唯一的主键</strong>并回填；如果是用户自带主键，则校验其非空、不重复、类型匹配。校验完成后，这批行的主键 <span class="mono">IDs</span> 才算确定下来。</p>
 
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>包装成 insertTask</h4><p>insert 请求进 Proxy，在 <span class="mono">PreExecute</span> 阶段做数据正确性检查。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>校验主键列</h4><p><span class="mono">checkPrimaryFieldData</span>：主键是否合法、是否与 schema 一致。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>autoID? 分配 : 校验</h4><p>自增→为每行<strong>分配全局唯一主键</strong>并回填；自带→校验非空/不重/类型匹配。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>主键 IDs 敲定</h4><p>主键确定，才能据它<strong>路由到分片</strong>（下一关）。</p></div></div>
+</div>
+
 <p>为什么主键要在<strong>这么靠前</strong>的位置敲定？因为接下来"把哪一行发到哪个分片"完全依赖主键。主键不仅是身份证，更是<strong>路由依据</strong>——
 没有确定的主键，后面一步都没法走。所以你可以把这一步理解成"先给每个包裹贴好唯一单号，才能按单号分拣"。它同时也是 Proxy 对客户端数据做的<strong>最后一道语义校验</strong>：
 一旦放行进入写入流水线，后端就默认这批数据"格式正确、主键齐全"，不再重复校验，把宝贵的算力留给真正的落盘。</p>
@@ -585,6 +592,13 @@ watch it gate or schedule; we focus on what "processing" it does on the <strong>
 <span class="inline">checkPrimaryFieldData</span>: it confirms the batch's <strong>primary-key column</strong> is valid and consistent with the schema. If the collection uses <strong>auto-ID</strong>,
 the client never sends a primary key, so this step <strong>assigns a globally unique key to every row</strong> and fills it in; with a user-supplied key it checks non-null, uniqueness, and type. Only
 after this does the batch's primary-key <span class="mono">IDs</span> become settled.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Wrap into an insertTask</h4><p>the insert enters the Proxy; <span class="mono">PreExecute</span> runs data-correctness checks.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Validate the PK column</h4><p><span class="mono">checkPrimaryFieldData</span>: is the primary key valid and consistent with the schema?</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>autoID? allocate : validate</h4><p>auto → <strong>allocate a globally unique PK</strong> per row and fill it in; user-supplied → check non-null/unique/type.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>PK IDs settled</h4><p>with PKs fixed, they can <strong>route to a shard</strong> (the next gate).</p></div></div>
+</div>
 
 <p>Why settle the primary key <strong>so early</strong>? Because the next step — "which row goes to which shard" — depends entirely on it. The key is not just an identity card, it is the
 <strong>routing basis</strong>; without a settled key, no later step can proceed. Think of it as "stamp a unique tracking number on every parcel before you can sort by it." It is also the

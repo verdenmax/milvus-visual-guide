@@ -31,6 +31,13 @@ LESSON_15 = {
 <span class="inline">checkPrimaryFieldData</span>：它要确认这批数据里的<strong>主键列</strong>是否合法、是否与 schema 声明一致。如果集合开了<strong>主键自增（autoID）</strong>，
 客户端根本不会传主键，这一步就负责<strong>为每一行分配一个全局唯一的主键</strong>并回填；如果是用户自带主键，则校验其非空、不重复、类型匹配。校验完成后，这批行的主键 <span class="mono">IDs</span> 才算确定下来。</p>
 
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>包装成 insertTask</h4><p>insert 请求进 Proxy，在 <span class="mono">PreExecute</span> 阶段做数据正确性检查。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>校验主键列</h4><p><span class="mono">checkPrimaryFieldData</span>：主键是否合法、是否与 schema 一致。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>autoID? 分配 : 校验</h4><p>自增→为每行<strong>分配全局唯一主键</strong>并回填；自带→校验非空/不重/类型匹配。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>主键 IDs 敲定</h4><p>主键确定，才能据它<strong>路由到分片</strong>（下一关）。</p></div></div>
+</div>
+
 <p>为什么主键要在<strong>这么靠前</strong>的位置敲定？因为接下来"把哪一行发到哪个分片"完全依赖主键。主键不仅是身份证，更是<strong>路由依据</strong>——
 没有确定的主键，后面一步都没法走。所以你可以把这一步理解成"先给每个包裹贴好唯一单号，才能按单号分拣"。它同时也是 Proxy 对客户端数据做的<strong>最后一道语义校验</strong>：
 一旦放行进入写入流水线，后端就默认这批数据"格式正确、主键齐全"，不再重复校验，把宝贵的算力留给真正的落盘。</p>
@@ -215,6 +222,13 @@ watch it gate or schedule; we focus on what "processing" it does on the <strong>
 <span class="inline">checkPrimaryFieldData</span>: it confirms the batch's <strong>primary-key column</strong> is valid and consistent with the schema. If the collection uses <strong>auto-ID</strong>,
 the client never sends a primary key, so this step <strong>assigns a globally unique key to every row</strong> and fills it in; with a user-supplied key it checks non-null, uniqueness, and type. Only
 after this does the batch's primary-key <span class="mono">IDs</span> become settled.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Wrap into an insertTask</h4><p>the insert enters the Proxy; <span class="mono">PreExecute</span> runs data-correctness checks.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Validate the PK column</h4><p><span class="mono">checkPrimaryFieldData</span>: is the primary key valid and consistent with the schema?</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>autoID? allocate : validate</h4><p>auto → <strong>allocate a globally unique PK</strong> per row and fill it in; user-supplied → check non-null/unique/type.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>PK IDs settled</h4><p>with PKs fixed, they can <strong>route to a shard</strong> (the next gate).</p></div></div>
+</div>
 
 <p>Why settle the primary key <strong>so early</strong>? Because the next step — "which row goes to which shard" — depends entirely on it. The key is not just an identity card, it is the
 <strong>routing basis</strong>; without a settled key, no later step can proceed. Think of it as "stamp a unique tracking number on every parcel before you can sort by it." It is also the
@@ -534,6 +548,14 @@ StreamingNode 会周期性地往 WAL 里插入特殊的 <strong>TimeTick 消息<
 <p>把上面拼起来，就得到 Milvus 写入架构最核心的一句话：<strong>WAL 是真相，其他一切都是它的"投影"</strong>。段是把 WAL 里的 insert 消息攒起来、落盘成的列式文件；
 索引是在段上再建的加速结构；QueryNode 内存里的可检索数据，是它<strong>消费 WAL、回放消息</strong>得到的。它们形态各异，但都在做同一件事：<strong>沿着 WAL 往前追，把日志"翻译"成自己需要的样子</strong>。</p>
 
+<div class="flow">
+  <div class="node hl"><div class="nt">WAL（真相）</div><div class="nd">按序追加的 insert/delete 日志</div></div>
+  <div class="arrow">回放</div>
+  <div class="node"><div class="nt">growing/sealed 段</div><div class="nd">攒消息、落盘成列式 binlog</div></div>
+  <div class="node"><div class="nt">索引</div><div class="nd">在段上再建的加速结构</div></div>
+  <div class="node"><div class="nt">QueryNode 内存</div><div class="nd">消费 WAL 得到的可检索数据</div></div>
+</div>
+
 <p>这个"<strong>log as data（日志即数据）</strong>"的设计，回报是巨大的<strong>解耦与弹性</strong>。新增一个 QueryNode？让它从 WAL 的某个位置开始消费，慢慢追上即可，不必停机搬数据。
 某个消费者落后了？它自己沿 WAL 加速重放追上来，不影响别人。写入侧只管把消息<strong>可靠地按序追加</strong>，读取侧、落盘侧、索引侧各自<strong>独立地消费</strong>——
 它们之间不直接耦合，只通过 WAL 这条<strong>有序日志</strong>间接协作。这就是为什么 Milvus 能把"写得快"和"读得稳"分开优化：因为它们被一条日志干净地隔开了。
@@ -705,6 +727,14 @@ The division to remember is clean: <strong>StreamingCoord decides (assignment, c
 <h2>Log as data: other shapes catch up by replaying</h2>
 <p>Put it together and you get the most central sentence of Milvus's write architecture: <strong>the WAL is the truth; everything else is its "projection"</strong>. A segment is the columnar file produced by accumulating insert messages from the WAL and persisting them;
 an index is an acceleration structure built atop a segment; the searchable data in a QueryNode's memory is what it got by <strong>consuming the WAL and replaying messages</strong>. Different shapes, but all doing one thing: <strong>following the WAL forward, "translating" the log into the form each needs</strong>.</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">WAL (the truth)</div><div class="nd">ordered append-only insert/delete log</div></div>
+  <div class="arrow">replay</div>
+  <div class="node"><div class="nt">growing/sealed segments</div><div class="nd">accumulate messages, flush to columnar binlog</div></div>
+  <div class="node"><div class="nt">indexes</div><div class="nd">acceleration structures built atop segments</div></div>
+  <div class="node"><div class="nt">QueryNode memory</div><div class="nd">searchable data from consuming the WAL</div></div>
+</div>
 
 <p>This "<strong>log as data</strong>" design pays off in enormous <strong>decoupling and elasticity</strong>. Add a QueryNode? Let it start consuming from some WAL position and gradually catch up — no downtime, no data hauling.
 A consumer fell behind? It accelerates its own replay along the WAL to catch up, affecting no one else. The write side just <strong>reliably appends messages in order</strong>; the read, persist, and index sides each <strong>consume independently</strong> —

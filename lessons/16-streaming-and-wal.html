@@ -481,6 +481,14 @@ StreamingNode 会周期性地往 WAL 里插入特殊的 <strong>TimeTick 消息<
 <p>把上面拼起来，就得到 Milvus 写入架构最核心的一句话：<strong>WAL 是真相，其他一切都是它的"投影"</strong>。段是把 WAL 里的 insert 消息攒起来、落盘成的列式文件；
 索引是在段上再建的加速结构；QueryNode 内存里的可检索数据，是它<strong>消费 WAL、回放消息</strong>得到的。它们形态各异，但都在做同一件事：<strong>沿着 WAL 往前追，把日志"翻译"成自己需要的样子</strong>。</p>
 
+<div class="flow">
+  <div class="node hl"><div class="nt">WAL（真相）</div><div class="nd">按序追加的 insert/delete 日志</div></div>
+  <div class="arrow">回放</div>
+  <div class="node"><div class="nt">growing/sealed 段</div><div class="nd">攒消息、落盘成列式 binlog</div></div>
+  <div class="node"><div class="nt">索引</div><div class="nd">在段上再建的加速结构</div></div>
+  <div class="node"><div class="nt">QueryNode 内存</div><div class="nd">消费 WAL 得到的可检索数据</div></div>
+</div>
+
 <p>这个"<strong>log as data（日志即数据）</strong>"的设计，回报是巨大的<strong>解耦与弹性</strong>。新增一个 QueryNode？让它从 WAL 的某个位置开始消费，慢慢追上即可，不必停机搬数据。
 某个消费者落后了？它自己沿 WAL 加速重放追上来，不影响别人。写入侧只管把消息<strong>可靠地按序追加</strong>，读取侧、落盘侧、索引侧各自<strong>独立地消费</strong>——
 它们之间不直接耦合，只通过 WAL 这条<strong>有序日志</strong>间接协作。这就是为什么 Milvus 能把"写得快"和"读得稳"分开优化：因为它们被一条日志干净地隔开了。
@@ -699,6 +707,14 @@ The division to remember is clean: <strong>StreamingCoord decides (assignment, c
 <h2>Log as data: other shapes catch up by replaying</h2>
 <p>Put it together and you get the most central sentence of Milvus's write architecture: <strong>the WAL is the truth; everything else is its "projection"</strong>. A segment is the columnar file produced by accumulating insert messages from the WAL and persisting them;
 an index is an acceleration structure built atop a segment; the searchable data in a QueryNode's memory is what it got by <strong>consuming the WAL and replaying messages</strong>. Different shapes, but all doing one thing: <strong>following the WAL forward, "translating" the log into the form each needs</strong>.</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">WAL (the truth)</div><div class="nd">ordered append-only insert/delete log</div></div>
+  <div class="arrow">replay</div>
+  <div class="node"><div class="nt">growing/sealed segments</div><div class="nd">accumulate messages, flush to columnar binlog</div></div>
+  <div class="node"><div class="nt">indexes</div><div class="nd">acceleration structures built atop segments</div></div>
+  <div class="node"><div class="nt">QueryNode memory</div><div class="nd">searchable data from consuming the WAL</div></div>
+</div>
 
 <p>This "<strong>log as data</strong>" design pays off in enormous <strong>decoupling and elasticity</strong>. Add a QueryNode? Let it start consuming from some WAL position and gradually catch up — no downtime, no data hauling.
 A consumer fell behind? It accelerates its own replay along the WAL to catch up, affecting no one else. The write side just <strong>reliably appends messages in order</strong>; the read, persist, and index sides each <strong>consume independently</strong> —
