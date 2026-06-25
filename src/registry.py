@@ -16,6 +16,7 @@ import part8
 import part9
 import part10
 import part11
+import part12
 
 # Filename -> {"zh": ..., "en": ...}. Keep keys in sync with shell.PAGES.
 CONTENT = {
