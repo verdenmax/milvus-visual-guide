@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus 图解学习指南 - 打印版</h1>
-<p style="color:var(--muted)">全 47 课 - 逐课分页。用浏览器 Ctrl/Cmd+P 即可导出 PDF。</p>
+<p style="color:var(--muted)">全 48 课 - 逐课分页。用浏览器 Ctrl/Cmd+P 即可导出 PDF。</p>
 <div class="print-toc"><h2>目录</h2>
 <ol>
   <li>Milvus 是什么</li>
@@ -375,6 +375,7 @@ details[open] > summary { list-style: none; }
   <li>提交 PR 与贡献</li>
   <li>术语表</li>
   <li>批量导入：第二条写入路径</li>
+  <li>混合检索与重排</li>
 </ol></div>
 <section class="lesson-print">
 <h1>Milvus 是什么</h1>
@@ -8951,6 +8952,135 @@ Go 这边则有对应的封装（如第 2、27 课的 <span class="mono">LocalSe
   <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
   <ul>
     <li>本课说批量导入与流式写入是“同一个段抽象、两条生产路径”。请：(1) 给三个场景各选一条写入路径并说明：A) 线上应用用户持续插入数据；B) 从旧系统迁移 5 亿条历史向量；C) 每天凌晨批量回填昨日数据。(2) 解释“绕过 WAL”为何在导入场景里是安全的——导入的“事实来源”是什么？(3) 为什么让两条路径都产出“同格式的段”很重要？这与第 22 课(Knowhere 统一接口)、第 36 课(算子统一吃一批吐一批)体现了怎样共同的设计审美？</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>混合检索与重排</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+前面讲的检索，大多是"<strong>一个查询向量、在一个向量字段里找近邻</strong>"。但真实业务里，一次好的检索往往要<strong>综合多个信号</strong>：既看<strong>语义相似</strong>（稠密向量），又看<strong>关键词命中</strong>（稀疏向量 / BM25，第 24 课）；或者同时比对<strong>图像</strong>与<strong>文本</strong>两种 embedding。这就是<strong>混合检索（HybridSearch）</strong>：一个集合可以有<strong>多个向量字段</strong>，一次请求并行跑<strong>多路子搜索</strong>，再把多份结果<strong>融合（rerank）</strong>成一份最终排名。这一课看它怎么扇出、又怎么融合。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 类比</div>
+  把混合检索想成<strong>招聘时综合多个维度选人</strong>。同一批候选人，HR 会从几个角度各排一份榜：按"<strong>技能匹配</strong>"排一榜、按"<strong>过往经验</strong>"排一榜、按"<strong>文化契合</strong>"排一榜。每份榜单都有道理，但你最终要的是<strong>一份总排名</strong>。
+  怎么把几份榜单<strong>融合</strong>成一份？有三种办法：只看每人在各榜的<strong>名次</strong>、名次靠前就加分（<strong>RRF</strong>）；给各榜不同<strong>权重</strong>、按加权分合并（<strong>加权融合</strong>）；或者请一位<strong>资深专家</strong>把入围者重新仔细面一遍、给出权威排序（<strong>模型重排</strong>）。混合检索做的，正是"<strong>多路打分 → 融合成一榜</strong>"这件事。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观视角</div>
+  一句话：<strong>HybridSearch 在一个请求里带多路子搜索(<span class="mono">SubReqs</span>，各搜一个向量字段)，Proxy 扇出、各自得到一份 ranked 结果，再用一个 <span class="mono">ranker</span> 融合成最终 topK；ranker 有三类——RRF(按名次)、WeightedRanker(按加权分)、模型重排(<span class="inline">internal/util/function/rerank</span>，调外部 cross-encoder)</strong>。解析在 <span class="inline">proxy/task_search.go</span> 的 <span class="mono">parseRankParams</span> / <span class="inline">rerank_meta.go</span>。
+</div>
+
+<h2>为什么需要混合检索</h2>
+<p>单一向量检索有个天生的局限：<strong>一种 embedding 只擅长抓一类信号</strong>。<strong>稠密向量</strong>（dense，第 4 课）擅长<strong>语义</strong>——"沙发"和"长椅"能匹配上，哪怕字面不同；但它对<strong>精确关键词</strong>不敏感——你搜一个具体型号"XJ-200"，语义向量可能反而抓不准。<strong>稀疏向量</strong>（sparse / BM25，第 24 课）正相反：它擅长<strong>关键词精确命中</strong>，却不懂语义近义。<strong>两者各有盲区，恰好互补</strong>。</p>
+
+<div class="cols">
+  <div class="col"><h4>稠密向量（dense）</h4><p>擅长<strong>语义</strong>：沙发≈长椅、医生≈大夫，字面不同也能匹配。盲区：对<strong>精确关键词/型号</strong>(XJ-200)不敏感。</p></div>
+  <div class="col"><h4>稀疏向量（sparse / BM25）</h4><p>擅长<strong>关键词精确命中</strong>：搜什么词、命中什么词。盲区：不懂<strong>近义/语义</strong>，换个说法就漏。</p></div>
+</div>
+<p>于是一个很自然的想法冒出来：<strong>能不能两种都用，取长补短？</strong>这正是混合检索的动机。为支持它，Milvus 允许一个集合<strong>定义多个向量字段</strong>（第 6 课）——比如一个 <span class="mono">dense_vec</span> 存语义 embedding、一个 <span class="mono">sparse_vec</span> 存关键词权重。检索时，同一个查询<strong>同时打到这两个字段</strong>：稠密那路找语义最近的、稀疏那路找关键词最配的，最后<strong>融合</strong>。除了"语义+关键词"，混合检索还覆盖<strong>多模态</strong>（图像向量 + 文本向量一起搜）、<strong>多视角</strong>（同一对象的不同 embedding 模型）等场景。一句话：<strong>当"像不像"不能用单一标准衡量时，就把多个标准并起来、再融合</strong>——这是把向量检索从"玩具 demo"推向"真实业务"的关键一步。</p>
+
+<p>这里值得点破一个 RAG（检索增强生成）时代特别常见的痛点，它正是混合检索大放异彩的舞台。当你用 LLM 做问答、给它喂检索来的上下文时，用户的提问<strong>既有语义、又常含关键术语</strong>：比如"<strong>2023 年 XJ-200 型号的退货政策</strong>"——"退货政策"是语义、"XJ-200""2023"是必须精确命中的关键词。<strong>纯语义检索可能召回一堆"退货政策"相关但型号不对的文档；纯关键词检索又可能因为换了个说法而错过最相关的那篇。</strong>只有把两路并起来、再融合，才能既<strong>抓住语义、又锁定关键词</strong>，把真正相关的文档顶到前面。这也是为什么近两年几乎所有正经的 RAG / 企业搜索方案，都把"<strong>dense + sparse 混合检索 + rerank</strong>"当成标配。理解了混合检索，你就握住了把 Milvus 用在生产级检索增强里的那把钥匙——它不再是"给个向量找近邻"的玩具，而是能<strong>综合多种相关性信号</strong>的真实检索引擎。</p>
+
+<h2>一次 HybridSearch：多路子搜索</h2>
+<p>机制上，一次混合检索<strong>不是一个搜索，而是一束搜索</strong>。客户端发来的 <span class="mono">HybridSearchRequest</span> 里带着一组<strong>子请求（<span class="mono">SubReqs</span>）</strong>——每个子请求就是一次<strong>普通的向量搜索</strong>：指定<strong>搜哪个向量字段、用什么查询向量、topK 多少、带什么过滤</strong>。Proxy 侧（<span class="inline">internal/proxy/task_search.go</span>）一看 <span class="mono">len(SubReqs) &gt; 0</span>，就知道这是"<strong>进阶（advanced）</strong>"的混合检索，于是把每个子请求<strong>当成一次独立搜索扇出去</strong>（复用第 25–29 课那整套查询链路），并行地各自跑完、各自<strong>归并出一份自己的 topK</strong>。</p>
+<p>这里有个关键认知：<strong>每一路子搜索，本身就是一次完整的、你已经学过的向量检索</strong>。它一样经 delegator 扇到各段、一样 filter-then-search、一样三层 reduce（第 29 课）。所以混合检索<strong>没有另造一套检索引擎</strong>，而是<strong>把 N 次普通检索并起来跑、再加一道融合</strong>。这又是那个熟悉的设计哲学：<strong>用已有的、可组合的能力拼出新功能</strong>，而不是重起炉灶。子搜索的数量有上限（<span class="mono">defaultMaxSearchRequest</span>），免得一个请求扇出太多路把系统压垮。等所有子搜索都返回，Proxy 手里就有了 <strong>N 份各自排好的候选列表</strong>——接下来的问题是：<strong>怎么把这 N 份合成一份？</strong></p>
+
+<p>顺带说一个容易忽略、却很影响效果的细节：<strong>每一路子搜索通常要多取一些候选</strong>。直觉上你可能觉得"我最终只要 top-10，那每路取 top-10 不就够了？"其实不然——因为融合会<strong>打乱名次</strong>：一个在语义榜排第 15、但在关键词榜排第 2 的文档，融合后很可能挤进最终 top-10；可如果每路只取了 top-10，它在语义那路<strong>压根没被取到</strong>，融合时就<strong>永远丢了</strong>。所以实践中，每路子搜索往往要取一个<strong>比最终 topK 更大的候选池</strong>（比如最终要 10、每路先取 50），给融合留足"翻盘"的余地。这是混合检索调参里最常踩的坑之一，也再次说明：<strong>融合不是简单地把几个 top-K 拼起来，而是要在更大的候选集上重新排序</strong>。理解这一点，你在用 Milvus 做混合检索时就能避开"召回莫名偏低"的暗坑。</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">HybridSearch</div><div class="nd">一个请求，N 个 SubReqs</div></div>
+  <div class="arrow">扇出</div>
+  <div class="node hl"><div class="nt">子搜索：dense_vec</div><div class="nd">语义最近 → ranked 列表 A</div></div>
+  <div class="node hl"><div class="nt">子搜索：sparse_vec</div><div class="nd">关键词最配 → ranked 列表 B</div></div>
+  <div class="arrow">融合</div>
+  <div class="node"><div class="nt">ranker</div><div class="nd">A+B → 最终 topK</div></div>
+</div>
+
+<h2>融合：RRF / 加权 / 模型重排</h2>
+<p>把 N 份排名<strong>合成一份</strong>，是混合检索的灵魂，这一步叫 <strong>rerank（重排 / 融合）</strong>。难点在于：<strong>不同子搜索的"分数"往往不可比</strong>——稠密向量的相似度（比如 0.92）和稀疏向量的 BM25 分（比如 14.7）<strong>根本不是一个量纲</strong>，直接相加毫无意义。Milvus 提供三类 ranker 来解决这件事（配置见 <span class="inline">proxy/rerank_meta.go</span>、<span class="mono">parseRankParams</span>）。</p>
+<p>第一类 <strong>RRF（Reciprocal Rank Fusion，倒数排名融合）</strong>：它<strong>干脆不看原始分数，只看名次</strong>。一个文档在某份榜单里排第 r 名，就得 <span class="mono">1/(k+r)</span> 分（k 是个平滑常数，默认 60），把它在所有榜单里的这种"名次分"加起来，就是最终分。妙在它<strong>天然抹平了量纲差异</strong>——名次永远是可比的。当你不确定各路分数该怎么权衡时，RRF 是个稳健的默认。第二类 <strong>WeightedRanker（加权融合）</strong>：当你<strong>明确想让某一路更重要</strong>时（比如"语义占七成、关键词占三成"），就给各路一个权重，把<strong>归一化后的分数</strong>加权求和。第三类 <strong>模型重排（model reranker）</strong>：把各路的候选<strong>交给一个专门的重排模型</strong>（cross-encoder，如 Cohere、TEI 等，代码在 <span class="inline">internal/util/function/rerank</span>）重新打分排序——质量最高，但要<strong>调用外部模型、成本也最高</strong>。下面把三者摆清。</p>
+
+<p>怎么在这三者间选？这又是一道熟悉的<strong>取舍题</strong>。RRF <strong>最省心、最稳健</strong>——不用调参、不怕量纲、对"我也说不清两路谁更重要"的场景最友好，所以常被设成默认。WeightedRanker <strong>给你控制权</strong>——当你凭业务经验知道"这个场景语义更重要"时，能手动压一个权重上去，代价是要自己调那个比例。模型重排<strong>质量天花板最高</strong>——cross-encoder 会把"查询和每个候选"成对地细看一遍，比单纯的分数融合精准得多，但它要<strong>为每个候选都跑一次模型推理</strong>，延迟和成本都显著上去，所以通常只对前融合出的<strong>少量候选</strong>(比如 top-50)做精排。一个常见的生产组合是"<strong>先粗后精</strong>"：先用 RRF 把多路快速融合出一批候选，再用模型重排对这批候选做最终精排——<strong>用便宜的方法过滤大头、用昂贵的方法雕琢尖端</strong>。这种"两级排序"的思路，和第 5 课 ANN"先粗筛桶、再精算"、第 28 课"先过滤、再检索"是同一种<strong>分层收敛、把贵的算力花在刀刃上</strong>的智慧。</p>
+
+<table class="t">
+  <tr><th>Ranker</th><th>怎么融合</th><th>适用</th></tr>
+  <tr><td class="mono"><strong>RRF</strong></td><td>只按名次：每榜得 1/(k+r) 分相加(k 默认 60)，抹平量纲差异</td><td>各路分数不可比 / 稳健默认</td></tr>
+  <tr><td class="mono"><strong>WeightedRanker</strong></td><td>归一化分数后加权求和</td><td>明确想给某一路更高权重</td></tr>
+  <tr><td class="mono"><strong>模型重排</strong></td><td>把候选交 cross-encoder 模型重新打分</td><td>追求最高相关性、可接受外部调用成本</td></tr>
+</table>
+
+<div class="cellgroup">
+  <div class="cg-cap"><b>RRF 融合示例</b>（k=60）：只看名次、不看原始分，于是不同量纲也能合并</div>
+  <div class="cells"><span class="lab">语义榜 A</span><span class="cell hl">文档 D 第 1 名</span><span class="sep">→</span><span class="cell q">1/(60+1) = 0.0164</span></div>
+  <div class="cells"><span class="lab">关键词榜 B</span><span class="cell hl">文档 D 第 3 名</span><span class="sep">→</span><span class="cell q">1/(60+3) = 0.0159</span></div>
+  <div class="cells"><span class="lab">RRF 合计</span><span class="cell">0.0164 + 0.0159</span><span class="sep">=</span><span class="cell q">0.0323 ← D 的最终分</span></div>
+</div>
+
+<h2>它落在系统的哪一层</h2>
+<p>把混合检索放回整张架构图，你会发现它<strong>主要是 Proxy 的活</strong>，外加内核的一点配合。<strong>Proxy 是总指挥</strong>：它解析 <span class="mono">SubReqs</span>、把每路子搜索扇出去（经各 QueryNode 的 delegator）、收齐 N 份结果、再<strong>在 Proxy 这一层执行融合</strong>（RRF/加权由 Proxy 算，模型重排则由 Proxy 去调外部模型）。这很合理——融合需要<strong>看到所有路的全局结果</strong>，而 Proxy 正是那个"<strong>所有结果最终汇聚的点</strong>"（回忆第 29 课：Proxy 本就是三层 reduce 的最顶层）。</p>
+<p>内核侧也有一个相关角色：<span class="inline">internal/core/src/exec/operator</span> 里的 <span class="mono">RescoresNode</span>——它和第 36 课的 <span class="mono">FilterBitsNode</span> 是兄弟，区别在于：FilterBitsNode 产出"<strong>哪些行通过</strong>"的 bitset，而 RescoresNode 接收一批 offset、对它们<strong>重新打分</strong>、产出带新分数的有效结果。它服务于在段内就需要"调整分数"的场景（比如某些 rerank/groupby 逻辑下推到 segcore）。但对大多数混合检索而言，<strong>融合发生在 Proxy 这一层</strong>，因为只有这里才同时握着所有子搜索的结果。把这一课收一收：混合检索 = <strong>多个向量字段</strong>（第 6 课）+ <strong>多路并行子搜索</strong>（复用第 25–29 课）+ <strong>一道融合</strong>（RRF/加权/模型）。它让 Milvus 能回答"<strong>既要语义像、又要关键词配</strong>"这类真实而复杂的检索诉求——这正是现代 RAG、推荐、多模态检索里最常用的一招。</p>
+
+<p>最后留一个练习给你的直觉：下次设计检索时，先问自己一句——"<strong>我判断'相关'，真的只靠一种信号吗？</strong>"如果答案是"还要看关键词""还要看图片""还要看时效"，那你大概率就需要混合检索。把"相关性"拆成几路可独立检索的信号、各自召回、再用合适的 ranker 融合，是一种<strong>既灵活又强大</strong>的范式。它的代价是多了"<strong>选哪些字段、每路取多少、用哪种 ranker、怎么调权重</strong>"这些要调的旋钮；但回报是，你的检索质量能<strong>逼近真实业务对'相关'的复杂定义</strong>，而不再被单一向量的盲区所限。这，就是从"会用向量检索"到"会用好向量检索"的那道分水岭。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>为何混合</strong>：单一 embedding 有盲区——稠密擅语义、稀疏(BM25)擅关键词，互补；一个集合可有多个向量字段，混合检索综合多信号(也用于多模态/多视角)。</li>
+    <li><strong>多路子搜索</strong>：<span class="mono">HybridSearch</span> 带 N 个 <span class="mono">SubReqs</span>，每个就是一次完整的普通向量检索；Proxy 扇出、各得一份 ranked 列表(复用第 25–29 课，不另造引擎)。</li>
+    <li><strong>融合(rerank)</strong>：不同路分数不可比，需 ranker——<strong>RRF</strong>(只按名次 1/(k+r)，抹平量纲)、<strong>WeightedRanker</strong>(归一化后加权)、<strong>模型重排</strong>(cross-encoder，质量最高、成本最高)。</li>
+    <li><strong>落在哪</strong>：融合主要由 <strong>Proxy</strong> 执行(它是所有结果的汇聚点，第 29 课最顶层 reduce)；内核的 <span class="mono">RescoresNode</span> 服务于段内重打分。常用于 RAG/推荐/多模态。</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. 为什么需要混合检索(HybridSearch)，而不是只用一个向量字段搜？</div>
+  <ol class="opts">
+    <li>因为单向量检索结果总是错的</li>
+    <li>单一 embedding 有盲区：稠密向量擅语义却不抓精确关键词，稀疏(BM25)擅关键词却不懂近义；混合检索用多个向量字段综合多种相关性信号(也用于多模态)</li>
+    <li>因为混合检索更省内存</li>
+    <li>纯粹为了让查询更慢</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。稠密向量(第4课)擅长语义——沙发≈长椅，但对“XJ-200”这种精确关键词不敏感；稀疏向量/BM25(第24课)擅长关键词精确命中，却不懂近义。两者盲区互补。一个集合可定义多个向量字段(第6课)，混合检索同时打到多个字段、综合多种信号，也覆盖多模态(图+文)、多视角。这是把检索从玩具推向真实业务(尤其 RAG：提问既含语义又含关键术语)的关键一步。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. 一次 HybridSearch 在系统里是怎么执行的？</div>
+  <ol class="opts">
+    <li>它是一个全新的、独立于普通检索的引擎</li>
+    <li>它带 N 个 SubReqs，每个就是一次完整的普通向量检索；Proxy 把它们并行扇出(复用第25–29课查询链路)、各得一份 ranked 列表，再用 ranker 融合成最终 topK</li>
+    <li>它只在一个段里搜、不扇出</li>
+    <li>它把所有向量字段拼成一个大向量再搜一次</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。HybridSearchRequest 带一组 SubReqs，每个指定搜哪个向量字段、用什么查询向量、topK、过滤。Proxy(task_search.go)见 len(SubReqs)>0 即知是 advanced 混合检索，把每路当独立搜索扇出，复用 delegator 扇段、filter-then-search、三层 reduce(第29课)，各自归并出一份 topK。所以它不另造引擎，而是“N 次普通检索并起来跑 + 一道融合”。子搜索数有上限(defaultMaxSearchRequest)；且每路通常要多取候选(比最终 topK 大)，因为融合会打乱名次。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 融合(rerank)的三类 ranker——RRF、WeightedRanker、模型重排——各自怎么工作、何时用？</div>
+  <ol class="opts">
+    <li>RRF 需要调用外部模型</li>
+    <li>三者都直接把各路原始分数相加</li>
+    <li>RRF 只按名次(1/(k+r)，k默认60，抹平量纲，稳健默认)；WeightedRanker 归一化分数后加权(想给某路更高权重)；模型重排用 cross-encoder 精排(质量最高、成本最高，常只精排少量候选)</li>
+    <li>模型重排不看查询、只看候选</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：C</strong>。难点是不同路分数不可比(稠密相似度 0.92 vs BM25 14.7 不是一个量纲)。RRF 干脆只看名次：某榜第 r 名得 1/(k+r)，跨榜相加，天然抹平量纲，不确定怎么权衡时的稳健默认。WeightedRanker 在你明确想偏向某路时，对归一化分数加权求和。模型重排把候选交 cross-encoder(Cohere/TEI 等)成对精看、重新打分，质量最高但要为每个候选跑模型、延迟成本高，故常只对前融合出的少量候选(如 top-50)精排。常见“先粗后精”：RRF 快融出候选 → 模型精排——把贵算力花在刀刃上(同第5/28课分层收敛)。</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>本课说混合检索是“多路打分 → 融合成一榜”，且主要在 Proxy 这一层融合。请：(1) 为一个 RAG 问答场景(用户问“2023 年 XJ-200 的退货政策”)设计一个混合检索：用哪些向量字段、为什么纯语义或纯关键词都不够？(2) 解释 RRF 为什么能融合“不可比的分数”，并说明为何每路子搜索常要多取候选(比最终 topK 大)。(3) 为什么融合放在 Proxy 而不是某个 QueryNode？这与第 29 课“三层 reduce 的最顶层是 Proxy”有何呼应？</li>
   </ul>
 </div>
 </div>

@@ -66,4 +66,5 @@ CONTENT = {
     "45-contributing-prs.html": part10.LESSON_45,
     "46-glossary.html": part10.LESSON_46,
     "47-bulk-import.html": part11.LESSON_47,
+    "48-hybrid-search-rerank.html": part11.LESSON_48,
 }

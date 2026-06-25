@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 47 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 48 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
@@ -375,6 +375,7 @@ details[open] > summary { list-style: none; }
   <li>Submitting PRs & contributing</li>
   <li>Glossary</li>
   <li>Bulk import: the second write path</li>
+  <li>Hybrid search & reranking</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -8967,6 +8968,127 @@ The writes in Part 4 were the <strong>online, streaming</strong> path: row by ro
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
     <li>This lesson says bulk import and streaming writes are 'one segment abstraction, two production paths'. Please: (1) pick a write path for each scenario and justify: A) an online app continuously inserting user data; B) migrating 500M historical vectors from a legacy system; C) a nightly batch backfill of yesterday's data. (2) Explain why 'bypassing the WAL' is safe in the import scenario — what is the import's 'source of truth'? (3) Why does it matter that both paths produce 'same-format segments'? What shared design aesthetic does this share with Lesson 22 (Knowhere's unified interface) and Lesson 36 (operators uniformly consuming/emitting a batch)?</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Hybrid search & reranking</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+The searches so far were mostly "<strong>one query vector, find neighbors in one vector field</strong>". But real workloads often need to <strong>combine multiple signals</strong>: both <strong>semantic similarity</strong> (dense vectors) and <strong>keyword hits</strong> (sparse vectors / BM25, Lesson 24); or matching both an <strong>image</strong> and a <strong>text</strong> embedding. That's <strong>hybrid search</strong>: a collection can have <strong>multiple vector fields</strong>, one request runs several <strong>sub-searches</strong> in parallel, then <strong>fuses (reranks)</strong> the result lists into one final ranking. This lesson covers how it fans out and how it fuses.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of hybrid search as <strong>hiring by combining multiple dimensions</strong>. For the same candidate pool, HR ranks them several ways: by "<strong>skill match</strong>", by "<strong>past experience</strong>", by "<strong>culture fit</strong>". Each ranking has merit, but you ultimately want <strong>one combined ranking</strong>.
+  How to <strong>fuse</strong> several rankings into one? Three ways: look only at each person's <strong>rank</strong> in each list and reward high ranks (<strong>RRF</strong>); give each list a <strong>weight</strong> and combine weighted scores (<strong>weighted fusion</strong>); or have a <strong>senior expert</strong> re-interview the shortlist and give an authoritative order (<strong>model reranking</strong>). Hybrid search does exactly this "<strong>score several ways → fuse into one list</strong>".
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>HybridSearch carries several sub-searches in one request (<span class="mono">SubReqs</span>, each over a vector field); the Proxy fans them out, gets a ranked list each, then fuses into the final topK with a <span class="mono">ranker</span> — three kinds: RRF (by rank), WeightedRanker (by weighted score), and model reranking (<span class="inline">internal/util/function/rerank</span>, calling an external cross-encoder)</strong>. Parsing is in <span class="mono">parseRankParams</span> (<span class="inline">proxy/task_search.go</span>) / <span class="inline">rerank_meta.go</span>.
+</div>
+
+<h2>Why hybrid search</h2>
+<p>Single-vector search has an innate limit: <strong>one embedding is only good at capturing one kind of signal</strong>. <strong>Dense vectors</strong> (Lesson 4) excel at <strong>semantics</strong> — "sofa" matches "couch" even with different spelling; but they're insensitive to <strong>exact keywords</strong> — search a specific model "XJ-200" and a semantic vector may miss. <strong>Sparse vectors</strong> (sparse / BM25, Lesson 24) are the opposite: great at <strong>exact keyword hits</strong>, oblivious to semantic synonyms. <strong>Each has a blind spot, and they complement each other.</strong></p>
+
+<div class="cols">
+  <div class="col"><h4>Dense vectors</h4><p>great at <strong>semantics</strong>: sofa≈couch, doctor≈physician — matches despite different wording. Blind spot: insensitive to <strong>exact keywords/model numbers</strong> (XJ-200).</p></div>
+  <div class="col"><h4>Sparse vectors (sparse / BM25)</h4><p>great at <strong>exact keyword hits</strong>: search a word, hit that word. Blind spot: oblivious to <strong>synonyms/semantics</strong> — reword it and it misses.</p></div>
+</div>
+<p>So a natural idea arises: <strong>can we use both and cover each other's weaknesses?</strong> That's the motivation for hybrid search. To support it, Milvus lets a collection <strong>define multiple vector fields</strong> (Lesson 6) — say a <span class="mono">dense_vec</span> for semantic embeddings and a <span class="mono">sparse_vec</span> for keyword weights. At search time the same query <strong>hits both fields</strong>: the dense path finds the semantically nearest, the sparse path the keyword-best, and the results are <strong>fused</strong>. Beyond "semantic + keyword", hybrid search also covers <strong>multimodal</strong> (image + text vectors together), <strong>multi-view</strong> (different embedding models of the same object), and more. In a line: <strong>when "similar" can't be measured by a single yardstick, combine several and fuse</strong> — a key step from "toy demo" to "real workload".</p>
+
+<h2>One HybridSearch: several sub-searches</h2>
+<p>Mechanically, a hybrid search is <strong>not one search but a bundle</strong>. The client's <span class="mono">HybridSearchRequest</span> carries a set of <strong>sub-requests (<span class="mono">SubReqs</span>)</strong> — each a <strong>plain vector search</strong>: which vector field, which query vector, what topK, what filter. The Proxy side (<span class="inline">internal/proxy/task_search.go</span>), seeing <span class="mono">len(SubReqs) &gt; 0</span>, knows this is an "<strong>advanced</strong>" hybrid search, so it <strong>fans each sub-request out as an independent search</strong> (reusing the whole Lesson 25–29 query path), runs them in parallel, each <strong>merging its own topK</strong>.</p>
+<p>A key realization: <strong>each sub-search is itself a complete vector search you've already learned</strong>. It fans through delegators to segments, does filter-then-search, does the three-level reduce (Lesson 29). So hybrid search <strong>builds no new search engine</strong> — it <strong>runs N plain searches together, then adds a fusion step</strong>. Again that familiar philosophy: <strong>compose existing capabilities into a new feature</strong> rather than reinvent. The number of sub-searches is capped (<span class="mono">defaultMaxSearchRequest</span>) so one request can't fan out enough to crush the system. Once all sub-searches return, the Proxy holds <strong>N separately-ranked candidate lists</strong> — and the question becomes: <strong>how to combine these N into one?</strong></p>
+
+<div class="flow">
+  <div class="node"><div class="nt">HybridSearch</div><div class="nd">one request, N SubReqs</div></div>
+  <div class="arrow">fan out</div>
+  <div class="node hl"><div class="nt">sub-search: dense_vec</div><div class="nd">semantic nearest → ranked list A</div></div>
+  <div class="node hl"><div class="nt">sub-search: sparse_vec</div><div class="nd">keyword best → ranked list B</div></div>
+  <div class="arrow">fuse</div>
+  <div class="node"><div class="nt">ranker</div><div class="nd">A+B → final topK</div></div>
+</div>
+
+<h2>Fusion: RRF / weighted / model reranking</h2>
+<p>Combining N rankings <strong>into one</strong> is the soul of hybrid search; this step is <strong>rerank (fusion)</strong>. The hard part: <strong>scores from different sub-searches are often incomparable</strong> — a dense similarity (say 0.92) and a sparse BM25 score (say 14.7) are <strong>simply not the same unit</strong>, so adding them is meaningless. Milvus offers three kinds of ranker (config in <span class="inline">proxy/rerank_meta.go</span>, <span class="mono">parseRankParams</span>).</p>
+<p>First, <strong>RRF (Reciprocal Rank Fusion)</strong>: it <strong>ignores raw scores and looks only at rank</strong>. A document ranked r-th in some list earns <span class="mono">1/(k+r)</span> (k a smoothing constant, default 60); summing these "rank scores" across all lists gives the final score. The beauty: it <strong>naturally erases unit differences</strong> — ranks are always comparable. When unsure how to weigh the scores, RRF is a robust default. Second, <strong>WeightedRanker</strong>: when you <strong>clearly want one path to matter more</strong> (say "semantics 70%, keywords 30%"), give each path a weight and sum the <strong>normalized scores</strong>. Third, <strong>model reranking</strong>: hand the candidates to a dedicated rerank model (a cross-encoder, e.g. Cohere, TEI; code in <span class="inline">internal/util/function/rerank</span>) to re-score and reorder — highest quality, but it <strong>calls an external model and costs the most</strong>. The three side by side:</p>
+
+<table class="t">
+  <tr><th>Ranker</th><th>How it fuses</th><th>Best for</th></tr>
+  <tr><td class="mono"><strong>RRF</strong></td><td>by rank only: each list adds 1/(k+r) (k default 60), erasing unit differences</td><td>incomparable scores / robust default</td></tr>
+  <tr><td class="mono"><strong>WeightedRanker</strong></td><td>normalize scores, then weighted sum</td><td>when you want one path weighted higher</td></tr>
+  <tr><td class="mono"><strong>Model reranking</strong></td><td>hand candidates to a cross-encoder model to re-score</td><td>maximum relevance, external-call cost acceptable</td></tr>
+</table>
+
+<div class="cellgroup">
+  <div class="cg-cap"><b>RRF fusion example</b> (k=60): rank only, not raw scores — so different units still combine</div>
+  <div class="cells"><span class="lab">semantic list A</span><span class="cell hl">doc D ranked #1</span><span class="sep">→</span><span class="cell q">1/(60+1) = 0.0164</span></div>
+  <div class="cells"><span class="lab">keyword list B</span><span class="cell hl">doc D ranked #3</span><span class="sep">→</span><span class="cell q">1/(60+3) = 0.0159</span></div>
+  <div class="cells"><span class="lab">RRF total</span><span class="cell">0.0164 + 0.0159</span><span class="sep">=</span><span class="cell q">0.0323 ← D's final score</span></div>
+</div>
+
+<h2>Where it lands in the system</h2>
+<p>Place hybrid search back on the architecture map and you'll see it's <strong>mostly the Proxy's job</strong>, with a touch of core help. <strong>The Proxy is the conductor</strong>: it parses <span class="mono">SubReqs</span>, fans each sub-search out (through QueryNode delegators), gathers the N results, and <strong>performs fusion at the Proxy layer</strong> (RRF/weighted computed by Proxy; model reranking has the Proxy call the external model). That makes sense — fusion needs to <strong>see the global results of all paths</strong>, and the Proxy is exactly "<strong>the point where all results converge</strong>" (recall Lesson 29: the Proxy is the top tier of the three-level reduce).</p>
+<p>The core side has a related role: <span class="mono">RescoresNode</span> in <span class="inline">internal/core/src/exec/operator</span> — sibling to Lesson 36's <span class="mono">FilterBitsNode</span>, differing in that FilterBitsNode produces a "which rows pass" bitset, while RescoresNode takes an array of offsets, <strong>re-scores</strong> them, and produces valid results with new scores. It serves cases needing in-segment score adjustment (some rerank/groupby logic pushed down to segcore). But for most hybrid searches, <strong>fusion happens at the Proxy layer</strong>, since only there are all sub-search results held at once. To wrap up: hybrid search = <strong>multiple vector fields</strong> (Lesson 6) + <strong>parallel sub-searches</strong> (reusing Lessons 25–29) + <strong>one fusion step</strong> (RRF/weighted/model). It lets Milvus answer "<strong>both semantically similar and keyword-matching</strong>" — the most-used move in modern RAG, recommendation, and multimodal retrieval.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Why hybrid</strong>: a single embedding has blind spots — dense excels at semantics, sparse (BM25) at keywords, complementary; a collection can hold multiple vector fields, and hybrid search combines signals (also for multimodal/multi-view).</li>
+    <li><strong>Sub-searches</strong>: <span class="mono">HybridSearch</span> carries N <span class="mono">SubReqs</span>, each a complete plain vector search; the Proxy fans them out, getting a ranked list each (reusing Lessons 25–29, no new engine).</li>
+    <li><strong>Fusion (rerank)</strong>: scores across paths are incomparable, so a ranker is needed — <strong>RRF</strong> (rank-only 1/(k+r), erases units), <strong>WeightedRanker</strong> (normalize then weight), <strong>model reranking</strong> (cross-encoder, highest quality, highest cost).</li>
+    <li><strong>Where it lands</strong>: fusion is mostly done by the <strong>Proxy</strong> (the convergence point of all results, the top reduce tier of Lesson 29); the core's <span class="mono">RescoresNode</span> serves in-segment re-scoring. Common in RAG/recommendation/multimodal.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Why hybrid search instead of searching just one vector field?</div>
+  <ol class="opts">
+    <li>Because single-vector search is always wrong</li>
+    <li>A single embedding has blind spots: dense excels at semantics but misses exact keywords, sparse (BM25) hits keywords but ignores synonyms; hybrid search combines multiple vector fields and relevance signals (also for multimodal)</li>
+    <li>Because hybrid search uses less memory</li>
+    <li>Purely to make queries slower</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. Dense vectors (L4) excel at semantics — sofa≈couch — but miss exact keywords like 'XJ-200'; sparse/BM25 (L24) nails keyword hits but ignores synonyms. Their blind spots complement. A collection can define multiple vector fields (L6); hybrid search hits several at once, combining signals, also covering multimodal (image+text) and multi-view. It's a key step from toy to real workload (especially RAG, where questions carry both semantics and key terms).</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. How is a HybridSearch executed in the system?</div>
+  <ol class="opts">
+    <li>It's a brand-new engine independent of plain search</li>
+    <li>It carries N SubReqs, each a complete plain vector search; the Proxy fans them out in parallel (reusing the Lesson 25–29 path), gets a ranked list each, then fuses into the final topK with a ranker</li>
+    <li>It searches in one segment only, no fan-out</li>
+    <li>It concatenates all vector fields into one big vector and searches once</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. A HybridSearchRequest carries a set of SubReqs, each specifying the vector field, query vector, topK, filter. The Proxy (task_search.go), seeing len(SubReqs)>0, treats each as an independent search, reusing delegator fan-out, filter-then-search, and the three-level reduce (L29), each merging its own topK. So it builds no new engine — 'N plain searches run together + one fusion'. Sub-searches are capped (defaultMaxSearchRequest); each path usually fetches more candidates than the final topK, since fusion reshuffles ranks.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. The three rankers — RRF, WeightedRanker, model reranking — how does each work and when to use it?</div>
+  <ol class="opts">
+    <li>RRF requires calling an external model</li>
+    <li>All three just add the raw scores from each path</li>
+    <li>RRF uses rank only (1/(k+r), k default 60, erases units, robust default); WeightedRanker normalizes then weights (to weight a path higher); model reranking uses a cross-encoder (highest quality, highest cost, often only the top few)</li>
+    <li>Model reranking ignores the query, looking only at candidates</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. The hard part: scores across paths are incomparable (dense 0.92 vs BM25 14.7, different units). RRF looks only at rank: r-th in a list earns 1/(k+r), summed across lists, naturally erasing units — a robust default when unsure. WeightedRanker, when you want to favor a path, weights the normalized scores. Model reranking hands candidates to a cross-encoder (Cohere/TEI) for pairwise re-scoring — highest quality but a model run per candidate, high latency/cost, so often only the top few (e.g. top-50). A common 'coarse then fine': RRF fuses fast → model refines — spend costly compute where it counts (like the layered convergence of L5/L28).</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson says hybrid search is 'score several ways → fuse into one list', fused mainly at the Proxy. Please: (1) design a hybrid search for a RAG scenario (user asks 'the 2023 return policy for XJ-200'): which vector fields, and why is pure-semantic or pure-keyword insufficient? (2) explain why RRF can fuse 'incomparable scores', and why each sub-search often fetches more candidates than the final topK. (3) why is fusion done at the Proxy rather than a QueryNode? How does this echo Lesson 29's 'the top tier of the three-level reduce is the Proxy'?</li>
   </ul>
 </div>
 </div>

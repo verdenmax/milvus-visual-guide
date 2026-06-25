@@ -3034,6 +3034,67 @@ QUIZZES = {
             },
         ],
     },
+    "48-hybrid-search-rerank.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "为什么需要混合检索(HybridSearch)，而不是只用一个向量字段搜？",
+                    "en": "Why hybrid search instead of searching just one vector field?",
+                },
+                "opts": [
+                    {"zh": "单一 embedding 有盲区：稠密向量擅语义却不抓精确关键词，稀疏(BM25)擅关键词却不懂近义；混合检索用多个向量字段综合多种相关性信号(也用于多模态)", "en": "A single embedding has blind spots: dense excels at semantics but misses exact keywords, sparse (BM25) hits keywords but ignores synonyms; hybrid search combines multiple vector fields and relevance signals (also for multimodal)"},
+                    {"zh": "因为单向量检索结果总是错的", "en": "Because single-vector search is always wrong"},
+                    {"zh": "因为混合检索更省内存", "en": "Because hybrid search uses less memory"},
+                    {"zh": "纯粹为了让查询更慢", "en": "Purely to make queries slower"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "稠密向量(第4课)擅长语义——沙发≈长椅，但对“XJ-200”这种精确关键词不敏感；稀疏向量/BM25(第24课)擅长关键词精确命中，却不懂近义。两者盲区互补。一个集合可定义多个向量字段(第6课)，混合检索同时打到多个字段、综合多种信号，也覆盖多模态(图+文)、多视角。这是把检索从玩具推向真实业务(尤其 RAG：提问既含语义又含关键术语)的关键一步。",
+                    "en": "Dense vectors (L4) excel at semantics — sofa≈couch — but miss exact keywords like 'XJ-200'; sparse/BM25 (L24) nails keyword hits but ignores synonyms. Their blind spots complement. A collection can define multiple vector fields (L6); hybrid search hits several at once, combining signals, also covering multimodal (image+text) and multi-view. It's a key step from toy to real workload (especially RAG, where questions carry both semantics and key terms).",
+                },
+            },
+            {
+                "q": {
+                    "zh": "一次 HybridSearch 在系统里是怎么执行的？",
+                    "en": "How is a HybridSearch executed in the system?",
+                },
+                "opts": [
+                    {"zh": "它带 N 个 SubReqs，每个就是一次完整的普通向量检索；Proxy 把它们并行扇出(复用第25–29课查询链路)、各得一份 ranked 列表，再用 ranker 融合成最终 topK", "en": "It carries N SubReqs, each a complete plain vector search; the Proxy fans them out in parallel (reusing the Lesson 25–29 path), gets a ranked list each, then fuses into the final topK with a ranker"},
+                    {"zh": "它是一个全新的、独立于普通检索的引擎", "en": "It's a brand-new engine independent of plain search"},
+                    {"zh": "它把所有向量字段拼成一个大向量再搜一次", "en": "It concatenates all vector fields into one big vector and searches once"},
+                    {"zh": "它只在一个段里搜、不扇出", "en": "It searches in one segment only, no fan-out"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "HybridSearchRequest 带一组 SubReqs，每个指定搜哪个向量字段、用什么查询向量、topK、过滤。Proxy(task_search.go)见 len(SubReqs)>0 即知是 advanced 混合检索，把每路当独立搜索扇出，复用 delegator 扇段、filter-then-search、三层 reduce(第29课)，各自归并出一份 topK。所以它不另造引擎，而是“N 次普通检索并起来跑 + 一道融合”。子搜索数有上限(defaultMaxSearchRequest)；且每路通常要多取候选(比最终 topK 大)，因为融合会打乱名次。",
+                    "en": "A HybridSearchRequest carries a set of SubReqs, each specifying the vector field, query vector, topK, filter. The Proxy (task_search.go), seeing len(SubReqs)>0, treats each as an independent search, reusing delegator fan-out, filter-then-search, and the three-level reduce (L29), each merging its own topK. So it builds no new engine — 'N plain searches run together + one fusion'. Sub-searches are capped (defaultMaxSearchRequest); each path usually fetches more candidates than the final topK, since fusion reshuffles ranks.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "融合(rerank)的三类 ranker——RRF、WeightedRanker、模型重排——各自怎么工作、何时用？",
+                    "en": "The three rankers — RRF, WeightedRanker, model reranking — how does each work and when to use it?",
+                },
+                "opts": [
+                    {"zh": "RRF 只按名次(1/(k+r)，k默认60，抹平量纲，稳健默认)；WeightedRanker 归一化分数后加权(想给某路更高权重)；模型重排用 cross-encoder 精排(质量最高、成本最高，常只精排少量候选)", "en": "RRF uses rank only (1/(k+r), k default 60, erases units, robust default); WeightedRanker normalizes then weights (to weight a path higher); model reranking uses a cross-encoder (highest quality, highest cost, often only the top few)"},
+                    {"zh": "三者都直接把各路原始分数相加", "en": "All three just add the raw scores from each path"},
+                    {"zh": "RRF 需要调用外部模型", "en": "RRF requires calling an external model"},
+                    {"zh": "模型重排不看查询、只看候选", "en": "Model reranking ignores the query, looking only at candidates"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "难点是不同路分数不可比(稠密相似度 0.92 vs BM25 14.7 不是一个量纲)。RRF 干脆只看名次：某榜第 r 名得 1/(k+r)，跨榜相加，天然抹平量纲，不确定怎么权衡时的稳健默认。WeightedRanker 在你明确想偏向某路时，对归一化分数加权求和。模型重排把候选交 cross-encoder(Cohere/TEI 等)成对精看、重新打分，质量最高但要为每个候选跑模型、延迟成本高，故常只对前融合出的少量候选(如 top-50)精排。常见“先粗后精”：RRF 快融出候选 → 模型精排——把贵算力花在刀刃上(同第5/28课分层收敛)。",
+                    "en": "The hard part: scores across paths are incomparable (dense 0.92 vs BM25 14.7, different units). RRF looks only at rank: r-th in a list earns 1/(k+r), summed across lists, naturally erasing units — a robust default when unsure. WeightedRanker, when you want to favor a path, weights the normalized scores. Model reranking hands candidates to a cross-encoder (Cohere/TEI) for pairwise re-scoring — highest quality but a model run per candidate, high latency/cost, so often only the top few (e.g. top-50). A common 'coarse then fine': RRF fuses fast → model refines — spend costly compute where it counts (like the layered convergence of L5/L28).",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课说混合检索是“多路打分 → 融合成一榜”，且主要在 Proxy 这一层融合。请：(1) 为一个 RAG 问答场景(用户问“2023 年 XJ-200 的退货政策”)设计一个混合检索：用哪些向量字段、为什么纯语义或纯关键词都不够？(2) 解释 RRF 为什么能融合“不可比的分数”，并说明为何每路子搜索常要多取候选(比最终 topK 大)。(3) 为什么融合放在 Proxy 而不是某个 QueryNode？这与第 29 课“三层 reduce 的最顶层是 Proxy”有何呼应？",
+                "en": "This lesson says hybrid search is 'score several ways → fuse into one list', fused mainly at the Proxy. Please: (1) design a hybrid search for a RAG scenario (user asks 'the 2023 return policy for XJ-200'): which vector fields, and why is pure-semantic or pure-keyword insufficient? (2) explain why RRF can fuse 'incomparable scores', and why each sub-search often fetches more candidates than the final topK. (3) why is fusion done at the Proxy rather than a QueryNode? How does this echo Lesson 29's 'the top tier of the three-level reduce is the Proxy'?",
+            },
+        ],
+    },
 }
 
 

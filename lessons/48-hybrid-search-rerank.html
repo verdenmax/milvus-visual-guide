@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>48 · 混合检索与重排 / Hybrid search &amp; reranking - Milvus 图解教程</title>
+<meta name="description" content="第十一部分 · 进阶专题（选读）｜混合检索与重排 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="48 · 混合检索与重排 / Hybrid search &amp; reranking - Milvus 图解教程">
+<meta property="og:description" content="第十一部分 · 进阶专题（选读）｜混合检索与重排 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="48 · 混合检索与重排 / Hybrid search &amp; reranking - Milvus 图解教程">
+<meta name="twitter:description" content="第十一部分 · 进阶专题（选读）｜混合检索与重排 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.timeline .tl-row { display: flex; align-items: flex-start; gap: .6rem; padding: .12rem 0; }
+.timeline .tl-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: .45rem; }
+.timeline .tl-t { font-family: ui-monospace, monospace; font-weight: 700; color: var(--accent-ink); min-width: 2.4rem; font-size: .82rem; flex-shrink: 0; margin-top: .18rem; }
+.timeline .tl-c { font-size: .9rem; color: var(--muted); }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第十一部分 · 进阶专题（选读）</span><span class="lang-en">Part 11 · Advanced topics (optional)</span></span>
+    <span class="pill">48 / 48</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:100%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第十一部分 · 进阶专题（选读）</span><span class="lang-en">Part 11 · Advanced topics (optional)</span></div>
+    <h1><span class="lang-zh">混合检索与重排</span><span class="lang-en">Hybrid search &amp; reranking</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+前面讲的检索，大多是"<strong>一个查询向量、在一个向量字段里找近邻</strong>"。但真实业务里，一次好的检索往往要<strong>综合多个信号</strong>：既看<strong>语义相似</strong>（稠密向量），又看<strong>关键词命中</strong>（稀疏向量 / BM25，第 24 课）；或者同时比对<strong>图像</strong>与<strong>文本</strong>两种 embedding。这就是<strong>混合检索（HybridSearch）</strong>：一个集合可以有<strong>多个向量字段</strong>，一次请求并行跑<strong>多路子搜索</strong>，再把多份结果<strong>融合（rerank）</strong>成一份最终排名。这一课看它怎么扇出、又怎么融合。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 类比</div>
+  把混合检索想成<strong>招聘时综合多个维度选人</strong>。同一批候选人，HR 会从几个角度各排一份榜：按"<strong>技能匹配</strong>"排一榜、按"<strong>过往经验</strong>"排一榜、按"<strong>文化契合</strong>"排一榜。每份榜单都有道理，但你最终要的是<strong>一份总排名</strong>。
+  怎么把几份榜单<strong>融合</strong>成一份？有三种办法：只看每人在各榜的<strong>名次</strong>、名次靠前就加分（<strong>RRF</strong>）；给各榜不同<strong>权重</strong>、按加权分合并（<strong>加权融合</strong>）；或者请一位<strong>资深专家</strong>把入围者重新仔细面一遍、给出权威排序（<strong>模型重排</strong>）。混合检索做的，正是"<strong>多路打分 → 融合成一榜</strong>"这件事。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观视角</div>
+  一句话：<strong>HybridSearch 在一个请求里带多路子搜索(<span class="mono">SubReqs</span>，各搜一个向量字段)，Proxy 扇出、各自得到一份 ranked 结果，再用一个 <span class="mono">ranker</span> 融合成最终 topK；ranker 有三类——RRF(按名次)、WeightedRanker(按加权分)、模型重排(<span class="inline">internal/util/function/rerank</span>，调外部 cross-encoder)</strong>。解析在 <span class="inline">proxy/task_search.go</span> 的 <span class="mono">parseRankParams</span> / <span class="inline">rerank_meta.go</span>。
+</div>
+
+<h2>为什么需要混合检索</h2>
+<p>单一向量检索有个天生的局限：<strong>一种 embedding 只擅长抓一类信号</strong>。<strong>稠密向量</strong>（dense，第 4 课）擅长<strong>语义</strong>——"沙发"和"长椅"能匹配上，哪怕字面不同；但它对<strong>精确关键词</strong>不敏感——你搜一个具体型号"XJ-200"，语义向量可能反而抓不准。<strong>稀疏向量</strong>（sparse / BM25，第 24 课）正相反：它擅长<strong>关键词精确命中</strong>，却不懂语义近义。<strong>两者各有盲区，恰好互补</strong>。</p>
+
+<div class="cols">
+  <div class="col"><h4>稠密向量（dense）</h4><p>擅长<strong>语义</strong>：沙发≈长椅、医生≈大夫，字面不同也能匹配。盲区：对<strong>精确关键词/型号</strong>(XJ-200)不敏感。</p></div>
+  <div class="col"><h4>稀疏向量（sparse / BM25）</h4><p>擅长<strong>关键词精确命中</strong>：搜什么词、命中什么词。盲区：不懂<strong>近义/语义</strong>，换个说法就漏。</p></div>
+</div>
+<p>于是一个很自然的想法冒出来：<strong>能不能两种都用，取长补短？</strong>这正是混合检索的动机。为支持它，Milvus 允许一个集合<strong>定义多个向量字段</strong>（第 6 课）——比如一个 <span class="mono">dense_vec</span> 存语义 embedding、一个 <span class="mono">sparse_vec</span> 存关键词权重。检索时，同一个查询<strong>同时打到这两个字段</strong>：稠密那路找语义最近的、稀疏那路找关键词最配的，最后<strong>融合</strong>。除了"语义+关键词"，混合检索还覆盖<strong>多模态</strong>（图像向量 + 文本向量一起搜）、<strong>多视角</strong>（同一对象的不同 embedding 模型）等场景。一句话：<strong>当"像不像"不能用单一标准衡量时，就把多个标准并起来、再融合</strong>——这是把向量检索从"玩具 demo"推向"真实业务"的关键一步。</p>
+
+<p>这里值得点破一个 RAG（检索增强生成）时代特别常见的痛点，它正是混合检索大放异彩的舞台。当你用 LLM 做问答、给它喂检索来的上下文时，用户的提问<strong>既有语义、又常含关键术语</strong>：比如"<strong>2023 年 XJ-200 型号的退货政策</strong>"——"退货政策"是语义、"XJ-200""2023"是必须精确命中的关键词。<strong>纯语义检索可能召回一堆"退货政策"相关但型号不对的文档；纯关键词检索又可能因为换了个说法而错过最相关的那篇。</strong>只有把两路并起来、再融合，才能既<strong>抓住语义、又锁定关键词</strong>，把真正相关的文档顶到前面。这也是为什么近两年几乎所有正经的 RAG / 企业搜索方案，都把"<strong>dense + sparse 混合检索 + rerank</strong>"当成标配。理解了混合检索，你就握住了把 Milvus 用在生产级检索增强里的那把钥匙——它不再是"给个向量找近邻"的玩具，而是能<strong>综合多种相关性信号</strong>的真实检索引擎。</p>
+
+<h2>一次 HybridSearch：多路子搜索</h2>
+<p>机制上，一次混合检索<strong>不是一个搜索，而是一束搜索</strong>。客户端发来的 <span class="mono">HybridSearchRequest</span> 里带着一组<strong>子请求（<span class="mono">SubReqs</span>）</strong>——每个子请求就是一次<strong>普通的向量搜索</strong>：指定<strong>搜哪个向量字段、用什么查询向量、topK 多少、带什么过滤</strong>。Proxy 侧（<span class="inline">internal/proxy/task_search.go</span>）一看 <span class="mono">len(SubReqs) &gt; 0</span>，就知道这是"<strong>进阶（advanced）</strong>"的混合检索，于是把每个子请求<strong>当成一次独立搜索扇出去</strong>（复用第 25–29 课那整套查询链路），并行地各自跑完、各自<strong>归并出一份自己的 topK</strong>。</p>
+<p>这里有个关键认知：<strong>每一路子搜索，本身就是一次完整的、你已经学过的向量检索</strong>。它一样经 delegator 扇到各段、一样 filter-then-search、一样三层 reduce（第 29 课）。所以混合检索<strong>没有另造一套检索引擎</strong>，而是<strong>把 N 次普通检索并起来跑、再加一道融合</strong>。这又是那个熟悉的设计哲学：<strong>用已有的、可组合的能力拼出新功能</strong>，而不是重起炉灶。子搜索的数量有上限（<span class="mono">defaultMaxSearchRequest</span>），免得一个请求扇出太多路把系统压垮。等所有子搜索都返回，Proxy 手里就有了 <strong>N 份各自排好的候选列表</strong>——接下来的问题是：<strong>怎么把这 N 份合成一份？</strong></p>
+
+<p>顺带说一个容易忽略、却很影响效果的细节：<strong>每一路子搜索通常要多取一些候选</strong>。直觉上你可能觉得"我最终只要 top-10，那每路取 top-10 不就够了？"其实不然——因为融合会<strong>打乱名次</strong>：一个在语义榜排第 15、但在关键词榜排第 2 的文档，融合后很可能挤进最终 top-10；可如果每路只取了 top-10，它在语义那路<strong>压根没被取到</strong>，融合时就<strong>永远丢了</strong>。所以实践中，每路子搜索往往要取一个<strong>比最终 topK 更大的候选池</strong>（比如最终要 10、每路先取 50），给融合留足"翻盘"的余地。这是混合检索调参里最常踩的坑之一，也再次说明：<strong>融合不是简单地把几个 top-K 拼起来，而是要在更大的候选集上重新排序</strong>。理解这一点，你在用 Milvus 做混合检索时就能避开"召回莫名偏低"的暗坑。</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">HybridSearch</div><div class="nd">一个请求，N 个 SubReqs</div></div>
+  <div class="arrow">扇出</div>
+  <div class="node hl"><div class="nt">子搜索：dense_vec</div><div class="nd">语义最近 → ranked 列表 A</div></div>
+  <div class="node hl"><div class="nt">子搜索：sparse_vec</div><div class="nd">关键词最配 → ranked 列表 B</div></div>
+  <div class="arrow">融合</div>
+  <div class="node"><div class="nt">ranker</div><div class="nd">A+B → 最终 topK</div></div>
+</div>
+
+<h2>融合：RRF / 加权 / 模型重排</h2>
+<p>把 N 份排名<strong>合成一份</strong>，是混合检索的灵魂，这一步叫 <strong>rerank（重排 / 融合）</strong>。难点在于：<strong>不同子搜索的"分数"往往不可比</strong>——稠密向量的相似度（比如 0.92）和稀疏向量的 BM25 分（比如 14.7）<strong>根本不是一个量纲</strong>，直接相加毫无意义。Milvus 提供三类 ranker 来解决这件事（配置见 <span class="inline">proxy/rerank_meta.go</span>、<span class="mono">parseRankParams</span>）。</p>
+<p>第一类 <strong>RRF（Reciprocal Rank Fusion，倒数排名融合）</strong>：它<strong>干脆不看原始分数，只看名次</strong>。一个文档在某份榜单里排第 r 名，就得 <span class="mono">1/(k+r)</span> 分（k 是个平滑常数，默认 60），把它在所有榜单里的这种"名次分"加起来，就是最终分。妙在它<strong>天然抹平了量纲差异</strong>——名次永远是可比的。当你不确定各路分数该怎么权衡时，RRF 是个稳健的默认。第二类 <strong>WeightedRanker（加权融合）</strong>：当你<strong>明确想让某一路更重要</strong>时（比如"语义占七成、关键词占三成"），就给各路一个权重，把<strong>归一化后的分数</strong>加权求和。第三类 <strong>模型重排（model reranker）</strong>：把各路的候选<strong>交给一个专门的重排模型</strong>（cross-encoder，如 Cohere、TEI 等，代码在 <span class="inline">internal/util/function/rerank</span>）重新打分排序——质量最高，但要<strong>调用外部模型、成本也最高</strong>。下面把三者摆清。</p>
+
+<p>怎么在这三者间选？这又是一道熟悉的<strong>取舍题</strong>。RRF <strong>最省心、最稳健</strong>——不用调参、不怕量纲、对"我也说不清两路谁更重要"的场景最友好，所以常被设成默认。WeightedRanker <strong>给你控制权</strong>——当你凭业务经验知道"这个场景语义更重要"时，能手动压一个权重上去，代价是要自己调那个比例。模型重排<strong>质量天花板最高</strong>——cross-encoder 会把"查询和每个候选"成对地细看一遍，比单纯的分数融合精准得多，但它要<strong>为每个候选都跑一次模型推理</strong>，延迟和成本都显著上去，所以通常只对前融合出的<strong>少量候选</strong>(比如 top-50)做精排。一个常见的生产组合是"<strong>先粗后精</strong>"：先用 RRF 把多路快速融合出一批候选，再用模型重排对这批候选做最终精排——<strong>用便宜的方法过滤大头、用昂贵的方法雕琢尖端</strong>。这种"两级排序"的思路，和第 5 课 ANN"先粗筛桶、再精算"、第 28 课"先过滤、再检索"是同一种<strong>分层收敛、把贵的算力花在刀刃上</strong>的智慧。</p>
+
+<table class="t">
+  <tr><th>Ranker</th><th>怎么融合</th><th>适用</th></tr>
+  <tr><td class="mono"><strong>RRF</strong></td><td>只按名次：每榜得 1/(k+r) 分相加(k 默认 60)，抹平量纲差异</td><td>各路分数不可比 / 稳健默认</td></tr>
+  <tr><td class="mono"><strong>WeightedRanker</strong></td><td>归一化分数后加权求和</td><td>明确想给某一路更高权重</td></tr>
+  <tr><td class="mono"><strong>模型重排</strong></td><td>把候选交 cross-encoder 模型重新打分</td><td>追求最高相关性、可接受外部调用成本</td></tr>
+</table>
+
+<div class="cellgroup">
+  <div class="cg-cap"><b>RRF 融合示例</b>（k=60）：只看名次、不看原始分，于是不同量纲也能合并</div>
+  <div class="cells"><span class="lab">语义榜 A</span><span class="cell hl">文档 D 第 1 名</span><span class="sep">→</span><span class="cell q">1/(60+1) = 0.0164</span></div>
+  <div class="cells"><span class="lab">关键词榜 B</span><span class="cell hl">文档 D 第 3 名</span><span class="sep">→</span><span class="cell q">1/(60+3) = 0.0159</span></div>
+  <div class="cells"><span class="lab">RRF 合计</span><span class="cell">0.0164 + 0.0159</span><span class="sep">=</span><span class="cell q">0.0323 ← D 的最终分</span></div>
+</div>
+
+<h2>它落在系统的哪一层</h2>
+<p>把混合检索放回整张架构图，你会发现它<strong>主要是 Proxy 的活</strong>，外加内核的一点配合。<strong>Proxy 是总指挥</strong>：它解析 <span class="mono">SubReqs</span>、把每路子搜索扇出去（经各 QueryNode 的 delegator）、收齐 N 份结果、再<strong>在 Proxy 这一层执行融合</strong>（RRF/加权由 Proxy 算，模型重排则由 Proxy 去调外部模型）。这很合理——融合需要<strong>看到所有路的全局结果</strong>，而 Proxy 正是那个"<strong>所有结果最终汇聚的点</strong>"（回忆第 29 课：Proxy 本就是三层 reduce 的最顶层）。</p>
+<p>内核侧也有一个相关角色：<span class="inline">internal/core/src/exec/operator</span> 里的 <span class="mono">RescoresNode</span>——它和第 36 课的 <span class="mono">FilterBitsNode</span> 是兄弟，区别在于：FilterBitsNode 产出"<strong>哪些行通过</strong>"的 bitset，而 RescoresNode 接收一批 offset、对它们<strong>重新打分</strong>、产出带新分数的有效结果。它服务于在段内就需要"调整分数"的场景（比如某些 rerank/groupby 逻辑下推到 segcore）。但对大多数混合检索而言，<strong>融合发生在 Proxy 这一层</strong>，因为只有这里才同时握着所有子搜索的结果。把这一课收一收：混合检索 = <strong>多个向量字段</strong>（第 6 课）+ <strong>多路并行子搜索</strong>（复用第 25–29 课）+ <strong>一道融合</strong>（RRF/加权/模型）。它让 Milvus 能回答"<strong>既要语义像、又要关键词配</strong>"这类真实而复杂的检索诉求——这正是现代 RAG、推荐、多模态检索里最常用的一招。</p>
+
+<p>最后留一个练习给你的直觉：下次设计检索时，先问自己一句——"<strong>我判断'相关'，真的只靠一种信号吗？</strong>"如果答案是"还要看关键词""还要看图片""还要看时效"，那你大概率就需要混合检索。把"相关性"拆成几路可独立检索的信号、各自召回、再用合适的 ranker 融合，是一种<strong>既灵活又强大</strong>的范式。它的代价是多了"<strong>选哪些字段、每路取多少、用哪种 ranker、怎么调权重</strong>"这些要调的旋钮；但回报是，你的检索质量能<strong>逼近真实业务对'相关'的复杂定义</strong>，而不再被单一向量的盲区所限。这，就是从"会用向量检索"到"会用好向量检索"的那道分水岭。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>为何混合</strong>：单一 embedding 有盲区——稠密擅语义、稀疏(BM25)擅关键词，互补；一个集合可有多个向量字段，混合检索综合多信号(也用于多模态/多视角)。</li>
+    <li><strong>多路子搜索</strong>：<span class="mono">HybridSearch</span> 带 N 个 <span class="mono">SubReqs</span>，每个就是一次完整的普通向量检索；Proxy 扇出、各得一份 ranked 列表(复用第 25–29 课，不另造引擎)。</li>
+    <li><strong>融合(rerank)</strong>：不同路分数不可比，需 ranker——<strong>RRF</strong>(只按名次 1/(k+r)，抹平量纲)、<strong>WeightedRanker</strong>(归一化后加权)、<strong>模型重排</strong>(cross-encoder，质量最高、成本最高)。</li>
+    <li><strong>落在哪</strong>：融合主要由 <strong>Proxy</strong> 执行(它是所有结果的汇聚点，第 29 课最顶层 reduce)；内核的 <span class="mono">RescoresNode</span> 服务于段内重打分。常用于 RAG/推荐/多模态。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. 为什么需要混合检索(HybridSearch)，而不是只用一个向量字段搜？</div>
+  <ol class="opts">
+    <li>因为单向量检索结果总是错的</li>
+    <li>单一 embedding 有盲区：稠密向量擅语义却不抓精确关键词，稀疏(BM25)擅关键词却不懂近义；混合检索用多个向量字段综合多种相关性信号(也用于多模态)</li>
+    <li>因为混合检索更省内存</li>
+    <li>纯粹为了让查询更慢</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。稠密向量(第4课)擅长语义——沙发≈长椅，但对“XJ-200”这种精确关键词不敏感；稀疏向量/BM25(第24课)擅长关键词精确命中，却不懂近义。两者盲区互补。一个集合可定义多个向量字段(第6课)，混合检索同时打到多个字段、综合多种信号，也覆盖多模态(图+文)、多视角。这是把检索从玩具推向真实业务(尤其 RAG：提问既含语义又含关键术语)的关键一步。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. 一次 HybridSearch 在系统里是怎么执行的？</div>
+  <ol class="opts">
+    <li>它是一个全新的、独立于普通检索的引擎</li>
+    <li>它带 N 个 SubReqs，每个就是一次完整的普通向量检索；Proxy 把它们并行扇出(复用第25–29课查询链路)、各得一份 ranked 列表，再用 ranker 融合成最终 topK</li>
+    <li>它只在一个段里搜、不扇出</li>
+    <li>它把所有向量字段拼成一个大向量再搜一次</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。HybridSearchRequest 带一组 SubReqs，每个指定搜哪个向量字段、用什么查询向量、topK、过滤。Proxy(task_search.go)见 len(SubReqs)>0 即知是 advanced 混合检索，把每路当独立搜索扇出，复用 delegator 扇段、filter-then-search、三层 reduce(第29课)，各自归并出一份 topK。所以它不另造引擎，而是“N 次普通检索并起来跑 + 一道融合”。子搜索数有上限(defaultMaxSearchRequest)；且每路通常要多取候选(比最终 topK 大)，因为融合会打乱名次。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 融合(rerank)的三类 ranker——RRF、WeightedRanker、模型重排——各自怎么工作、何时用？</div>
+  <ol class="opts">
+    <li>RRF 需要调用外部模型</li>
+    <li>三者都直接把各路原始分数相加</li>
+    <li>RRF 只按名次(1/(k+r)，k默认60，抹平量纲，稳健默认)；WeightedRanker 归一化分数后加权(想给某路更高权重)；模型重排用 cross-encoder 精排(质量最高、成本最高，常只精排少量候选)</li>
+    <li>模型重排不看查询、只看候选</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：C</strong>。难点是不同路分数不可比(稠密相似度 0.92 vs BM25 14.7 不是一个量纲)。RRF 干脆只看名次：某榜第 r 名得 1/(k+r)，跨榜相加，天然抹平量纲，不确定怎么权衡时的稳健默认。WeightedRanker 在你明确想偏向某路时，对归一化分数加权求和。模型重排把候选交 cross-encoder(Cohere/TEI 等)成对精看、重新打分，质量最高但要为每个候选跑模型、延迟成本高，故常只对前融合出的少量候选(如 top-50)精排。常见“先粗后精”：RRF 快融出候选 → 模型精排——把贵算力花在刀刃上(同第5/28课分层收敛)。</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>本课说混合检索是“多路打分 → 融合成一榜”，且主要在 Proxy 这一层融合。请：(1) 为一个 RAG 问答场景(用户问“2023 年 XJ-200 的退货政策”)设计一个混合检索：用哪些向量字段、为什么纯语义或纯关键词都不够？(2) 解释 RRF 为什么能融合“不可比的分数”，并说明为何每路子搜索常要多取候选(比最终 topK 大)。(3) 为什么融合放在 Proxy 而不是某个 QueryNode？这与第 29 课“三层 reduce 的最顶层是 Proxy”有何呼应？</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+The searches so far were mostly "<strong>one query vector, find neighbors in one vector field</strong>". But real workloads often need to <strong>combine multiple signals</strong>: both <strong>semantic similarity</strong> (dense vectors) and <strong>keyword hits</strong> (sparse vectors / BM25, Lesson 24); or matching both an <strong>image</strong> and a <strong>text</strong> embedding. That's <strong>hybrid search</strong>: a collection can have <strong>multiple vector fields</strong>, one request runs several <strong>sub-searches</strong> in parallel, then <strong>fuses (reranks)</strong> the result lists into one final ranking. This lesson covers how it fans out and how it fuses.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of hybrid search as <strong>hiring by combining multiple dimensions</strong>. For the same candidate pool, HR ranks them several ways: by "<strong>skill match</strong>", by "<strong>past experience</strong>", by "<strong>culture fit</strong>". Each ranking has merit, but you ultimately want <strong>one combined ranking</strong>.
+  How to <strong>fuse</strong> several rankings into one? Three ways: look only at each person's <strong>rank</strong> in each list and reward high ranks (<strong>RRF</strong>); give each list a <strong>weight</strong> and combine weighted scores (<strong>weighted fusion</strong>); or have a <strong>senior expert</strong> re-interview the shortlist and give an authoritative order (<strong>model reranking</strong>). Hybrid search does exactly this "<strong>score several ways → fuse into one list</strong>".
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>HybridSearch carries several sub-searches in one request (<span class="mono">SubReqs</span>, each over a vector field); the Proxy fans them out, gets a ranked list each, then fuses into the final topK with a <span class="mono">ranker</span> — three kinds: RRF (by rank), WeightedRanker (by weighted score), and model reranking (<span class="inline">internal/util/function/rerank</span>, calling an external cross-encoder)</strong>. Parsing is in <span class="mono">parseRankParams</span> (<span class="inline">proxy/task_search.go</span>) / <span class="inline">rerank_meta.go</span>.
+</div>
+
+<h2>Why hybrid search</h2>
+<p>Single-vector search has an innate limit: <strong>one embedding is only good at capturing one kind of signal</strong>. <strong>Dense vectors</strong> (Lesson 4) excel at <strong>semantics</strong> — "sofa" matches "couch" even with different spelling; but they're insensitive to <strong>exact keywords</strong> — search a specific model "XJ-200" and a semantic vector may miss. <strong>Sparse vectors</strong> (sparse / BM25, Lesson 24) are the opposite: great at <strong>exact keyword hits</strong>, oblivious to semantic synonyms. <strong>Each has a blind spot, and they complement each other.</strong></p>
+
+<div class="cols">
+  <div class="col"><h4>Dense vectors</h4><p>great at <strong>semantics</strong>: sofa≈couch, doctor≈physician — matches despite different wording. Blind spot: insensitive to <strong>exact keywords/model numbers</strong> (XJ-200).</p></div>
+  <div class="col"><h4>Sparse vectors (sparse / BM25)</h4><p>great at <strong>exact keyword hits</strong>: search a word, hit that word. Blind spot: oblivious to <strong>synonyms/semantics</strong> — reword it and it misses.</p></div>
+</div>
+<p>So a natural idea arises: <strong>can we use both and cover each other's weaknesses?</strong> That's the motivation for hybrid search. To support it, Milvus lets a collection <strong>define multiple vector fields</strong> (Lesson 6) — say a <span class="mono">dense_vec</span> for semantic embeddings and a <span class="mono">sparse_vec</span> for keyword weights. At search time the same query <strong>hits both fields</strong>: the dense path finds the semantically nearest, the sparse path the keyword-best, and the results are <strong>fused</strong>. Beyond "semantic + keyword", hybrid search also covers <strong>multimodal</strong> (image + text vectors together), <strong>multi-view</strong> (different embedding models of the same object), and more. In a line: <strong>when "similar" can't be measured by a single yardstick, combine several and fuse</strong> — a key step from "toy demo" to "real workload".</p>
+
+<h2>One HybridSearch: several sub-searches</h2>
+<p>Mechanically, a hybrid search is <strong>not one search but a bundle</strong>. The client's <span class="mono">HybridSearchRequest</span> carries a set of <strong>sub-requests (<span class="mono">SubReqs</span>)</strong> — each a <strong>plain vector search</strong>: which vector field, which query vector, what topK, what filter. The Proxy side (<span class="inline">internal/proxy/task_search.go</span>), seeing <span class="mono">len(SubReqs) &gt; 0</span>, knows this is an "<strong>advanced</strong>" hybrid search, so it <strong>fans each sub-request out as an independent search</strong> (reusing the whole Lesson 25–29 query path), runs them in parallel, each <strong>merging its own topK</strong>.</p>
+<p>A key realization: <strong>each sub-search is itself a complete vector search you've already learned</strong>. It fans through delegators to segments, does filter-then-search, does the three-level reduce (Lesson 29). So hybrid search <strong>builds no new search engine</strong> — it <strong>runs N plain searches together, then adds a fusion step</strong>. Again that familiar philosophy: <strong>compose existing capabilities into a new feature</strong> rather than reinvent. The number of sub-searches is capped (<span class="mono">defaultMaxSearchRequest</span>) so one request can't fan out enough to crush the system. Once all sub-searches return, the Proxy holds <strong>N separately-ranked candidate lists</strong> — and the question becomes: <strong>how to combine these N into one?</strong></p>
+
+<div class="flow">
+  <div class="node"><div class="nt">HybridSearch</div><div class="nd">one request, N SubReqs</div></div>
+  <div class="arrow">fan out</div>
+  <div class="node hl"><div class="nt">sub-search: dense_vec</div><div class="nd">semantic nearest → ranked list A</div></div>
+  <div class="node hl"><div class="nt">sub-search: sparse_vec</div><div class="nd">keyword best → ranked list B</div></div>
+  <div class="arrow">fuse</div>
+  <div class="node"><div class="nt">ranker</div><div class="nd">A+B → final topK</div></div>
+</div>
+
+<h2>Fusion: RRF / weighted / model reranking</h2>
+<p>Combining N rankings <strong>into one</strong> is the soul of hybrid search; this step is <strong>rerank (fusion)</strong>. The hard part: <strong>scores from different sub-searches are often incomparable</strong> — a dense similarity (say 0.92) and a sparse BM25 score (say 14.7) are <strong>simply not the same unit</strong>, so adding them is meaningless. Milvus offers three kinds of ranker (config in <span class="inline">proxy/rerank_meta.go</span>, <span class="mono">parseRankParams</span>).</p>
+<p>First, <strong>RRF (Reciprocal Rank Fusion)</strong>: it <strong>ignores raw scores and looks only at rank</strong>. A document ranked r-th in some list earns <span class="mono">1/(k+r)</span> (k a smoothing constant, default 60); summing these "rank scores" across all lists gives the final score. The beauty: it <strong>naturally erases unit differences</strong> — ranks are always comparable. When unsure how to weigh the scores, RRF is a robust default. Second, <strong>WeightedRanker</strong>: when you <strong>clearly want one path to matter more</strong> (say "semantics 70%, keywords 30%"), give each path a weight and sum the <strong>normalized scores</strong>. Third, <strong>model reranking</strong>: hand the candidates to a dedicated rerank model (a cross-encoder, e.g. Cohere, TEI; code in <span class="inline">internal/util/function/rerank</span>) to re-score and reorder — highest quality, but it <strong>calls an external model and costs the most</strong>. The three side by side:</p>
+
+<table class="t">
+  <tr><th>Ranker</th><th>How it fuses</th><th>Best for</th></tr>
+  <tr><td class="mono"><strong>RRF</strong></td><td>by rank only: each list adds 1/(k+r) (k default 60), erasing unit differences</td><td>incomparable scores / robust default</td></tr>
+  <tr><td class="mono"><strong>WeightedRanker</strong></td><td>normalize scores, then weighted sum</td><td>when you want one path weighted higher</td></tr>
+  <tr><td class="mono"><strong>Model reranking</strong></td><td>hand candidates to a cross-encoder model to re-score</td><td>maximum relevance, external-call cost acceptable</td></tr>
+</table>
+
+<div class="cellgroup">
+  <div class="cg-cap"><b>RRF fusion example</b> (k=60): rank only, not raw scores — so different units still combine</div>
+  <div class="cells"><span class="lab">semantic list A</span><span class="cell hl">doc D ranked #1</span><span class="sep">→</span><span class="cell q">1/(60+1) = 0.0164</span></div>
+  <div class="cells"><span class="lab">keyword list B</span><span class="cell hl">doc D ranked #3</span><span class="sep">→</span><span class="cell q">1/(60+3) = 0.0159</span></div>
+  <div class="cells"><span class="lab">RRF total</span><span class="cell">0.0164 + 0.0159</span><span class="sep">=</span><span class="cell q">0.0323 ← D's final score</span></div>
+</div>
+
+<h2>Where it lands in the system</h2>
+<p>Place hybrid search back on the architecture map and you'll see it's <strong>mostly the Proxy's job</strong>, with a touch of core help. <strong>The Proxy is the conductor</strong>: it parses <span class="mono">SubReqs</span>, fans each sub-search out (through QueryNode delegators), gathers the N results, and <strong>performs fusion at the Proxy layer</strong> (RRF/weighted computed by Proxy; model reranking has the Proxy call the external model). That makes sense — fusion needs to <strong>see the global results of all paths</strong>, and the Proxy is exactly "<strong>the point where all results converge</strong>" (recall Lesson 29: the Proxy is the top tier of the three-level reduce).</p>
+<p>The core side has a related role: <span class="mono">RescoresNode</span> in <span class="inline">internal/core/src/exec/operator</span> — sibling to Lesson 36's <span class="mono">FilterBitsNode</span>, differing in that FilterBitsNode produces a "which rows pass" bitset, while RescoresNode takes an array of offsets, <strong>re-scores</strong> them, and produces valid results with new scores. It serves cases needing in-segment score adjustment (some rerank/groupby logic pushed down to segcore). But for most hybrid searches, <strong>fusion happens at the Proxy layer</strong>, since only there are all sub-search results held at once. To wrap up: hybrid search = <strong>multiple vector fields</strong> (Lesson 6) + <strong>parallel sub-searches</strong> (reusing Lessons 25–29) + <strong>one fusion step</strong> (RRF/weighted/model). It lets Milvus answer "<strong>both semantically similar and keyword-matching</strong>" — the most-used move in modern RAG, recommendation, and multimodal retrieval.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Why hybrid</strong>: a single embedding has blind spots — dense excels at semantics, sparse (BM25) at keywords, complementary; a collection can hold multiple vector fields, and hybrid search combines signals (also for multimodal/multi-view).</li>
+    <li><strong>Sub-searches</strong>: <span class="mono">HybridSearch</span> carries N <span class="mono">SubReqs</span>, each a complete plain vector search; the Proxy fans them out, getting a ranked list each (reusing Lessons 25–29, no new engine).</li>
+    <li><strong>Fusion (rerank)</strong>: scores across paths are incomparable, so a ranker is needed — <strong>RRF</strong> (rank-only 1/(k+r), erases units), <strong>WeightedRanker</strong> (normalize then weight), <strong>model reranking</strong> (cross-encoder, highest quality, highest cost).</li>
+    <li><strong>Where it lands</strong>: fusion is mostly done by the <strong>Proxy</strong> (the convergence point of all results, the top reduce tier of Lesson 29); the core's <span class="mono">RescoresNode</span> serves in-segment re-scoring. Common in RAG/recommendation/multimodal.</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Why hybrid search instead of searching just one vector field?</div>
+  <ol class="opts">
+    <li>Because single-vector search is always wrong</li>
+    <li>A single embedding has blind spots: dense excels at semantics but misses exact keywords, sparse (BM25) hits keywords but ignores synonyms; hybrid search combines multiple vector fields and relevance signals (also for multimodal)</li>
+    <li>Because hybrid search uses less memory</li>
+    <li>Purely to make queries slower</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. Dense vectors (L4) excel at semantics — sofa≈couch — but miss exact keywords like 'XJ-200'; sparse/BM25 (L24) nails keyword hits but ignores synonyms. Their blind spots complement. A collection can define multiple vector fields (L6); hybrid search hits several at once, combining signals, also covering multimodal (image+text) and multi-view. It's a key step from toy to real workload (especially RAG, where questions carry both semantics and key terms).</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. How is a HybridSearch executed in the system?</div>
+  <ol class="opts">
+    <li>It's a brand-new engine independent of plain search</li>
+    <li>It carries N SubReqs, each a complete plain vector search; the Proxy fans them out in parallel (reusing the Lesson 25–29 path), gets a ranked list each, then fuses into the final topK with a ranker</li>
+    <li>It searches in one segment only, no fan-out</li>
+    <li>It concatenates all vector fields into one big vector and searches once</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. A HybridSearchRequest carries a set of SubReqs, each specifying the vector field, query vector, topK, filter. The Proxy (task_search.go), seeing len(SubReqs)>0, treats each as an independent search, reusing delegator fan-out, filter-then-search, and the three-level reduce (L29), each merging its own topK. So it builds no new engine — 'N plain searches run together + one fusion'. Sub-searches are capped (defaultMaxSearchRequest); each path usually fetches more candidates than the final topK, since fusion reshuffles ranks.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. The three rankers — RRF, WeightedRanker, model reranking — how does each work and when to use it?</div>
+  <ol class="opts">
+    <li>RRF requires calling an external model</li>
+    <li>All three just add the raw scores from each path</li>
+    <li>RRF uses rank only (1/(k+r), k default 60, erases units, robust default); WeightedRanker normalizes then weights (to weight a path higher); model reranking uses a cross-encoder (highest quality, highest cost, often only the top few)</li>
+    <li>Model reranking ignores the query, looking only at candidates</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. The hard part: scores across paths are incomparable (dense 0.92 vs BM25 14.7, different units). RRF looks only at rank: r-th in a list earns 1/(k+r), summed across lists, naturally erasing units — a robust default when unsure. WeightedRanker, when you want to favor a path, weights the normalized scores. Model reranking hands candidates to a cross-encoder (Cohere/TEI) for pairwise re-scoring — highest quality but a model run per candidate, high latency/cost, so often only the top few (e.g. top-50). A common 'coarse then fine': RRF fuses fast → model refines — spend costly compute where it counts (like the layered convergence of L5/L28).</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson says hybrid search is 'score several ways → fuse into one list', fused mainly at the Proxy. Please: (1) design a hybrid search for a RAG scenario (user asks 'the 2023 return policy for XJ-200'): which vector fields, and why is pure-semantic or pure-keyword insufficient? (2) explain why RRF can fuse 'incomparable scores', and why each sub-search often fetches more candidates than the final topK. (3) why is fusion done at the Proxy rather than a QueryNode? How does this echo Lesson 29's 'the top tier of the three-level reduce is the Proxy'?</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="47-bulk-import.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">批量导入：第二条写入路径</span><span class="lang-en">Bulk import: the second write path</span></div></a><a class="next" href="../index.html"><div class="dir"><span class="lang-zh">完成 →</span><span class="lang-en">Done →</span></div><div class="ttl"><span class="lang-zh">返回目录</span><span class="lang-en">Back to index</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>

@@ -141,6 +141,8 @@ PAGES = [
      "第十部分 · 实践与贡献", "Part 10 · Practice & contributing"),
     ("47-bulk-import.html", "批量导入：第二条写入路径", "Bulk import: the second write path",
      "第十一部分 · 进阶专题（选读）", "Part 11 · Advanced topics (optional)"),
+    ("48-hybrid-search-rerank.html", "混合检索与重排", "Hybrid search & reranking",
+     "第十一部分 · 进阶专题（选读）", "Part 11 · Advanced topics (optional)"),
 ]
 
 
@@ -676,6 +678,8 @@ SUBTITLES = {
                          "the guide's quick-reference glossary: key concepts by theme (architecture/write/query/indexing/C++ core/streaming/ops & contributing), each a one-line definition + lesson"),
     "47-bulk-import.html": ("绕过 WAL 的第二条写入路径 · ImportV2 → DataCoord 多阶段作业(PreImport/Import/Sort/Index/提交) · DataNode 读 json/csv/parquet 直接写段 · 与流式分工",
                             "the second write path bypassing WAL · ImportV2 → DataCoord multi-phase job (PreImport/Import/Sort/Index/commit) · DataNode reads json/csv/parquet straight into segments · divides labor with streaming"),
+    "48-hybrid-search-rerank.html": ("多向量字段 · HybridSearch 带 N 个 SubReqs 并行子搜索 · 融合 ranker：RRF(按名次)/WeightedRanker(加权)/模型重排 · 主要在 Proxy 融合",
+                                     "multiple vector fields · HybridSearch with N SubReqs run in parallel · fusion rankers: RRF (by rank)/WeightedRanker/model reranking · fused mainly at the Proxy"),
 }
 
 
