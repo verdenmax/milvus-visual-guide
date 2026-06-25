@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus 图解学习指南 - 打印版</h1>
-<p style="color:var(--muted)">全 37 课 - 逐课分页。用浏览器 Ctrl/Cmd+P 即可导出 PDF。</p>
+<p style="color:var(--muted)">全 38 课 - 逐课分页。用浏览器 Ctrl/Cmd+P 即可导出 PDF。</p>
 <div class="print-toc"><h2>目录</h2>
 <ol>
   <li>Milvus 是什么</li>
@@ -365,6 +365,7 @@ details[open] > summary { list-style: none; }
   <li>mmap 与列式分块</li>
   <li>表达式与向量化执行</li>
   <li>GPU 加速</li>
+  <li>API 与多语言 SDK</li>
 </ol></div>
 <section class="lesson-print">
 <h1>Milvus 是什么</h1>
@@ -7619,6 +7620,127 @@ Go 这边则有对应的封装（如第 2、27 课的 <span class="mono">LocalSe
   <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
   <ul>
     <li>本课说“硬件能力会反过来改变算法选择”——CPU 上不敢用的暴力全算，在 GPU 上(GPU_BRUTE_FORCE)反而简单、召回 100%、还能当精度基准。请结合第 5 课(ANN 索引)与第 29 课(批量更划算)谈谈：(1) 为什么 CPU 时代“必须用近似索引”的直觉，到 GPU 时代未必成立？(2) 既然 GPU 常快出数量级，为什么 Milvus 还把它做成可选的独立构建、而非默认开启？请从主机↔显存搬运、显存上限、成本/运维、以及“小批量未必划算”几个角度，谈谈什么样的业务才真正值得上 GPU。</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>API 与多语言 SDK</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+前八部分我们一路从宏观架构钻到 C++ 内核。从这一部分（第九部分）起，我们回到<strong>用户能直接摸到的那一层</strong>——API、工具与运维。第一课先看最贴近你的东西：<strong>你写的客户端代码，到底是怎么和 Milvus 对话的？</strong>答案的核心是一份<strong>契约</strong>（milvus-proto）和一个<strong>门面</strong>（Proxy）：所有语言的 SDK 都照着同一份 proto 说话，经 gRPC（或 REST）抵达 Proxy，再由它转身指挥整个集群。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 类比</div>
+  把 Milvus 的 API 想成一家<strong>跨国餐厅</strong>。墙上挂着一份<strong>标准菜单</strong>（<span class="mono">milvus-proto</span>）：每道菜叫什么、要哪些配料、上桌是什么样，写得清清楚楚、<strong>全球统一</strong>。服务员有<strong>说各种语言的</strong>（Python、Go、Java、Node 的 SDK），但他们点的都是<strong>同一份菜单</strong>，所以你用哪国话点"宫保鸡丁"，端上来的都是同一道菜。
+  顾客进店有<strong>两道门</strong>：正门走 <strong>gRPC</strong>（高效、二进制），侧门走 <strong>REST/HTTP</strong>（人人会用的 JSON）；但两道门通向的是<strong>同一个后厨</strong>——<span class="mono">Proxy</span>。后厨才是真正派活、协调上菜的地方。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观视角</div>
+  一句话：<strong>所有 Milvus API 由一份 <span class="mono">milvus-proto</span> 的 <span class="mono">MilvusService</span> 定义（生成为 <span class="mono">milvuspb</span>），各语言 SDK 都照它说话；请求经 gRPC 或 REST 抵达 Proxy 的"传输层"(<span class="inline">internal/distributed/proxy</span>)，再转交"逻辑层"(<span class="inline">internal/proxy/impl.go</span>) 真正处理</strong>。一份契约统一所有客户端，一个 Proxy 门面统一所有入口。
+</div>
+
+<h2>一份契约定义所有 API：milvus-proto</h2>
+<p>Milvus 的所有对外能力——建集合、插入、搜索、查询、建索引、加载……——都不是各 SDK 各写各的，而是<strong>集中定义在一份协议里</strong>：<span class="mono">milvus-proto</span>（仓库 <span class="mono">github.com/milvus-io/milvus-proto</span>）。它用 <strong>Protocol Buffers</strong> 描述了一个叫 <span class="mono">MilvusService</span> 的 gRPC 服务，以及每个接口的<strong>请求/响应消息</strong>：<span class="mono">SearchRequest</span> / <span class="mono">SearchResults</span>、<span class="mono">InsertRequest</span>、<span class="mono">CreateCollectionRequest</span>……这些定义一经编译，就生成各语言的代码——Go 侧生成的包叫 <span class="mono">milvuspb</span>（在 <span class="mono">go-api/v3</span> 里）。</p>
+
+<p>先打个比方理解"契约"为什么重要。设想没有这份统一协议会怎样：Python SDK 的作者按自己的理解约定"搜索请求里 topK 这个字段叫 limit、放第 3 个位置"，Go SDK 的作者却约定"叫 top_k、放第 5 个位置"，服务端再各自去猜……只要有一处理解不一致，就会冒出"<strong>这边发的、那边读不对</strong>"的诡异 bug，而且极难排查。proto 契约把这种"口头约定"变成了"<strong>白纸黑字、机器可校验</strong>"的规范：字段叫什么、什么类型、第几号、是否必填，全部钉死在一份文件里。服务端和所有 SDK 都以它为准、由它生成代码，于是"理解不一致"这种问题<strong>从根上就不可能发生</strong>。这就是为什么在任何需要"多方协作、跨语言对接"的系统里，<strong>先定契约</strong>都是头等大事——契约是各方信任的锚点。Milvus 把这份锚点放在一个<strong>独立仓库</strong>里单独维护、单独发版，正是因为它的稳定与权威，比任何一端的实现都更重要。</p>
+<p>"<strong>以 proto 为唯一事实来源</strong>"是这套设计的灵魂。因为服务端和所有客户端 SDK 都<strong>从同一份 proto 生成或绑定</strong>，所以它们对"一次搜索请求长什么样、返回什么字段"有<strong>完全一致的理解</strong>，不会出现"Python 以为是这样、Go 以为是那样"的鸡同鸭讲。想加一个新接口或给请求加一个字段？先改 proto，再各端重新生成——<strong>契约先行，实现跟上</strong>。这也是为什么第 8 部分反复提醒你"<strong>proto 类型住在 milvus-proto/go-api，而不是 milvus 仓库自己的 pkg/proto</strong>"：对外 API 的契约是一个<strong>独立、共享</strong>的仓库，Milvus 主仓只是它的一个使用者。把契约独立出来，多语言生态才能围着同一个中心转。</p>
+
+<p>再多说一句 Protocol Buffers 为什么适合做这件事。它是一种<strong>与语言无关的接口描述语言（IDL）</strong>：你只写一份 <span class="mono">.proto</span> 文件描述"消息长什么样、服务有哪些方法"，再用代码生成器一键产出 Python、Go、Java 等各语言的<strong>强类型代码</strong>。相比让每种语言手写一套"怎么把请求拼成字节流"，这种方式有三个实打实的好处：一是<strong>不会写错、不会写歪</strong>——序列化/反序列化由生成代码保证，各端字节级一致；二是<strong>高效紧凑</strong>——proto 编码出来的是二进制，比 JSON 这种文本格式更小更快，正适合"一次搜索要传一大批高维向量"的场景；三是<strong>演进友好</strong>——proto 的字段都带编号，新增字段用新编号、老字段不动，于是<strong>新老客户端能兼容共存</strong>（老客户端忽略不认识的新字段即可）。这套"<strong>一份 IDL、多端生成、向后兼容</strong>"的机制，正是 gRPC 生态的基石，也是 Milvus 敢于维护这么多语言 SDK 而不乱套的底气。</p>
+
+<h2>传输与逻辑分离：Server（distributed）vs Proxy（impl）</h2>
+<p>请求抵达服务端后，有一个很值得学的<strong>分层</strong>：Milvus 把"<strong>怎么收网络请求</strong>"和"<strong>请求该怎么处理</strong>"<strong>拆成了两层</strong>。第一层是<strong>传输层</strong>，在 <span class="inline">internal/distributed/proxy/service.go</span>：这里有一个 gRPC <span class="mono">Server</span>，它 <span class="mono">RegisterMilvusServiceServer</span> 把自己注册成 <span class="mono">MilvusService</span> 的实现，于是每个 gRPC 方法都落在它身上。但你去看它的 <span class="mono">Search</span> 方法，会发现它<strong>几乎什么都没做</strong>——只有一行：<span class="mono">return s.proxy.Search(ctx, request)</span>。</p>
+<p>真正的活在<strong>第二层</strong>：<span class="inline">internal/proxy/impl.go</span> 里的 <span class="mono">Proxy</span> 类型，它的 <span class="mono">Search</span> 才是那段长长的业务逻辑（鉴权、参数校验、入队 dqQueue、扇出到 QueryNode、归并结果——正是第 25 课讲过的）。为什么要这么分？因为"<strong>传输</strong>"和"<strong>逻辑</strong>"是两件会各自变化的事。传输层要操心 gRPC 怎么收、TLS、鉴权拦截、限流、还要兼管 REST/HTTP 入口；逻辑层只关心"一次搜索语义上该怎么完成"。把它们解耦，就能<strong>各自演进、各自测试</strong>：换个网络框架不影响业务逻辑，改业务逻辑也不必碰网络栈。这正是第 36 课"机制与策略分离"那种审美，在 API 层的又一次体现。下面这张分层图把"从你的代码到 Proxy 逻辑"这条路画清楚。</p>
+
+<p>这种分层还有一个很实在的运维含义：<strong>同一套逻辑层 Proxy，可以被多种传输层"复用"</strong>。你已经看到 gRPC 和 REST 两道门都落到同一个 <span class="mono">Proxy</span>；正因为业务逻辑不掺杂任何"我是从 gRPC 来还是从 HTTP 来"的判断，将来想再加一种接入方式（比如某种新协议网关），也只需在传输层再搭一座桥、同样转交给 <span class="mono">Proxy</span> 即可，<strong>逻辑层一行都不用改</strong>。反过来，鉴权、TLS、限流、连接管理这些"<strong>每个请求都要过一遍</strong>"的横切关注点，被集中在传输层统一处理，逻辑层就能保持干净、专注。这种"<strong>把变化的东西关在一层里、把稳定的核心护在另一层</strong>"的切分，是大型服务端工程反复验证过的好习惯——它让系统在面对"新协议、新安全要求、新限流策略"这类外部变化时，<strong>改动面始终收敛在传输层</strong>，而最核心、最不该被频繁触碰的业务逻辑岿然不动。</p>
+
+<div class="layers">
+  <div class="layer l-main"><div class="lh"><span class="badge">客户端</span><span class="name">你的代码 + SDK（pymilvus / go / java …）</span></div><div class="ld">照 milvus-proto 构造 SearchRequest，经 gRPC/REST 发出</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">传输层</span><span class="name">gRPC/REST Server（internal/distributed/proxy）</span></div><div class="ld">收网络请求、鉴权、限流；Server.Search 仅一行转交 s.proxy.Search</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">逻辑层</span><span class="name">Proxy（internal/proxy/impl.go）</span></div><div class="ld">真正的业务：校验、入队(dqQueue)、扇出 QueryNode、归并结果</div></div>
+</div>
+
+<h2>一份 proto，多语言 SDK</h2>
+<p>有了"以 proto 为契约"这块地基，Milvus 的<strong>多语言 SDK 生态</strong>就水到渠成。官方维护了 <strong>Python（pymilvus）、Go、Java、Node.js</strong> 等多种 SDK，它们底层都做同一件事：<strong>把你调用的方法（如 <span class="mono">client.search(...)</span>）翻译成一个 <span class="mono">SearchRequest</span> proto 消息、经 gRPC 发给 Proxy、再把返回的 <span class="mono">SearchResults</span> 解析成你这门语言里顺手的对象</strong>。因为大家照的是同一份菜单，所以<strong>跨语言行为一致</strong>：同样的参数，在 Python 和 Java 里语义相同、结果相同。</p>
+<p>这对你意味着什么？<strong>选 SDK 主要看团队顺手、而非功能差异</strong>——核心能力由 proto 统一保证，不会"Python 能搜、Go 搜不了"。SDK 之上往往还有一层更好用的封装（比如 pymilvus 的 <span class="mono">MilvusClient</span> 把建集合、插入、搜索包成几个简洁方法，再加上连接池、重试、类型转换等便利），但<strong>剥到最里层，都是在收发那几个 proto 消息</strong>。理解了这一点，SDK 对你就不再是黑盒：任何一个 SDK 方法，你都能在脑子里把它还原成"<strong>它在构造哪个 Request、解析哪个 Response</strong>"——这也是排查问题、读 SDK 源码时最有用的一把钥匙。下面把几种入口摆在一起看。</p>
+
+<p>顺带破除一个常见误解：很多人以为"SDK 里那些方便的功能（连接池、自动重试、负载均衡、把结果转成 DataFrame）是 Milvus 服务端给的"，其实不然——这些大多是<strong>SDK 客户端侧自己加的便利层</strong>，服务端只认那几个 proto 消息。这条边界很重要：它意味着<strong>同一个 Milvus 集群，配不同成熟度的 SDK，体验可能不一样</strong>。比如某语言的 SDK 实现了客户端重试、另一种没有，那么面对偶发的网络抖动，前者会自动重发、后者会直接报错给你。也意味着当你怀疑"是 Milvus 的问题还是 SDK 的问题"时，有一个屡试不爽的排查法：<strong>绕过 SDK，直接用 curl 打 REST 接口</strong>复现一次——如果 REST 也错，问题多半在服务端；如果只有某个 SDK 错，那就去看那个 SDK 的封装逻辑。把"服务端只管 proto 语义、SDK 各自加料"这条线划清楚，你定位问题就有了稳稳的支点，而不是在"到底谁的锅"里瞎猜。</p>
+
+<div class="cols">
+  <div class="col"><h4>各语言 SDK（gRPC）</h4><p>pymilvus / Go / Java / Node 等，把方法调用译成 proto 消息经 gRPC 收发。<strong>高效、二进制、长连接</strong>，是生产首选。行为由同一份 proto 统一。</p></div>
+  <div class="col"><h4>RESTful API（HTTP/JSON）</h4><p>Proxy 内置 gin HTTP 服务（<span class="inline">httpserver/handler_v2.go</span>，路径 <span class="mono">/v2/vectordb</span>）。<strong>无需 SDK、curl 即可</strong>，适合快速试验、跨语言/无 gRPC 环境。落到的还是同一个 Proxy。</p></div>
+</div>
+
+<h2>两道门：gRPC 与 REST，通向同一个 Proxy</h2>
+<p>最后点清那"两道门"。<strong>gRPC</strong> 是主入口：基于 HTTP/2 的二进制协议，配合 proto 序列化，<strong>高效、强类型、支持流式与长连接</strong>，几乎所有官方 SDK 走的都是它。但并非人人都想引一个 gRPC SDK，于是 Proxy 还在 <span class="inline">internal/distributed/proxy/service.go</span> 里<strong>同时起了一个 HTTP 服务</strong>（<span class="mono">registerHTTPServer</span>，用 gin 框架），把同样的能力包成 <strong>RESTful 风格的 JSON 接口</strong>（处理器在 <span class="inline">httpserver/handler_v2.go</span>，路径前缀 <span class="mono">/v2/vectordb</span>）。这样，一个只会发 HTTP 请求的环境（浏览器脚本、curl、某些没有 Milvus SDK 的语言）也能用上 Milvus。</p>
+
+<p>那么实战里到底该选哪道门？给你一条朴素的判断线。<strong>生产环境、追求吞吐与延迟</strong>，走 gRPC：长连接复用、二进制编码、传大批向量时省下的带宽与解析开销很可观，官方 SDK 也都为它做了连接管理与负载均衡。<strong>快速试验、临时脚本、跨语言集成、或所在环境装 gRPC SDK 不方便</strong>，走 REST：一条 curl 就能建集合、插数据、发搜索，调试时在浏览器或 Postman 里看 JSON 一目了然。很多团队的实际用法是<strong>两者并用</strong>：开发联调期用 REST 快速验证想法，上线后核心链路切回 gRPC 求性能。无论怎么选，记住那句话——<strong>两道门通向同一个后厨</strong>，语义不会因为换了门而改变。你甚至可以用 REST 把一个搜索调通、确认参数无误后，再放心地用 gRPC SDK 把它写进生产代码，因为你清楚两者落到的是同一套 <span class="mono">Proxy</span> 逻辑。这种"<strong>能在两种包装间自由切换、心里却始终清楚底层是同一回事</strong>"的笃定，正是真正理解了 API 层之后的从容。</p>
+<p>关键在于：<strong>两道门，同一个后厨</strong>。无论你走 gRPC 还是 REST，请求最终都汇聚到<strong>同一个 Proxy 逻辑层</strong>去处理——REST 处理器本质上也是把 JSON 转成对应的 proto 请求、调用同一套 <span class="mono">Proxy</span> 方法。所以两条路的<strong>语义完全一致</strong>，只是"包装"不同：gRPC 省带宽、低延迟、适合生产；REST 零门槛、易调试、适合上手与集成。理解了"<strong>一份契约 + 一个门面 + 两种包装</strong>"，你就抓住了 Milvus API 层的全貌。下一课，我们转向另一件运维必修课——<strong>可观测性</strong>：当请求在这套系统里跑起来，我们靠日志、指标、链路追踪怎么"看见"它。</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>客户端构造请求</h4><p>SDK 把 <span class="mono">client.search(...)</span> 译成 <span class="mono">SearchRequest</span> proto（或 REST 的 JSON）。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>选一道门</h4><p>走 gRPC（二进制/HTTP2）或 REST（gin，<span class="mono">/v2/vectordb</span>）发出。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>传输层接住</h4><p><span class="inline">distributed/proxy</span> 的 Server 鉴权/限流后，一行转交 <span class="mono">s.proxy.Search</span>。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>逻辑层处理</h4><p><span class="inline">proxy/impl.go</span> 的 Proxy 校验、入队、扇出集群，归并结果原路返回。</p></div></div>
+</div>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>一份契约</strong>：所有 API 由 <span class="mono">milvus-proto</span> 的 <span class="mono">MilvusService</span> 定义（生成 <span class="mono">milvuspb</span>：SearchRequest/SearchResults…）；服务端与各 SDK 都从同一份 proto 生成，行为天然一致。</li>
+    <li><strong>传输/逻辑分离</strong>：<span class="inline">internal/distributed/proxy</span> 的 gRPC <span class="mono">Server</span> 只收网络请求并一行转交；真正逻辑在 <span class="inline">internal/proxy/impl.go</span> 的 <span class="mono">Proxy</span>。</li>
+    <li><strong>多语言 SDK</strong>：pymilvus/Go/Java/Node 等只是"方法↔proto 消息"的翻译层；选 SDK 看团队顺手，核心能力由 proto 统一。</li>
+    <li><strong>两道门</strong>：gRPC（高效二进制，生产首选）与 REST（gin，<span class="mono">/v2/vectordb</span>，零门槛）通向同一个 Proxy，语义一致、仅包装不同。</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. 为什么 Milvus 把所有对外 API 集中定义在一份 milvus-proto（MilvusService）里，而不是各 SDK 各自约定？</div>
+  <ol class="opts">
+    <li>纯粹是为了多生成一些代码</li>
+    <li>因为每种语言的功能本来就该不一样</li>
+    <li>以 proto 为唯一事实来源：服务端与各语言 SDK 都从同一份 proto 生成/绑定，对请求与响应的理解完全一致，跨语言行为统一、演进可控</li>
+    <li>因为 gRPC 不允许多个客户端</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：C</strong>。milvus-proto 用 Protocol Buffers 描述 MilvusService 及各接口的请求/响应消息(SearchRequest/SearchResults…)，编译生成各语言代码(Go 侧为 milvuspb)。服务端与所有 SDK 都以同一份 proto 为准，于是对“一次搜索长什么样、返回哪些字段”理解一致，不会鸡同鸭讲；加字段先改 proto 再各端重生成、向后兼容。契约独立成仓，多语言生态才能围着同一中心转。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Milvus 里 internal/distributed/proxy 的 gRPC Server 与 internal/proxy/impl.go 的 Proxy 是什么关系？</div>
+  <ol class="opts">
+    <li>两者是同一个类的两个名字</li>
+    <li>前者是“传输层”(收网络请求、鉴权、限流，方法体常只一行转交)，后者是“逻辑层”(真正的校验、入队、扇出、归并)；传输与逻辑解耦</li>
+    <li>Proxy(impl.go)负责网络收发，Server(distributed)负责业务逻辑</li>
+    <li>Server 负责 C++ 内核，Proxy 负责 GPU</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。service.go 的 Server 把自己 RegisterMilvusServiceServer 成 MilvusService 实现，但它的 Search 几乎只有一行：return s.proxy.Search(ctx, request)。真正的业务逻辑在 impl.go 的 Proxy.Search(校验、入 dqQueue、扇出 QueryNode、归并)。这样切分是因为“传输”(gRPC/TLS/鉴权/限流/REST)与“逻辑”(搜索语义)会各自变化，解耦后可各自演进与测试，也让同一逻辑层被 gRPC 和 REST 两道门复用。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 关于 gRPC 与 REST 两种入口，下面哪个说法正确？</div>
+  <ol class="opts">
+    <li>只有 gRPC 能用，REST 仅供文档展示</li>
+    <li>REST 比 gRPC 总是更快、更省带宽</li>
+    <li>REST 和 gRPC 走完全独立的两套业务逻辑，结果可能不同</li>
+    <li>两道门通向同一个 Proxy、语义一致，仅“包装”不同：gRPC 二进制高效(生产首选)，REST(gin，/v2/vectordb)零门槛易调试；REST 处理器本质是把 JSON 转成同样的 proto 调用同一套 Proxy</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。Proxy 在 service.go 里同时起 gRPC 和一个 gin HTTP 服务(registerHTTPServer，处理器在 httpserver/handler_v2.go，路径 /v2/vectordb)。两道门最终都汇到同一个 Proxy 逻辑层——REST 处理器把 JSON 转成对应 proto 请求、调用同一套 Proxy 方法，故语义完全一致。区别只在包装：gRPC(HTTP2 二进制、长连接、强类型)适合生产；REST(JSON、curl 即用)适合上手与跨语言/无 gRPC 环境。</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>本课说“一份契约 + 一个门面 + 两种包装”。请结合第 3 课(一次请求的旅程)与第 10 课(Proxy)谈谈：(1) 你在 pymilvus 里调用 client.search(...)，到返回结果，中间经过了哪些层(SDK→proto→哪道门→传输层 Server→逻辑层 Proxy→集群)？(2) 为什么把“传输层(distributed/proxy)”和“逻辑层(proxy/impl.go)”分开，对加新协议入口、做鉴权限流、写单测各有什么好处？(3) 假如你怀疑一个搜索结果不对，如何利用“gRPC 与 REST 落到同一个 Proxy”这一点来快速定位是服务端还是 SDK 的问题？</li>
   </ul>
 </div>
 </div>

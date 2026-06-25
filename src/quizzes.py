@@ -2485,6 +2485,67 @@ QUIZZES = {
             },
         ],
     },
+    "38-api-and-sdks.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "为什么 Milvus 把所有对外 API 集中定义在一份 milvus-proto（MilvusService）里，而不是各 SDK 各自约定？",
+                    "en": "Why does Milvus define all external APIs centrally in one milvus-proto (MilvusService) rather than each SDK agreeing on its own?",
+                },
+                "opts": [
+                    {"zh": "以 proto 为唯一事实来源：服务端与各语言 SDK 都从同一份 proto 生成/绑定，对请求与响应的理解完全一致，跨语言行为统一、演进可控", "en": "The proto as single source of truth: server and all SDKs generate/bind from the same proto, sharing an identical understanding of requests/responses — consistent cross-language behavior and controlled evolution"},
+                    {"zh": "因为 gRPC 不允许多个客户端", "en": "Because gRPC forbids multiple clients"},
+                    {"zh": "因为每种语言的功能本来就该不一样", "en": "Because each language's features should differ anyway"},
+                    {"zh": "纯粹是为了多生成一些代码", "en": "Purely to generate more code"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "milvus-proto 用 Protocol Buffers 描述 MilvusService 及各接口的请求/响应消息(SearchRequest/SearchResults…)，编译生成各语言代码(Go 侧为 milvuspb)。服务端与所有 SDK 都以同一份 proto 为准，于是对“一次搜索长什么样、返回哪些字段”理解一致，不会鸡同鸭讲；加字段先改 proto 再各端重生成、向后兼容。契约独立成仓，多语言生态才能围着同一中心转。",
+                    "en": "milvus-proto uses Protocol Buffers to describe MilvusService and each endpoint's request/response messages (SearchRequest/SearchResults…), compiled into per-language code (milvuspb in Go). Server and all SDKs follow the same proto, so they agree on 'what a search looks like, what fields return' — no mismatch; adding a field means editing the proto then regenerating, backward-compatibly. Pulling the contract into its own repo lets a multi-language ecosystem orbit one center.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "Milvus 里 internal/distributed/proxy 的 gRPC Server 与 internal/proxy/impl.go 的 Proxy 是什么关系？",
+                    "en": "What's the relationship between the gRPC Server in internal/distributed/proxy and the Proxy in internal/proxy/impl.go?",
+                },
+                "opts": [
+                    {"zh": "前者是“传输层”(收网络请求、鉴权、限流，方法体常只一行转交)，后者是“逻辑层”(真正的校验、入队、扇出、归并)；传输与逻辑解耦", "en": "The former is the 'transport layer' (receive, auth, rate-limit; methods often just one line forwarding), the latter the 'logic layer' (real validation, enqueue, fan-out, merge); transport decoupled from logic"},
+                    {"zh": "两者是同一个类的两个名字", "en": "They are two names for the same class"},
+                    {"zh": "Proxy(impl.go)负责网络收发，Server(distributed)负责业务逻辑", "en": "Proxy(impl.go) does networking, Server(distributed) does business logic"},
+                    {"zh": "Server 负责 C++ 内核，Proxy 负责 GPU", "en": "Server handles the C++ core, Proxy handles the GPU"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "service.go 的 Server 把自己 RegisterMilvusServiceServer 成 MilvusService 实现，但它的 Search 几乎只有一行：return s.proxy.Search(ctx, request)。真正的业务逻辑在 impl.go 的 Proxy.Search(校验、入 dqQueue、扇出 QueryNode、归并)。这样切分是因为“传输”(gRPC/TLS/鉴权/限流/REST)与“逻辑”(搜索语义)会各自变化，解耦后可各自演进与测试，也让同一逻辑层被 gRPC 和 REST 两道门复用。",
+                    "en": "service.go's Server RegisterMilvusServiceServer's itself as the MilvusService impl, but its Search is essentially one line: return s.proxy.Search(ctx, request). The real logic is impl.go's Proxy.Search (validate, enqueue dqQueue, fan out to QueryNodes, merge). The split exists because 'transport' (gRPC/TLS/auth/rate-limit/REST) and 'logic' (search semantics) change independently; decoupling lets each evolve and be tested, and lets one logic layer be reused by both the gRPC and REST doors.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "关于 gRPC 与 REST 两种入口，下面哪个说法正确？",
+                    "en": "About the gRPC and REST entrances, which statement is correct?",
+                },
+                "opts": [
+                    {"zh": "两道门通向同一个 Proxy、语义一致，仅“包装”不同：gRPC 二进制高效(生产首选)，REST(gin，/v2/vectordb)零门槛易调试；REST 处理器本质是把 JSON 转成同样的 proto 调用同一套 Proxy", "en": "Both doors lead to the same Proxy with identical semantics, differing only in 'wrapping': gRPC binary-efficient (production), REST (gin, /v2/vectordb) zero-friction; the REST handler essentially turns JSON into the same proto calls on the same Proxy"},
+                    {"zh": "REST 和 gRPC 走完全独立的两套业务逻辑，结果可能不同", "en": "REST and gRPC run two fully separate business logics and may return different results"},
+                    {"zh": "REST 比 gRPC 总是更快、更省带宽", "en": "REST is always faster and more bandwidth-efficient than gRPC"},
+                    {"zh": "只有 gRPC 能用，REST 仅供文档展示", "en": "Only gRPC works; REST is just for documentation"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "Proxy 在 service.go 里同时起 gRPC 和一个 gin HTTP 服务(registerHTTPServer，处理器在 httpserver/handler_v2.go，路径 /v2/vectordb)。两道门最终都汇到同一个 Proxy 逻辑层——REST 处理器把 JSON 转成对应 proto 请求、调用同一套 Proxy 方法，故语义完全一致。区别只在包装：gRPC(HTTP2 二进制、长连接、强类型)适合生产；REST(JSON、curl 即用)适合上手与跨语言/无 gRPC 环境。",
+                    "en": "The Proxy starts both gRPC and a gin HTTP server in service.go (registerHTTPServer; handlers in httpserver/handler_v2.go, path /v2/vectordb). Both doors converge on the same Proxy logic — the REST handler turns JSON into the matching proto request and calls the same Proxy methods, so semantics are identical. The difference is only wrapping: gRPC (HTTP2 binary, long connections, strongly typed) for production; REST (JSON, curl-ready) for getting started and gRPC-less/cross-language environments.",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课说“一份契约 + 一个门面 + 两种包装”。请结合第 3 课(一次请求的旅程)与第 10 课(Proxy)谈谈：(1) 你在 pymilvus 里调用 client.search(...)，到返回结果，中间经过了哪些层(SDK→proto→哪道门→传输层 Server→逻辑层 Proxy→集群)？(2) 为什么把“传输层(distributed/proxy)”和“逻辑层(proxy/impl.go)”分开，对加新协议入口、做鉴权限流、写单测各有什么好处？(3) 假如你怀疑一个搜索结果不对，如何利用“gRPC 与 REST 落到同一个 Proxy”这一点来快速定位是服务端还是 SDK 的问题？",
+                "en": "This lesson says 'one contract + one facade + two wrappings'. Tie to Lesson 3 (a request's journey) and Lesson 10 (Proxy): (1) From calling client.search(...) in pymilvus to getting results, which layers are crossed (SDK→proto→which door→transport Server→logic Proxy→cluster)? (2) Why does splitting 'transport (distributed/proxy)' from 'logic (proxy/impl.go)' help with adding new protocol entrances, doing auth/rate-limiting, and writing unit tests? (3) If you suspect a search result is wrong, how can you use 'gRPC and REST land on the same Proxy' to quickly tell whether it's a server-side or SDK-side problem?",
+            },
+        ],
+    },
 }
 
 

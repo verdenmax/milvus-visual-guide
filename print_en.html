@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 37 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 38 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
@@ -365,6 +365,7 @@ details[open] > summary { list-style: none; }
   <li>mmap & chunked columns</li>
   <li>Expressions & vectorized execution</li>
   <li>GPU acceleration</li>
+  <li>API & multi-language SDKs</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -7703,6 +7704,117 @@ In Lesson 36 we squeezed the CPU dry — vectorization and SIMD let one instruct
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
     <li>This lesson says 'hardware reshapes algorithm choice' — brute force, unthinkable on CPU, is simple on GPU (GPU_BRUTE_FORCE), with 100% recall and useful as a baseline. Tie to Lesson 5 (ANN indexes) and Lesson 29 (batching pays): (1) Why might the CPU-era intuition 'you must use an approximate index' not hold on the GPU? (2) Given the GPU is often orders of magnitude faster, why does Milvus still make it an optional separate build rather than on by default? Considering host↔VRAM transfer, VRAM ceilings, cost/ops, and 'small batches may not pay', discuss what kind of workload truly justifies going GPU.</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>API & multi-language SDKs</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+The first eight parts drilled from macro architecture down to the C++ core. From here (Part 9) we return to <strong>the layer you can touch directly</strong> — APIs, tools, and operations. First, the thing closest to you: <strong>how does your client code actually talk to Milvus?</strong> The answer centers on a <strong>contract</strong> (milvus-proto) and a <strong>facade</strong> (the Proxy): SDKs in every language speak the same proto, arriving via gRPC (or REST) at the Proxy, which then turns around and directs the whole cluster.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Picture Milvus's API as a <strong>multinational restaurant</strong>. On the wall hangs a <strong>standard menu</strong> (<span class="mono">milvus-proto</span>): what each dish is called, what ingredients it needs, how it's plated — written clearly and <strong>identical worldwide</strong>. Waiters speak <strong>many languages</strong> (the Python, Go, Java, Node SDKs), but they all order from the <strong>same menu</strong>, so whichever language you use to order "kung pao chicken", the same dish arrives.
+  Guests enter through <strong>two doors</strong>: the front door is <strong>gRPC</strong> (efficient, binary), the side door is <strong>REST/HTTP</strong> (everyone's JSON); but both lead to the <strong>same kitchen</strong> — the <span class="mono">Proxy</span>. The kitchen is where work is dispatched and dishes coordinated.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>all Milvus APIs are defined by <span class="mono">MilvusService</span> in <span class="mono">milvus-proto</span> (generated into <span class="mono">milvuspb</span>), which every-language SDK speaks; a request arrives via gRPC or REST at the Proxy's "transport layer" (<span class="inline">internal/distributed/proxy</span>) and is handed to the "logic layer" (<span class="inline">internal/proxy/impl.go</span>) for real processing</strong>. One contract unifies all clients; one Proxy facade unifies all entrances.
+</div>
+
+<h2>One contract defines all APIs: milvus-proto</h2>
+<p>All of Milvus's outward capabilities — create collection, insert, search, query, build index, load… — are not written separately by each SDK, but <strong>defined centrally in one protocol</strong>: <span class="mono">milvus-proto</span> (repo <span class="mono">github.com/milvus-io/milvus-proto</span>). Using <strong>Protocol Buffers</strong>, it describes a gRPC service called <span class="mono">MilvusService</span> and each endpoint's <strong>request/response messages</strong>: <span class="mono">SearchRequest</span> / <span class="mono">SearchResults</span>, <span class="mono">InsertRequest</span>, <span class="mono">CreateCollectionRequest</span>… Compiled, these generate code in each language — the Go package is <span class="mono">milvuspb</span> (under <span class="mono">go-api/v3</span>).</p>
+<p>"<strong>The proto as the single source of truth</strong>" is the soul of this design. Because the server and all client SDKs are <strong>generated from or bound to the same proto</strong>, they share a <strong>completely consistent understanding</strong> of "what a search request looks like, what fields come back" — no "Python thinks one thing, Go thinks another". Want a new endpoint or a new request field? Change the proto, regenerate everywhere — <strong>contract first, implementation follows</strong>. This is why Part 8 kept reminding you that "<strong>proto types live in milvus-proto/go-api, not the milvus repo's own pkg/proto</strong>": the API contract is a <strong>separate, shared</strong> repo, of which the main Milvus repo is just one consumer. Pulling the contract out is what lets a multi-language ecosystem orbit one center.</p>
+
+<h2>Transport vs logic: Server (distributed) vs Proxy (impl)</h2>
+<p>Once a request reaches the server, there's a <strong>layering</strong> well worth learning: Milvus <strong>splits</strong> "<strong>how to receive a network request</strong>" from "<strong>how the request should be handled</strong>". The first is the <strong>transport layer</strong>, in <span class="inline">internal/distributed/proxy/service.go</span>: a gRPC <span class="mono">Server</span> that <span class="mono">RegisterMilvusServiceServer</span> registers itself as the implementation of <span class="mono">MilvusService</span>, so every gRPC method lands on it. But look at its <span class="mono">Search</span> method and you'll find it does <strong>almost nothing</strong> — one line: <span class="mono">return s.proxy.Search(ctx, request)</span>.</p>
+<p>The real work is in the <strong>second layer</strong>: the <span class="mono">Proxy</span> type in <span class="inline">internal/proxy/impl.go</span>, whose <span class="mono">Search</span> holds the long business logic (auth, validation, enqueue to dqQueue, fan out to QueryNodes, merge results — exactly Lesson 25). Why split this way? Because "<strong>transport</strong>" and "<strong>logic</strong>" change for different reasons. The transport layer worries about how gRPC receives, TLS, auth interceptors, rate limiting, and also hosts the REST/HTTP entrance; the logic layer cares only about "how a search should be completed semantically". Decouple them and each can <strong>evolve and be tested separately</strong>: swap the network framework without touching business logic, change business logic without touching the network stack. It's Lesson 36's "mechanism vs policy" aesthetic, again at the API layer. The layered diagram traces "from your code to Proxy logic".</p>
+
+<div class="layers">
+  <div class="layer l-main"><div class="lh"><span class="badge">client</span><span class="name">your code + SDK (pymilvus / go / java …)</span></div><div class="ld">build a SearchRequest per milvus-proto, send via gRPC/REST</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">transport</span><span class="name">gRPC/REST Server (internal/distributed/proxy)</span></div><div class="ld">receive, auth, rate-limit; Server.Search is one line forwarding to s.proxy.Search</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">logic</span><span class="name">Proxy (internal/proxy/impl.go)</span></div><div class="ld">the real business: validate, enqueue (dqQueue), fan out to QueryNodes, merge</div></div>
+</div>
+
+<h2>One proto, many SDKs</h2>
+<p>With "the proto as contract" as foundation, Milvus's <strong>multi-language SDK ecosystem</strong> follows naturally. The project maintains SDKs for <strong>Python (pymilvus), Go, Java, Node.js</strong> and more, all doing the same thing underneath: <strong>translate your method call (e.g. <span class="mono">client.search(...)</span>) into a <span class="mono">SearchRequest</span> proto message, send it via gRPC to the Proxy, then parse the returned <span class="mono">SearchResults</span> into objects natural to your language</strong>. Because everyone follows the same menu, <strong>behavior is consistent across languages</strong>: the same params mean the same thing and return the same results in Python and Java.</p>
+<p>What does that mean for you? <strong>Pick an SDK by what your team prefers, not by feature differences</strong> — core capabilities are guaranteed uniform by the proto; there's no "Python can search but Go can't". SDKs often add a more ergonomic wrapper on top (pymilvus's <span class="mono">MilvusClient</span> packs create/insert/search into a few clean methods, plus connection pooling, retries, type conversion), but <strong>peel to the core and it's all sending/receiving those proto messages</strong>. Grasp this and the SDK stops being a black box: any SDK method, you can mentally reduce to "<strong>which Request it builds, which Response it parses</strong>" — the most useful key when debugging or reading SDK source. The entrances side by side:</p>
+
+<div class="cols">
+  <div class="col"><h4>Language SDKs (gRPC)</h4><p>pymilvus / Go / Java / Node, translating method calls into proto messages over gRPC. <strong>Efficient, binary, long-lived connections</strong> — the production choice. Behavior unified by one proto.</p></div>
+  <div class="col"><h4>RESTful API (HTTP/JSON)</h4><p>The Proxy embeds a gin HTTP server (<span class="inline">httpserver/handler_v2.go</span>, path <span class="mono">/v2/vectordb</span>). <strong>No SDK needed — curl works</strong>, great for quick trials and gRPC-less environments. It still lands on the same Proxy.</p></div>
+</div>
+
+<h2>Two doors: gRPC and REST, into the same Proxy</h2>
+<p>Finally, the "two doors". <strong>gRPC</strong> is the main entrance: an HTTP/2 binary protocol with proto serialization — <strong>efficient, strongly typed, supporting streaming and long connections</strong> — used by nearly all official SDKs. But not everyone wants to pull in a gRPC SDK, so the Proxy <strong>also starts an HTTP server</strong> in <span class="inline">internal/distributed/proxy/service.go</span> (<span class="mono">registerHTTPServer</span>, using gin), wrapping the same capabilities as a <strong>RESTful JSON API</strong> (handlers in <span class="inline">httpserver/handler_v2.go</span>, path prefix <span class="mono">/v2/vectordb</span>). So an HTTP-only environment (browser scripts, curl, languages without a Milvus SDK) can use Milvus too.</p>
+<p>The key: <strong>two doors, one kitchen</strong>. Whether you take gRPC or REST, the request ultimately converges on the <strong>same Proxy logic layer</strong> — the REST handler essentially turns JSON into the corresponding proto request and calls the same <span class="mono">Proxy</span> methods. So the two paths are <strong>semantically identical</strong>, differing only in "wrapping": gRPC saves bandwidth, low latency, for production; REST is zero-friction, easy to debug, for getting started and integration. Grasp "<strong>one contract + one facade + two wrappings</strong>" and you've got the whole picture of Milvus's API layer. Next lesson turns to another ops essential — <strong>observability</strong>: once requests run through this system, how do we "see" them via logs, metrics, and tracing.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Client builds the request</h4><p>the SDK translates <span class="mono">client.search(...)</span> into a <span class="mono">SearchRequest</span> proto (or REST JSON).</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Pick a door</h4><p>send via gRPC (binary/HTTP2) or REST (gin, <span class="mono">/v2/vectordb</span>).</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Transport catches it</h4><p>the <span class="inline">distributed/proxy</span> Server auths/rate-limits, then forwards in one line to <span class="mono">s.proxy.Search</span>.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Logic handles it</h4><p>the <span class="inline">proxy/impl.go</span> Proxy validates, enqueues, fans out to the cluster, and merges results back.</p></div></div>
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>One contract</strong>: all APIs are defined by <span class="mono">MilvusService</span> in <span class="mono">milvus-proto</span> (generates <span class="mono">milvuspb</span>: SearchRequest/SearchResults…); server and SDKs all generate from the same proto, so behavior is inherently consistent.</li>
+    <li><strong>Transport/logic split</strong>: the gRPC <span class="mono">Server</span> in <span class="inline">internal/distributed/proxy</span> only receives and forwards in one line; the real logic is the <span class="mono">Proxy</span> in <span class="inline">internal/proxy/impl.go</span>.</li>
+    <li><strong>Many SDKs</strong>: pymilvus/Go/Java/Node are just "method↔proto message" translators; choose by team preference — core capability is unified by the proto.</li>
+    <li><strong>Two doors</strong>: gRPC (efficient binary, production choice) and REST (gin, <span class="mono">/v2/vectordb</span>, zero-friction) lead to the same Proxy — identical semantics, only different wrapping.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Why does Milvus define all external APIs centrally in one milvus-proto (MilvusService) rather than each SDK agreeing on its own?</div>
+  <ol class="opts">
+    <li>Purely to generate more code</li>
+    <li>Because each language's features should differ anyway</li>
+    <li>The proto as single source of truth: server and all SDKs generate/bind from the same proto, sharing an identical understanding of requests/responses — consistent cross-language behavior and controlled evolution</li>
+    <li>Because gRPC forbids multiple clients</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. milvus-proto uses Protocol Buffers to describe MilvusService and each endpoint's request/response messages (SearchRequest/SearchResults…), compiled into per-language code (milvuspb in Go). Server and all SDKs follow the same proto, so they agree on 'what a search looks like, what fields return' — no mismatch; adding a field means editing the proto then regenerating, backward-compatibly. Pulling the contract into its own repo lets a multi-language ecosystem orbit one center.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. What's the relationship between the gRPC Server in internal/distributed/proxy and the Proxy in internal/proxy/impl.go?</div>
+  <ol class="opts">
+    <li>They are two names for the same class</li>
+    <li>The former is the 'transport layer' (receive, auth, rate-limit; methods often just one line forwarding), the latter the 'logic layer' (real validation, enqueue, fan-out, merge); transport decoupled from logic</li>
+    <li>Proxy(impl.go) does networking, Server(distributed) does business logic</li>
+    <li>Server handles the C++ core, Proxy handles the GPU</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. service.go's Server RegisterMilvusServiceServer's itself as the MilvusService impl, but its Search is essentially one line: return s.proxy.Search(ctx, request). The real logic is impl.go's Proxy.Search (validate, enqueue dqQueue, fan out to QueryNodes, merge). The split exists because 'transport' (gRPC/TLS/auth/rate-limit/REST) and 'logic' (search semantics) change independently; decoupling lets each evolve and be tested, and lets one logic layer be reused by both the gRPC and REST doors.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. About the gRPC and REST entrances, which statement is correct?</div>
+  <ol class="opts">
+    <li>Only gRPC works; REST is just for documentation</li>
+    <li>REST is always faster and more bandwidth-efficient than gRPC</li>
+    <li>REST and gRPC run two fully separate business logics and may return different results</li>
+    <li>Both doors lead to the same Proxy with identical semantics, differing only in 'wrapping': gRPC binary-efficient (production), REST (gin, /v2/vectordb) zero-friction; the REST handler essentially turns JSON into the same proto calls on the same Proxy</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. The Proxy starts both gRPC and a gin HTTP server in service.go (registerHTTPServer; handlers in httpserver/handler_v2.go, path /v2/vectordb). Both doors converge on the same Proxy logic — the REST handler turns JSON into the matching proto request and calls the same Proxy methods, so semantics are identical. The difference is only wrapping: gRPC (HTTP2 binary, long connections, strongly typed) for production; REST (JSON, curl-ready) for getting started and gRPC-less/cross-language environments.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson says 'one contract + one facade + two wrappings'. Tie to Lesson 3 (a request's journey) and Lesson 10 (Proxy): (1) From calling client.search(...) in pymilvus to getting results, which layers are crossed (SDK→proto→which door→transport Server→logic Proxy→cluster)? (2) Why does splitting 'transport (distributed/proxy)' from 'logic (proxy/impl.go)' help with adding new protocol entrances, doing auth/rate-limiting, and writing unit tests? (3) If you suspect a search result is wrong, how can you use 'gRPC and REST land on the same Proxy' to quickly tell whether it's a server-side or SDK-side problem?</li>
   </ul>
 </div>
 </div>

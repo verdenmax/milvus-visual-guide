@@ -121,6 +121,8 @@ PAGES = [
      "第八部分 · C++ 内核", "Part 8 · C++ core internals"),
     ("37-gpu-acceleration.html", "GPU 加速", "GPU acceleration",
      "第八部分 · C++ 内核", "Part 8 · C++ core internals"),
+    ("38-api-and-sdks.html", "API 与多语言 SDK", "API & multi-language SDKs",
+     "第九部分 · API、工具与运维", "Part 9 · API, tools & ops"),
 ]
 
 
@@ -636,6 +638,8 @@ SUBTITLES = {
                               "logical ITypeExpr → physical Expr::Eval (vectorized); Task/Driver/Operator pipeline; FilterBitsNode/VectorSearchNode; composable operators"),
     "37-gpu-acceleration.html": ("GPU 索引(GPU_CAGRA/IVF/BRUTE) 类型在 Milvus、算法在 Knowhere/RAFT · 编译期 milvus-gpu · 显存池 · IndexEngineVersionManager 取最小版本",
                                  "GPU indexes (GPU_CAGRA/IVF/BRUTE): types in Milvus, algorithms in Knowhere/RAFT; compile-time milvus-gpu; VRAM pool; IndexEngineVersionManager takes the MIN version"),
+    "38-api-and-sdks.html": ("一份契约 milvus-proto(MilvusService→milvuspb) · 传输层 distributed/proxy vs 逻辑层 proxy/impl.go · 多语言 SDK · gRPC 与 REST 两道门",
+                             "one contract milvus-proto (MilvusService→milvuspb); transport distributed/proxy vs logic proxy/impl.go; multi-language SDKs; gRPC & REST two doors"),
 }
 
 
