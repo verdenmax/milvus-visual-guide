@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>23 · 构建与加载索引 / Index build &amp;amp; load - Milvus 图解教程</title>
+<meta name="description" content="第五部分 · 索引｜构建与加载索引 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="23 · 构建与加载索引 / Index build &amp;amp; load - Milvus 图解教程">
+<meta property="og:description" content="第五部分 · 索引｜构建与加载索引 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="23 · 构建与加载索引 / Index build &amp;amp; load - Milvus 图解教程">
+<meta name="twitter:description" content="第五部分 · 索引｜构建与加载索引 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.timeline .tl-row { display: flex; align-items: flex-start; gap: .6rem; padding: .12rem 0; }
+.timeline .tl-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: .45rem; }
+.timeline .tl-t { font-family: ui-monospace, monospace; font-weight: 700; color: var(--accent-ink); min-width: 2.4rem; font-size: .82rem; flex-shrink: 0; margin-top: .18rem; }
+.timeline .tl-c { font-size: .9rem; color: var(--muted); }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第五部分 · 索引</span><span class="lang-en">Part 5 · Indexing</span></span>
+    <span class="pill">23 / 24</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:95%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第五部分 · 索引</span><span class="lang-en">Part 5 · Indexing</span></div>
+    <h1><span class="lang-zh">构建与加载索引</span><span class="lang-en">Index build &amp;amp; load</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+前两课分别讲了"<strong>谁来建索引</strong>"（DataCoord 调度、worker 执行）和"<strong>建什么索引</strong>"（Knowhere 的各家向量索引）。这一课把镜头切到<strong>数据流</strong>：一段数据从"原始向量"到"可被检索的索引"，物理上到底<strong>流经哪些地方</strong>。
+完整链路是：<strong>sealed 段的原始向量 → 构建任务（worker 读 binlog、调 Knowhere 建索引）→ 索引文件写进对象存储 → QueryNode 在加载集合时把索引读进内存或 mmap → 段变得可被 ANN 检索</strong>。
+途中还有两个关键问题：<strong>还没建好索引的段（尤其 growing 段）怎么查</strong>？以及<strong>索引格式升级了、老索引还能不能用</strong>（索引版本管理）？这一课一并讲清。
+</p>
+
+<div class="card analogy">
+  <div class="tag">📚 生活类比</div>
+  又回到图书馆。上一课馆员助手已经把书架读了一遍、写好了一沓<strong>目录卡片</strong>（索引）。但卡片不能就摊在书架旁——它得<strong>装箱、送进中央档案库</strong>（对象存储）统一保管，登记在册，谁要都能调。
+  等到某家<strong>分馆</strong>（QueryNode）要对外提供"快速查书"服务时，它会去中央档案库<strong>把这套卡片借出一份副本</strong>：要么<strong>整副本搬到前台抽屉里</strong>（加载进内存，查得最快），要么<strong>放在身边的架子上、用到哪页翻哪页</strong>（mmap，省内存、按需读盘）。
+  还有两件事：<strong>刚到、还没来得及编目的新书</strong>（growing 段），读者要找也得照顾——只能<strong>一本本翻过去</strong>（暴力扫描），慢但不漏。以及，档案库的<strong>卡片格式偶尔会升级</strong>（新版排版更高效），分馆得能认出"这批卡片是哪个版本的、我这台设备认不认得"——这就是索引版本管理。
+</div>
+
+<h2>数据流总览：从 sealed 段到可检索</h2>
+<p>先把整条路一眼看全。它串起了前面好几课的角色：第 17 课的 flush 产出 sealed 段、第 18 课的对象存储与 binlog、第 13 课 QueryCoord 的加载/释放、第 21 课的构建任务：</p>
+
+<div class="timeline">
+  <div class="lane"><span class="lane-label">① sealed</span><span class="tslot">段已 flush 成 binlog（原始向量，不可变）</span></div>
+  <div class="lane"><span class="lane-label">② 构建</span><span class="tslot now">worker 读 binlog → 调 Knowhere 建索引</span></div>
+  <div class="lane"><span class="lane-label">③ 落盘</span><span class="tslot">索引文件写进对象存储（index_files 前缀）</span></div>
+  <div class="lane"><span class="lane-label">④ 加载</span><span class="tslot now">QueryNode 读索引进内存 / mmap</span></div>
+  <div class="lane"><span class="lane-label">⑤ 可查</span><span class="tslot">该段以 ANN 方式参与检索</span></div>
+</div>
+
+<p>这条流水线最值得记住的特征是：<strong>每一步都把"重活"留在后台、把"产物"沉淀成持久文件</strong>。原始向量是持久的（binlog 在对象存储）、索引也是持久的（索引文件在对象存储）——所以即便 worker 或 QueryNode 中途崩了，<strong>已落盘的产物都不会丢</strong>，重启后从对象存储重新取即可。
+这正是 Milvus 反复出现的"<strong>计算与存储分离</strong>"：构建索引的算力（worker）、服务检索的算力（QueryNode）都是<strong>无状态、可替换</strong>的，真正的<strong>状态</strong>（原始数据、索引）都躺在对象存储这块共享底座上。理解这一点，你就明白为什么 Milvus 的节点能随意扩缩容、崩了能快速恢复——因为"数据"和"算它的人"被干净地解耦了。</p>
+
+<h2>构建侧：worker 读 binlog、调 Knowhere、写索引文件</h2>
+<p>把第 21 课的"构建"这一步放大。worker（datanode 上的 <span class="inline">indexBuildTask</span>）领到一个段的构建任务后，它的 <span class="inline">Execute</span> 大致做三件事：</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>读出原始向量</h4><p>按任务里的段信息，从对象存储<strong>拉取该段的向量 binlog</strong>，反序列化、拼装成 Knowhere 能吃的内存数据集（回忆第 18 课的列式 binlog）。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>调 Knowhere 建索引</h4><p>按索引类型与参数（第 22 课），把数据集交给 Knowhere 跑建索引——建图 / 聚类 / 训练码本。这是整条链路里<strong>最吃 CPU/内存</strong>的一步。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>写索引文件 + 登记</h4><p>把 Knowhere 产出的索引<strong>序列化成索引文件</strong>、写回对象存储（<span class="mono">index_files</span> 前缀），再把文件路径<strong>上报 DataCoord</strong>，段标记"已建索引"。</p></div></div>
+</div>
+
+<p>这里有个常被忽视、却很重要的细节：worker 建索引<strong>读的是 binlog（原始向量），写的是索引文件——两者是<strong>并存</strong>的，索引<strong>不会替换</strong>原始数据</strong>。
+为什么要留着原始向量？因为很多索引（如量化的 IVF_PQ）是<strong>有损</strong>的，检索时可能需要原始向量做<strong>精确重排（rerank）</strong>；而且未来若要<strong>重建索引</strong>（换索引类型、换参数、或索引格式升级），也必须从原始向量重新来过。所以对象存储里，同一个段会同时存着<strong>原始 binlog</strong> 和<strong>索引文件</strong>两份产物，各司其职：原始 binlog 是"<strong>真相</strong>"（可重建一切），索引文件是"<strong>加速副本</strong>"（坏了、过时了都能从原始数据重造）。这也呼应了第 18 课列出的对象存储产物清单：insert_log / delta_log / stats_log / <strong>index_files</strong> 并列共存。</p>
+
+<p>顺带把"构建为什么必须在不可变数据上做"再钉死一遍。worker 读 binlog 建索引时，<strong>必须确信这份数据在构建期间不会变</strong>——否则建到一半数据被改写，建出的索引就和数据对不上了。sealed 段恰好提供了这个保证：它是<strong>只读、不可变</strong>的快照，worker 可以放心地读它、慢慢算，期间不必担心有人在背后改数据。
+这正是前面几部分反复铺垫的"<strong>不可变性</strong>"在索引场景下的再次兑现：binlog 不可变让 compaction 能安全地后台合并（第 19 课）、让删除只能追加墓碑（第 20 课），现在又让建索引能安全地后台进行。<strong>不可变是这一切后台异步任务的共同地基</strong>——没有它，"一边服务查询、一边后台重写/建索引"这种并发就会处处是数据竞争。</p>
+
+<h2>加载侧：QueryNode 把索引读进内存或 mmap</h2>
+<p>索引文件躺在对象存储里只是"<strong>可被加载的资产</strong>"，本身不能直接对外服务。真正让它"<strong>活起来、能查</strong>"的，是 <strong>QueryNode 在加载集合时的加载动作</strong>（回忆第 13 课：QueryCoord 决定把哪些段加载到哪些 QueryNode）。
+加载逻辑在 <span class="mono">internal/querynodev2/segments/segment_loader.go</span>（如 <span class="inline">loadSealedSegment</span>），它把该段的索引文件从对象存储取下、交给 C++ 侧（经 Knowhere）<strong>反序列化、装载</strong>成一个可检索的索引对象。装载方式有两种，是一个重要的<strong>内存 vs 磁盘</strong>取舍，直接关系到"一个节点能服务多大数据、查得多快"：</p>
+
+<div class="cols">
+  <div class="col"><h4>加载进内存（memory）</h4><p>把索引<strong>整个读进内存</strong>。检索时所有访问都命中内存，<strong>延迟最低、最稳定</strong>；代价是<strong>吃内存</strong>，单节点能装下的数据量受内存上限约束。对延迟敏感、内存充裕的场景首选。</p></div>
+  <div class="col"><h4>内存映射（mmap）</h4><p>把索引文件 <strong>mmap</strong> 进地址空间，<strong>用到哪页才从磁盘换入哪页</strong>。<strong>省内存</strong>、能在同样内存下装下<strong>多得多</strong>的数据；代价是冷数据访问会触发<strong>缺页读盘</strong>，延迟略升、有抖动。容量优先时选它。</p></div>
+</div>
+
+<p>memory 与 mmap 的取舍，本质又是那个老三角的一条边：<strong>用延迟换容量</strong>。它和上一课 DiskANN"把图放磁盘"是同一种思路在<strong>不同层次</strong>的体现——DiskANN 是<strong>索引算法本身</strong>为磁盘而设计，mmap 则是<strong>加载方式</strong>层面让任意内存索引"按需读盘"。
+Milvus 允许按字段、按场景<strong>精细配置</strong>哪些数据走 mmap，于是你能把"热的小字段放内存、冷的大向量走 mmap"，在<strong>成本与延迟</strong>之间找到适合自己的平衡点。这层灵活性，正是"计算存储分离 + 文件化索引"带来的红利：索引既然只是对象存储里的文件，加载侧就能自由决定"怎么把它搬进来用"。</p>
+
+<p>还要把"加载"和第 13 课的<strong>QueryCoord</strong> 接起来，免得你以为 QueryNode 会自作主张地加载。真正决定"<strong>哪些段、哪些索引、加载到哪台 QueryNode</strong>"的是 QueryCoord——它掌握全局的副本、均衡与 distribution↔target 视图，把加载任务<strong>派</strong>给具体的 QueryNode；QueryNode 只是<strong>执行</strong>这条加载指令（从对象存储取索引文件、装载、汇报已就绪）。
+这又一次是"<strong>协调器调度、节点执行</strong>"的同一主旋律：建索引是 DataCoord 调度 + worker 执行，加载索引则是 QueryCoord 调度 + QueryNode 执行。两条后台链路结构惊人地对称——都把"重活"交给可替换的节点，把"全局账本"留在协调器手里。把这种对称性看透，你对 Milvus 整套分布式骨架的理解就成型了。</p>
+
+<h2>还没建索引的段：growing 段用暴力扫描</h2>
+<p>一个绕不开的问题：<strong>刚写入、还在 growing、或刚 sealed 但索引还没建好</strong>的段，查询要不要照顾？答案是必须照顾——否则刚写进去的数据就查不到，违背了"<strong>写完即可见</strong>"。
+处理办法很直接：<strong>这些还没有索引的段，检索时退化为暴力扫描（brute force / FLAT 式逐条算距离）</strong>。慢，但<strong>正确、不漏</strong>。这也解释了为什么第 21 课强调"<strong>索引只建在不可变的 sealed 段上</strong>"——growing 段还在变，建了也白建，索性等它 sealed 后再建，建好之前就用暴力扫描兜底。</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">growing 段</div><div class="nd">还在接收新行 · 无索引</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">暴力扫描</div><div class="nd">逐条算距离 · 慢但不漏</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">flush → sealed</div><div class="nd">冻结成不可变 binlog</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">建索引 → ANN</div><div class="nd">该段转为索引检索 · 快</div></div>
+</div>
+
+<p>于是一次检索在 QueryNode 上常常是<strong>"混合"</strong>的：少数 growing 段走暴力扫描、大量 sealed 段走 ANN 索引，各段算出局部 topK，再<strong>归并</strong>成全局结果（这与第 10 课 Proxy 的扇出归并是同一种"分而治之"，只是层次不同）。
+对用户而言，这一切是<strong>透明</strong>的——你只管查，至于"哪些段有索引、哪些没有、各用什么方式算"，由 QueryNode 内部自动决定。理解这层混合，你就不会再困惑"为什么刚写的数据也能立刻搜到，但好像比老数据慢一点点"——因为新数据所在的 growing 段还在用暴力扫描，等它 sealed、建好索引，就和老数据一样快了。这也是为什么一个集合刚导入大量数据时，查询会先慢后快：随着后台把一个个 sealed 段的索引陆续建好，走暴力扫描的段越来越少、走 ANN 的段越来越多，整体延迟便<strong>逐步下降、趋于稳定</strong>。</p>
+
+<h2>索引版本管理：格式升级了，老索引怎么办</h2>
+<p>最后一个常被忽略、却很现实的问题：索引文件是有<strong>格式版本</strong>的。Knowhere 在演进，索引的<strong>引擎版本（index engine version）</strong>会升级——新版可能有更高效的布局、新的能力。那么集群里<strong>新老 QueryNode 混部</strong>、或<strong>老索引遇上新引擎</strong>时，怎么保证"建出来的索引，加载它的节点认得"？
+这就是 <span class="mono">internal/datacoord/index_engine_version_manager.go</span> 的职责：DataCoord 维护一个 <span class="inline">IndexEngineVersionManager</span>，跟踪集群里各 QueryNode 上报的索引引擎版本，给出<strong>当前可用的版本</strong>（<span class="inline">GetCurrentIndexEngineVersion</span>）与<strong>最低兼容版本</strong>（<span class="inline">GetMinimalIndexEngineVersion</span>）。建索引时按这个<strong>协商出的版本</strong>来建，就能保证产出的索引<strong>不会高于集群里最弱节点认得的版本</strong>，避免"建了个新格式索引、却没有节点能加载"的尴尬。</p>
+
+<p>这套版本协商，背后是一个分布式系统都会遇到的现实约束：<strong>升级不是一瞬间、而是滚动进行的</strong>。你不可能让全集群几十上百个节点同时换成新版 Knowhere；现实里总有一段时间<strong>新老节点并存</strong>。如果建索引的 worker 已经升级、却按最新格式建了索引，而某些还没升级的老 QueryNode <strong>读不懂</strong>这个新格式，那个段就在这些节点上<strong>加载失败、无法服务</strong>。
+版本管理器的"<strong>取最低兼容版本</strong>"策略，本质就是一条朴素的兼容性铁律：<strong>产出物的格式，要向集群里最保守的消费者看齐</strong>。等所有节点都升级完、最低版本水位整体抬高了，新格式才会自然启用。这种"<strong>以最弱节点为准</strong>"的保守协商，在数据库的在线升级里随处可见——它用一点"暂时用不上新特性"的代价，换来了<strong>升级期间服务不中断</strong>。这也是分布式系统"<strong>兼容性优先于新特性</strong>"原则的一个缩影：能不能用上最新最快的格式是其次，<strong>整个集群在升级过程中始终可用、不丢服务</strong>才是第一位的。</p>
+
+<p>把这一课收束一下：我们沿着<strong>数据流</strong>，走完了索引"从原始向量到可被检索"的物理全程——构建侧 worker 把 sealed 段读成索引文件落对象存储，加载侧 QueryNode 把索引文件搬进内存或 mmap，中间用暴力扫描兜住还没建好索引的段，外加版本管理保证新老索引互认。
+至此，<strong>向量索引</strong>这条线就讲透了：第 21 课"谁建"、第 22 课"建什么"、第 23 课"怎么流动与加载"。但别忘了，真实的查询往往不只是"找最像的向量"，还常常带着<strong>标量过滤条件</strong>（"价格 &lt; 100 且类别 = 数码"）和<strong>全文检索</strong>（"包含关键词 X"）。这些<strong>非向量</strong>的检索要快，同样得靠索引——那就是下一课<strong>标量与全文索引</strong>的主题。</p>
+
+<table class="t">
+  <tr><th>产物 / 状态</th><th>在哪里</th><th>谁负责</th></tr>
+  <tr><td>原始向量 binlog</td><td>对象存储（insert_log 前缀）</td><td>flush（第 17 课）产出，构建时被读</td></tr>
+  <tr><td>索引文件</td><td>对象存储（index_files 前缀）</td><td>worker 构建后写入</td></tr>
+  <tr><td>索引元数据（路径/状态）</td><td>etcd（经 DataCoord）</td><td>worker 回写、DataCoord 记账</td></tr>
+  <tr><td>加载后的索引对象</td><td>QueryNode 内存 / mmap</td><td>QueryNode 加载集合时装载</td></tr>
+  <tr><td>索引引擎版本</td><td>DataCoord（版本管理器）</td><td><span class="mono">index_engine_version_manager.go</span></td></tr>
+</table>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/datacoord/index_engine_version_manager.go</span><span class="ln">IndexEngineVersionManager：协商索引引擎版本（节选）</span></div>
+  <pre><span class="cm">// DataCoord 跟踪各 QueryNode 上报的索引引擎版本，给出可用/最低兼容版本，</span>
+<span class="cm">// 让构建出的索引不会高于集群里最弱节点能加载的版本。</span>
+<span class="kw">type</span> IndexEngineVersionManager <span class="kw">interface</span> {
+    <span class="fn">GetCurrentIndexEngineVersion</span>() int32 <span class="cm">// 当前可用版本</span>
+    <span class="fn">GetMinimalIndexEngineVersion</span>() int32 <span class="cm">// 最低兼容版本</span>
+    <span class="cm">// AddNode/RemoveNode/Update：随 QueryNode 上下线刷新版本视图</span>
+}</pre>
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  一句话：索引的<strong>数据流</strong>是——<strong>sealed 段原始向量</strong>（对象存储 binlog）→ <strong>worker 构建</strong>（<span class="inline">indexBuildTask.Execute</span>：读 binlog、调 Knowhere）→ <strong>索引文件落对象存储</strong>（index_files）→ <strong>QueryNode 加载</strong>（<span class="mono">segment_loader.go</span>：读进内存或 mmap）→ 段以 <strong>ANN</strong> 可查。<strong>原始向量与索引并存</strong>（重排/重建要用原始数据）；<strong>growing 段无索引、用暴力扫描兜底</strong>，sealed 并建好索引后转 ANN；一次检索常是"暴力 + ANN"混合再归并。<strong>计算存储分离</strong>让节点无状态可恢复。<strong>索引版本</strong>由 <span class="mono">index_engine_version_manager.go</span> 协商，保证产出的索引被集群节点认得。
+</div>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>完整数据流</strong>：sealed 段原始向量 → worker 读 binlog·调 Knowhere 构建 → 索引文件落对象存储 → QueryNode 加载 → 段可 ANN 检索。</li>
+    <li><strong>原始与索引并存</strong>：索引文件（<span class="mono">index_files</span>）不替换原始 binlog；量化索引重排、未来重建都要回到原始向量。</li>
+    <li><strong>加载两方式</strong>：内存（延迟最低·吃内存）vs mmap（省内存·按需读盘·略抖）；可按字段/场景配置，是延迟↔容量取舍。</li>
+    <li><strong>growing 用暴力扫描</strong>：无索引的段退化为逐条算距离，慢但不漏；sealed 建好索引后转 ANN。一次检索常是暴力+ANN 混合归并。</li>
+    <li><strong>计算存储分离</strong>：原始数据与索引都在对象存储，worker/QueryNode 无状态、崩了从对象存储恢复。</li>
+    <li><strong>索引版本管理</strong>：<span class="mono">index_engine_version_manager.go</span> 的 <span class="inline">IndexEngineVersionManager</span>（<span class="inline">GetCurrentIndexEngineVersion</span>/<span class="inline">GetMinimalIndexEngineVersion</span>）协商版本，避免建出无人能加载的索引。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. 一个 sealed 段的索引，从构建到能被查询，经过哪条路径？</div>
+  <ol class="opts">
+    <li>sealed 段 → 构建任务（worker 读该段 binlog、调 Knowhere 建索引）→ 索引文件写入对象存储 → QueryNode 加载（可 mmap 或全内存，loadSealedSegment）；growing 段尚未建索引，查询时用暴力扫描</li>
+    <li>QueryNode 直接从内存共享 DataNode 的索引，无需对象存储</li>
+    <li>growing 段也用 HNSW 索引检索</li>
+    <li>索引文件随 binlog 一起在写入时同步生成</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：A</strong>。对象存储是构建侧（worker 写）与加载侧（QueryNode 读）之间的解耦点，二者无需直接通信。mmap 让超出内存的索引也能加载，是“内存 vs 延迟”的取舍</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. 索引引擎版本管理（index_engine_version_manager.go）在滚动升级时为何重要？</div>
+  <ol class="opts">
+    <li>它给每个段分配主键</li>
+    <li>不同节点的 Knowhere 版本支持的索引格式可能不同；构建时按“以最弱节点为准”（GetCurrentIndexEngineVersion/GetMinimalIndexEngineVersion）选版本，确保新建的索引所有 QueryNode 都能加载，升级期间服务不中断</li>
+    <li>它只是日志里的版本号，无实际作用</li>
+    <li>它决定查询用哪个 metric</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。“以最弱节点为准”是兼容性优先于新特性的体现：用一点“暂不使用新格式”的代价，换升级期间全集群始终可加载、不丢服务。这是在线数据库升级的通用保守策略</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>本课用“对象存储”把索引构建与加载彻底解耦，又用“以最弱节点为准”的版本协商保证滚动升级不中断。请思考：这两个设计分别体现了分布式系统的什么通用原则？为什么 growing 段宁可用暴力扫描也不立刻建索引，这与“段的生命周期”（第 7 课）如何呼应？（可结合第 18 课 binlog、第 22 课 Knowhere。）</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+The last two lessons covered "<strong>who builds the index</strong>" (DataCoord schedules, a worker executes) and "<strong>what index to build</strong>" (Knowhere's vector-index families). This lesson cuts to the <strong>data flow</strong>: physically, where does a segment's data travel as it goes from "raw vectors" to "a searchable index"?
+The full chain: <strong>a sealed segment's raw vectors → a build task (the worker reads binlogs and calls Knowhere) → index files written to object storage → QueryNode reads the index into memory or mmaps it when the collection is loaded → the segment becomes ANN-searchable</strong>.
+Two key questions arise along the way: <strong>how do you query a segment that isn't indexed yet (especially a growing one)</strong>, and <strong>if the index format is upgraded, can old indexes still be used</strong> (index versioning)? This lesson settles both.
+</p>
+
+<div class="card analogy">
+  <div class="tag">📮 Analogy</div>
+  Back to the library. Last lesson the assistant read the shelf and wrote a stack of <strong>catalog cards</strong> (the index). But the cards can't just sit by the shelf — they must be <strong>boxed and sent to the central archive</strong> (object storage) for safekeeping, logged, and available on request.
+  When a <strong>branch library</strong> (QueryNode) wants to offer "fast lookups," it <strong>checks out a copy</strong> of those cards from the central archive: either <strong>moves the whole copy into the front desk drawer</strong> (load into memory, fastest to query) or <strong>keeps it on a nearby shelf and flips to a page when needed</strong> (mmap, memory-saving, read on demand).
+  Two more things: <strong>brand-new books not yet cataloged</strong> (growing segments) must still serve readers — only by <strong>flipping through them one by one</strong> (brute force), slow but complete. And the archive's <strong>card format occasionally upgrades</strong> (a more efficient new layout), so a branch must recognize "which version these cards are and whether my equipment reads it" — that is index versioning.
+</div>
+
+<h2>Data-flow overview: from sealed segment to searchable</h2>
+<p>First see the whole path at a glance. It threads together roles from several earlier lessons: Lesson 17's flush producing sealed segments, Lesson 18's object storage and binlogs, Lesson 13's QueryCoord load/release, Lesson 21's build task:</p>
+
+<div class="timeline">
+  <div class="lane"><span class="lane-label">① sealed</span><span class="tslot">segment flushed to binlogs (raw vectors, immutable)</span></div>
+  <div class="lane"><span class="lane-label">② build</span><span class="tslot now">worker reads binlogs → calls Knowhere to build</span></div>
+  <div class="lane"><span class="lane-label">③ persist</span><span class="tslot">index files written to object storage (index_files prefix)</span></div>
+  <div class="lane"><span class="lane-label">④ load</span><span class="tslot now">QueryNode reads the index into memory / mmap</span></div>
+  <div class="lane"><span class="lane-label">⑤ queryable</span><span class="tslot">the segment participates in search via ANN</span></div>
+</div>
+
+<p>The most memorable trait of this pipeline: <strong>every step leaves the "heavy work" in the background and settles the "product" into durable files</strong>. Raw vectors are durable (binlogs in object storage), and so is the index (index files in object storage) — so even if a worker or QueryNode crashes midway, <strong>the already-persisted products are never lost</strong>; just refetch from object storage on restart.
+This is Milvus's recurring "<strong>compute-storage separation</strong>": the compute for building indexes (workers) and for serving search (QueryNodes) is <strong>stateless and replaceable</strong>, while the real <strong>state</strong> (raw data, indexes) lives on the shared object-storage substrate. Grasp this and you see why Milvus nodes scale freely and recover fast after a crash — because "the data" and "who computes on it" are cleanly decoupled.</p>
+
+<h2>Build side: worker reads binlogs, calls Knowhere, writes index files</h2>
+<p>Zoom into Lesson 21's "build" step. After the worker (the <span class="inline">indexBuildTask</span> on a datanode) picks up a segment's build task, its <span class="inline">Execute</span> roughly does three things:</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Read raw vectors</h4><p>By the segment info in the task, <strong>pull the segment's vector binlogs</strong> from object storage, deserialize, and assemble into an in-memory dataset Knowhere can consume (recall Lesson 18's columnar binlogs).</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Call Knowhere to build</h4><p>Per the index type and params (Lesson 22), hand the dataset to Knowhere to build — graph / cluster / train codebook. This is the <strong>most CPU/memory-hungry</strong> step of the chain.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Write index files + register</h4><p><strong>Serialize Knowhere's output into index files</strong>, write them back to object storage (<span class="mono">index_files</span> prefix), then <strong>report the paths to DataCoord</strong> and mark the segment "indexed."</p></div></div>
+</div>
+
+<p>One often-overlooked but important detail: the worker <strong>reads binlogs (raw vectors) and writes index files — the two coexist; the index does NOT replace the raw data</strong>.
+Why keep the raw vectors? Because many indexes (e.g. quantized IVF_PQ) are <strong>lossy</strong>, and search may need raw vectors for <strong>exact re-ranking</strong>; and any future <strong>rebuild</strong> (change index type, change params, or an index-format upgrade) must start over from the raw vectors. So in object storage, one segment holds both the <strong>raw binlogs</strong> and the <strong>index files</strong>, each with its job: the raw binlogs are the "<strong>truth</strong>" (everything can be rebuilt from them), the index files an "<strong>acceleration copy</strong>" (if corrupted or stale, they can be rebuilt from the raw data). This echoes Lesson 18's object-storage product list: insert_log / delta_log / stats_log / <strong>index_files</strong> coexisting side by side.</p>
+
+<p>Let's also nail down once more "why the build must run on immutable data." When the worker reads binlogs to build an index, it <strong>must be sure the data won't change during the build</strong> — otherwise, if the data were rewritten halfway, the produced index wouldn't match the data. A sealed segment provides exactly this guarantee: it is a <strong>read-only, immutable</strong> snapshot, so the worker can read it freely and compute slowly without worrying about anyone changing the data behind its back.
+This is the recurring "<strong>immutability</strong>" theme from earlier parts cashing in again, now in the indexing context: immutable binlogs let compaction merge safely in the background (Lesson 19), let deletes only append tombstones (Lesson 20), and now let index builds proceed safely in the background. <strong>Immutability is the shared foundation of all these background async tasks</strong> — without it, the concurrency of "serving queries while rewriting/indexing in the background" would be riddled with data races.</p>
+
+<h2>Load side: QueryNode reads the index into memory or mmap</h2>
+<p>An index file sitting in object storage is only a "<strong>loadable asset</strong>" — it cannot serve directly. What makes it "<strong>come alive and queryable</strong>" is <strong>QueryNode's load action when the collection is loaded</strong> (recall Lesson 13: QueryCoord decides which segments load onto which QueryNodes).
+The load logic is in <span class="mono">internal/querynodev2/segments/segment_loader.go</span> (e.g. <span class="inline">loadSealedSegment</span>); it fetches the segment's index files from object storage and hands them to the C++ side (via Knowhere) to <strong>deserialize and load</strong> into a searchable index object. Loading comes in two ways — an important <strong>memory vs disk</strong> tradeoff that directly governs "how much data a node can serve and how fast it queries":</p>
+
+<div class="cols">
+  <div class="col"><h4>Load into memory</h4><p>Read the <strong>entire index into RAM</strong>. All access at query time hits memory, giving the <strong>lowest, most stable latency</strong>; the cost is <strong>memory consumption</strong>, with per-node capacity bounded by RAM. First choice for latency-sensitive, memory-rich scenarios.</p></div>
+  <div class="col"><h4>Memory-map (mmap)</h4><p><strong>mmap</strong> the index files into the address space, <strong>paging in from disk only what's touched</strong>. <strong>Memory-saving</strong>, fitting <strong>far more</strong> data under the same RAM; the cost is that cold access triggers <strong>page faults to disk</strong>, with slightly higher, jittery latency. Pick it when capacity comes first.</p></div>
+</div>
+
+<p>The memory-vs-mmap tradeoff is, again, one edge of that old triangle: <strong>trade latency for capacity</strong>. It is the same idea as last lesson's DiskANN ("put the graph on disk") expressed at a <strong>different level</strong> — DiskANN designs the <strong>index algorithm itself</strong> for disk, while mmap makes <strong>any in-memory index</strong> "page in on demand" at the <strong>load</strong> level.
+Milvus lets you <strong>finely configure</strong> which data goes through mmap by field and scenario, so you can keep "hot small fields in memory, cold large vectors on mmap," finding your own balance between <strong>cost and latency</strong>. This flexibility is the dividend of "compute-storage separation + file-based indexes": since an index is just a file in object storage, the load side is free to decide "how to bring it in and use it."</p>
+
+<p>Let's also connect "load" to Lesson 13's <strong>QueryCoord</strong>, lest you think QueryNode loads on its own whim. The one that decides "<strong>which segments, which indexes, onto which QueryNode</strong>" is QueryCoord — it holds the global view of replicas, balancing, and distribution↔target, and <strong>dispatches</strong> load tasks to specific QueryNodes; a QueryNode merely <strong>executes</strong> that load command (fetch index files from object storage, load, report ready).
+This is, once more, the same "<strong>coordinator schedules, node executes</strong>" theme: index build is DataCoord-scheduled + worker-executed, index load is QueryCoord-scheduled + QueryNode-executed. The two background chains are strikingly symmetric — both hand the "heavy work" to replaceable nodes and keep the "global ledger" with the coordinator. See this symmetry clearly and your grasp of Milvus's whole distributed skeleton takes shape.</p>
+
+<h2>Segments not yet indexed: growing segments use brute force</h2>
+<p>An unavoidable question: should queries serve segments that are <strong>just written, still growing, or sealed-but-not-yet-indexed</strong>? They must — otherwise freshly written data couldn't be found, violating "<strong>visible once written</strong>."
+The handling is direct: <strong>these unindexed segments fall back to brute force at query time (FLAT-style per-row distance)</strong>. Slow, but <strong>correct and complete</strong>. This also explains why Lesson 21 stressed "<strong>indexes are built only on immutable sealed segments</strong>" — a growing segment is still changing, so building on it is wasted; better to wait until it's sealed, with brute force covering the gap until then.</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">growing segment</div><div class="nd">still receiving rows · no index</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">brute force</div><div class="nd">per-row distance · slow but complete</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">flush → sealed</div><div class="nd">frozen into immutable binlogs</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">build → ANN</div><div class="nd">segment switches to index search · fast</div></div>
+</div>
+
+<p>So a single search on a QueryNode is often <strong>"hybrid"</strong>: a few growing segments use brute force, many sealed segments use ANN indexes, each computes a local topK, then they <strong>merge</strong> into a global result (the same "divide and conquer" as Lesson 10's Proxy fan-out-and-reduce, just at a different level).
+To the user this is all <strong>transparent</strong> — you just query, and "which segments have an index, which don't, and how each computes" is decided automatically inside QueryNode. Grasp this hybrid and you'll no longer wonder "why can freshly written data be searched instantly, yet seems a touch slower than old data" — because the growing segment holding new data is still on brute force; once it's sealed and indexed, it's as fast as the old data. This is also why, just after bulk-importing a lot of data, queries start slow and speed up: as the background builds the indexes of sealed segments one by one, fewer segments use brute force and more use ANN, so overall latency <strong>steadily drops and stabilizes</strong>.</p>
+
+<h2>Index versioning: the format upgraded — what about old indexes?</h2>
+<p>A last, often-ignored yet very real issue: index files have a <strong>format version</strong>. Knowhere evolves, and the index's <strong>engine version</strong> upgrades — newer versions may have more efficient layouts or new capabilities. So when the cluster runs <strong>mixed old/new QueryNodes</strong>, or an <strong>old index meets a new engine</strong>, how do you guarantee "the index that's built is recognized by the node that loads it"?
+That is the job of <span class="mono">internal/datacoord/index_engine_version_manager.go</span>: DataCoord maintains an <span class="inline">IndexEngineVersionManager</span> that tracks the index-engine versions reported by each QueryNode and yields the <strong>currently available version</strong> (<span class="inline">GetCurrentIndexEngineVersion</span>) and the <strong>minimal compatible version</strong> (<span class="inline">GetMinimalIndexEngineVersion</span>). Building per this <strong>negotiated version</strong> ensures the produced index is <strong>never higher than the weakest node in the cluster can recognize</strong>, avoiding the embarrassment of "built a new-format index that no node can load."</p>
+
+<p>Behind this version negotiation is a real constraint every distributed system faces: <strong>upgrades aren't instantaneous — they roll out gradually</strong>. You can't switch dozens or hundreds of nodes to a new Knowhere version all at once; in practice there's always a window of <strong>mixed old/new nodes</strong>. If a worker that already upgraded builds an index in the latest format, while some not-yet-upgraded old QueryNodes <strong>can't read</strong> that new format, that segment <strong>fails to load and can't serve</strong> on those nodes.
+The version manager's "<strong>take the minimal compatible version</strong>" policy is, in essence, a plain compatibility rule: <strong>the format of a product must align with the most conservative consumer in the cluster</strong>. Only once all nodes have upgraded and the minimal-version watermark rises overall does the new format naturally take effect. This "<strong>defer to the weakest node</strong>" conservative negotiation is everywhere in online database upgrades — it trades "temporarily not using a new feature" for <strong>uninterrupted service during the upgrade</strong>. It is a microcosm of the distributed-systems principle "<strong>compatibility over new features</strong>": whether you get the newest, fastest format is secondary; what comes first is that <strong>the whole cluster stays available throughout the upgrade, losing no service</strong>.</p>
+
+<p>To wrap up: along the <strong>data flow</strong>, we walked the index's full physical journey "from raw vectors to searchable" — the build side's worker turns a sealed segment into index files in object storage, the load side's QueryNode brings those files into memory or mmap, brute force covers segments not yet indexed in between, plus versioning ensures old and new indexes recognize each other.
+With that, the <strong>vector-index</strong> thread is complete: Lesson 21 "who builds," Lesson 22 "what to build," Lesson 23 "how it flows and loads." But remember, real queries are often not just "find the most similar vector" — they frequently carry <strong>scalar filters</strong> ("price &lt; 100 and category = electronics") and <strong>full-text search</strong> ("contains keyword X"). For these <strong>non-vector</strong> lookups to be fast, they too need indexes — the subject of the next lesson, <strong>scalar and full-text indexes</strong>.</p>
+
+<table class="t">
+  <tr><th>Product / state</th><th>Where</th><th>Who</th></tr>
+  <tr><td>raw-vector binlogs</td><td>object storage (insert_log prefix)</td><td>produced by flush (Lesson 17), read at build</td></tr>
+  <tr><td>index files</td><td>object storage (index_files prefix)</td><td>written by worker after build</td></tr>
+  <tr><td>index metadata (paths/state)</td><td>etcd (via DataCoord)</td><td>written back by worker, booked by DataCoord</td></tr>
+  <tr><td>loaded index object</td><td>QueryNode memory / mmap</td><td>loaded by QueryNode on collection load</td></tr>
+  <tr><td>index engine version</td><td>DataCoord (version manager)</td><td><span class="mono">index_engine_version_manager.go</span></td></tr>
+</table>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/datacoord/index_engine_version_manager.go</span><span class="ln">IndexEngineVersionManager: negotiate the index engine version (excerpt)</span></div>
+  <pre><span class="cm">// DataCoord tracks the index-engine versions reported by each QueryNode and yields available/minimal-compatible versions,</span>
+<span class="cm">// so a built index is never higher than the weakest node in the cluster can load.</span>
+<span class="kw">type</span> IndexEngineVersionManager <span class="kw">interface</span> {
+    <span class="fn">GetCurrentIndexEngineVersion</span>() int32 <span class="cm">// currently available version</span>
+    <span class="fn">GetMinimalIndexEngineVersion</span>() int32 <span class="cm">// minimal compatible version</span>
+    <span class="cm">// AddNode/RemoveNode/Update: refresh the version view as QueryNodes come and go</span>
+}</pre>
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: the index <strong>data flow</strong> is — <strong>sealed segment raw vectors</strong> (object-storage binlogs) → <strong>worker builds</strong> (<span class="inline">indexBuildTask.Execute</span>: read binlogs, call Knowhere) → <strong>index files to object storage</strong> (index_files) → <strong>QueryNode loads</strong> (<span class="mono">segment_loader.go</span>: into memory or mmap) → the segment is queryable via <strong>ANN</strong>. <strong>Raw vectors and index coexist</strong> (re-rank/rebuild need the raw data); <strong>growing segments have no index and fall back to brute force</strong>, switching to ANN once sealed and built; a single search is often "brute force + ANN" merged. <strong>Compute-storage separation</strong> makes nodes stateless and recoverable. <strong>Index versions</strong> are negotiated by <span class="mono">index_engine_version_manager.go</span>, ensuring built indexes are recognized by cluster nodes.
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Full data flow</strong>: sealed-segment raw vectors → worker reads binlogs · calls Knowhere to build → index files to object storage → QueryNode loads → segment ANN-searchable.</li>
+    <li><strong>Raw and index coexist</strong>: index files (<span class="mono">index_files</span>) don't replace raw binlogs; quantized-index re-ranking and any future rebuild go back to raw vectors.</li>
+    <li><strong>Two load modes</strong>: memory (lowest latency · RAM-hungry) vs mmap (memory-saving · page-in on demand · slight jitter); configurable per field/scenario, a latency↔capacity tradeoff.</li>
+    <li><strong>Growing uses brute force</strong>: unindexed segments fall back to per-row distance, slow but complete; switch to ANN after sealed and built. A search is often brute-force + ANN merged.</li>
+    <li><strong>Compute-storage separation</strong>: both raw data and indexes live in object storage; workers/QueryNodes are stateless and recover from object storage after a crash.</li>
+    <li><strong>Index versioning</strong>: <span class="mono">index_engine_version_manager.go</span>'s <span class="inline">IndexEngineVersionManager</span> (<span class="inline">GetCurrentIndexEngineVersion</span>/<span class="inline">GetMinimalIndexEngineVersion</span>) negotiates versions, avoiding building an index no node can load.</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. What path does a sealed segment's index take from build to queryable?</div>
+  <ol class="opts">
+    <li>sealed segment → build task (worker reads the segment's binlogs, calls Knowhere to build) → index files written to object storage → QueryNode loads them (mmap or fully in-memory, loadSealedSegment); growing segments aren't indexed yet and use brute force at query time</li>
+    <li>QueryNode shares the DataNode's index directly from memory, with no object storage</li>
+    <li>Growing segments are also searched via an HNSW index</li>
+    <li>Index files are generated synchronously with binlogs at write time</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. Object storage is the decoupling point between the build side (worker writes) and the load side (QueryNode reads), so the two need no direct communication. mmap lets indexes larger than RAM still load, a 'memory vs latency' tradeoff</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Why does index-engine version management (index_engine_version_manager.go) matter during a rolling upgrade?</div>
+  <ol class="opts">
+    <li>It assigns primary keys to each segment</li>
+    <li>Different nodes' Knowhere versions may support different index formats; the build picks a version 'deferring to the weakest node' (GetCurrentIndexEngineVersion/GetMinimalIndexEngineVersion) so every QueryNode can load the new index, keeping service uninterrupted during the upgrade</li>
+    <li>It is just a version string in logs with no real effect</li>
+    <li>It decides which metric a query uses</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. 'Defer to the weakest node' embodies compatibility-over-new-features: trade 'not yet using the newest format' for a cluster that stays loadable and loses no service during the upgrade. It's the standard conservative strategy for online database upgrades</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson fully decouples index build from load via 'object storage,' and guarantees uninterrupted rolling upgrades via 'defer to the weakest node' version negotiation. Consider: what general distributed-systems principles do these two designs embody? Why would a growing segment rather use brute force than build an index immediately, and how does that echo the 'segment lifecycle' (Lesson 7)? (Tie in Lesson 18 binlog and Lesson 22 Knowhere.)</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="22-knowhere.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">Knowhere 向量索引</span><span class="lang-en">Knowhere vector indexes</span></div></a><a class="next" href="24-scalar-and-fulltext.html"><div class="dir"><span class="lang-zh">下一课 →</span><span class="lang-en">Next →</span></div><div class="ttl"><span class="lang-zh">标量与全文索引</span><span class="lang-en">Scalar &amp;amp; full-text</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>

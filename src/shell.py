@@ -87,6 +87,14 @@ PAGES = [
      "第四部分 · 写入链路", "Part 4 · The write path"),
     ("20-delete-and-upsert.html", "删除与 Upsert", "Delete &amp; upsert",
      "第四部分 · 写入链路", "Part 4 · The write path"),
+    ("21-index-service.html", "索引服务", "The index service",
+     "第五部分 · 索引", "Part 5 · Indexing"),
+    ("22-knowhere.html", "Knowhere 向量索引", "Knowhere vector indexes",
+     "第五部分 · 索引", "Part 5 · Indexing"),
+    ("23-index-build-and-load.html", "构建与加载索引", "Index build &amp; load",
+     "第五部分 · 索引", "Part 5 · Indexing"),
+    ("24-scalar-and-fulltext.html", "标量与全文索引", "Scalar &amp; full-text",
+     "第五部分 · 索引", "Part 5 · Indexing"),
 ]
 
 
@@ -568,6 +576,14 @@ SUBTITLES = {
                                   "compaction merges fragments & applies L0 tombstones; Mix/Merge/Clustering/Sort/Level0 types; DataCoord schedules, datanode executes; GC reclaims orphans past TTL"),
     "20-delete-and-upsert.html": ("删除即墓碑·进 WAL·沉淀 L0 deltalog · 布隆过滤器路由删除 · upsert = 删除 + 插入 · 按时间戳的 MVCC 可见性",
                                   "delete as tombstone; into WAL; settle as L0 deltalog; bloom filters route deletes; upsert = delete + insert; timestamp-based MVCC visibility"),
+    "21-index-service.html": ("DataCoord 调度索引构建·worker 执行（无 indexnode 进程） · CreateIndex → 每个 sealed 段一个构建任务 → 索引文件 → 可加载 · auto-index 自动选型",
+                              "DataCoord schedules index build, a worker executes it (no indexnode process); CreateIndex → one build task per sealed segment → index files → loadable; auto-index picks the type"),
+    "22-knowhere.html": ("向量索引由 Knowhere 提供：FLAT/IVF_FLAT/SQ8/PQ·HNSW·DiskANN·SCANN·GPU CAGRA·稀疏 · nlist/nprobe 与 M/ef 取舍 · metric 必须与字段匹配",
+                         "vector indexes come from Knowhere: FLAT/IVF_FLAT/SQ8/PQ, HNSW, DiskANN, SCANN, GPU CAGRA, sparse; nlist/nprobe and M/ef tradeoffs; the metric must match the field"),
+    "23-index-build-and-load.html": ("sealed 段 → 构建任务（worker 读 binlog·调 Knowhere）→ 索引文件落对象存储 → QueryNode 加载（mmap 或内存） · growing 段用暴力扫描 · 索引引擎版本协商",
+                                     "sealed segment → build task (worker reads binlogs, calls Knowhere) → index files in object storage → QueryNode loads (mmap or memory); growing segments use brute force; index-engine version negotiation"),
+    "24-scalar-and-fulltext.html": ("标量索引加速过滤：倒排/bitmap/排序/ngram/混合/JSON · 全文 BM25 由 Rust tantivy 落地 · 标量 bitset 下推给向量 ANN（先筛后搜）",
+                                    "scalar indexes accelerate filtering: inverted/bitmap/sort/ngram/hybrid/JSON; full-text BM25 via Rust tantivy; scalar bitset pushed down into vector ANN (filter-then-search)"),
 }
 
 

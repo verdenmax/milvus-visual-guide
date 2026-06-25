@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>22 · Knowhere 向量索引 / Knowhere vector indexes - Milvus 图解教程</title>
+<meta name="description" content="第五部分 · 索引｜Knowhere 向量索引 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="22 · Knowhere 向量索引 / Knowhere vector indexes - Milvus 图解教程">
+<meta property="og:description" content="第五部分 · 索引｜Knowhere 向量索引 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="22 · Knowhere 向量索引 / Knowhere vector indexes - Milvus 图解教程">
+<meta name="twitter:description" content="第五部分 · 索引｜Knowhere 向量索引 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.timeline .tl-row { display: flex; align-items: flex-start; gap: .6rem; padding: .12rem 0; }
+.timeline .tl-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: .45rem; }
+.timeline .tl-t { font-family: ui-monospace, monospace; font-weight: 700; color: var(--accent-ink); min-width: 2.4rem; font-size: .82rem; flex-shrink: 0; margin-top: .18rem; }
+.timeline .tl-c { font-size: .9rem; color: var(--muted); }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第五部分 · 索引</span><span class="lang-en">Part 5 · Indexing</span></span>
+    <span class="pill">22 / 24</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:91%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第五部分 · 索引</span><span class="lang-en">Part 5 · Indexing</span></div>
+    <h1><span class="lang-zh">Knowhere 向量索引</span><span class="lang-en">Knowhere vector indexes</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+上一课我们看清了"谁来建索引"：DataCoord 调度、datanode worker 执行。但 worker 在那一步只是<strong>调了一个库</strong>——真正懂"如何把向量组织成可快速检索的结构"的，是 Milvus 依赖的上游向量检索内核 <strong>Knowhere</strong>。
+这一课就钻进 Knowhere，看它提供了哪几大<strong>向量索引家族</strong>（FLAT、IVF 系、HNSW、DiskANN、SCANN、GPU、稀疏），各自是<strong>什么思路</strong>、有<strong>哪些关键参数</strong>、<strong>何时该选谁</strong>。
+一句重要的提醒先放这儿：下面绝大多数索引名（HNSW、IVF_SQ8、SCANN、CAGRA……）是 <strong>Knowhere 库里的 <span class="inline">IndexEnum</span> 常量</strong>，<strong>并不</strong>定义在 Milvus 自己的代码里；只有少数枚举在 Milvus core 中被引用，本课会精确区分。
+</p>
+
+<div class="card analogy">
+  <div class="tag">📚 生活类比</div>
+  想象你管着一个堆满货物的大仓库，任务是"<strong>来一个样品，找出最像它的几件货</strong>"。你有好几种组织货架的办法：
+  <strong>最笨但最准</strong>的，是把<strong>每一件货都和样品比一遍</strong>（这就是 FLAT，暴力扫描，召回 100% 但慢）；
+  <strong>聪明一点</strong>，先把货<strong>按相似度分区</strong>（聚类），样品先定位到最近的几个区、只翻这几个区（这是 IVF：先粗分桶，再桶内细找）；
+  <strong>更聪明</strong>，给货物之间<strong>架一张"近邻跳板"的网</strong>，从任意一件货出发，顺着跳板几步就能跳到最像样品的那片（这是 HNSW：可导航的小世界图）；
+  <strong>省空间</strong>的办法是把每件货<strong>压成一张缩略图</strong>再比（这是 PQ 量化：用近似换内存）；
+  <strong>放不下内存</strong>时，就把货架<strong>摊到磁盘上</strong>、只把索引骨架留在内存（这是 DiskANN）。
+  没有"最好"的办法，只有"<strong>在速度、内存、召回、成本之间，你愿意怎么取舍</strong>"。Knowhere 就是把这些办法<strong>都备齐</strong>的工具箱。
+</div>
+
+<h2>Knowhere 是什么：Milvus 的向量检索内核</h2>
+<p><strong>Knowhere</strong> 是 Milvus 项目维护的一个<strong>独立的、上游的</strong>向量检索库（C++ 为主，对接 FAISS、HNSWlib、DiskANN、cuVS 等多种底层实现，并统一封装）。Milvus 的 C++ core 在<strong>建索引</strong>和<strong>做向量检索</strong>这两件最核心的算法活上，都是<strong>调用 Knowhere</strong> 来完成的——你可以把它理解成 Milvus 的"<strong>向量计算引擎</strong>"。
+回忆第 2 课讲的"三语言分工"：Go 管分布式与调度、C++ 管单机的存储与计算、Rust 管全文索引；而 C++ 这一层里，<strong>向量索引与检索的具体算法</strong>就外包给了 Knowhere 这个专门的库。</p>
+
+<p>为什么要把算法<strong>单独抽成一个库</strong>，而不是和 Milvus core 混写在一起？因为向量检索是一个<strong>飞速演进、又高度专业</strong>的领域：今天 HNSW 当红、明天 DiskANN、后天 GPU 上的 CAGRA，底层还要对接 FAISS、cuVS 等一堆各有所长的实现。把这些<strong>算法细节封装进 Knowhere</strong>，让它专注"如何又快又准地建索引、搜向量"，Milvus core 则只需通过<strong>统一的接口</strong>说"给我用 X 索引、Y 度量、建/搜"，两边<strong>各自独立演进</strong>。
+这正是良好分层的价值：Milvus 不必为了引入一种新索引就改动分布式调度，Knowhere 也不必关心段、WAL、副本这些分布式概念。本课接下来讲的所有索引家族，都是 Knowhere 这一侧暴露给 Milvus 的"<strong>能力清单</strong>"。</p>
+
+<p>这带来一个对<strong>读代码很重要</strong>的事实，也是本课<strong>反复强调</strong>的引用纪律：因为索引算法住在 Knowhere（上游库）里，绝大多数<strong>索引类型名是 Knowhere 的 <span class="inline">IndexEnum</span> 常量，而不是 Milvus core 里的符号</strong>。
+在 Milvus 仓库里，你能看到的是 core 代码<strong>引用</strong>这些 Knowhere 枚举的地方——例如 <span class="mono">internal/core/src/index/Utils.cpp</span> 里引用了 <span class="inline">knowhere::IndexEnum::INDEX_FAISS_IVFFLAT</span>、<span class="inline">INDEX_SPARSE_INVERTED_INDEX</span>、<span class="inline">INDEX_SPARSE_WAND</span> 等，<span class="mono">internal/core/src/common/Utils.h</span> 里引用了 <span class="inline">INDEX_DISKANN</span>。
+但像 HNSW、IVF_SQ8、IVF_PQ、SCANN、GPU_CAGRA 这些名字，<strong>不要</strong>去 Milvus core 里找它们的"定义"——它们的定义在 Knowhere 上游库里。<strong>本课提到这些名字时，一律按"Knowhere 索引名"来讲，绝不硬安到某个不含它的 Milvus 文件上。</strong></p>
+
+<h2>向量索引家族：思路、参数、何时用</h2>
+<p>下面这张表是本课的"地图"。把它读懂，你就掌握了"面对一个字段，该怎么选索引"的主干判断：</p>
+
+<table class="t">
+  <tr><th>家族（Knowhere 名）</th><th>核心思路</th><th>关键参数</th><th>何时选它</th></tr>
+  <tr><td><strong>FLAT</strong></td><td>暴力穷举，逐条算距离</td><td>无</td><td>数据小、要 100% 召回、做基准对照</td></tr>
+  <tr><td><strong>IVF_FLAT</strong></td><td>先聚类分桶，查询只探最近的几桶</td><td>nlist（桶数）/ nprobe（探几桶）</td><td>中等规模、想要召回与速度平衡、不愿损精度</td></tr>
+  <tr><td><strong>IVF_SQ8</strong></td><td>IVF + 标量量化（每维压成 1 字节）</td><td>nlist / nprobe</td><td>内存吃紧、可接受轻微精度损失</td></tr>
+  <tr><td><strong>IVF_PQ</strong></td><td>IVF + 乘积量化（向量压成短码）</td><td>nlist / nprobe / m / nbits</td><td>超大规模、内存极紧、能容忍更多精度损失</td></tr>
+  <tr><td><strong>HNSW</strong></td><td>可导航小世界图，顺近邻边跳转</td><td>M（每点边数）/ efConstruction / ef（查询）</td><td>追求<strong>高召回 + 低延迟</strong>、内存够用（最常用）</td></tr>
+  <tr><td><strong>DiskANN</strong></td><td>磁盘上的图索引，内存只放骨架</td><td>search_list / beamwidth 等</td><td>数据量远超内存、用 SSD 换容量</td></tr>
+  <tr><td><strong>SCANN</strong></td><td>各向异性量化 + 重排，谷歌系</td><td>nlist / nprobe / reorder_k</td><td>想在量化索引上拿更高召回</td></tr>
+  <tr><td><strong>GPU（CAGRA / GPU_IVF_*）</strong></td><td>GPU 上建图 / IVF，海量并行</td><td>对应 CPU 版 + GPU 资源</td><td>有 GPU、要极高吞吐</td></tr>
+  <tr><td><strong>稀疏（SPARSE_INVERTED_INDEX / SPARSE_WAND）</strong></td><td>为稀疏向量设计的倒排 + WAND 剪枝</td><td>drop_ratio 等</td><td>稀疏向量（如 BM25/SPLADE 学习稀疏）</td></tr>
+</table>
+
+<p>读这张表，抓两条主线就够了。<strong>第一条线是"分桶 vs 建图"</strong>：IVF 系走的是"<strong>先聚类、查询只看最近几桶</strong>"的路子，参数核心是 <span class="inline">nlist</span>（分多少桶）与 <span class="inline">nprobe</span>（查时探几桶）——nprobe 越大，看的桶越多，召回越高但越慢；
+HNSW 走的是"<strong>建一张近邻跳板网、顺边跳到目标区</strong>"的路子，参数核心是 <span class="inline">M</span>（每个点连几条边，图越密越准也越占内存）与 <span class="inline">ef</span>（查询时维护的候选集大小，越大召回越高也越慢）。
+<strong>第二条线是"原始 vs 量化"</strong>：FLAT/IVF_FLAT/HNSW 存的是<strong>原始向量</strong>（准但占内存），SQ8/PQ 则把向量<strong>压缩</strong>了（省内存但损精度）。把这两条线一交叉，你就能理解为什么有 IVF_FLAT、IVF_SQ8、IVF_PQ 这一串变体——它们都是"IVF 这套分桶骨架"配上"不同的压缩强度"。</p>
+
+<p>给每个家族安一句"人设"会更好记。<strong>FLAT</strong> 是老实的笨小孩：它从不近似，召回永远 100%——当你想<strong>量一量别的索引到底损了多少召回</strong>时，它就是那把"<strong>真值标尺</strong>"，但规模一大就力不从心。<strong>IVF</strong> 是分区规划师：聚一次类，查询时只走最近的几个区；简单、可预测，精度几乎全靠 nprobe 调。<strong>HNSW</strong> 是人脉广的领路人：靠一张多层跳板图，几跳就到对的邻域，给出大多数业务最想要的"低延迟 + 高召回"组合——代价是要把整张图（连同原始向量）<strong>都放进内存</strong>。
+<strong>DiskANN</strong> 是磁盘上的大仓库：当连量化都塞不进内存时，它把图放上 SSD、内存只留一副导航骨架，用一点延迟换"<strong>服务远超内存的数据量</strong>"的能力。<strong>量化版 IVF（SQ8/PQ）</strong>是省空间的能手：SQ8 把每一维压成一个字节，PQ 把向量切成若干子向量、各用码本里的一个码字替代，体积大幅缩水，代价是接受一点召回损失（可用重排步骤部分找回）。</p>
+
+<div class="cols">
+  <div class="col"><h4>"要召回高、延迟低，内存够"</h4><p>直接上 <strong>HNSW</strong>。图索引几跳就拿到接近穷举的召回；召回还要更高就把 <span class="inline">ef</span> 调大。这是大多数线上向量检索的默认甜点区。</p></div>
+  <div class="col"><h4>"我的数据放不进内存"</h4><p>用 <strong>IVF_PQ/SQ8</strong> 量化压缩，或上 <strong>DiskANN</strong> 把主体落 SSD。用一点召回（量化）或一点延迟（磁盘），换"<strong>每节点能服务多得多的向量</strong>"的容量。</p></div>
+</div>
+
+<p>再单独说一句<strong>稀疏</strong>向量，因为它和上面这些长得很不一样。稠密 embedding 是几百个<strong>恒有值</strong>的维度；<strong>稀疏向量</strong>（来自 BM25 或 SPLADE 这类学习稀疏模型）维度极高、但每条向量只有<strong>寥寥几个非零项</strong>——本质是一张"词 → 权重"的映射。它没法像稠密向量那样分桶或建图，于是 Knowhere 用<strong>倒排索引</strong>（<span class="inline">SPARSE_INVERTED_INDEX</span>）来服务它：对每个维度，维护一条"哪些向量含它、权重多少"的倒排链。
+<strong>WAND</strong> 变体（<span class="inline">SPARSE_WAND</span>）再加上动态剪枝——算出上界分数、把不可能进 topK 的候选直接跳过，和文本检索引擎的做法如出一辙。这两个稀疏枚举，正是真实出现在 Milvus core <span class="mono">index/Utils.cpp</span> 里的那一对。</p>
+
+<h2>放在哪里算：内存、磁盘、GPU</h2>
+<p>不同索引家族对<strong>存储介质</strong>的假设也不同，这直接决定了它的容量上限与成本。把它们按"算力/存储层次"摆开看：</p>
+
+<div class="layers">
+  <div class="layer l-core"><span class="badge">GPU 显存</span><span class="name">GPU 索引（CAGRA / GPU_IVF_*）</span><span class="ld">海量并行、极高吞吐；受显存容量限制、需要 GPU 卡</span></div>
+  <div class="layer l-main"><span class="badge">内存</span><span class="name">HNSW / IVF_FLAT / IVF_SQ8 / IVF_PQ / FLAT</span><span class="ld">索引常驻内存或 mmap；最常见，延迟低；容量受内存限制（量化可压）</span></div>
+  <div class="layer l-part"><span class="badge">磁盘(SSD)</span><span class="name">DiskANN</span><span class="ld">图主体落 SSD，内存只放骨架；用磁盘容量换"放得下超大数据"，延迟略升</span></div>
+  <div class="layer l-app"><span class="badge">稀疏</span><span class="name">SPARSE_INVERTED_INDEX / SPARSE_WAND</span><span class="ld">面向稀疏向量的倒排结构，配 WAND 动态剪枝跳过低分候选</span></div>
+</div>
+
+<p>这一层次图想说的核心是一个<strong>三角取舍</strong>：<strong>速度、内存（成本）、召回</strong>，三者通常只能优先保两个。
+HNSW 把"速度 + 召回"拉满，代价是<strong>吃内存</strong>；IVF_PQ/SQ8 用<strong>量化省内存</strong>，代价是<strong>损召回</strong>；DiskANN 用<strong>磁盘换容量</strong>，代价是<strong>延迟略升</strong>；GPU 用<strong>硬件换吞吐</strong>，代价是<strong>需要 GPU 成本</strong>。
+没有一个索引能在三个角上同时夺冠——选型的本质，就是<strong>根据你的数据规模、延迟要求、内存预算、召回底线，在这个三角里挑一个落点</strong>。这也呼应了第 5 课讲 ANN 时反复出现的那句话：<strong>近似检索，是在"够快、够省、够准"之间做工程权衡。</strong></p>
+
+<h2>一次 IVF 检索是怎么跳过大半数据的</h2>
+<p>把"分桶剪枝"这件事看具体，最能体会索引为什么快。以 IVF 为例，假设建索引时把全段向量聚成了 4 个桶（<span class="inline">nlist=4</span>），查询设 <span class="inline">nprobe=2</span>：</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>定位最近的桶</h4><p>查询向量 q 先和 4 个桶的<strong>中心点</strong>算距离，挑出最近的 <span class="inline">nprobe=2</span> 个桶。其余 2 个桶<strong>整桶跳过</strong>，连看都不看。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>桶内精算</h4><p>只在选中的 2 个桶里，对桶内向量<strong>逐条算距离</strong>（若是 IVF_FLAT 用原始向量精算；若是 SQ8/PQ 则用压缩码近似算）。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>归并取 topK</h4><p>把这 2 个桶里算出的候选<strong>归并、排序</strong>，取最近的 topK 返回。扫描量从"全段"降到了"大约一半"——nprobe 越小降得越多、越快，但漏桶的风险也越大（召回越低）。</p></div></div>
+</div>
+
+<p>这条流程把 <span class="inline">nprobe</span> 的取舍演示得很直白：<strong>nprobe 调大</strong>，看的桶多、漏掉真近邻的概率小、<strong>召回升</strong>，但要精算的向量也多、<strong>变慢</strong>；<strong>nprobe 调小</strong>则反之。
+HNSW 里的 <span class="inline">ef</span> 是同一个旋钮的"图版本"：ef 越大，查询时维护的候选集越大、搜得越充分、召回越高也越慢。<strong>记住这条通则</strong>：几乎所有 ANN 索引都有这么一个"<strong>查得多一点 ↔ 召回高一点、但更慢</strong>"的运行时旋钮，调它就是在<strong>速度与召回之间滑动</strong>。建索引期的参数（nlist、M）决定"结构的骨架与上限"，查询期的参数（nprobe、ef）则在这个骨架上做"当次检索的松紧调节"。顺带一提：HNSW 的检索其实是同一思路的"图版本"——它从图的顶层入口出发，每一步都<strong>贪心地跳向离 q 更近的邻居</strong>，先在稀疏的高层快速逼近大致区域，再逐层下沉到稠密的底层做精细搜索，最终把候选收敛到目标邻域。无论分桶还是建图，本质都是<strong>"只精算一小撮、整体跳过大半"</strong>。</p>
+
+<h2>一条铁律：度量必须和字段匹配</h2>
+<p>最后强调一个<strong>极易踩坑、却后果严重</strong>的点：索引用的<strong>度量（metric）必须和字段建表时声明的度量一致</strong>。回忆第 4 课——向量的"相似"是由度量定义的：<strong>L2</strong>（欧氏距离，越小越像）、<strong>IP</strong>（内积，越大越像）、<strong>COSINE</strong>（余弦，方向越一致越像）。
+如果字段是按 COSINE 语义训练出来的 embedding，却给它建了个 L2 的索引，那么索引"<strong>认为的近</strong>"和你"<strong>真正想要的近</strong>"就对不上，检索结果会<strong>系统性地错</strong>——而且不会报错，只是召回莫名其妙地差。所以 Knowhere 建索引时，<strong>度量是和索引绑在一起的一等参数</strong>，必须和字段、和你训练 embedding 时用的度量三者对齐。这是向量检索里最隐蔽的一类 bug，务必从一开始就把它定对。Milvus 会在建索引时校验度量与字段的一致性，但语义层面的"用对度量"仍要靠你自己把关。</p>
+
+<p>把"参数"再收一收，分成<strong>两个时刻</strong>记最清楚。<strong>建索引期参数</strong>（如 IVF 的 <span class="inline">nlist</span>、HNSW 的 <span class="inline">M</span> 与 <span class="inline">efConstruction</span>、PQ 的 <span class="inline">m</span>/<span class="inline">nbits</span>）决定的是<strong>索引结构本身</strong>——分多少桶、图多密、码本多大；它们一旦建好就<strong>固化进索引文件</strong>，要改只能重建。
+<strong>查询期参数</strong>（如 <span class="inline">nprobe</span>、<span class="inline">ef</span>）则是每次检索都能<strong>临时调</strong>的旋钮，不必重建索引，调大调小就在当次的"速度 ↔ 召回"之间滑动。理解这层"<strong>建期定骨架、查期调松紧</strong>"的分工，你在调优时就不会把两类参数混为一谈：召回长期不够，先想是不是 nlist/M 这类<strong>结构参数</strong>选小了（要重建）；只是某次想多换点召回，调大 nprobe/ef 即可（无需重建）。</p>
+
+<p>最后把这一课接回主线。本课讲的是 Knowhere 这个<strong>算法内核"有什么、怎么选"</strong>；但这些索引<strong>建在哪段数据上、建完的文件去哪了、QueryNode 又怎么把它用起来</strong>，是<strong>数据流</strong>的事——那正是下一课（第 23 课）要走的"sealed 段 → 构建 → 索引文件落对象存储 → QueryNode 加载"全程。把"选什么索引"（本课）和"索引怎么流动"（下一课）合起来，你才算真正掌握了 Milvus 的向量索引。</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/core/src/index/Utils.cpp</span><span class="ln">Milvus core 引用 Knowhere 的索引枚举（节选示意）</span></div>
+  <pre><span class="cm">// 这些是 Knowhere 上游库的 IndexEnum 常量，Milvus core 在此处引用它们：</span>
+knowhere::IndexEnum::<span class="nb">INDEX_FAISS_IVFFLAT</span>      <span class="cm">// IVF_FLAT</span>
+knowhere::IndexEnum::<span class="nb">INDEX_FAISS_BIN_IVFFLAT</span>  <span class="cm">// 二值向量 IVF</span>
+knowhere::IndexEnum::<span class="nb">INDEX_SPARSE_INVERTED_INDEX</span> <span class="cm">// 稀疏倒排</span>
+knowhere::IndexEnum::<span class="nb">INDEX_SPARSE_WAND</span>        <span class="cm">// 稀疏 WAND 剪枝</span>
+<span class="cm">// 另见 common/Utils.h 引用 knowhere::IndexEnum::INDEX_DISKANN（DiskANN）。</span>
+<span class="cm">// 而 HNSW / IVF_SQ8 / IVF_PQ / SCANN / GPU_CAGRA 等名字定义在 Knowhere 库内，core 不含其定义。</span></pre>
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  一句话：worker 建索引/检索时调的算法内核是上游库 <strong>Knowhere</strong>。它备齐了多大<strong>向量索引家族</strong>——<strong>FLAT</strong>（暴力·满召回）、<strong>IVF_FLAT/SQ8/PQ</strong>（聚类分桶 + 可选量化，旋钮 nlist/nprobe）、<strong>HNSW</strong>（近邻图，旋钮 M/ef）、<strong>DiskANN</strong>（磁盘图换容量）、<strong>SCANN</strong>、<strong>GPU/CAGRA</strong>（硬件换吞吐）、<strong>稀疏</strong>（SPARSE_INVERTED_INDEX/SPARSE_WAND）。选型是<strong>速度↔内存↔召回</strong>三角取舍；度量必须和字段一致。引用纪律：多数索引名是 <strong>Knowhere IndexEnum</strong>，Milvus core 仅<strong>引用</strong>少数（<span class="mono">index/Utils.cpp</span> 的 IVF/稀疏、<span class="mono">common/Utils.h</span> 的 INDEX_DISKANN）。
+</div>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>Knowhere = 向量内核</strong>：Milvus C++ core 的建索引与向量检索都调上游库 Knowhere（封装 FAISS/HNSWlib/DiskANN/cuVS）。</li>
+    <li><strong>索引家族</strong>：FLAT（满召回慢）/ IVF_FLAT·SQ8·PQ（分桶±量化）/ HNSW（近邻图，最常用）/ DiskANN（磁盘）/ SCANN / GPU·CAGRA / 稀疏。</li>
+    <li><strong>两条主线</strong>：分桶（IVF：nlist/nprobe）vs 建图（HNSW：M/ef）；原始（准·占内存）vs 量化（省内存·损精度）。</li>
+    <li><strong>三角取舍</strong>：速度↔内存（成本）↔召回，通常只能优先两个；选型即在三角里挑落点。</li>
+    <li><strong>运行时旋钮</strong>：nprobe/ef 越大→召回高但更慢；建索引期参数（nlist/M）定骨架，查询期参数（nprobe/ef）定松紧。</li>
+    <li><strong>度量必须匹配</strong>：L2/IP/COSINE 要和字段、和 embedding 训练时一致，否则结果系统性错且不报错。</li>
+    <li><strong>引用纪律</strong>：多数索引名是 Knowhere 的 IndexEnum；core 仅引用少数（<span class="mono">index/Utils.cpp</span>、<span class="mono">common/Utils.h</span> 的 INDEX_DISKANN）。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. Milvus 的向量索引（HNSW、IVF_PQ、SCANN、GPU CAGRA 等）究竟来自哪里？</div>
+  <ol class="opts">
+    <li>每种索引都是一个独立的微服务</li>
+    <li>由 Proxy 在查询时临时算法生成</li>
+    <li>它们大多是上游 Knowhere 库提供的 IndexEnum 索引类型，并非 milvus core 自己定义；core 仅引用少量常量（如 common/Utils.h 的 INDEX_DISKANN、index/Utils.cpp 的 INDEX_FAISS_IVFFLAT/INDEX_SPARSE_INVERTED_INDEX/INDEX_SPARSE_WAND 等 knowhere::IndexEnum::）</li>
+    <li>全部由 milvus core 的 Go 代码实现</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：C</strong>。向量索引算法属于 Knowhere（封装 Faiss/HNSWlib/DiskANN/cuVS 等）。引用 milvus 文件时只能引那些确实存在的 IndexEnum 常量，其余索引名应作为“Knowhere 索引名”呈现，不要硬塞进不含它们的 milvus 文件</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. 选择向量索引与参数时，下面哪一条描述是对的？</div>
+  <ol class="opts">
+    <li>HNSW 不需要任何参数</li>
+    <li>metric 可以查询时随意更换，不影响结果</li>
+    <li>nprobe 越小召回越高</li>
+    <li>IVF 系的 nlist/nprobe、HNSW 的 M/ef 都是“召回 vs 速度/内存”的旋钮；FLAT 暴力扫描召回 100% 但最慢，PQ/SQ8 用压缩省内存换精度，DiskANN 把图放磁盘换超大规模；且查询 metric 必须与建索引时一致</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。所有 ANN 索引本质都在“召回—延迟—内存”三角里取舍；调大 nprobe/ef 提召回但更慢。metric（L2/IP/COSINE 等）必须与字段建索引时匹配，否则距离语义错乱、结果无意义</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>本课刻意区分了“milvus core 真正定义/引用的 IndexEnum 常量”与“仅作为 Knowhere 索引名呈现的类型”。请思考：为什么把向量索引算法外包给 Knowhere 这样的专门库，对 Milvus 是合理的架构选择？这对“引用代码出处”的严谨性提出了什么要求（即不能把 HNSW/SCANN 等硬归到不含它们的 milvus 文件）？（可结合第 5 课 ANN 算法。）</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Last lesson nailed "who builds the index": DataCoord schedules, a datanode worker executes. But in that step the worker merely <strong>called a library</strong> — the one that truly knows "how to organize vectors into a fast-searchable structure" is Milvus's upstream vector-search kernel, <strong>Knowhere</strong>.
+This lesson drills into Knowhere to see which <strong>vector-index families</strong> it offers (FLAT, the IVF line, HNSW, DiskANN, SCANN, GPU, sparse), what each is <strong>about</strong>, its <strong>key params</strong>, and <strong>when to pick which</strong>.
+One important caveat up front: most index names below (HNSW, IVF_SQ8, SCANN, CAGRA…) are <strong><span class="inline">IndexEnum</span> constants in the Knowhere library</strong>, <strong>not</strong> defined in Milvus's own code; only a few enums are referenced in Milvus core, and this lesson distinguishes them precisely.
+</p>
+
+<div class="card analogy">
+  <div class="tag">📮 Analogy</div>
+  Picture running a warehouse packed with goods, your job being "<strong>given a sample, find the few items most like it</strong>." You have several ways to organize the shelves:
+  <strong>The dumbest but most accurate</strong> is to <strong>compare every item against the sample</strong> (that's FLAT, brute force, 100% recall but slow);
+  <strong>a bit smarter</strong>, first <strong>zone the goods by similarity</strong> (cluster), locate the sample to the nearest few zones and only browse those (that's IVF: coarse buckets first, fine search within);
+  <strong>smarter still</strong>, <strong>string a net of "neighbor shortcuts"</strong> between items so that from any item you hop a few shortcuts to the patch most like the sample (that's HNSW: a navigable small-world graph);
+  <strong>to save space</strong>, <strong>compress each item into a thumbnail</strong> before comparing (that's PQ quantization: approximation for memory);
+  <strong>when it won't fit in memory</strong>, <strong>spread the shelves onto disk</strong> and keep only the index skeleton in memory (that's DiskANN).
+  There is no "best" method, only "<strong>how you choose to trade off among speed, memory, recall, and cost</strong>." Knowhere is the toolbox that stocks <strong>all</strong> of these methods.
+</div>
+
+<h2>What is Knowhere: Milvus's vector-search kernel</h2>
+<p><strong>Knowhere</strong> is a <strong>standalone, upstream</strong> vector-search library maintained by the Milvus project (primarily C++, wrapping FAISS, HNSWlib, DiskANN, cuVS, etc. behind a unified API). Milvus's C++ core does its two most core algorithmic jobs — <strong>building indexes</strong> and <strong>vector search</strong> — by <strong>calling Knowhere</strong>; think of it as Milvus's "<strong>vector compute engine</strong>."
+Recall Lesson 2's "three-language split": Go handles distribution and scheduling, C++ handles single-machine storage and compute, Rust handles full-text indexing; and within that C++ layer, the <strong>concrete algorithms of vector indexing and search</strong> are outsourced to this dedicated library, Knowhere.</p>
+
+<p>Why factor the algorithms into a <strong>separate library</strong> instead of intermixing them with Milvus core? Because vector search is a <strong>fast-evolving yet highly specialized</strong> field: HNSW is hot today, DiskANN tomorrow, GPU CAGRA the day after, with FAISS, cuVS and a dozen other implementations underneath, each with its own strengths. <strong>Encapsulating those algorithm details inside Knowhere</strong> lets it focus on "how to build and search vectors fast and accurately," while Milvus core only says, through a <strong>unified interface</strong>, "use index X with metric Y, build/search"; the two <strong>evolve independently</strong>.
+That is the value of clean layering: Milvus need not touch distributed scheduling to add a new index, and Knowhere need not know about segments, the WAL, or replicas. Every index family this lesson covers is part of the "<strong>capability menu</strong>" Knowhere exposes to Milvus.</p>
+
+<p>This yields a fact <strong>important for reading code</strong>, and the citation discipline this lesson <strong>keeps stressing</strong>: because the index algorithms live in Knowhere (the upstream library), most <strong>index-type names are Knowhere <span class="inline">IndexEnum</span> constants, not symbols in Milvus core</strong>.
+In the Milvus repo, what you can see are the spots where core code <strong>references</strong> these Knowhere enums — e.g. <span class="mono">internal/core/src/index/Utils.cpp</span> references <span class="inline">knowhere::IndexEnum::INDEX_FAISS_IVFFLAT</span>, <span class="inline">INDEX_SPARSE_INVERTED_INDEX</span>, <span class="inline">INDEX_SPARSE_WAND</span>, and <span class="mono">internal/core/src/common/Utils.h</span> references <span class="inline">INDEX_DISKANN</span>.
+But names like HNSW, IVF_SQ8, IVF_PQ, SCANN, GPU_CAGRA — <strong>do not</strong> hunt for their "definition" in Milvus core; they are defined in the Knowhere upstream library. <strong>When this lesson mentions these names, it treats them strictly as "Knowhere index names," never forcing them onto some Milvus file that lacks them.</strong></p>
+
+<h2>The vector-index families: idea, params, when to use</h2>
+<p>The table below is this lesson's "map." Read it well and you grasp the backbone of "facing a field, how to choose an index":</p>
+
+<table class="t">
+  <tr><th>Family (Knowhere name)</th><th>Core idea</th><th>Key params</th><th>When to pick it</th></tr>
+  <tr><td><strong>FLAT</strong></td><td>brute force, per-row distance</td><td>none</td><td>small data, want 100% recall, baseline comparison</td></tr>
+  <tr><td><strong>IVF_FLAT</strong></td><td>cluster into buckets, query probes only the nearest few</td><td>nlist (buckets) / nprobe (probed)</td><td>medium scale, want recall-speed balance, no precision loss</td></tr>
+  <tr><td><strong>IVF_SQ8</strong></td><td>IVF + scalar quantization (1 byte per dim)</td><td>nlist / nprobe</td><td>memory-tight, can accept slight precision loss</td></tr>
+  <tr><td><strong>IVF_PQ</strong></td><td>IVF + product quantization (short codes)</td><td>nlist / nprobe / m / nbits</td><td>huge scale, very tight memory, tolerate more precision loss</td></tr>
+  <tr><td><strong>HNSW</strong></td><td>navigable small-world graph, hop along neighbor edges</td><td>M (edges/node) / efConstruction / ef (query)</td><td>want <strong>high recall + low latency</strong>, memory sufficient (most common)</td></tr>
+  <tr><td><strong>DiskANN</strong></td><td>on-disk graph index, only skeleton in memory</td><td>search_list / beamwidth, etc.</td><td>data far exceeds memory, trade SSD for capacity</td></tr>
+  <tr><td><strong>SCANN</strong></td><td>anisotropic quantization + reorder, Google-derived</td><td>nlist / nprobe / reorder_k</td><td>want higher recall on a quantized index</td></tr>
+  <tr><td><strong>GPU (CAGRA / GPU_IVF_*)</strong></td><td>graph / IVF on GPU, massive parallelism</td><td>CPU-equivalents + GPU resources</td><td>have a GPU, need very high throughput</td></tr>
+  <tr><td><strong>Sparse (SPARSE_INVERTED_INDEX / SPARSE_WAND)</strong></td><td>inverted index for sparse vectors + WAND pruning</td><td>drop_ratio, etc.</td><td>sparse vectors (e.g. BM25 / SPLADE learned-sparse)</td></tr>
+</table>
+
+<p>Reading the table, two through-lines suffice. <strong>Line one is "bucketing vs graph"</strong>: the IVF line takes the "<strong>cluster first, query looks at only the nearest few buckets</strong>" route, its core params being <span class="inline">nlist</span> (how many buckets) and <span class="inline">nprobe</span> (how many to probe) — bigger nprobe means more buckets seen, higher recall but slower;
+HNSW takes the "<strong>build a net of neighbor shortcuts and hop edge-by-edge to the target patch</strong>" route, its core params being <span class="inline">M</span> (edges per point — denser graph, more accurate but more memory) and <span class="inline">ef</span> (candidate-set size at query time — larger means higher recall but slower).
+<strong>Line two is "raw vs quantized"</strong>: FLAT/IVF_FLAT/HNSW store <strong>raw vectors</strong> (accurate but memory-hungry), while SQ8/PQ <strong>compress</strong> them (memory-saving but precision-losing). Cross these two lines and you understand why the IVF_FLAT, IVF_SQ8, IVF_PQ series exists — all "the IVF bucketing skeleton" plus "different compression strengths."</p>
+
+<p>It helps to give each family a one-line "personality." <strong>FLAT</strong> is the honest plodder: it never approximates, so its recall is always 100% — invaluable as a <strong>ground-truth baseline</strong> when you want to measure how much recall another index actually loses, but hopeless at scale. <strong>IVF</strong> is the zoning planner: cluster once, then at query time visit only the nearest zones; simple, predictable, and its accuracy is tuned almost entirely by nprobe. <strong>HNSW</strong> is the well-connected navigator: by building a multi-layer shortcut graph it reaches the right neighborhood in just a few hops, delivering the best latency-recall combo most workloads want — at the price of holding the whole graph (and raw vectors) in memory.
+<strong>DiskANN</strong> is the warehouse-on-disk: when even quantization can't squeeze the data into RAM, it puts the graph on SSD and keeps only a navigating skeleton in memory, trading a bit of latency for the ability to serve datasets far larger than memory. <strong>The quantized IVFs (SQ8/PQ)</strong> are the space-savers: SQ8 squashes each dimension to a byte, PQ chops a vector into sub-vectors and replaces each with a codebook entry, shrinking footprint dramatically while accepting some recall loss that a re-rank step can partly recover.</p>
+
+<div class="cols">
+  <div class="col"><h4>"I want max recall &amp; low latency, RAM is fine"</h4><p>Reach for <strong>HNSW</strong>. The graph gives near-exhaustive recall at a few-hop cost; tune <span class="inline">ef</span> up if recall must be higher. This is the default sweet spot for most production vector search.</p></div>
+  <div class="col"><h4>"My data won't fit in RAM"</h4><p>Quantize with <strong>IVF_PQ/SQ8</strong> to shrink it, or go <strong>DiskANN</strong> to put the bulk on SSD. You trade a little recall (quantization) or a little latency (disk) for the capacity to serve far more vectors per node.</p></div>
+</div>
+
+<p>A quick word on <strong>sparse</strong> vectors, since they look different from everything above. Dense embeddings have a few hundred always-present dimensions; <strong>sparse vectors</strong> (from BM25 or learned-sparse models like SPLADE) have a huge dimensionality but only a handful of non-zero entries per vector — essentially "term → weight" maps. They can't be bucketed or graphed the same way, so Knowhere serves them with an <strong>inverted index</strong> (<span class="inline">SPARSE_INVERTED_INDEX</span>): for each dimension, a posting list of "which vectors have it and with what weight." The <strong>WAND</strong> variant (<span class="inline">SPARSE_WAND</span>) adds dynamic pruning — it computes upper-bound scores and skips candidates that cannot possibly enter the topK, much like text search engines do. These are the two sparse-vector enums that genuinely appear in Milvus core's <span class="mono">index/Utils.cpp</span>.</p>
+
+<h2>Where it computes: memory, disk, GPU</h2>
+<p>Different families also assume different <strong>storage media</strong>, which directly sets capacity ceilings and cost. Lay them out by the "compute/storage hierarchy":</p>
+
+<div class="layers">
+  <div class="layer l-core"><span class="badge">GPU VRAM</span><span class="name">GPU indexes (CAGRA / GPU_IVF_*)</span><span class="ld">massive parallelism, very high throughput; bounded by VRAM, needs a GPU card</span></div>
+  <div class="layer l-main"><span class="badge">memory</span><span class="name">HNSW / IVF_FLAT / IVF_SQ8 / IVF_PQ / FLAT</span><span class="ld">index resident in memory or mmap; most common, low latency; capacity bounded by RAM (quantization compresses)</span></div>
+  <div class="layer l-part"><span class="badge">disk(SSD)</span><span class="name">DiskANN</span><span class="ld">graph body on SSD, only skeleton in memory; trade disk capacity to "fit huge data," latency slightly up</span></div>
+  <div class="layer l-app"><span class="badge">sparse</span><span class="name">SPARSE_INVERTED_INDEX / SPARSE_WAND</span><span class="ld">inverted structures for sparse vectors, with WAND dynamic pruning to skip low-score candidates</span></div>
+</div>
+
+<p>The core message of this hierarchy is a <strong>triangle tradeoff</strong>: <strong>speed, memory (cost), recall</strong> — you can usually prioritize only two.
+HNSW maxes out "speed + recall" at the cost of <strong>memory</strong>; IVF_PQ/SQ8 <strong>save memory via quantization</strong> at the cost of <strong>recall</strong>; DiskANN <strong>trades disk for capacity</strong> at the cost of <strong>slightly higher latency</strong>; GPU <strong>trades hardware for throughput</strong> at the cost of <strong>GPU expense</strong>.
+No index wins all three corners at once — choosing an index is, in essence, <strong>picking a landing point in this triangle per your data scale, latency target, memory budget, and recall floor</strong>. This echoes the refrain from Lesson 5 on ANN: <strong>approximate search is an engineering tradeoff among "fast enough, cheap enough, accurate enough."</strong></p>
+
+<h2>How one IVF search skips most of the data</h2>
+<p>Making "bucket pruning" concrete best conveys why an index is fast. Take IVF: suppose the build clustered the segment's vectors into 4 buckets (<span class="inline">nlist=4</span>) and the query sets <span class="inline">nprobe=2</span>:</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Locate nearest buckets</h4><p>The query vector q first computes distance to the 4 buckets' <strong>centroids</strong> and picks the nearest <span class="inline">nprobe=2</span>. The other 2 buckets are <strong>skipped entirely</strong>, never looked at.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>In-bucket exact compute</h4><p>Only within the 2 chosen buckets, compute distance <strong>per vector</strong> (IVF_FLAT computes exactly on raw vectors; SQ8/PQ approximate via compressed codes).</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Merge for topK</h4><p><strong>Merge and sort</strong> the candidates from those 2 buckets and take the nearest topK. Scanned volume drops from "the whole segment" to "about half" — smaller nprobe drops it more and runs faster, but risks missing a bucket (lower recall).</p></div></div>
+</div>
+
+<p>This flow demonstrates the <span class="inline">nprobe</span> tradeoff plainly: <strong>raise nprobe</strong> → more buckets seen, lower chance of missing a true neighbor, <strong>recall up</strong>, but more vectors to compute, <strong>slower</strong>; <strong>lower nprobe</strong> is the reverse.
+HNSW's <span class="inline">ef</span> is the "graph version" of the same dial: bigger ef → larger candidate set maintained at query time → more thorough search → higher recall but slower. <strong>Remember this general rule</strong>: nearly every ANN index has such a "<strong>search a bit more ↔ a bit higher recall, but slower</strong>" runtime dial; turning it <strong>slides between speed and recall</strong>. Build-time params (nlist, M) set "the skeleton and its ceiling"; query-time params (nprobe, ef) adjust "the tightness of this particular search" on that skeleton. As an aside: HNSW search is really the "graph version" of the same idea — starting from the graph's top entry, each step <strong>greedily hops toward a neighbor closer to q</strong>, rapidly approaching the rough region on the sparse upper layers, then descending layer by layer into the dense bottom for a fine search, finally converging candidates onto the target neighborhood. Whether bucketing or graph, the essence is the same: <strong>"exact-compute a tiny subset, skip most overall."</strong></p>
+
+<h2>An iron rule: the metric must match the field</h2>
+<p>Finally, stress a point that is <strong>easy to trip on yet severe</strong>: the index's <strong>metric must match the metric declared for the field at schema time</strong>. Recall Lesson 4 — a vector's "similarity" is defined by a metric: <strong>L2</strong> (Euclidean, smaller is closer), <strong>IP</strong> (inner product, larger is closer), <strong>COSINE</strong> (cosine, more aligned direction is closer).
+If a field's embeddings were trained under COSINE semantics but you build an L2 index on them, then what the index "<strong>thinks is near</strong>" and what you "<strong>actually want as near</strong>" disagree, and results are <strong>systematically wrong</strong> — with no error raised, just inexplicably poor recall. So when Knowhere builds an index, the <strong>metric is a first-class parameter bound to the index</strong> and must align across the field, the index, and the metric you used to train the embeddings. This is one of the most insidious bug classes in vector search; get it right from the very start. Milvus does validate metric-vs-field consistency at build time, but using the semantically right metric is ultimately yours to guard.</p>
+
+<p>To tidy up "params," the clearest way is to split them by <strong>two moments</strong>. <strong>Build-time params</strong> (IVF's <span class="inline">nlist</span>, HNSW's <span class="inline">M</span> and <span class="inline">efConstruction</span>, PQ's <span class="inline">m</span>/<span class="inline">nbits</span>) decide the <strong>index structure itself</strong> — how many buckets, how dense the graph, how big the codebook; once built they are <strong>frozen into the index files</strong> and changing them means a rebuild.
+<strong>Query-time params</strong> (<span class="inline">nprobe</span>, <span class="inline">ef</span>) are dials you can <strong>adjust per search</strong> without rebuilding, sliding the current query along "speed ↔ recall." Grasping this "<strong>build sets the skeleton, query tunes the tightness</strong>" split keeps the two kinds apart when tuning: if recall is chronically too low, first suspect a too-small <strong>structural param</strong> like nlist/M (needs a rebuild); if you just want more recall on a particular query, bump nprobe/ef (no rebuild).</p>
+
+<p>Finally, connect this lesson back to the main line. Here we covered <strong>what the Knowhere algorithm kernel offers and how to choose</strong>; but <strong>which segment's data these indexes are built on, where the built files go, and how QueryNode puts them to use</strong> are matters of <strong>data flow</strong> — exactly the "sealed segment → build → index files to object storage → QueryNode loads" journey of the next lesson (23). Combine "which index to choose" (this lesson) with "how the index flows" (next lesson) and you truly command Milvus's vector indexing.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/core/src/index/Utils.cpp</span><span class="ln">Milvus core references Knowhere's index enums (illustrative excerpt)</span></div>
+  <pre><span class="cm">// These are IndexEnum constants from the upstream Knowhere library; Milvus core references them here:</span>
+knowhere::IndexEnum::<span class="nb">INDEX_FAISS_IVFFLAT</span>      <span class="cm">// IVF_FLAT</span>
+knowhere::IndexEnum::<span class="nb">INDEX_FAISS_BIN_IVFFLAT</span>  <span class="cm">// binary-vector IVF</span>
+knowhere::IndexEnum::<span class="nb">INDEX_SPARSE_INVERTED_INDEX</span> <span class="cm">// sparse inverted</span>
+knowhere::IndexEnum::<span class="nb">INDEX_SPARSE_WAND</span>        <span class="cm">// sparse WAND pruning</span>
+<span class="cm">// See also common/Utils.h referencing knowhere::IndexEnum::INDEX_DISKANN (DiskANN).</span>
+<span class="cm">// Whereas HNSW / IVF_SQ8 / IVF_PQ / SCANN / GPU_CAGRA are defined inside Knowhere; core has no definition of them.</span></pre>
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: the algorithm kernel the worker calls to build/search is the upstream library <strong>Knowhere</strong>. It stocks a range of <strong>vector-index families</strong> — <strong>FLAT</strong> (brute force · full recall), <strong>IVF_FLAT/SQ8/PQ</strong> (cluster-bucket + optional quantization, dials nlist/nprobe), <strong>HNSW</strong> (neighbor graph, dials M/ef), <strong>DiskANN</strong> (on-disk graph for capacity), <strong>SCANN</strong>, <strong>GPU/CAGRA</strong> (hardware for throughput), <strong>sparse</strong> (SPARSE_INVERTED_INDEX/SPARSE_WAND). Selection is a <strong>speed↔memory↔recall</strong> triangle; the metric must match the field. Citation discipline: most index names are <strong>Knowhere IndexEnum</strong>, and Milvus core only <strong>references</strong> a few (the IVF/sparse ones in <span class="mono">index/Utils.cpp</span>, INDEX_DISKANN in <span class="mono">common/Utils.h</span>).
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Knowhere = vector kernel</strong>: Milvus C++ core does index build and vector search by calling the upstream Knowhere library (wraps FAISS/HNSWlib/DiskANN/cuVS).</li>
+    <li><strong>Index families</strong>: FLAT (full recall, slow) / IVF_FLAT·SQ8·PQ (bucketing ± quantization) / HNSW (neighbor graph, most common) / DiskANN (disk) / SCANN / GPU·CAGRA / sparse.</li>
+    <li><strong>Two through-lines</strong>: bucketing (IVF: nlist/nprobe) vs graph (HNSW: M/ef); raw (accurate · memory) vs quantized (memory-saving · precision loss).</li>
+    <li><strong>Triangle tradeoff</strong>: speed ↔ memory (cost) ↔ recall, usually only two prioritized; selection is picking a point in the triangle.</li>
+    <li><strong>Runtime dial</strong>: larger nprobe/ef → higher recall but slower; build-time params (nlist/M) set the skeleton, query-time params (nprobe/ef) set the tightness.</li>
+    <li><strong>Metric must match</strong>: L2/IP/COSINE must align with the field and with embedding training, else results are systematically wrong with no error.</li>
+    <li><strong>Citation discipline</strong>: most index names are Knowhere IndexEnum; core only references a few (<span class="mono">index/Utils.cpp</span>, INDEX_DISKANN in <span class="mono">common/Utils.h</span>).</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Where do Milvus's vector indexes (HNSW, IVF_PQ, SCANN, GPU CAGRA, etc.) actually come from?</div>
+  <ol class="opts">
+    <li>Each index type is a standalone microservice</li>
+    <li>Generated on the fly by the Proxy at query time</li>
+    <li>Most are IndexEnum types provided by the upstream Knowhere library, not defined by milvus core itself; core only references a few constants (e.g. INDEX_DISKANN in common/Utils.h, INDEX_FAISS_IVFFLAT/INDEX_SPARSE_INVERTED_INDEX/INDEX_SPARSE_WAND etc. as knowhere::IndexEnum:: in index/Utils.cpp)</li>
+    <li>All implemented by milvus core's Go code</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. Vector index algorithms belong to Knowhere (wrapping Faiss/HNSWlib/DiskANN/cuVS, etc.). When citing a milvus file you may only cite IndexEnum constants that truly exist; the rest should be presented as 'Knowhere index names,' not forced into milvus files that lack them</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. When choosing a vector index and its params, which statement is correct?</div>
+  <ol class="opts">
+    <li>HNSW needs no parameters at all</li>
+    <li>The metric can be swapped freely at query time without affecting results</li>
+    <li>The smaller nprobe is, the higher the recall</li>
+    <li>IVF's nlist/nprobe and HNSW's M/ef are all 'recall vs speed/memory' knobs; FLAT brute force gives 100% recall but is slowest, PQ/SQ8 trade accuracy for memory via compression, DiskANN puts the graph on disk for huge scale; and the query metric must match the one used to build the index</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. Every ANN index trades within the 'recall–latency–memory' triangle; raising nprobe/ef lifts recall but is slower. The metric (L2/IP/COSINE, etc.) must match what the field was indexed with, otherwise distance semantics break and results are meaningless</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson deliberately separates 'IndexEnum constants milvus core truly defines/references' from 'types presented merely as Knowhere index names.' Consider: why is outsourcing vector index algorithms to a dedicated library like Knowhere a sound architectural choice for Milvus? What rigor does this demand about 'citing code provenance' (i.e. not attributing HNSW/SCANN to milvus files that lack them)? (Tie in Lesson 5 ANN algorithms.)</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="21-index-service.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">索引服务</span><span class="lang-en">The index service</span></div></a><a class="next" href="23-index-build-and-load.html"><div class="dir"><span class="lang-zh">下一课 →</span><span class="lang-en">Next →</span></div><div class="ttl"><span class="lang-zh">构建与加载索引</span><span class="lang-en">Index build &amp;amp; load</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>

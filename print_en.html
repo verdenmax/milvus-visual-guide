@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 20 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 24 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
@@ -348,6 +348,10 @@ details[open] > summary { list-style: none; }
   <li>Binlog &amp; storage format</li>
   <li>Compaction &amp; GC</li>
   <li>Delete &amp; upsert</li>
+  <li>The index service</li>
+  <li>Knowhere vector indexes</li>
+  <li>Index build &amp; load</li>
+  <li>Scalar &amp; full-text</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -5044,6 +5048,640 @@ But it leaves one question unanswered: <strong>how exactly is that guarantee tim
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
     <li>This lesson unifies insert, delete, and upsert into 'a pile of timestamped immutable events,' then adjudicates visibility with one MVCC rule. Consider: compared with a traditional database's 'in-place update + read/write locking,' what are the advantages and costs of this 'writes only append, reads take a snapshot, judged by timestamp' design under high-concurrency vector retrieval? What question does it leave open about 'how guarantee-ts T is set,' to be answered by consistency levels (Lesson 30)? (Tie in Lesson 16's WAL and TSO, and Lesson 19's compaction reclaiming old versions.)</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>The index service</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+The first four parts nailed the write path: a row enters through the Proxy, is Appended to the WAL, accumulates into a growing segment, is flushed to binlogs, and is later merged tidy by compaction. But up to here, the vectors in those sealed segments are still just <strong>raw data</strong> — to ask "most like which?", you can only compute the distance from the query vector to <strong>every single</strong> stored vector (brute force). With many segments and many vectors, that scan becomes unacceptably slow.
+From here we enter Part 5, <strong>Indexing</strong>: first the <strong>index service</strong> — who decides which segments get an index, who actually builds it, and how the result becomes a "loadable" asset.
+The headline conclusion up front: <strong>index build is scheduled by DataCoord and executed by a worker (a datanode) — there is NO separate indexnode process</strong> (recall the "coordinators schedule, nodes execute" theme from Lessons 9 and 12).
+</p>
+
+<div class="card analogy">
+  <div class="tag">📮 Analogy</div>
+  Remember that library, "one bookshelf = a family of volumes"? The books are all shelved, but if a reader wants "books on vector search," must they walk the shelves one by one? Too slow. An efficient library builds a set of <strong>catalog cards</strong> (an index) for every shelf: sorted by topic and author, so a searcher flips a few cards and goes straight to the target.
+  But the catalog doesn't grow itself. The <strong>head librarian</strong> (DataCoord) watches the whole library's ledger and decides "<strong>which shelves still lack a catalog, and what kind to build</strong>," then hands out tasks; the one who actually <strong>buries themselves in the shelf and writes cards</strong> is an <strong>assistant</strong> (a worker). The head librarian only <strong>schedules and registers</strong>, never copies cards; the assistant only <strong>does the work</strong>, then hands the cards back and registers them in the master catalog.
+  Note: there is <strong>no third "dedicated card-copying department"</strong> — the card-copying is done on the side by the same assistant who usually tends the stacks. Grasp this and you have the skeleton of Milvus's index service.
+</div>
+
+<h2>Why an index service: from brute force to a loadable index</h2>
+<p>Lesson 5 (on ANN) planted the seed: an <strong>exact</strong> nearest-neighbor over high-dimensional vectors must compare against every datum, with cost growing <strong>linearly</strong> with size. A collection may hold hundreds of millions of vectors across hundreds or thousands of sealed segments; a per-row <strong>brute-force</strong> scan simply can't hold up in production.
+An index exists for exactly this: one <strong>offline preprocessing</strong> pass (build a graph, cluster, quantize…) organizes the data into a structure that lets a query <strong>skip most of it</strong>, compressing retrieval from "scan everything" to "look at a small candidate set." The price is that this preprocessing is itself <strong>heavy</strong> — read out a whole segment, run a complex algorithm, write the result back to storage. In other words, an index is a <strong>"pain now, gain later"</strong> bargain: spend extra effort once at build time, and <strong>every subsequent query reaps the benefit</strong>, amortizing that preprocessing cost across countless retrievals.</p>
+
+<p>Precisely because building an index is <strong>heavy and slow</strong>, it can't sit in the write hot path (it would wreck write latency); it must be a <strong>background task</strong>, done asynchronously after data is <strong>sealed (immutable)</strong> — the very same philosophy as last lesson's compaction: <strong>decouple "fast bookkeeping" from "slow tidying."</strong>
+So we need an "<strong>index service</strong>" to answer three questions: <strong>which segments to build for</strong> (schedule), <strong>who builds</strong> (execute), and <strong>how the result is used</strong> (let QueryNode load it). Those three questions are this lesson's through-line.</p>
+
+<p>It's worth making "just how heavy is an index build" concrete. Take the most common graph index, HNSW: to build a graph over hundreds of thousands or millions of vectors in a segment, the algorithm must <strong>repeatedly search each point's neighbors, link edges, and organize layers</strong> — work whose cost grows super-linearly with size. The IVF family must first <strong>cluster</strong> the whole segment's vectors (run k-means) and assign each vector to a bucket; quantized IVF_PQ additionally trains a <strong>codebook</strong>. All of this means a build <strong>eats lots of CPU/memory, reads out the whole segment, and produces sizeable index files</strong>.
+Putting such a heavy job in the write path would make every write wait for a "full-segment recompute," instantly destroying write latency. So Milvus's choice is a foregone conclusion — <strong>writes only land data into segments fast, and index building is left to the background, done slowly on immutable sealed segments</strong>. That is the plain yet hard engineering reason behind "an index must be a background service."</p>
+
+<div class="cols">
+  <div class="col"><h4>No index (brute force)</h4><p>The query vector computes a distance against <strong>every single</strong> stored vector in a segment, cost <span class="mono">O(N)</span> growing linearly with size. More segments, more vectors, slower. Growing segments (not yet indexed) are queried exactly this way — it works, but only for <strong>small data</strong>.</p></div>
+  <div class="col"><h4>With an index (ANN)</h4><p>Vectors are pre-organized into a graph / inverted buckets / quantized codes; a query <strong>probes only a small candidate set</strong>, cost approaching <span class="mono">O(log N)</span> or sublinear. The cost is the heavy one-time build, so it runs in the background on sealed segments.</p></div>
+</div>
+
+<h2>Who owns, who builds: DataCoord schedules + a worker executes</h2>
+<p>This is the point <strong>most easily misremembered</strong>, so nail it down: index build has <strong>no</strong> separate process called "indexnode." Its division of labor matches the main theme of Lesson 12 (DataCoord) and Lesson 17 (DataNode) exactly — <strong>coordinators schedule, nodes execute</strong>.</p>
+
+<p><strong>DataCoord is the brain</strong>: it owns the <strong>index metadata</strong> (which field of which collection has what index, and the state of each segment's index), with code in <span class="mono">internal/datacoord/index_service.go</span> (the outward RPCs such as <span class="inline">CreateIndex</span>), <span class="mono">index_meta.go</span> (metadata), and <span class="mono">index_inspector.go</span> (inspection: find "sealed segments not yet indexed" and emit build tasks). It does <strong>not</strong> read vectors or run algorithms itself.</p>
+
+<p><strong>The worker is the hands</strong>: the one that actually reads a segment's binlogs, calls Knowhere to run the build algorithm, and writes index files back to object storage is a <strong>worker</strong> — in today's architecture, that worker runs on a <strong>datanode</strong> (code in <span class="mono">internal/datanode/index/task_index.go</span>, the <span class="inline">indexBuildTask</span>).
+It implements the gRPC interface <span class="inline">workerpb.IndexNodeClient</span> — <strong>note: despite the "IndexNode" in the interface name, that is only a legacy protocol name and does NOT imply a separate indexnode process</strong>. This dovetails with Lesson 17: streaming writes went to StreamingNode, and the DataNode stepped back to do compaction and index builds.</p>
+
+<p>Inside the worker, one build task is roughly three moves: <strong>read</strong> — pull the segment's vector binlogs out of object storage and assemble them into an in-memory dataset; <strong>build</strong> — hand that dataset to <strong>Knowhere</strong> with the index type and params and let it run the actual algorithm (build a graph / cluster / train a codebook); <strong>write</strong> — serialize Knowhere's output into index files and write them back to object storage, then report the paths to DataCoord. The worker is "just hands": it knows nothing about which segment "should" be built — that decision belongs entirely to DataCoord's inspector. This clean split of "the coordinator decides, the worker computes" is exactly what makes the whole thing scalable: add more workers and more segments build in parallel, with DataCoord still the single brain keeping the books.</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">DataCoord</div><div class="nd">owns index meta · inspects sealed segments · emits build tasks</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">build task queue</div><div class="nd">one task per sealed segment · dispatched to a worker</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">datanode worker</div><div class="nd">implements IndexNodeClient · reads binlogs · calls Knowhere · writes index files</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">write back meta</div><div class="nd">register index-file paths · mark segment "indexed"</div></div>
+</div>
+
+<h2>The index lifecycle: CreateIndex → per-segment build task → index files → loadable</h2>
+<p>Stringing one build <strong>end to end</strong> is the best way to understand the index service. It is four steps, each mapping to a stage in the diagram above:</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>CreateIndex (declare intent)</h4><p class="mono">index_service.go · CreateIndex</p><p>A user declares "build an index" on a <strong>field</strong> (with an index type and params). DataCoord records this <strong>index definition</strong> into metadata — a <strong>collection-level</strong> declaration that has <strong>not</strong> yet computed any segment.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Per-segment build task</h4><p class="mono">index_inspector.go · createIndexForSegment</p><p>The inspector periodically scans: any segment that is <strong>sealed yet not built for this index</strong> gets <strong>one build task</strong>. As many sealed segments as a collection has, that many tasks go out (one per segment).</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Worker builds index files</h4><p class="mono">datanode/index · indexBuildTask</p><p>The worker takes a task: <strong>read the segment's vector binlogs</strong> → call <strong>Knowhere</strong> to build (graph / cluster / quantize) → write the resulting <strong>index files</strong> to object storage (recall Lesson 18's <span class="mono">index_files</span> prefix).</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Register → loadable</h4><p>The worker <strong>writes the index-file paths back to DataCoord's metadata</strong> and the segment is marked "<strong>indexed</strong>." The index is now a <strong>durable asset</strong>; when the collection is loaded, QueryNode can <strong>load</strong> it for ANN (next lesson, and Lesson 23).</p></div></div>
+</div>
+
+<p>One often-missed key in this lifecycle: <strong>CreateIndex is a "declaration," not "built instantly."</strong> After you call CreateIndex, the already-existing sealed segments are built <strong>segment by segment, asynchronously</strong>; and segments produced <strong>later</strong> (from continued writes and flushes) are <strong>auto-built</strong> with the same index by the inspector.
+So "building an index" is not a one-shot action but a <strong>continuously-in-effect policy</strong>: as long as the index definition exists, DataCoord ensures "<strong>every sealed segment eventually gets it</strong>." This also explains why interfaces like <span class="inline">GetIndexState</span> / <span class="inline">DescribeIndex</span> report progress ("built/building/total") — building an index is inherently a <strong>gradually-converging</strong> process.</p>
+
+<h2>Why build "per segment": granularity, failure, and retry</h2>
+<p>Notice a phrase that keeps recurring above: <strong>"one build task per sealed segment."</strong> The index service's scheduling granularity is <strong>not the collection, not the partition, but the segment</strong>. This is no arbitrary choice; it falls straight out of earlier parts: a segment is Milvus's smallest <strong>immutable, independently-processable</strong> unit of data — only a sealed segment (data frozen) is fit for indexing, because the build algorithm needs to see <strong>a fixed, unchanging dataset</strong>; a growing segment is still receiving new rows, so an index built on it would instantly go stale. Hence growing segments are simply <strong>not indexed</strong> and are queried by brute force (a point the next lesson and Lesson 23 re-emphasize).</p>
+
+<p>Per-segment indexing brings three concrete benefits. First, <strong>parallelism</strong>: the build tasks for hundreds or thousands of segments are mutually independent and can be <strong>dispatched at once</strong> across many workers, spreading a large collection's "build" into many small concurrent tasks. Second, <strong>incrementality</strong>: writes keep producing new segments, and the inspector only needs to emit tasks for the <strong>newly-appeared, not-yet-built</strong> segments; already-built ones <strong>need no redo</strong> — the index "grows naturally" with the data. Third, <strong>failure isolation</strong>: if one segment's build task fails (a worker crashed, a binlog read errored), only <strong>that one segment</strong> is affected; DataCoord simply re-dispatches it, without touching other already-built segments.</p>
+
+<div class="cellgroup">
+  <div class="cg-cap">Several sealed segments of one collection, each an independent build task: parallel, incremental, individually retriable on failure</div>
+  <div class="cells">
+    <div class="cell dim"><span class="lab">seg #1</span><span class="q">indexed ✓</span></div>
+    <div class="cell dim"><span class="lab">seg #2</span><span class="q">indexed ✓</span></div>
+    <div class="cell hl"><span class="lab">seg #3</span><span class="q">building…</span></div>
+    <div class="cell sep"><span class="lab">seg #4</span><span class="q">failed→retry</span></div>
+    <div class="cell"><span class="lab">seg #5 (growing)</span><span class="q">no index · brute force</span></div>
+  </div>
+</div>
+
+<p>It is exactly this "<strong>per-segment task + state machine + retry</strong>" mechanism that lets the index service, in a distributed environment of <strong>continuous writes, crashing nodes, and flaky networks</strong>, steadily drive "every segment eventually gets indexed" to completion.
+This is also the root reason DataCoord must <strong>own the index metadata</strong>: it has to <strong>keep books</strong> for every segment — which step this segment reached, which index definition it uses, where its index files live, how many times it failed. Without this ledger, "gradual convergence" under distribution is impossible. Think of <span class="mono">index_meta.go</span> as that "<strong>index ledger</strong>," and <span class="mono">index_inspector.go</span> as the inspector who <strong>keeps reconciling and re-dispatches a task wherever a gap appears</strong>.</p>
+
+<table class="t">
+  <tr><th>Stage</th><th>Who</th><th>Output / state</th></tr>
+  <tr><td><strong>CreateIndex</strong></td><td>Proxy→DataCoord</td><td>write the index definition to metadata (collection-level)</td></tr>
+  <tr><td><strong>Inspect & emit tasks</strong></td><td>DataCoord (inspector)</td><td>each not-yet-built sealed segment → one build task</td></tr>
+  <tr><td><strong>Build</strong></td><td>datanode worker</td><td>read binlogs · call Knowhere · write index files to object storage</td></tr>
+  <tr><td><strong>Register</strong></td><td>worker→DataCoord</td><td>index-file paths into metadata · mark segment "indexed"</td></tr>
+  <tr><td><strong>Load</strong></td><td>QueryNode</td><td>on collection load, read the index into memory / mmap for ANN</td></tr>
+</table>
+
+<p>On <strong>auto-index</strong>: many users don't want to agonize over "HNSW or IVF, and how to tune the params." Milvus offers <strong>AUTOINDEX</strong> — you merely declare "build an index on this field," and the system <strong>auto-picks</strong> a reasonable index type and params by field type and data scale.
+Its essence still runs the exact same chain: CreateIndex declares → inspector emits tasks → worker builds with Knowhere → register as loadable; only the "which index, what params" step shifts from <strong>user-specified</strong> to <strong>system-chosen</strong>. For beginners, AUTOINDEX is the most worry-free default; switch to a concrete type when you want to fine-tune (next lesson dissects each index family).</p>
+
+<p>Let's also <strong>connect ahead</strong> how this "index service" relates to the next two lessons, so you don't memorize them in isolation. This lesson is about "<strong>how the act of building an index is scheduled and executed</strong>" — a <strong>control-flow</strong> view. The next lesson (22) drills into the <strong>Knowhere</strong> library that the worker calls, seeing exactly which <strong>vector-index families</strong> exist (FLAT/IVF/HNSW/DiskANN…), their tradeoffs and params. The lesson after (23) follows the <strong>data flow</strong>, walking the physical path "sealed segment's raw vectors → worker builds → index files to object storage → QueryNode loads into memory or mmap."
+The three are three facets of one thing: <strong>who schedules (this lesson), with what algorithm (Lesson 22), how data flows (Lesson 23)</strong>. Stack them together and you truly understand Milvus indexing.</p>
+
+<p>Finally, a design observation worth savoring: the index service almost <strong>exactly mirrors</strong> compaction's paradigm — both are <strong>scheduled by DataCoord</strong>, both <strong>execute on a datanode worker</strong>, both act only on <strong>immutable sealed segments</strong>, both <strong>write results to object storage</strong> and then <strong>atomically register them into metadata</strong>, and both are <strong>background tasks that don't disturb the write hot path</strong>.
+This is no coincidence but the same <strong>background-maintenance skeleton</strong> Milvus reuses: peel the "slow and heavy, but makes reads faster" work off the foreground and let the coordinator amortize it when the system is idle. Once you understand compaction, you understand the index service <strong>almost for free</strong>; and once you understand this generic skeleton, you hold the key to Milvus's entire "after the write" world.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/datacoord/index_service.go</span><span class="ln">CreateIndex: declare the index definition, accepted by DataCoord (excerpt)</span></div>
+  <pre><span class="cm">// DataCoord's outward RPC: accept the "build an index on a field" declaration, write it to index meta.</span>
+<span class="cm">// Note: this only "registers intent"; the per-segment build is dispatched asynchronously by the inspector to a worker.</span>
+<span class="kw">func</span> (s *Server) <span class="fn">CreateIndex</span>(ctx context.Context, req *indexpb.CreateIndexRequest) (*commonpb.Status, error) {
+    <span class="cm">// health check, param validation, allocate indexID...</span>
+    <span class="cm">// write the index definition to meta; later index_inspector inspects sealed segments and emits per-segment build tasks.</span>
+}</pre>
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: vectors in a sealed segment, if unindexed, can only be <strong>brute-force scanned row by row</strong> (slow). The index service makes "building an index" a <strong>background task</strong> — <strong>DataCoord schedules</strong> (<span class="mono">index_service.go</span>/<span class="mono">index_meta.go</span>/<span class="mono">index_inspector.go</span>: owns metadata, inspects sealed segments, emits <strong>one build task per segment</strong>), and a <strong>datanode worker executes</strong> (<span class="inline">indexBuildTask</span>, implementing <span class="inline">workerpb.IndexNodeClient</span>, with <strong>no separate indexnode process</strong>: read binlogs, call Knowhere, write index files, write back meta). CreateIndex is a <strong>declaration</strong>, not an instant build; new segments are <strong>auto-built</strong>; AUTOINDEX lets the system pick the type and params.
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Why index</strong>: without one, you can only brute-force <span class="mono">O(N)</span> per-row distances; an index trades a heavy offline preprocess for "look at a small candidate set" at query time.</li>
+    <li><strong>Schedule vs execute</strong>: DataCoord owns index metadata and schedules (<span class="inline">CreateIndex</span> in <span class="mono">index_service.go</span>, <span class="mono">index_inspector.go</span>); a datanode worker executes (<span class="inline">indexBuildTask</span>).</li>
+    <li><strong>No indexnode</strong>: the worker implements <span class="inline">workerpb.IndexNodeClient</span>, but that's just a protocol name — the build runs on a datanode; there is <strong>no</strong> separate indexnode process (echoing Lessons 9 and 17).</li>
+    <li><strong>Lifecycle</strong>: CreateIndex (declare) → one build task per sealed segment → worker reads binlogs · calls Knowhere · writes index files → registered, then loadable by QueryNode.</li>
+    <li><strong>Declare, not instant</strong>: existing segments build asynchronously one by one, new sealed segments auto-build; progress is queryable via <span class="inline">GetIndexState</span>/<span class="inline">DescribeIndex</span>.</li>
+    <li><strong>AUTOINDEX</strong>: the system auto-picks index type and params by field type and scale; the chain is unchanged, only the type-selection is automated.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. In Milvus, who schedules index build and who actually executes it?</div>
+  <ol class="opts">
+    <li>QueryNode builds the index incidentally while loading segments</li>
+    <li>The Proxy builds it locally right after receiving the request</li>
+    <li>DataCoord owns index metadata and scheduling (CreateIndex in internal/datacoord/index_service.go, index_inspector.go), dispatching a per-sealed-segment build task to a worker; the worker executes via the workerpb IndexNodeClient protocol — there is no separate indexnode process</li>
+    <li>RootCoord builds all indexes</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. 'IndexNodeClient' is only a legacy protocol name; the executor is a worker on a datanode, with no separate indexnode process. Splitting scheduling (DataCoord) from execution (worker) continues the control-plane/data-plane division of labor</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. After a CreateIndex request, how does an index go from 'a declaration' to 'loadable files'?</div>
+  <ol class="opts">
+    <li>The whole table is built in one shot into a single global index file</li>
+    <li>CreateIndex records the index definition in metadata; then each sealed segment spawns a build task, the worker reads that segment's binlogs, calls Knowhere to build, writes index files back to object storage, and QueryNode can then load them</li>
+    <li>The index lives only in memory and is never persisted</li>
+    <li>Growing segments also get an index built immediately</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. Indexes are built per segment: only sealed (closed, immutable) segments are worth indexing, growing ones still use brute force (see Lesson 23). Declare → dispatch task → build files → loadable is an asynchronous pipeline</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson stresses 'no separate indexnode process; the build runs on a worker implementing the IndexNodeClient protocol.' Consider: why does Milvus make index build an asynchronous task 'scheduled by DataCoord, dispatched per segment to a worker' instead of building synchronously at write time? What does this design buy for write throughput, resource elasticity, and auto-index type selection? (Tie in Lesson 12 DataCoord and Lesson 23 build-and-load.)</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Knowhere vector indexes</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Last lesson nailed "who builds the index": DataCoord schedules, a datanode worker executes. But in that step the worker merely <strong>called a library</strong> — the one that truly knows "how to organize vectors into a fast-searchable structure" is Milvus's upstream vector-search kernel, <strong>Knowhere</strong>.
+This lesson drills into Knowhere to see which <strong>vector-index families</strong> it offers (FLAT, the IVF line, HNSW, DiskANN, SCANN, GPU, sparse), what each is <strong>about</strong>, its <strong>key params</strong>, and <strong>when to pick which</strong>.
+One important caveat up front: most index names below (HNSW, IVF_SQ8, SCANN, CAGRA…) are <strong><span class="inline">IndexEnum</span> constants in the Knowhere library</strong>, <strong>not</strong> defined in Milvus's own code; only a few enums are referenced in Milvus core, and this lesson distinguishes them precisely.
+</p>
+
+<div class="card analogy">
+  <div class="tag">📮 Analogy</div>
+  Picture running a warehouse packed with goods, your job being "<strong>given a sample, find the few items most like it</strong>." You have several ways to organize the shelves:
+  <strong>The dumbest but most accurate</strong> is to <strong>compare every item against the sample</strong> (that's FLAT, brute force, 100% recall but slow);
+  <strong>a bit smarter</strong>, first <strong>zone the goods by similarity</strong> (cluster), locate the sample to the nearest few zones and only browse those (that's IVF: coarse buckets first, fine search within);
+  <strong>smarter still</strong>, <strong>string a net of "neighbor shortcuts"</strong> between items so that from any item you hop a few shortcuts to the patch most like the sample (that's HNSW: a navigable small-world graph);
+  <strong>to save space</strong>, <strong>compress each item into a thumbnail</strong> before comparing (that's PQ quantization: approximation for memory);
+  <strong>when it won't fit in memory</strong>, <strong>spread the shelves onto disk</strong> and keep only the index skeleton in memory (that's DiskANN).
+  There is no "best" method, only "<strong>how you choose to trade off among speed, memory, recall, and cost</strong>." Knowhere is the toolbox that stocks <strong>all</strong> of these methods.
+</div>
+
+<h2>What is Knowhere: Milvus's vector-search kernel</h2>
+<p><strong>Knowhere</strong> is a <strong>standalone, upstream</strong> vector-search library maintained by the Milvus project (primarily C++, wrapping FAISS, HNSWlib, DiskANN, cuVS, etc. behind a unified API). Milvus's C++ core does its two most core algorithmic jobs — <strong>building indexes</strong> and <strong>vector search</strong> — by <strong>calling Knowhere</strong>; think of it as Milvus's "<strong>vector compute engine</strong>."
+Recall Lesson 2's "three-language split": Go handles distribution and scheduling, C++ handles single-machine storage and compute, Rust handles full-text indexing; and within that C++ layer, the <strong>concrete algorithms of vector indexing and search</strong> are outsourced to this dedicated library, Knowhere.</p>
+
+<p>Why factor the algorithms into a <strong>separate library</strong> instead of intermixing them with Milvus core? Because vector search is a <strong>fast-evolving yet highly specialized</strong> field: HNSW is hot today, DiskANN tomorrow, GPU CAGRA the day after, with FAISS, cuVS and a dozen other implementations underneath, each with its own strengths. <strong>Encapsulating those algorithm details inside Knowhere</strong> lets it focus on "how to build and search vectors fast and accurately," while Milvus core only says, through a <strong>unified interface</strong>, "use index X with metric Y, build/search"; the two <strong>evolve independently</strong>.
+That is the value of clean layering: Milvus need not touch distributed scheduling to add a new index, and Knowhere need not know about segments, the WAL, or replicas. Every index family this lesson covers is part of the "<strong>capability menu</strong>" Knowhere exposes to Milvus.</p>
+
+<p>This yields a fact <strong>important for reading code</strong>, and the citation discipline this lesson <strong>keeps stressing</strong>: because the index algorithms live in Knowhere (the upstream library), most <strong>index-type names are Knowhere <span class="inline">IndexEnum</span> constants, not symbols in Milvus core</strong>.
+In the Milvus repo, what you can see are the spots where core code <strong>references</strong> these Knowhere enums — e.g. <span class="mono">internal/core/src/index/Utils.cpp</span> references <span class="inline">knowhere::IndexEnum::INDEX_FAISS_IVFFLAT</span>, <span class="inline">INDEX_SPARSE_INVERTED_INDEX</span>, <span class="inline">INDEX_SPARSE_WAND</span>, and <span class="mono">internal/core/src/common/Utils.h</span> references <span class="inline">INDEX_DISKANN</span>.
+But names like HNSW, IVF_SQ8, IVF_PQ, SCANN, GPU_CAGRA — <strong>do not</strong> hunt for their "definition" in Milvus core; they are defined in the Knowhere upstream library. <strong>When this lesson mentions these names, it treats them strictly as "Knowhere index names," never forcing them onto some Milvus file that lacks them.</strong></p>
+
+<h2>The vector-index families: idea, params, when to use</h2>
+<p>The table below is this lesson's "map." Read it well and you grasp the backbone of "facing a field, how to choose an index":</p>
+
+<table class="t">
+  <tr><th>Family (Knowhere name)</th><th>Core idea</th><th>Key params</th><th>When to pick it</th></tr>
+  <tr><td><strong>FLAT</strong></td><td>brute force, per-row distance</td><td>none</td><td>small data, want 100% recall, baseline comparison</td></tr>
+  <tr><td><strong>IVF_FLAT</strong></td><td>cluster into buckets, query probes only the nearest few</td><td>nlist (buckets) / nprobe (probed)</td><td>medium scale, want recall-speed balance, no precision loss</td></tr>
+  <tr><td><strong>IVF_SQ8</strong></td><td>IVF + scalar quantization (1 byte per dim)</td><td>nlist / nprobe</td><td>memory-tight, can accept slight precision loss</td></tr>
+  <tr><td><strong>IVF_PQ</strong></td><td>IVF + product quantization (short codes)</td><td>nlist / nprobe / m / nbits</td><td>huge scale, very tight memory, tolerate more precision loss</td></tr>
+  <tr><td><strong>HNSW</strong></td><td>navigable small-world graph, hop along neighbor edges</td><td>M (edges/node) / efConstruction / ef (query)</td><td>want <strong>high recall + low latency</strong>, memory sufficient (most common)</td></tr>
+  <tr><td><strong>DiskANN</strong></td><td>on-disk graph index, only skeleton in memory</td><td>search_list / beamwidth, etc.</td><td>data far exceeds memory, trade SSD for capacity</td></tr>
+  <tr><td><strong>SCANN</strong></td><td>anisotropic quantization + reorder, Google-derived</td><td>nlist / nprobe / reorder_k</td><td>want higher recall on a quantized index</td></tr>
+  <tr><td><strong>GPU (CAGRA / GPU_IVF_*)</strong></td><td>graph / IVF on GPU, massive parallelism</td><td>CPU-equivalents + GPU resources</td><td>have a GPU, need very high throughput</td></tr>
+  <tr><td><strong>Sparse (SPARSE_INVERTED_INDEX / SPARSE_WAND)</strong></td><td>inverted index for sparse vectors + WAND pruning</td><td>drop_ratio, etc.</td><td>sparse vectors (e.g. BM25 / SPLADE learned-sparse)</td></tr>
+</table>
+
+<p>Reading the table, two through-lines suffice. <strong>Line one is "bucketing vs graph"</strong>: the IVF line takes the "<strong>cluster first, query looks at only the nearest few buckets</strong>" route, its core params being <span class="inline">nlist</span> (how many buckets) and <span class="inline">nprobe</span> (how many to probe) — bigger nprobe means more buckets seen, higher recall but slower;
+HNSW takes the "<strong>build a net of neighbor shortcuts and hop edge-by-edge to the target patch</strong>" route, its core params being <span class="inline">M</span> (edges per point — denser graph, more accurate but more memory) and <span class="inline">ef</span> (candidate-set size at query time — larger means higher recall but slower).
+<strong>Line two is "raw vs quantized"</strong>: FLAT/IVF_FLAT/HNSW store <strong>raw vectors</strong> (accurate but memory-hungry), while SQ8/PQ <strong>compress</strong> them (memory-saving but precision-losing). Cross these two lines and you understand why the IVF_FLAT, IVF_SQ8, IVF_PQ series exists — all "the IVF bucketing skeleton" plus "different compression strengths."</p>
+
+<p>It helps to give each family a one-line "personality." <strong>FLAT</strong> is the honest plodder: it never approximates, so its recall is always 100% — invaluable as a <strong>ground-truth baseline</strong> when you want to measure how much recall another index actually loses, but hopeless at scale. <strong>IVF</strong> is the zoning planner: cluster once, then at query time visit only the nearest zones; simple, predictable, and its accuracy is tuned almost entirely by nprobe. <strong>HNSW</strong> is the well-connected navigator: by building a multi-layer shortcut graph it reaches the right neighborhood in just a few hops, delivering the best latency-recall combo most workloads want — at the price of holding the whole graph (and raw vectors) in memory.
+<strong>DiskANN</strong> is the warehouse-on-disk: when even quantization can't squeeze the data into RAM, it puts the graph on SSD and keeps only a navigating skeleton in memory, trading a bit of latency for the ability to serve datasets far larger than memory. <strong>The quantized IVFs (SQ8/PQ)</strong> are the space-savers: SQ8 squashes each dimension to a byte, PQ chops a vector into sub-vectors and replaces each with a codebook entry, shrinking footprint dramatically while accepting some recall loss that a re-rank step can partly recover.</p>
+
+<div class="cols">
+  <div class="col"><h4>"I want max recall &amp; low latency, RAM is fine"</h4><p>Reach for <strong>HNSW</strong>. The graph gives near-exhaustive recall at a few-hop cost; tune <span class="inline">ef</span> up if recall must be higher. This is the default sweet spot for most production vector search.</p></div>
+  <div class="col"><h4>"My data won't fit in RAM"</h4><p>Quantize with <strong>IVF_PQ/SQ8</strong> to shrink it, or go <strong>DiskANN</strong> to put the bulk on SSD. You trade a little recall (quantization) or a little latency (disk) for the capacity to serve far more vectors per node.</p></div>
+</div>
+
+<p>A quick word on <strong>sparse</strong> vectors, since they look different from everything above. Dense embeddings have a few hundred always-present dimensions; <strong>sparse vectors</strong> (from BM25 or learned-sparse models like SPLADE) have a huge dimensionality but only a handful of non-zero entries per vector — essentially "term → weight" maps. They can't be bucketed or graphed the same way, so Knowhere serves them with an <strong>inverted index</strong> (<span class="inline">SPARSE_INVERTED_INDEX</span>): for each dimension, a posting list of "which vectors have it and with what weight." The <strong>WAND</strong> variant (<span class="inline">SPARSE_WAND</span>) adds dynamic pruning — it computes upper-bound scores and skips candidates that cannot possibly enter the topK, much like text search engines do. These are the two sparse-vector enums that genuinely appear in Milvus core's <span class="mono">index/Utils.cpp</span>.</p>
+
+<h2>Where it computes: memory, disk, GPU</h2>
+<p>Different families also assume different <strong>storage media</strong>, which directly sets capacity ceilings and cost. Lay them out by the "compute/storage hierarchy":</p>
+
+<div class="layers">
+  <div class="layer l-core"><span class="badge">GPU VRAM</span><span class="name">GPU indexes (CAGRA / GPU_IVF_*)</span><span class="ld">massive parallelism, very high throughput; bounded by VRAM, needs a GPU card</span></div>
+  <div class="layer l-main"><span class="badge">memory</span><span class="name">HNSW / IVF_FLAT / IVF_SQ8 / IVF_PQ / FLAT</span><span class="ld">index resident in memory or mmap; most common, low latency; capacity bounded by RAM (quantization compresses)</span></div>
+  <div class="layer l-part"><span class="badge">disk(SSD)</span><span class="name">DiskANN</span><span class="ld">graph body on SSD, only skeleton in memory; trade disk capacity to "fit huge data," latency slightly up</span></div>
+  <div class="layer l-app"><span class="badge">sparse</span><span class="name">SPARSE_INVERTED_INDEX / SPARSE_WAND</span><span class="ld">inverted structures for sparse vectors, with WAND dynamic pruning to skip low-score candidates</span></div>
+</div>
+
+<p>The core message of this hierarchy is a <strong>triangle tradeoff</strong>: <strong>speed, memory (cost), recall</strong> — you can usually prioritize only two.
+HNSW maxes out "speed + recall" at the cost of <strong>memory</strong>; IVF_PQ/SQ8 <strong>save memory via quantization</strong> at the cost of <strong>recall</strong>; DiskANN <strong>trades disk for capacity</strong> at the cost of <strong>slightly higher latency</strong>; GPU <strong>trades hardware for throughput</strong> at the cost of <strong>GPU expense</strong>.
+No index wins all three corners at once — choosing an index is, in essence, <strong>picking a landing point in this triangle per your data scale, latency target, memory budget, and recall floor</strong>. This echoes the refrain from Lesson 5 on ANN: <strong>approximate search is an engineering tradeoff among "fast enough, cheap enough, accurate enough."</strong></p>
+
+<h2>How one IVF search skips most of the data</h2>
+<p>Making "bucket pruning" concrete best conveys why an index is fast. Take IVF: suppose the build clustered the segment's vectors into 4 buckets (<span class="inline">nlist=4</span>) and the query sets <span class="inline">nprobe=2</span>:</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Locate nearest buckets</h4><p>The query vector q first computes distance to the 4 buckets' <strong>centroids</strong> and picks the nearest <span class="inline">nprobe=2</span>. The other 2 buckets are <strong>skipped entirely</strong>, never looked at.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>In-bucket exact compute</h4><p>Only within the 2 chosen buckets, compute distance <strong>per vector</strong> (IVF_FLAT computes exactly on raw vectors; SQ8/PQ approximate via compressed codes).</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Merge for topK</h4><p><strong>Merge and sort</strong> the candidates from those 2 buckets and take the nearest topK. Scanned volume drops from "the whole segment" to "about half" — smaller nprobe drops it more and runs faster, but risks missing a bucket (lower recall).</p></div></div>
+</div>
+
+<p>This flow demonstrates the <span class="inline">nprobe</span> tradeoff plainly: <strong>raise nprobe</strong> → more buckets seen, lower chance of missing a true neighbor, <strong>recall up</strong>, but more vectors to compute, <strong>slower</strong>; <strong>lower nprobe</strong> is the reverse.
+HNSW's <span class="inline">ef</span> is the "graph version" of the same dial: bigger ef → larger candidate set maintained at query time → more thorough search → higher recall but slower. <strong>Remember this general rule</strong>: nearly every ANN index has such a "<strong>search a bit more ↔ a bit higher recall, but slower</strong>" runtime dial; turning it <strong>slides between speed and recall</strong>. Build-time params (nlist, M) set "the skeleton and its ceiling"; query-time params (nprobe, ef) adjust "the tightness of this particular search" on that skeleton. As an aside: HNSW search is really the "graph version" of the same idea — starting from the graph's top entry, each step <strong>greedily hops toward a neighbor closer to q</strong>, rapidly approaching the rough region on the sparse upper layers, then descending layer by layer into the dense bottom for a fine search, finally converging candidates onto the target neighborhood. Whether bucketing or graph, the essence is the same: <strong>"exact-compute a tiny subset, skip most overall."</strong></p>
+
+<h2>An iron rule: the metric must match the field</h2>
+<p>Finally, stress a point that is <strong>easy to trip on yet severe</strong>: the index's <strong>metric must match the metric declared for the field at schema time</strong>. Recall Lesson 4 — a vector's "similarity" is defined by a metric: <strong>L2</strong> (Euclidean, smaller is closer), <strong>IP</strong> (inner product, larger is closer), <strong>COSINE</strong> (cosine, more aligned direction is closer).
+If a field's embeddings were trained under COSINE semantics but you build an L2 index on them, then what the index "<strong>thinks is near</strong>" and what you "<strong>actually want as near</strong>" disagree, and results are <strong>systematically wrong</strong> — with no error raised, just inexplicably poor recall. So when Knowhere builds an index, the <strong>metric is a first-class parameter bound to the index</strong> and must align across the field, the index, and the metric you used to train the embeddings. This is one of the most insidious bug classes in vector search; get it right from the very start. Milvus does validate metric-vs-field consistency at build time, but using the semantically right metric is ultimately yours to guard.</p>
+
+<p>To tidy up "params," the clearest way is to split them by <strong>two moments</strong>. <strong>Build-time params</strong> (IVF's <span class="inline">nlist</span>, HNSW's <span class="inline">M</span> and <span class="inline">efConstruction</span>, PQ's <span class="inline">m</span>/<span class="inline">nbits</span>) decide the <strong>index structure itself</strong> — how many buckets, how dense the graph, how big the codebook; once built they are <strong>frozen into the index files</strong> and changing them means a rebuild.
+<strong>Query-time params</strong> (<span class="inline">nprobe</span>, <span class="inline">ef</span>) are dials you can <strong>adjust per search</strong> without rebuilding, sliding the current query along "speed ↔ recall." Grasping this "<strong>build sets the skeleton, query tunes the tightness</strong>" split keeps the two kinds apart when tuning: if recall is chronically too low, first suspect a too-small <strong>structural param</strong> like nlist/M (needs a rebuild); if you just want more recall on a particular query, bump nprobe/ef (no rebuild).</p>
+
+<p>Finally, connect this lesson back to the main line. Here we covered <strong>what the Knowhere algorithm kernel offers and how to choose</strong>; but <strong>which segment's data these indexes are built on, where the built files go, and how QueryNode puts them to use</strong> are matters of <strong>data flow</strong> — exactly the "sealed segment → build → index files to object storage → QueryNode loads" journey of the next lesson (23). Combine "which index to choose" (this lesson) with "how the index flows" (next lesson) and you truly command Milvus's vector indexing.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/core/src/index/Utils.cpp</span><span class="ln">Milvus core references Knowhere's index enums (illustrative excerpt)</span></div>
+  <pre><span class="cm">// These are IndexEnum constants from the upstream Knowhere library; Milvus core references them here:</span>
+knowhere::IndexEnum::<span class="nb">INDEX_FAISS_IVFFLAT</span>      <span class="cm">// IVF_FLAT</span>
+knowhere::IndexEnum::<span class="nb">INDEX_FAISS_BIN_IVFFLAT</span>  <span class="cm">// binary-vector IVF</span>
+knowhere::IndexEnum::<span class="nb">INDEX_SPARSE_INVERTED_INDEX</span> <span class="cm">// sparse inverted</span>
+knowhere::IndexEnum::<span class="nb">INDEX_SPARSE_WAND</span>        <span class="cm">// sparse WAND pruning</span>
+<span class="cm">// See also common/Utils.h referencing knowhere::IndexEnum::INDEX_DISKANN (DiskANN).</span>
+<span class="cm">// Whereas HNSW / IVF_SQ8 / IVF_PQ / SCANN / GPU_CAGRA are defined inside Knowhere; core has no definition of them.</span></pre>
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: the algorithm kernel the worker calls to build/search is the upstream library <strong>Knowhere</strong>. It stocks a range of <strong>vector-index families</strong> — <strong>FLAT</strong> (brute force · full recall), <strong>IVF_FLAT/SQ8/PQ</strong> (cluster-bucket + optional quantization, dials nlist/nprobe), <strong>HNSW</strong> (neighbor graph, dials M/ef), <strong>DiskANN</strong> (on-disk graph for capacity), <strong>SCANN</strong>, <strong>GPU/CAGRA</strong> (hardware for throughput), <strong>sparse</strong> (SPARSE_INVERTED_INDEX/SPARSE_WAND). Selection is a <strong>speed↔memory↔recall</strong> triangle; the metric must match the field. Citation discipline: most index names are <strong>Knowhere IndexEnum</strong>, and Milvus core only <strong>references</strong> a few (the IVF/sparse ones in <span class="mono">index/Utils.cpp</span>, INDEX_DISKANN in <span class="mono">common/Utils.h</span>).
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Knowhere = vector kernel</strong>: Milvus C++ core does index build and vector search by calling the upstream Knowhere library (wraps FAISS/HNSWlib/DiskANN/cuVS).</li>
+    <li><strong>Index families</strong>: FLAT (full recall, slow) / IVF_FLAT·SQ8·PQ (bucketing ± quantization) / HNSW (neighbor graph, most common) / DiskANN (disk) / SCANN / GPU·CAGRA / sparse.</li>
+    <li><strong>Two through-lines</strong>: bucketing (IVF: nlist/nprobe) vs graph (HNSW: M/ef); raw (accurate · memory) vs quantized (memory-saving · precision loss).</li>
+    <li><strong>Triangle tradeoff</strong>: speed ↔ memory (cost) ↔ recall, usually only two prioritized; selection is picking a point in the triangle.</li>
+    <li><strong>Runtime dial</strong>: larger nprobe/ef → higher recall but slower; build-time params (nlist/M) set the skeleton, query-time params (nprobe/ef) set the tightness.</li>
+    <li><strong>Metric must match</strong>: L2/IP/COSINE must align with the field and with embedding training, else results are systematically wrong with no error.</li>
+    <li><strong>Citation discipline</strong>: most index names are Knowhere IndexEnum; core only references a few (<span class="mono">index/Utils.cpp</span>, INDEX_DISKANN in <span class="mono">common/Utils.h</span>).</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Where do Milvus's vector indexes (HNSW, IVF_PQ, SCANN, GPU CAGRA, etc.) actually come from?</div>
+  <ol class="opts">
+    <li>Each index type is a standalone microservice</li>
+    <li>Generated on the fly by the Proxy at query time</li>
+    <li>Most are IndexEnum types provided by the upstream Knowhere library, not defined by milvus core itself; core only references a few constants (e.g. INDEX_DISKANN in common/Utils.h, INDEX_FAISS_IVFFLAT/INDEX_SPARSE_INVERTED_INDEX/INDEX_SPARSE_WAND etc. as knowhere::IndexEnum:: in index/Utils.cpp)</li>
+    <li>All implemented by milvus core's Go code</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. Vector index algorithms belong to Knowhere (wrapping Faiss/HNSWlib/DiskANN/cuVS, etc.). When citing a milvus file you may only cite IndexEnum constants that truly exist; the rest should be presented as 'Knowhere index names,' not forced into milvus files that lack them</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. When choosing a vector index and its params, which statement is correct?</div>
+  <ol class="opts">
+    <li>HNSW needs no parameters at all</li>
+    <li>The metric can be swapped freely at query time without affecting results</li>
+    <li>The smaller nprobe is, the higher the recall</li>
+    <li>IVF's nlist/nprobe and HNSW's M/ef are all 'recall vs speed/memory' knobs; FLAT brute force gives 100% recall but is slowest, PQ/SQ8 trade accuracy for memory via compression, DiskANN puts the graph on disk for huge scale; and the query metric must match the one used to build the index</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. Every ANN index trades within the 'recall–latency–memory' triangle; raising nprobe/ef lifts recall but is slower. The metric (L2/IP/COSINE, etc.) must match what the field was indexed with, otherwise distance semantics break and results are meaningless</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson deliberately separates 'IndexEnum constants milvus core truly defines/references' from 'types presented merely as Knowhere index names.' Consider: why is outsourcing vector index algorithms to a dedicated library like Knowhere a sound architectural choice for Milvus? What rigor does this demand about 'citing code provenance' (i.e. not attributing HNSW/SCANN to milvus files that lack them)? (Tie in Lesson 5 ANN algorithms.)</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Index build &amp; load</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+The last two lessons covered "<strong>who builds the index</strong>" (DataCoord schedules, a worker executes) and "<strong>what index to build</strong>" (Knowhere's vector-index families). This lesson cuts to the <strong>data flow</strong>: physically, where does a segment's data travel as it goes from "raw vectors" to "a searchable index"?
+The full chain: <strong>a sealed segment's raw vectors → a build task (the worker reads binlogs and calls Knowhere) → index files written to object storage → QueryNode reads the index into memory or mmaps it when the collection is loaded → the segment becomes ANN-searchable</strong>.
+Two key questions arise along the way: <strong>how do you query a segment that isn't indexed yet (especially a growing one)</strong>, and <strong>if the index format is upgraded, can old indexes still be used</strong> (index versioning)? This lesson settles both.
+</p>
+
+<div class="card analogy">
+  <div class="tag">📮 Analogy</div>
+  Back to the library. Last lesson the assistant read the shelf and wrote a stack of <strong>catalog cards</strong> (the index). But the cards can't just sit by the shelf — they must be <strong>boxed and sent to the central archive</strong> (object storage) for safekeeping, logged, and available on request.
+  When a <strong>branch library</strong> (QueryNode) wants to offer "fast lookups," it <strong>checks out a copy</strong> of those cards from the central archive: either <strong>moves the whole copy into the front desk drawer</strong> (load into memory, fastest to query) or <strong>keeps it on a nearby shelf and flips to a page when needed</strong> (mmap, memory-saving, read on demand).
+  Two more things: <strong>brand-new books not yet cataloged</strong> (growing segments) must still serve readers — only by <strong>flipping through them one by one</strong> (brute force), slow but complete. And the archive's <strong>card format occasionally upgrades</strong> (a more efficient new layout), so a branch must recognize "which version these cards are and whether my equipment reads it" — that is index versioning.
+</div>
+
+<h2>Data-flow overview: from sealed segment to searchable</h2>
+<p>First see the whole path at a glance. It threads together roles from several earlier lessons: Lesson 17's flush producing sealed segments, Lesson 18's object storage and binlogs, Lesson 13's QueryCoord load/release, Lesson 21's build task:</p>
+
+<div class="timeline">
+  <div class="lane"><span class="lane-label">① sealed</span><span class="tslot">segment flushed to binlogs (raw vectors, immutable)</span></div>
+  <div class="lane"><span class="lane-label">② build</span><span class="tslot now">worker reads binlogs → calls Knowhere to build</span></div>
+  <div class="lane"><span class="lane-label">③ persist</span><span class="tslot">index files written to object storage (index_files prefix)</span></div>
+  <div class="lane"><span class="lane-label">④ load</span><span class="tslot now">QueryNode reads the index into memory / mmap</span></div>
+  <div class="lane"><span class="lane-label">⑤ queryable</span><span class="tslot">the segment participates in search via ANN</span></div>
+</div>
+
+<p>The most memorable trait of this pipeline: <strong>every step leaves the "heavy work" in the background and settles the "product" into durable files</strong>. Raw vectors are durable (binlogs in object storage), and so is the index (index files in object storage) — so even if a worker or QueryNode crashes midway, <strong>the already-persisted products are never lost</strong>; just refetch from object storage on restart.
+This is Milvus's recurring "<strong>compute-storage separation</strong>": the compute for building indexes (workers) and for serving search (QueryNodes) is <strong>stateless and replaceable</strong>, while the real <strong>state</strong> (raw data, indexes) lives on the shared object-storage substrate. Grasp this and you see why Milvus nodes scale freely and recover fast after a crash — because "the data" and "who computes on it" are cleanly decoupled.</p>
+
+<h2>Build side: worker reads binlogs, calls Knowhere, writes index files</h2>
+<p>Zoom into Lesson 21's "build" step. After the worker (the <span class="inline">indexBuildTask</span> on a datanode) picks up a segment's build task, its <span class="inline">Execute</span> roughly does three things:</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Read raw vectors</h4><p>By the segment info in the task, <strong>pull the segment's vector binlogs</strong> from object storage, deserialize, and assemble into an in-memory dataset Knowhere can consume (recall Lesson 18's columnar binlogs).</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Call Knowhere to build</h4><p>Per the index type and params (Lesson 22), hand the dataset to Knowhere to build — graph / cluster / train codebook. This is the <strong>most CPU/memory-hungry</strong> step of the chain.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Write index files + register</h4><p><strong>Serialize Knowhere's output into index files</strong>, write them back to object storage (<span class="mono">index_files</span> prefix), then <strong>report the paths to DataCoord</strong> and mark the segment "indexed."</p></div></div>
+</div>
+
+<p>One often-overlooked but important detail: the worker <strong>reads binlogs (raw vectors) and writes index files — the two coexist; the index does NOT replace the raw data</strong>.
+Why keep the raw vectors? Because many indexes (e.g. quantized IVF_PQ) are <strong>lossy</strong>, and search may need raw vectors for <strong>exact re-ranking</strong>; and any future <strong>rebuild</strong> (change index type, change params, or an index-format upgrade) must start over from the raw vectors. So in object storage, one segment holds both the <strong>raw binlogs</strong> and the <strong>index files</strong>, each with its job: the raw binlogs are the "<strong>truth</strong>" (everything can be rebuilt from them), the index files an "<strong>acceleration copy</strong>" (if corrupted or stale, they can be rebuilt from the raw data). This echoes Lesson 18's object-storage product list: insert_log / delta_log / stats_log / <strong>index_files</strong> coexisting side by side.</p>
+
+<p>Let's also nail down once more "why the build must run on immutable data." When the worker reads binlogs to build an index, it <strong>must be sure the data won't change during the build</strong> — otherwise, if the data were rewritten halfway, the produced index wouldn't match the data. A sealed segment provides exactly this guarantee: it is a <strong>read-only, immutable</strong> snapshot, so the worker can read it freely and compute slowly without worrying about anyone changing the data behind its back.
+This is the recurring "<strong>immutability</strong>" theme from earlier parts cashing in again, now in the indexing context: immutable binlogs let compaction merge safely in the background (Lesson 19), let deletes only append tombstones (Lesson 20), and now let index builds proceed safely in the background. <strong>Immutability is the shared foundation of all these background async tasks</strong> — without it, the concurrency of "serving queries while rewriting/indexing in the background" would be riddled with data races.</p>
+
+<h2>Load side: QueryNode reads the index into memory or mmap</h2>
+<p>An index file sitting in object storage is only a "<strong>loadable asset</strong>" — it cannot serve directly. What makes it "<strong>come alive and queryable</strong>" is <strong>QueryNode's load action when the collection is loaded</strong> (recall Lesson 13: QueryCoord decides which segments load onto which QueryNodes).
+The load logic is in <span class="mono">internal/querynodev2/segments/segment_loader.go</span> (e.g. <span class="inline">loadSealedSegment</span>); it fetches the segment's index files from object storage and hands them to the C++ side (via Knowhere) to <strong>deserialize and load</strong> into a searchable index object. Loading comes in two ways — an important <strong>memory vs disk</strong> tradeoff that directly governs "how much data a node can serve and how fast it queries":</p>
+
+<div class="cols">
+  <div class="col"><h4>Load into memory</h4><p>Read the <strong>entire index into RAM</strong>. All access at query time hits memory, giving the <strong>lowest, most stable latency</strong>; the cost is <strong>memory consumption</strong>, with per-node capacity bounded by RAM. First choice for latency-sensitive, memory-rich scenarios.</p></div>
+  <div class="col"><h4>Memory-map (mmap)</h4><p><strong>mmap</strong> the index files into the address space, <strong>paging in from disk only what's touched</strong>. <strong>Memory-saving</strong>, fitting <strong>far more</strong> data under the same RAM; the cost is that cold access triggers <strong>page faults to disk</strong>, with slightly higher, jittery latency. Pick it when capacity comes first.</p></div>
+</div>
+
+<p>The memory-vs-mmap tradeoff is, again, one edge of that old triangle: <strong>trade latency for capacity</strong>. It is the same idea as last lesson's DiskANN ("put the graph on disk") expressed at a <strong>different level</strong> — DiskANN designs the <strong>index algorithm itself</strong> for disk, while mmap makes <strong>any in-memory index</strong> "page in on demand" at the <strong>load</strong> level.
+Milvus lets you <strong>finely configure</strong> which data goes through mmap by field and scenario, so you can keep "hot small fields in memory, cold large vectors on mmap," finding your own balance between <strong>cost and latency</strong>. This flexibility is the dividend of "compute-storage separation + file-based indexes": since an index is just a file in object storage, the load side is free to decide "how to bring it in and use it."</p>
+
+<p>Let's also connect "load" to Lesson 13's <strong>QueryCoord</strong>, lest you think QueryNode loads on its own whim. The one that decides "<strong>which segments, which indexes, onto which QueryNode</strong>" is QueryCoord — it holds the global view of replicas, balancing, and distribution↔target, and <strong>dispatches</strong> load tasks to specific QueryNodes; a QueryNode merely <strong>executes</strong> that load command (fetch index files from object storage, load, report ready).
+This is, once more, the same "<strong>coordinator schedules, node executes</strong>" theme: index build is DataCoord-scheduled + worker-executed, index load is QueryCoord-scheduled + QueryNode-executed. The two background chains are strikingly symmetric — both hand the "heavy work" to replaceable nodes and keep the "global ledger" with the coordinator. See this symmetry clearly and your grasp of Milvus's whole distributed skeleton takes shape.</p>
+
+<h2>Segments not yet indexed: growing segments use brute force</h2>
+<p>An unavoidable question: should queries serve segments that are <strong>just written, still growing, or sealed-but-not-yet-indexed</strong>? They must — otherwise freshly written data couldn't be found, violating "<strong>visible once written</strong>."
+The handling is direct: <strong>these unindexed segments fall back to brute force at query time (FLAT-style per-row distance)</strong>. Slow, but <strong>correct and complete</strong>. This also explains why Lesson 21 stressed "<strong>indexes are built only on immutable sealed segments</strong>" — a growing segment is still changing, so building on it is wasted; better to wait until it's sealed, with brute force covering the gap until then.</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">growing segment</div><div class="nd">still receiving rows · no index</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">brute force</div><div class="nd">per-row distance · slow but complete</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">flush → sealed</div><div class="nd">frozen into immutable binlogs</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">build → ANN</div><div class="nd">segment switches to index search · fast</div></div>
+</div>
+
+<p>So a single search on a QueryNode is often <strong>"hybrid"</strong>: a few growing segments use brute force, many sealed segments use ANN indexes, each computes a local topK, then they <strong>merge</strong> into a global result (the same "divide and conquer" as Lesson 10's Proxy fan-out-and-reduce, just at a different level).
+To the user this is all <strong>transparent</strong> — you just query, and "which segments have an index, which don't, and how each computes" is decided automatically inside QueryNode. Grasp this hybrid and you'll no longer wonder "why can freshly written data be searched instantly, yet seems a touch slower than old data" — because the growing segment holding new data is still on brute force; once it's sealed and indexed, it's as fast as the old data. This is also why, just after bulk-importing a lot of data, queries start slow and speed up: as the background builds the indexes of sealed segments one by one, fewer segments use brute force and more use ANN, so overall latency <strong>steadily drops and stabilizes</strong>.</p>
+
+<h2>Index versioning: the format upgraded — what about old indexes?</h2>
+<p>A last, often-ignored yet very real issue: index files have a <strong>format version</strong>. Knowhere evolves, and the index's <strong>engine version</strong> upgrades — newer versions may have more efficient layouts or new capabilities. So when the cluster runs <strong>mixed old/new QueryNodes</strong>, or an <strong>old index meets a new engine</strong>, how do you guarantee "the index that's built is recognized by the node that loads it"?
+That is the job of <span class="mono">internal/datacoord/index_engine_version_manager.go</span>: DataCoord maintains an <span class="inline">IndexEngineVersionManager</span> that tracks the index-engine versions reported by each QueryNode and yields the <strong>currently available version</strong> (<span class="inline">GetCurrentIndexEngineVersion</span>) and the <strong>minimal compatible version</strong> (<span class="inline">GetMinimalIndexEngineVersion</span>). Building per this <strong>negotiated version</strong> ensures the produced index is <strong>never higher than the weakest node in the cluster can recognize</strong>, avoiding the embarrassment of "built a new-format index that no node can load."</p>
+
+<p>Behind this version negotiation is a real constraint every distributed system faces: <strong>upgrades aren't instantaneous — they roll out gradually</strong>. You can't switch dozens or hundreds of nodes to a new Knowhere version all at once; in practice there's always a window of <strong>mixed old/new nodes</strong>. If a worker that already upgraded builds an index in the latest format, while some not-yet-upgraded old QueryNodes <strong>can't read</strong> that new format, that segment <strong>fails to load and can't serve</strong> on those nodes.
+The version manager's "<strong>take the minimal compatible version</strong>" policy is, in essence, a plain compatibility rule: <strong>the format of a product must align with the most conservative consumer in the cluster</strong>. Only once all nodes have upgraded and the minimal-version watermark rises overall does the new format naturally take effect. This "<strong>defer to the weakest node</strong>" conservative negotiation is everywhere in online database upgrades — it trades "temporarily not using a new feature" for <strong>uninterrupted service during the upgrade</strong>. It is a microcosm of the distributed-systems principle "<strong>compatibility over new features</strong>": whether you get the newest, fastest format is secondary; what comes first is that <strong>the whole cluster stays available throughout the upgrade, losing no service</strong>.</p>
+
+<p>To wrap up: along the <strong>data flow</strong>, we walked the index's full physical journey "from raw vectors to searchable" — the build side's worker turns a sealed segment into index files in object storage, the load side's QueryNode brings those files into memory or mmap, brute force covers segments not yet indexed in between, plus versioning ensures old and new indexes recognize each other.
+With that, the <strong>vector-index</strong> thread is complete: Lesson 21 "who builds," Lesson 22 "what to build," Lesson 23 "how it flows and loads." But remember, real queries are often not just "find the most similar vector" — they frequently carry <strong>scalar filters</strong> ("price &lt; 100 and category = electronics") and <strong>full-text search</strong> ("contains keyword X"). For these <strong>non-vector</strong> lookups to be fast, they too need indexes — the subject of the next lesson, <strong>scalar and full-text indexes</strong>.</p>
+
+<table class="t">
+  <tr><th>Product / state</th><th>Where</th><th>Who</th></tr>
+  <tr><td>raw-vector binlogs</td><td>object storage (insert_log prefix)</td><td>produced by flush (Lesson 17), read at build</td></tr>
+  <tr><td>index files</td><td>object storage (index_files prefix)</td><td>written by worker after build</td></tr>
+  <tr><td>index metadata (paths/state)</td><td>etcd (via DataCoord)</td><td>written back by worker, booked by DataCoord</td></tr>
+  <tr><td>loaded index object</td><td>QueryNode memory / mmap</td><td>loaded by QueryNode on collection load</td></tr>
+  <tr><td>index engine version</td><td>DataCoord (version manager)</td><td><span class="mono">index_engine_version_manager.go</span></td></tr>
+</table>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/datacoord/index_engine_version_manager.go</span><span class="ln">IndexEngineVersionManager: negotiate the index engine version (excerpt)</span></div>
+  <pre><span class="cm">// DataCoord tracks the index-engine versions reported by each QueryNode and yields available/minimal-compatible versions,</span>
+<span class="cm">// so a built index is never higher than the weakest node in the cluster can load.</span>
+<span class="kw">type</span> IndexEngineVersionManager <span class="kw">interface</span> {
+    <span class="fn">GetCurrentIndexEngineVersion</span>() int32 <span class="cm">// currently available version</span>
+    <span class="fn">GetMinimalIndexEngineVersion</span>() int32 <span class="cm">// minimal compatible version</span>
+    <span class="cm">// AddNode/RemoveNode/Update: refresh the version view as QueryNodes come and go</span>
+}</pre>
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: the index <strong>data flow</strong> is — <strong>sealed segment raw vectors</strong> (object-storage binlogs) → <strong>worker builds</strong> (<span class="inline">indexBuildTask.Execute</span>: read binlogs, call Knowhere) → <strong>index files to object storage</strong> (index_files) → <strong>QueryNode loads</strong> (<span class="mono">segment_loader.go</span>: into memory or mmap) → the segment is queryable via <strong>ANN</strong>. <strong>Raw vectors and index coexist</strong> (re-rank/rebuild need the raw data); <strong>growing segments have no index and fall back to brute force</strong>, switching to ANN once sealed and built; a single search is often "brute force + ANN" merged. <strong>Compute-storage separation</strong> makes nodes stateless and recoverable. <strong>Index versions</strong> are negotiated by <span class="mono">index_engine_version_manager.go</span>, ensuring built indexes are recognized by cluster nodes.
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Full data flow</strong>: sealed-segment raw vectors → worker reads binlogs · calls Knowhere to build → index files to object storage → QueryNode loads → segment ANN-searchable.</li>
+    <li><strong>Raw and index coexist</strong>: index files (<span class="mono">index_files</span>) don't replace raw binlogs; quantized-index re-ranking and any future rebuild go back to raw vectors.</li>
+    <li><strong>Two load modes</strong>: memory (lowest latency · RAM-hungry) vs mmap (memory-saving · page-in on demand · slight jitter); configurable per field/scenario, a latency↔capacity tradeoff.</li>
+    <li><strong>Growing uses brute force</strong>: unindexed segments fall back to per-row distance, slow but complete; switch to ANN after sealed and built. A search is often brute-force + ANN merged.</li>
+    <li><strong>Compute-storage separation</strong>: both raw data and indexes live in object storage; workers/QueryNodes are stateless and recover from object storage after a crash.</li>
+    <li><strong>Index versioning</strong>: <span class="mono">index_engine_version_manager.go</span>'s <span class="inline">IndexEngineVersionManager</span> (<span class="inline">GetCurrentIndexEngineVersion</span>/<span class="inline">GetMinimalIndexEngineVersion</span>) negotiates versions, avoiding building an index no node can load.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. What path does a sealed segment's index take from build to queryable?</div>
+  <ol class="opts">
+    <li>sealed segment → build task (worker reads the segment's binlogs, calls Knowhere to build) → index files written to object storage → QueryNode loads them (mmap or fully in-memory, loadSealedSegment); growing segments aren't indexed yet and use brute force at query time</li>
+    <li>QueryNode shares the DataNode's index directly from memory, with no object storage</li>
+    <li>Growing segments are also searched via an HNSW index</li>
+    <li>Index files are generated synchronously with binlogs at write time</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. Object storage is the decoupling point between the build side (worker writes) and the load side (QueryNode reads), so the two need no direct communication. mmap lets indexes larger than RAM still load, a 'memory vs latency' tradeoff</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Why does index-engine version management (index_engine_version_manager.go) matter during a rolling upgrade?</div>
+  <ol class="opts">
+    <li>It assigns primary keys to each segment</li>
+    <li>Different nodes' Knowhere versions may support different index formats; the build picks a version 'deferring to the weakest node' (GetCurrentIndexEngineVersion/GetMinimalIndexEngineVersion) so every QueryNode can load the new index, keeping service uninterrupted during the upgrade</li>
+    <li>It is just a version string in logs with no real effect</li>
+    <li>It decides which metric a query uses</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. 'Defer to the weakest node' embodies compatibility-over-new-features: trade 'not yet using the newest format' for a cluster that stays loadable and loses no service during the upgrade. It's the standard conservative strategy for online database upgrades</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson fully decouples index build from load via 'object storage,' and guarantees uninterrupted rolling upgrades via 'defer to the weakest node' version negotiation. Consider: what general distributed-systems principles do these two designs embody? Why would a growing segment rather use brute force than build an index immediately, and how does that echo the 'segment lifecycle' (Lesson 7)? (Tie in Lesson 18 binlog and Lesson 22 Knowhere.)</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Scalar &amp; full-text</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+The indexes of the last three lessons all served <strong>vector search</strong>. But real queries are rarely "pure vector" — they often carry <strong>scalar filters</strong> ("price &lt; 100, category = electronics, listed this week") and <strong>full-text search</strong> ("the product description contains 'waterproof'").
+This lesson covers the acceleration of that <strong>non-vector</strong> half: <strong>scalar indexes</strong> (inverted, bitmap, sort, ngram, hybrid, JSON) make filtering fast and cheap; <strong>full-text search (BM25)</strong> is realized via Rust's <strong>tantivy</strong> engine. Finally we see how <strong>scalar filter + vector ANN</strong> cooperate in a single "hybrid query."
+With this lesson, your full picture of Milvus — "<strong>find by similarity, filter by condition, and search by keyword</strong>" — is complete.
+</p>
+
+<div class="card analogy">
+  <div class="tag">📮 Analogy</div>
+  One last trip to the library. The "catalog cards" of earlier lessons were for "<strong>finding books with similar content</strong>" (vector search). But readers ask other things too:
+  "<strong>published after 2024</strong>" (filter by field range) — you need a list <strong>sorted by publication year</strong> (a sort index);
+  "<strong>hardcover / paperback</strong>," with only a few possible values (low cardinality) — a <strong>"hardcover→which books, paperback→which books" bitmap</strong> is cheapest (bitmap);
+  "<strong>title contains the word 'quantum'</strong>" — you need an <strong>inverted word list of "term → which books"</strong> (inverted index);
+  "<strong>the body text discusses 'waterproof'</strong>" — that demands a proper <strong>search engine</strong> over full text, which also tokenizes and scores relevance (full-text / BM25).
+  None of these is "find a similar vector"; they are "<strong>filter precisely by condition, search relevantly by keyword</strong>." A complex query often needs <strong>both</strong>: first use scalar indexes to quickly drop the vast majority of books, then run vector similarity over the small remaining pile — that's a <strong>hybrid query</strong>.
+</div>
+
+<h2>Scalar indexes: speeding up the filter half</h2>
+<p>Vector search answers "<strong>most like which</strong>"; scalar filtering answers "<strong>does it meet the condition</strong>." If the filter field has no index, then "price &lt; 100" can only be judged by <strong>scanning every row</strong> — as slow as unindexed vector search. <strong>Scalar indexes</strong> exist to speed up exactly this "filter by field value."
+The importance of this is often underrated: in many real workloads, <strong>the filter condition is the main force compressing candidates from "the whole collection" to "a small handful."</strong> Imagine a billion-product collection where "category=electronics and price&lt;100" might cut candidates from a billion to a few hundred thousand — if that cut is slow (scanning a billion rows), even the fastest vector search afterward is dragged down. So scalar indexes are not "icing on the cake" but the other half, <strong>as important as the vector index</strong>, in a hybrid query.
+Milvus's scalar-index implementations live under the C++ core's <span class="mono">internal/core/src/index/</span>, offering several kinds for different <strong>data characteristics</strong>, each good at a class of filters:</p>
+
+<table class="t">
+  <tr><th>Scalar index (header)</th><th>Fit data / query</th><th>Core idea</th></tr>
+  <tr><td><strong>Inverted (<span class="mono">InvertedIndexTantivy.h</span>)</strong></td><td>equality / set (=, IN), strings</td><td>"value → rows holding it" inverted list, backed by tantivy</td></tr>
+  <tr><td><strong>Bitmap (<span class="mono">BitmapIndex.h</span>)</strong></td><td><strong>low-cardinality</strong> fields (gender, status, enums)</td><td>one bitmap per value; filter = bit ops, very fast</td></tr>
+  <tr><td><strong>Sort (<span class="mono">ScalarIndexSort.h</span> / <span class="mono">StringIndexSort.h</span>)</strong></td><td><strong>range</strong> queries (&lt;, &gt;, BETWEEN)</td><td>STL_SORT: sort by value, binary-search the interval</td></tr>
+  <tr><td><strong>Ngram (<span class="mono">NgramInvertedIndex.h</span>)</strong></td><td>substring / fuzzy match (LIKE '%x%')</td><td>build inverted lists over n-gram slices to speed substring queries</td></tr>
+  <tr><td><strong>Hybrid (<span class="mono">HybridScalarIndex.h</span>)</strong></td><td>when unsure which to use</td><td><strong>auto-pick</strong> a suitable scalar index by data characteristics</td></tr>
+  <tr><td><strong>JSON (<span class="mono">JsonHybridScalarIndex.h</span>)</strong></td><td>sub-keys inside JSON / dynamic fields</td><td>build scalar indexes for JSON paths to speed nested-field filtering</td></tr>
+</table>
+
+<p>Reading the table, the key intuition is <strong>"pick the index by data characteristics."</strong> <strong>Low-cardinality</strong> fields (only a few values, e.g. "listed/unlisted") suit <strong>bitmap</strong> best: one bitmap per value, "filter all listed" is just <strong>pulling out the matching bitmap</strong>, and multi-condition AND/OR is direct <strong>bit operations</strong> — extremely fast and space-thrifty.
+<strong>Range</strong> queries (price interval, time interval) suit a <strong>sort index (STL_SORT)</strong>: sort the values, binary-search to pin the interval's ends, everything inside hits as a block. <strong>Equality and string</strong> queries suit <strong>inverted</strong>: directly look up "which rows hold this value."
+When unsure, <strong>HybridScalarIndex</strong> <strong>auto-picks for you</strong> — the same "worry-free" philosophy as Lesson 21's vector AUTOINDEX, applied on the scalar side. Grasp "<strong>match the index to what the data looks like</strong>" and you hold the backbone of scalar-index selection.</p>
+
+<p>Let's give each index a one-line "personality" for long-term memory. <strong>Bitmap</strong> is the king of low cardinality: when a field has only a <strong>handful</strong> of values like "yes/no" or "red/yellow/blue," storing one "which rows have it" bitmap per value reduces filtering to <strong>bit-AND/bit-OR</strong>, fast and thrifty; but if a field has thousands of distinct values (high cardinality, e.g. user IDs), the bitmaps explode and you shouldn't use it.
+The <strong>sort index (STL_SORT)</strong> is the tool for range queries: with values sorted, "price between 50 and 100" only needs a <strong>binary search</strong> for the interval's ends, with everything inside hitting as a block, avoiding row-by-row comparison. <strong>Inverted</strong> targets <strong>equality and strings</strong>: it natively answers "<strong>which rows have this field equal to X</strong>" because it stores exactly the "value → rows" mapping.
+<strong>Ngram</strong> solves the <strong>substring fuzzy match</strong> that inverted can't (<span class="inline">LIKE '%keyword%'</span>): slice a string into small pieces of n consecutive characters and build inverted lists over those pieces, so "contains a substring" is accelerated by hitting the corresponding n-gram slices. Memorize these four personalities and, facing a filter field, you'll <strong>reflexively</strong> pick the right index.</p>
+
+<p>A special word on <strong>JSON / dynamic field</strong> indexes. Recall Lesson 6: Milvus supports dynamic fields and the JSON type, letting you stuff flexibly-structured <strong>nested data</strong> into a row. But flexibility has a cost — filtering on a sub-key inside JSON (e.g. <span class="inline">meta["brand"]</span>) would by default require <strong>parsing each row's JSON</strong> before judging, which is slow.
+<strong>JsonHybridScalarIndex</strong> (<span class="mono">JsonHybridScalarIndex.h</span>) exists for this: it can build scalar indexes for <strong>specific paths</strong> inside JSON, accelerating "nested-field filtering" to the same order as ordinary scalar fields. This lets "dynamic/JSON fields" keep their <strong>schema flexibility</strong> without paying a heavy filter-performance penalty — once more reflecting Milvus's engineering bent toward "<strong>flexibility and performance together</strong>."</p>
+
+<div class="cols">
+  <div class="col"><h4>Vector indexes (last 3 lessons)</h4><p>Answer "<strong>most like which</strong>." Knowhere's HNSW/IVF/DiskANN etc., rank by <strong>semantic similarity</strong>, approximate search (ANN).</p></div>
+  <div class="col"><h4>Scalar indexes (this lesson)</h4><p>Answer "<strong>does it meet the condition</strong>." bitmap/sort/inverted etc., filter precisely by <strong>field value</strong>, producing a bitset.</p></div>
+  <div class="col"><h4>Full-text index (this lesson)</h4><p>Answer "<strong>which documents are most relevant</strong>." tantivy inverted + BM25, score and rank by <strong>term relevance</strong>.</p></div>
+</div>
+
+<p>These three index classes each do their job, yet can be <strong>stacked</strong> in one query — exactly where Milvus beats a "pure vector store": it doesn't only do "find a similar vector," but <strong>unifies</strong> three capabilities — <strong>similarity search, conditional filtering, keyword retrieval</strong> — into one engine, one dataset, one query. Behind this is a plain but important judgment: real-world retrieval is almost <strong>never</strong> "by vector only" or "by condition only," but always a <strong>combination of two or even three</strong> — "among candidates meeting some conditions and textually relevant, find the semantically most alike." Stocking all three index families and making them cooperate is what earns Milvus the name of a real-workload <strong>vector database</strong>, not an isolated "vector-search algorithm library."</p>
+
+<h2>Inverted index and full-text search: Rust's tantivy engine</h2>
+<p>The <strong>inverted</strong> index that keeps recurring above, and "full-text search," share one engine behind them: <strong>tantivy</strong> — a full-text search library written in <strong>Rust</strong> (analogous to Lucene in the Java world). This is the realization of "Rust handles full-text indexing" from Lesson 2's "three-language split."
+Milvus's C++ core <strong>wraps and calls</strong> tantivy through <span class="mono">internal/core/src/index/InvertedIndexTantivy.h</span> (the <span class="inline">InvertedIndexTantivy</span> class); the C++↔Rust bridge is the binding layer (FFI) under <span class="mono">internal/core/thirdparty/tantivy</span>. That is, the "dirty heavy work" of an inverted index — tokenization, building the term table, boolean retrieval, relevance scoring — is all <strong>outsourced to tantivy</strong>, the professional engine, while the C++ side only wires it into Milvus's segment and query system.</p>
+
+<div class="layers">
+  <div class="layer l-app"><span class="badge">Milvus core (C++)</span><span class="name">InvertedIndexTantivy</span><span class="ld">internal/core/src/index/InvertedIndexTantivy.{h,cpp}: wires inverted/full-text into segments &amp; queries</span></div>
+  <div class="layer l-main"><span class="badge">binding (FFI)</span><span class="name">thirdparty/tantivy</span><span class="ld">the C++ ↔ Rust bridge: rust-binding / tantivy-wrapper</span></div>
+  <div class="layer l-core"><span class="badge">engine (Rust)</span><span class="name">tantivy</span><span class="ld">tokenization, inverted term table, boolean retrieval, BM25 relevance scoring</span></div>
+</div>
+
+<p><strong>Full-text search</strong> is built on top of this inverted index. When you search "contains keyword" over a text, tantivy first <strong>tokenizes</strong> (splits the sentence into terms), maintains for each term an inverted list of "<strong>which documents it appears in, and how often</strong>," and at query time uses a relevance model like <strong>BM25</strong> to <strong>score and rank</strong> documents — those scoring high (containing the query terms, and not because the term is ubiquitous) rank first.
+This forms an interesting contrast with vector search's "rank by similarity": <strong>vector search ranks by "semantic closeness," full-text search ranks by "term relevance."</strong> Milvus embraces both, so it can do "<strong>semantic search</strong>" (find similar meaning) and "<strong>keyword search</strong>" (find literal hits), and even <strong>fuse</strong> the two into stronger retrieval (hybrid retrieval, covered later). BM25-style full-text scoring is realized precisely via tantivy's inverted index.</p>
+
+<p>It's worth clarifying the relationship between <strong>sparse vectors</strong> and <strong>full-text search</strong>, since they're easy to confuse. Lesson 22 covered Knowhere's sparse-vector indexes (SPARSE_INVERTED_INDEX/WAND), while this lesson covers tantivy's full-text inverted index — the two share <strong>the same idea</strong> (inverted + scored pruning) yet sit at <strong>different levels</strong>: full-text search targets <strong>raw text</strong>, handling tokenization, term-table building, and BM25 scoring itself; sparse-vector search targets an <strong>already-vectorized</strong> "term→weight" map (often the very output of a BM25/SPLADE model), doing retrieval at the vector level.
+In other words, you can have Milvus do full-text search <strong>directly on text</strong> (via tantivy), or first <strong>encode text into a sparse vector</strong> and do sparse-vector search (via Knowhere). The two paths converge — both achieve "term-hit" keyword-style retrieval — they just land at different spots in the engine stack. Grasp this distinction and you won't get tangled by the words "full-text search," "sparse vector," and "BM25" when reading Milvus docs.</p>
+
+<h2>Scalar filter + vector ANN: how a hybrid query cooperates</h2>
+<p>Putting scalar and vector indexes <strong>into one query</strong> is where they truly shine. Consider a typical request: "among products with <strong>category=electronics and price&lt;100</strong>, find the 10 <strong>most like</strong> this image." Here there is both a <strong>scalar filter</strong> (category, price) and a <strong>vector ANN</strong> (most like). Milvus's approach is <strong>filter first, then search</strong>:</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Scalar filter (shrink candidates)</h4><p>Use <strong>scalar indexes</strong> (bitmap/sort/inverted) to quickly compute the row set "<strong>satisfying category=electronics and price&lt;100</strong>" — a <strong>bitmap (bitset)</strong>. The vast majority of non-qualifying data is <strong>excluded wholesale</strong> at this step.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Vector ANN (filtered search)</h4><p>Hand this bitset as a <strong>filter mask</strong> to vector search: during ANN (HNSW/IVF), find nearest neighbors <strong>only among rows that pass the filter</strong>, wasting no compute on already-excluded data.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Merge for topK</h4><p>Each segment computes local results, merged into the global <strong>10 most alike</strong> — they <strong>both satisfy the scalar condition and are vector-nearest</strong>.</p></div></div>
+</div>
+
+<p>The key design here: <strong>the scalar filter's result (a bitset) is "fed into" vector search so ANN runs over the filtered subset</strong>, rather than "run full ANN first, then discard non-qualifying afterward." The latter (search-then-filter) has a fatal flaw: if the filter is selective (say only 1% of data qualifies), the topK first searched out may be <strong>entirely filtered away</strong>, collapsing recall or even returning nothing. <strong>Filter-then-search</strong> (pushing the filter mask down into ANN) guarantees the topK is chosen <strong>within the qualifying set</strong>, with stable recall. As an aside: this "<strong>push the filter condition as low as possible</strong>" idea has a general name in databases — <strong>predicate pushdown</strong> — eliminate non-qualifying data as early and as low as you can, rather than letting it flow into more expensive downstream operators. Milvus pushing the scalar-filter bitset down into vector ANN is precisely predicate pushdown in the "vector search" context.
+This is exactly why scalar indexes are <strong>indispensable</strong>: they make "filtering" <strong>fast enough, and able to hand the result to vector search precisely as a bitset</strong>. Without scalar indexes, filtering scans row by row; with them, filtering becomes bit operations, then the mask is pushed down to ANN — the two index families thus <strong>divide labor and cooperate</strong> in one query, jointly making "conditional similarity search" both fast and accurate.</p>
+
+<p>That completes <strong>Part 5 · Indexing</strong>; let's tie the four lessons into one line. Lesson 21 covered the <strong>index service</strong> (DataCoord schedules, a worker executes, no indexnode); Lesson 22, <strong>Knowhere vector indexes</strong> (the tradeoffs and params of FLAT/IVF/HNSW/DiskANN…); Lesson 23, <strong>build and load</strong> (sealed segment → build → index files → QueryNode loads, growing uses brute force); this lesson, <strong>scalar and full-text indexes</strong> (inverted/bitmap/sort/ngram/JSON + tantivy full-text, hybrid with vectors).
+Together the four answer one complete question: <strong>how does Milvus turn "raw data" into "an asset searchable fast in every way"</strong>. Indexing is the <strong>hub</strong> connecting "<strong>writes</strong>" (the first four parts) and "<strong>reads</strong>" (later parts) — writes land data into segments, indexes make segments searchable, and only then can reads, in milliseconds, find by similarity, filter by condition, and search by keyword. The next part formally enters the <strong>query path</strong>, watching how a search request traverses the Proxy, QueryNodes, and per-segment indexes to finally merge into the result you asked for. Looking back over these four lessons, you will spot a recurring motif: <strong>trading space for time</strong> — whether it is the vector HNSW graph, IVF inverted buckets, or the scalar bitmap, sorted array, and tantivy inverted list, each is essentially <strong>storing an extra "search-optimized structure" up front</strong>, converting the full scan you would otherwise do at query time into a few cheap jumps. Grasp this and you hold the master key to every index design.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/core/src/index/InvertedIndexTantivy.h</span><span class="ln">InvertedIndexTantivy: inverted/full-text scalar index wrapping Rust tantivy (excerpt)</span></div>
+  <pre><span class="cm">// The C++-side scalar-index implementation, internally calling Rust's tantivy engine (via the thirdparty/tantivy binding).</span>
+<span class="cm">// Inverted (equality/string) and full-text (BM25) are both wired into Milvus's segment &amp; query system through it.</span>
+<span class="kw">template</span> &lt;<span class="kw">typename</span> T&gt;
+<span class="kw">class</span> InvertedIndexTantivy : <span class="kw">public</span> ScalarIndex&lt;T&gt; {
+    <span class="cm">// Build: read field data -> hand to tantivy to build the inverted index</span>
+    <span class="cm">// Query: equality/range/substring/full-text -> translate to a tantivy query, return a bitset of matching rows</span>
+};
+<span class="cm">// See also BitmapIndex.h (low-cardinality bitmap), ScalarIndexSort.h (STL_SORT range), HybridScalarIndex.h (auto-pick).</span></pre>
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: beyond vector indexes, Milvus builds <strong>scalar indexes</strong> for <strong>non-vector</strong> lookups (C++ <span class="mono">internal/core/src/index/</span>) — <strong>inverted</strong> (<span class="inline">InvertedIndexTantivy</span>, equality/string), <strong>bitmap</strong> (<span class="inline">BitmapIndex</span>, low-cardinality), <strong>sort</strong> (<span class="inline">ScalarIndexSort</span> STL_SORT, range), <strong>ngram</strong> (substring), <strong>hybrid</strong> (<span class="inline">HybridScalarIndex</span>, auto-pick), <strong>JSON</strong>; <strong>full-text search (BM25)</strong> is realized by Rust's <strong>tantivy</strong> engine (<span class="mono">InvertedIndexTantivy.{cpp,h}</span> + the <span class="mono">thirdparty/tantivy</span> binding). A hybrid query <strong>filters first, then searches</strong>: scalar indexes compute a <strong>bitset</strong> filter mask, pushed down to vector ANN so it runs over the qualifying subset, keeping recall stable — scalar and vector index families cooperate in a single query.
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Scalar indexes speed filtering</strong>: inverted (<span class="mono">InvertedIndexTantivy.h</span>), bitmap (<span class="mono">BitmapIndex.h</span>, low-cardinality), sort (<span class="mono">ScalarIndexSort.h</span> STL_SORT, range), ngram, hybrid (<span class="mono">HybridScalarIndex.h</span>, auto-pick), JSON.</li>
+    <li><strong>Pick by data characteristics</strong>: low-cardinality→bitmap, range→sort, equality/string→inverted, substring→ngram, unsure→Hybrid auto-picks.</li>
+    <li><strong>tantivy = Rust full-text engine</strong>: inverted and full-text are wrapped by <span class="inline">InvertedIndexTantivy</span> and called via the <span class="mono">thirdparty/tantivy</span> binding, matching Lesson 2's "Rust handles full-text."</li>
+    <li><strong>Full-text BM25</strong>: tantivy tokenizes, builds inverted lists, and scores by BM25 relevance; complements vector's "rank by semantics" with "rank by term relevance."</li>
+    <li><strong>Hybrid query filters first</strong>: scalar indexes produce a bitset mask pushed down into ANN to find neighbors only in the qualifying subset; better than "search-then-filter" (selective filters empty the topK and crash recall).</li>
+    <li><strong>Cooperation</strong>: scalar indexes turn filtering into bit ops, vector indexes turn similarity search into ANN; the two divide labor in one "conditional similarity search."</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. In a conditional hybrid query, how do scalar filtering and vector ANN cooperate?</div>
+  <ol class="opts">
+    <li>Scalar and vector indexes query independently and never interact</li>
+    <li>The scalar index computes a bitset filter mask and pushes it down into vector ANN so ANN searches only the qualifying subset (filter-then-search); this avoids 'search-then-filter' where, under a selective filter, the topK gets filtered away and recall collapses</li>
+    <li>Always run full ANN first then discard non-qualifying rows, which is always better</li>
+    <li>Filtering must scan row by row and can't be accelerated by an index</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. Pushing the filter mask into ANN is essentially database 'predicate pushdown': eliminate non-qualifying data as early and low as possible. Filter-then-search guarantees the topK is chosen within the qualifying set, with stable recall</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Which statement about Milvus scalar and full-text indexes is correct?</div>
+  <ol class="opts">
+    <li>Bitmap indexes are best for high-cardinality fields</li>
+    <li>There is only one scalar index type, used for all fields</li>
+    <li>Scalar indexes live in C++ (internal/core/src/index/): inverted InvertedIndexTantivy (equality/string), BitmapIndex (low-cardinality), ScalarIndexSort (STL_SORT range), ngram (substring), HybridScalarIndex (auto-pick), JSON; full-text BM25 is delivered by Rust's tantivy engine via the thirdparty/tantivy binding</li>
+    <li>Full-text search is also provided by Knowhere</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. Different scalar indexes fit different cases: bitmap for low cardinality, sort for range queries, inverted (tantivy) for equality/full-text. HybridScalarIndex auto-picks by data characteristics. Full-text BM25 is delivered by Rust tantivy, not Knowhere</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson hands the 'filter' half to scalar indexes and the 'similarity search' half to vector indexes, then makes them cooperate via bitset pushdown (filter-then-search = predicate pushdown). Consider: why does Milvus need so many scalar index types (inverted/bitmap/sort/ngram/hybrid/JSON) rather than one-size-fits-all? Why introduce Rust's tantivy specifically for full-text instead of reusing the vector stack? (Tie in Lesson 22 Knowhere and Lesson 6 data model.)</li>
   </ul>
 </div>
 </div>

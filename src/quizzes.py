@@ -1465,6 +1465,206 @@ QUIZZES = {
             },
         ],
     },
+    "21-index-service.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "在 Milvus 里，谁负责调度索引构建、谁真正执行构建？",
+                    "en": "In Milvus, who schedules index build and who actually executes it?",
+                },
+                "opts": [
+                    {
+                        "zh": "DataCoord 拥有索引元数据与调度（internal/datacoord/index_service.go 的 CreateIndex、index_inspector.go），把每个 sealed 段的构建任务派给一个 worker；worker 实现 workerpb 的 IndexNodeClient 协议执行构建，并不存在独立的 indexnode 进程",
+                        "en": "DataCoord owns index metadata and scheduling (CreateIndex in internal/datacoord/index_service.go, index_inspector.go), dispatching a per-sealed-segment build task to a worker; the worker executes via the workerpb IndexNodeClient protocol — there is no separate indexnode process",
+                    },
+                    {"zh": "QueryNode 在加载段时顺便构建索引", "en": "QueryNode builds the index incidentally while loading segments"},
+                    {"zh": "Proxy 收到请求后直接在本地构建", "en": "The Proxy builds it locally right after receiving the request"},
+                    {"zh": "RootCoord 负责构建所有索引", "en": "RootCoord builds all indexes"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "“IndexNodeClient”只是历史遗留的协议名；执行索引构建的是 datanode 上的 worker，没有单独的 indexnode 进程。调度（DataCoord）与执行（worker）分离，正是控制面/数据面分工的延续",
+                    "en": "'IndexNodeClient' is only a legacy protocol name; the executor is a worker on a datanode, with no separate indexnode process. Splitting scheduling (DataCoord) from execution (worker) continues the control-plane/data-plane division of labor",
+                },
+            },
+            {
+                "q": {
+                    "zh": "一次 CreateIndex 请求之后，索引是如何从“一条声明”变成“可加载的文件”的？",
+                    "en": "After a CreateIndex request, how does an index go from 'a declaration' to 'loadable files'?",
+                },
+                "opts": [
+                    {
+                        "zh": "CreateIndex 把索引定义写进元数据；随后每个 sealed 段各派生一个构建任务，worker 读该段 binlog、调 Knowhere 建索引、把索引文件写回对象存储，QueryNode 之后即可加载",
+                        "en": "CreateIndex records the index definition in metadata; then each sealed segment spawns a build task, the worker reads that segment's binlogs, calls Knowhere to build, writes index files back to object storage, and QueryNode can then load them",
+                    },
+                    {"zh": "整张表一次性构建成一个全局索引文件", "en": "The whole table is built in one shot into a single global index file"},
+                    {"zh": "索引只存在内存里，从不落盘", "en": "The index lives only in memory and is never persisted"},
+                    {"zh": "growing 段也会立刻被构建索引", "en": "Growing segments also get an index built immediately"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "索引以“段”为单位构建：只有 sealed（已封口、不可变）段才值得建索引，growing 段仍用暴力扫描（详见第 23 课）。声明—派任务—建文件—可加载，是一条异步流水线",
+                    "en": "Indexes are built per segment: only sealed (closed, immutable) segments are worth indexing, growing ones still use brute force (see Lesson 23). Declare → dispatch task → build files → loadable is an asynchronous pipeline",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课强调“没有独立的 indexnode 进程，构建跑在实现 IndexNodeClient 协议的 worker 上”。请思考：为什么 Milvus 选择把索引构建做成“由 DataCoord 调度、按段派发给 worker”的异步任务，而不是在写入时同步建索引？这种设计对写入吞吐、资源弹性、以及 auto-index 自动选型分别带来什么好处？（可结合第 12 课 DataCoord、第 23 课构建与加载。）",
+                "en": "This lesson stresses 'no separate indexnode process; the build runs on a worker implementing the IndexNodeClient protocol.' Consider: why does Milvus make index build an asynchronous task 'scheduled by DataCoord, dispatched per segment to a worker' instead of building synchronously at write time? What does this design buy for write throughput, resource elasticity, and auto-index type selection? (Tie in Lesson 12 DataCoord and Lesson 23 build-and-load.)",
+            },
+        ],
+    },
+    "22-knowhere.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "Milvus 的向量索引（HNSW、IVF_PQ、SCANN、GPU CAGRA 等）究竟来自哪里？",
+                    "en": "Where do Milvus's vector indexes (HNSW, IVF_PQ, SCANN, GPU CAGRA, etc.) actually come from?",
+                },
+                "opts": [
+                    {
+                        "zh": "它们大多是上游 Knowhere 库提供的 IndexEnum 索引类型，并非 milvus core 自己定义；core 仅引用少量常量（如 common/Utils.h 的 INDEX_DISKANN、index/Utils.cpp 的 INDEX_FAISS_IVFFLAT/INDEX_SPARSE_INVERTED_INDEX/INDEX_SPARSE_WAND 等 knowhere::IndexEnum::）",
+                        "en": "Most are IndexEnum types provided by the upstream Knowhere library, not defined by milvus core itself; core only references a few constants (e.g. INDEX_DISKANN in common/Utils.h, INDEX_FAISS_IVFFLAT/INDEX_SPARSE_INVERTED_INDEX/INDEX_SPARSE_WAND etc. as knowhere::IndexEnum:: in index/Utils.cpp)",
+                    },
+                    {"zh": "全部由 milvus core 的 Go 代码实现", "en": "All implemented by milvus core's Go code"},
+                    {"zh": "每种索引都是一个独立的微服务", "en": "Each index type is a standalone microservice"},
+                    {"zh": "由 Proxy 在查询时临时算法生成", "en": "Generated on the fly by the Proxy at query time"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "向量索引算法属于 Knowhere（封装 Faiss/HNSWlib/DiskANN/cuVS 等）。引用 milvus 文件时只能引那些确实存在的 IndexEnum 常量，其余索引名应作为“Knowhere 索引名”呈现，不要硬塞进不含它们的 milvus 文件",
+                    "en": "Vector index algorithms belong to Knowhere (wrapping Faiss/HNSWlib/DiskANN/cuVS, etc.). When citing a milvus file you may only cite IndexEnum constants that truly exist; the rest should be presented as 'Knowhere index names,' not forced into milvus files that lack them",
+                },
+            },
+            {
+                "q": {
+                    "zh": "选择向量索引与参数时，下面哪一条描述是对的？",
+                    "en": "When choosing a vector index and its params, which statement is correct?",
+                },
+                "opts": [
+                    {
+                        "zh": "IVF 系的 nlist/nprobe、HNSW 的 M/ef 都是“召回 vs 速度/内存”的旋钮；FLAT 暴力扫描召回 100% 但最慢，PQ/SQ8 用压缩省内存换精度，DiskANN 把图放磁盘换超大规模；且查询 metric 必须与建索引时一致",
+                        "en": "IVF's nlist/nprobe and HNSW's M/ef are all 'recall vs speed/memory' knobs; FLAT brute force gives 100% recall but is slowest, PQ/SQ8 trade accuracy for memory via compression, DiskANN puts the graph on disk for huge scale; and the query metric must match the one used to build the index",
+                    },
+                    {"zh": "metric 可以查询时随意更换，不影响结果", "en": "The metric can be swapped freely at query time without affecting results"},
+                    {"zh": "nprobe 越小召回越高", "en": "The smaller nprobe is, the higher the recall"},
+                    {"zh": "HNSW 不需要任何参数", "en": "HNSW needs no parameters at all"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "所有 ANN 索引本质都在“召回—延迟—内存”三角里取舍；调大 nprobe/ef 提召回但更慢。metric（L2/IP/COSINE 等）必须与字段建索引时匹配，否则距离语义错乱、结果无意义",
+                    "en": "Every ANN index trades within the 'recall–latency–memory' triangle; raising nprobe/ef lifts recall but is slower. The metric (L2/IP/COSINE, etc.) must match what the field was indexed with, otherwise distance semantics break and results are meaningless",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课刻意区分了“milvus core 真正定义/引用的 IndexEnum 常量”与“仅作为 Knowhere 索引名呈现的类型”。请思考：为什么把向量索引算法外包给 Knowhere 这样的专门库，对 Milvus 是合理的架构选择？这对“引用代码出处”的严谨性提出了什么要求（即不能把 HNSW/SCANN 等硬归到不含它们的 milvus 文件）？（可结合第 5 课 ANN 算法。）",
+                "en": "This lesson deliberately separates 'IndexEnum constants milvus core truly defines/references' from 'types presented merely as Knowhere index names.' Consider: why is outsourcing vector index algorithms to a dedicated library like Knowhere a sound architectural choice for Milvus? What rigor does this demand about 'citing code provenance' (i.e. not attributing HNSW/SCANN to milvus files that lack them)? (Tie in Lesson 5 ANN algorithms.)",
+            },
+        ],
+    },
+    "23-index-build-and-load.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "一个 sealed 段的索引，从构建到能被查询，经过哪条路径？",
+                    "en": "What path does a sealed segment's index take from build to queryable?",
+                },
+                "opts": [
+                    {
+                        "zh": "sealed 段 → 构建任务（worker 读该段 binlog、调 Knowhere 建索引）→ 索引文件写入对象存储 → QueryNode 加载（可 mmap 或全内存，loadSealedSegment）；growing 段尚未建索引，查询时用暴力扫描",
+                        "en": "sealed segment → build task (worker reads the segment's binlogs, calls Knowhere to build) → index files written to object storage → QueryNode loads them (mmap or fully in-memory, loadSealedSegment); growing segments aren't indexed yet and use brute force at query time",
+                    },
+                    {"zh": "QueryNode 直接从内存共享 DataNode 的索引，无需对象存储", "en": "QueryNode shares the DataNode's index directly from memory, with no object storage"},
+                    {"zh": "索引文件随 binlog 一起在写入时同步生成", "en": "Index files are generated synchronously with binlogs at write time"},
+                    {"zh": "growing 段也用 HNSW 索引检索", "en": "Growing segments are also searched via an HNSW index"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "对象存储是构建侧（worker 写）与加载侧（QueryNode 读）之间的解耦点，二者无需直接通信。mmap 让超出内存的索引也能加载，是“内存 vs 延迟”的取舍",
+                    "en": "Object storage is the decoupling point between the build side (worker writes) and the load side (QueryNode reads), so the two need no direct communication. mmap lets indexes larger than RAM still load, a 'memory vs latency' tradeoff",
+                },
+            },
+            {
+                "q": {
+                    "zh": "索引引擎版本管理（index_engine_version_manager.go）在滚动升级时为何重要？",
+                    "en": "Why does index-engine version management (index_engine_version_manager.go) matter during a rolling upgrade?",
+                },
+                "opts": [
+                    {
+                        "zh": "不同节点的 Knowhere 版本支持的索引格式可能不同；构建时按“以最弱节点为准”（GetCurrentIndexEngineVersion/GetMinimalIndexEngineVersion）选版本，确保新建的索引所有 QueryNode 都能加载，升级期间服务不中断",
+                        "en": "Different nodes' Knowhere versions may support different index formats; the build picks a version 'deferring to the weakest node' (GetCurrentIndexEngineVersion/GetMinimalIndexEngineVersion) so every QueryNode can load the new index, keeping service uninterrupted during the upgrade",
+                    },
+                    {"zh": "它决定查询用哪个 metric", "en": "It decides which metric a query uses"},
+                    {"zh": "它给每个段分配主键", "en": "It assigns primary keys to each segment"},
+                    {"zh": "它只是日志里的版本号，无实际作用", "en": "It is just a version string in logs with no real effect"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "“以最弱节点为准”是兼容性优先于新特性的体现：用一点“暂不使用新格式”的代价，换升级期间全集群始终可加载、不丢服务。这是在线数据库升级的通用保守策略",
+                    "en": "'Defer to the weakest node' embodies compatibility-over-new-features: trade 'not yet using the newest format' for a cluster that stays loadable and loses no service during the upgrade. It's the standard conservative strategy for online database upgrades",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课用“对象存储”把索引构建与加载彻底解耦，又用“以最弱节点为准”的版本协商保证滚动升级不中断。请思考：这两个设计分别体现了分布式系统的什么通用原则？为什么 growing 段宁可用暴力扫描也不立刻建索引，这与“段的生命周期”（第 7 课）如何呼应？（可结合第 18 课 binlog、第 22 课 Knowhere。）",
+                "en": "This lesson fully decouples index build from load via 'object storage,' and guarantees uninterrupted rolling upgrades via 'defer to the weakest node' version negotiation. Consider: what general distributed-systems principles do these two designs embody? Why would a growing segment rather use brute force than build an index immediately, and how does that echo the 'segment lifecycle' (Lesson 7)? (Tie in Lesson 18 binlog and Lesson 22 Knowhere.)",
+            },
+        ],
+    },
+    "24-scalar-and-fulltext.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "在带条件的混合查询里，标量过滤与向量 ANN 是如何配合的？",
+                    "en": "In a conditional hybrid query, how do scalar filtering and vector ANN cooperate?",
+                },
+                "opts": [
+                    {
+                        "zh": "标量索引算出一个 bitset 过滤掩码，下推给向量 ANN，让 ANN 只在合格子集上检索（先筛后搜）；这避免了“先搜后筛”在高选择性过滤下 topK 被筛光、召回骤降的问题",
+                        "en": "The scalar index computes a bitset filter mask and pushes it down into vector ANN so ANN searches only the qualifying subset (filter-then-search); this avoids 'search-then-filter' where, under a selective filter, the topK gets filtered away and recall collapses",
+                    },
+                    {"zh": "先做完整 ANN，再事后丢掉不合格行，永远更优", "en": "Always run full ANN first then discard non-qualifying rows, which is always better"},
+                    {"zh": "标量与向量索引各查各的，结果不交互", "en": "Scalar and vector indexes query independently and never interact"},
+                    {"zh": "过滤必须逐行扫描，无法用索引加速", "en": "Filtering must scan row by row and can't be accelerated by an index"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "把过滤掩码下推进 ANN，本质是数据库的“谓词下推”：尽早、尽低剔除不合格数据。先筛后搜保证 topK 是在合格集合里选出来的，召回稳定",
+                    "en": "Pushing the filter mask into ANN is essentially database 'predicate pushdown': eliminate non-qualifying data as early and low as possible. Filter-then-search guarantees the topK is chosen within the qualifying set, with stable recall",
+                },
+            },
+            {
+                "q": {
+                    "zh": "下面关于 Milvus 标量与全文索引的描述，哪条是对的？",
+                    "en": "Which statement about Milvus scalar and full-text indexes is correct?",
+                },
+                "opts": [
+                    {
+                        "zh": "标量索引在 C++（internal/core/src/index/）：倒排 InvertedIndexTantivy（等值/字符串）、BitmapIndex（低基数）、ScalarIndexSort（STL_SORT 范围）、ngram（子串）、HybridScalarIndex（自动选型）、JSON；全文 BM25 由 Rust 的 tantivy 引擎落地，经 thirdparty/tantivy 绑定接入",
+                        "en": "Scalar indexes live in C++ (internal/core/src/index/): inverted InvertedIndexTantivy (equality/string), BitmapIndex (low-cardinality), ScalarIndexSort (STL_SORT range), ngram (substring), HybridScalarIndex (auto-pick), JSON; full-text BM25 is delivered by Rust's tantivy engine via the thirdparty/tantivy binding",
+                    },
+                    {"zh": "全文检索也由 Knowhere 提供", "en": "Full-text search is also provided by Knowhere"},
+                    {"zh": "标量索引只有一种类型，适用于所有字段", "en": "There is only one scalar index type, used for all fields"},
+                    {"zh": "bitmap 索引最适合高基数字段", "en": "Bitmap indexes are best for high-cardinality fields"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "不同标量索引各有适用场景：低基数用 bitmap、范围查询用排序、等值/全文用倒排（tantivy）。HybridScalarIndex 会按数据特征自动选型。全文 BM25 由 Rust tantivy 落地，不属于 Knowhere",
+                    "en": "Different scalar indexes fit different cases: bitmap for low cardinality, sort for range queries, inverted (tantivy) for equality/full-text. HybridScalarIndex auto-picks by data characteristics. Full-text BM25 is delivered by Rust tantivy, not Knowhere",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课把“过滤”这半边交给标量索引、把“相似检索”那半边交给向量索引，再用 bitset 下推让二者协同（先筛后搜 = 谓词下推）。请思考：为什么 Milvus 需要这么多种标量索引（倒排/bitmap/排序/ngram/混合/JSON），而不是一种通吃？全文检索为何要专门引入 Rust 的 tantivy，而不复用向量那套？（可结合第 22 课 Knowhere、第 6 课数据模型。）",
+                "en": "This lesson hands the 'filter' half to scalar indexes and the 'similarity search' half to vector indexes, then makes them cooperate via bitset pushdown (filter-then-search = predicate pushdown). Consider: why does Milvus need so many scalar index types (inverted/bitmap/sort/ngram/hybrid/JSON) rather than one-size-fits-all? Why introduce Rust's tantivy specifically for full-text instead of reusing the vector stack? (Tie in Lesson 22 Knowhere and Lesson 6 data model.)",
+            },
+        ],
+    },
 }
 
 

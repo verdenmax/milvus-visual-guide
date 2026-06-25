@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>24 · 标量与全文索引 / Scalar &amp;amp; full-text - Milvus 图解教程</title>
+<meta name="description" content="第五部分 · 索引｜标量与全文索引 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="24 · 标量与全文索引 / Scalar &amp;amp; full-text - Milvus 图解教程">
+<meta property="og:description" content="第五部分 · 索引｜标量与全文索引 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="24 · 标量与全文索引 / Scalar &amp;amp; full-text - Milvus 图解教程">
+<meta name="twitter:description" content="第五部分 · 索引｜标量与全文索引 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.timeline .tl-row { display: flex; align-items: flex-start; gap: .6rem; padding: .12rem 0; }
+.timeline .tl-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: .45rem; }
+.timeline .tl-t { font-family: ui-monospace, monospace; font-weight: 700; color: var(--accent-ink); min-width: 2.4rem; font-size: .82rem; flex-shrink: 0; margin-top: .18rem; }
+.timeline .tl-c { font-size: .9rem; color: var(--muted); }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第五部分 · 索引</span><span class="lang-en">Part 5 · Indexing</span></span>
+    <span class="pill">24 / 24</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:100%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第五部分 · 索引</span><span class="lang-en">Part 5 · Indexing</span></div>
+    <h1><span class="lang-zh">标量与全文索引</span><span class="lang-en">Scalar &amp;amp; full-text</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+前三课讲的索引，全是为<strong>向量检索</strong>服务的。但真实查询很少是"纯向量"——它常常带着<strong>标量过滤</strong>（"价格 &lt; 100、类别 = 数码、上架时间在本周"）和<strong>全文检索</strong>（"商品描述里含'防水'"）。
+这一课讲<strong>非向量</strong>那一半的加速：<strong>标量索引</strong>（倒排、bitmap、排序、ngram、混合、JSON）让过滤又快又省；<strong>全文检索（BM25）</strong>借助 Rust 的 <strong>tantivy</strong> 引擎落地。最后看<strong>标量过滤 + 向量 ANN</strong> 如何在一次"混合查询"里协同。
+有了这一课，你对 Milvus"<strong>既能按相似度找、又能按条件筛、还能按关键词搜</strong>"的全貌才算补齐。
+</p>
+
+<div class="card analogy">
+  <div class="tag">📚 生活类比</div>
+  最后一次回到图书馆。前几课的"目录卡片"是为"<strong>找内容相近的书</strong>"（向量检索）做的。但读者还有别的问法：
+  "<strong>2024 年以后出版的</strong>"（按字段范围筛）——你需要一份<strong>按出版年排好序</strong>的清单（排序索引）；
+  "<strong>精装 / 平装</strong>"这种就两三种取值的（低基数）——做一张<strong>"精装→哪些书、平装→哪些书"的对照位图</strong>最省（bitmap）；
+  "<strong>书名里带'量子'二字的</strong>"——你需要一份<strong>"词 → 出现在哪些书"的倒排词表</strong>（倒排索引）；
+  "<strong>正文里讲到'防水'的</strong>"——那就要给全文做一套<strong>专业的检索引擎</strong>，还要会断词、算相关性打分（全文 / BM25）。
+  这些都<strong>不是</strong>"找相似向量"，而是"<strong>按条件精确地筛、按关键词相关地搜</strong>"。一次复杂查询往往<strong>两种都要</strong>：先用标量索引快速筛掉绝大多数书，再在剩下的小堆里做向量相似检索——这就是<strong>混合查询</strong>。
+</div>
+
+<h2>标量索引：给过滤那一半提速</h2>
+<p>向量检索回答"<strong>最像谁</strong>"，标量过滤回答"<strong>满不满足条件</strong>"。如果过滤字段没有索引，那么"价格 &lt; 100"就只能<strong>逐行扫</strong>一遍所有数据去判断——和没索引的向量检索一样慢。<strong>标量索引</strong>就是为加速这种"按字段值筛"而生的。
+这件事的重要性常被低估：在很多真实业务里，<strong>过滤条件才是把候选从"全库"压到"一小撮"的主力</strong>。想象一个有十亿商品的库，一句"类别=数码 且 价格&lt;100"也许就把候选从十亿砍到几十万——如果这一刀砍得慢（逐行扫十亿），那后面再快的向量检索也被拖累了。所以标量索引不是"锦上添花"，而是混合查询里<strong>和向量索引同等重要</strong>的另一半。
+Milvus 的标量索引实现住在 C++ core 的 <span class="mono">internal/core/src/index/</span> 下，针对不同<strong>数据特征</strong>提供了好几种，每种擅长一类过滤：</p>
+
+<table class="t">
+  <tr><th>标量索引（头文件）</th><th>适合的数据 / 查询</th><th>核心思路</th></tr>
+  <tr><td><strong>倒排（<span class="mono">InvertedIndexTantivy.h</span>）</strong></td><td>等值 / 集合判断（=、IN）、字符串</td><td>"值 → 含此值的行"倒排表，tantivy 支撑</td></tr>
+  <tr><td><strong>bitmap（<span class="mono">BitmapIndex.h</span>）</strong></td><td><strong>低基数</strong>字段（性别、状态、枚举）</td><td>每个取值一张位图，过滤 = 位运算，极快</td></tr>
+  <tr><td><strong>排序（<span class="mono">ScalarIndexSort.h</span> / <span class="mono">StringIndexSort.h</span>）</strong></td><td><strong>范围</strong>查询（&lt;、&gt;、BETWEEN）</td><td>STL_SORT：按值排序后二分定位区间</td></tr>
+  <tr><td><strong>ngram（<span class="mono">NgramInvertedIndex.h</span>）</strong></td><td>子串 / 模糊匹配（LIKE '%x%'）</td><td>按 n-gram 切片建倒排，加速含子串查询</td></tr>
+  <tr><td><strong>混合（<span class="mono">HybridScalarIndex.h</span>）</strong></td><td>不确定该用哪种时</td><td>按数据特征<strong>自动挑</strong>合适的标量索引</td></tr>
+  <tr><td><strong>JSON（<span class="mono">JsonHybridScalarIndex.h</span>）</strong></td><td>JSON / 动态字段里的子键</td><td>为 JSON 路径建标量索引，加速嵌套字段过滤</td></tr>
+</table>
+
+<p>读这张表，关键是<strong>"按数据特征选索引"</strong>这条直觉。<strong>低基数</strong>字段（只有寥寥几种取值，如"已上架/已下架"）最适合 <strong>bitmap</strong>：每个取值一张位图，"筛出所有已上架"就是<strong>取出对应位图</strong>，多个条件的 AND/OR 直接做<strong>位运算</strong>，快到极致、还省空间。
+<strong>范围</strong>查询（价格区间、时间区间）最适合 <strong>排序索引（STL_SORT）</strong>：把值排好序，二分一下就能定位区间的两端，区间内整段命中。<strong>等值与字符串</strong>查询适合<strong>倒排</strong>：直接查"这个值出现在哪些行"。
+当你拿不准时，<strong>HybridScalarIndex</strong> 会<strong>替你自动挑</strong>——这和第 21 课向量的 AUTOINDEX 是同一种"省心"哲学，只是用在标量侧。理解了"<strong>数据长什么样，就配什么索引</strong>"，你就掌握了标量索引选型的主干。</p>
+
+<p>再把几种索引的"性格"各点一句，帮你形成长期记忆。<strong>bitmap</strong> 是低基数之王：当一个字段只有"是/否""红/黄/蓝"这种<strong>屈指可数</strong>的取值时，给每个取值存一张"哪些行是它"的位图，过滤就退化成<strong>位与/位或</strong>，又快又省；但若字段取值成千上万（高基数，如用户 ID），位图会爆炸，就不该用它。
+<strong>排序索引（STL_SORT）</strong>是范围查询的利器：把值排好序后，"价格在 50~100 之间"只需<strong>二分</strong>找到区间两端，中间整段命中，避免逐行比较。<strong>倒排</strong>则面向<strong>等值与字符串</strong>：天生回答"<strong>哪些行的这个字段等于 X</strong>"，因为它存的就是"值 → 行"的映射。
+<strong>ngram</strong> 解决的是倒排搞不定的<strong>子串模糊匹配</strong>（<span class="inline">LIKE '%关键词%'</span>）：把字符串切成连续的 n 个字符的小片、对这些小片建倒排，于是"含某子串"就能靠命中相应的 n-gram 片段来加速。把这四种性格记住，遇到一个过滤字段，你几乎能<strong>条件反射</strong>地选对索引。</p>
+
+<p>还要专门提一句 <strong>JSON / 动态字段</strong>的索引。回忆第 6 课：Milvus 支持动态字段和 JSON 类型，让你往一行里塞进结构灵活的<strong>嵌套数据</strong>。但灵活是有代价的——如果对 JSON 里的某个子键（如 <span class="inline">meta["brand"]</span>）做过滤，默认也得把每行的 JSON <strong>解析一遍</strong>再判断，很慢。
+<strong>JsonHybridScalarIndex</strong>（<span class="mono">JsonHybridScalarIndex.h</span>）就是为此而生：它能为 JSON 里的<strong>特定路径</strong>建标量索引，把"嵌套字段过滤"也加速到和普通标量字段一个量级。这让"动态/JSON 字段"既保留了<strong>schema 灵活性</strong>，又不至于在过滤性能上吃大亏——又一次体现了 Milvus"<strong>灵活与性能兼得</strong>"的工程取向。</p>
+
+<div class="cols">
+  <div class="col"><h4>向量索引（前三课）</h4><p>回答"<strong>最像谁</strong>"。Knowhere 的 HNSW/IVF/DiskANN 等，按<strong>语义相似度</strong>排序，近似检索（ANN）。</p></div>
+  <div class="col"><h4>标量索引（本课）</h4><p>回答"<strong>满不满足条件</strong>"。bitmap/排序/倒排等，按<strong>字段值精确</strong>筛选，产出一个 bitset。</p></div>
+  <div class="col"><h4>全文索引（本课）</h4><p>回答"<strong>哪些文档最相关</strong>"。tantivy 倒排 + BM25，按<strong>词项相关性</strong>打分排序。</p></div>
+</div>
+
+<p>这三类索引各司其职，却又能在一次查询里<strong>叠加</strong>使用，这正是 Milvus 强于"纯向量库"的地方：它不是只会做"找相似向量"这一件事，而是把<strong>相似检索、条件过滤、关键词检索</strong>三种能力<strong>统一</strong>进了同一个引擎、同一份数据、同一次查询里。这背后是一个朴素但重要的判断：真实业务里的检索，几乎<strong>从不是</strong>"只按向量"或"只按条件"，而总是<strong>二者乃至三者的组合</strong>——"在符合某些条件、且文本相关的候选里，找语义最像的"。把三种索引都备齐并能协同，Milvus 才配称为一个能扛真实业务的<strong>向量数据库</strong>，而非一个孤立的"向量检索算法库"。</p>
+
+<h2>倒排索引与全文检索：Rust 的 tantivy 引擎</h2>
+<p>上表里反复出现的<strong>倒排</strong>，以及"全文检索"，背后是同一个引擎：<strong>tantivy</strong>——一个用 <strong>Rust</strong> 写的全文搜索库（类比 Java 世界的 Lucene）。这正是第 2 课说的"三语言分工"里 <strong>Rust 负责全文索引</strong>那一块的落地。
+Milvus 的 C++ core 通过 <span class="mono">internal/core/src/index/InvertedIndexTantivy.h</span>（<span class="inline">InvertedIndexTantivy</span> 类）<strong>封装并调用</strong> tantivy；C++ 与 Rust 之间通过 <span class="mono">internal/core/thirdparty/tantivy</span> 下的绑定层（FFI）打通。也就是说，倒排索引的"脏活累活"——分词、建词表、布尔检索、相关性打分——都<strong>外包给 tantivy</strong> 这个专业引擎，C++ 这侧只负责把它接进 Milvus 的段与查询体系。</p>
+
+<div class="layers">
+  <div class="layer l-app"><span class="badge">Milvus core (C++)</span><span class="name">InvertedIndexTantivy</span><span class="ld">internal/core/src/index/InvertedIndexTantivy.{h,cpp}：把倒排/全文接入段与查询</span></div>
+  <div class="layer l-main"><span class="badge">绑定层 (FFI)</span><span class="name">thirdparty/tantivy</span><span class="ld">C++ ↔ Rust 的桥：rust-binding / tantivy-wrapper</span></div>
+  <div class="layer l-core"><span class="badge">引擎 (Rust)</span><span class="name">tantivy</span><span class="ld">分词、倒排词表、布尔检索、BM25 相关性打分</span></div>
+</div>
+
+<p><strong>全文检索（full-text search）</strong>就是建立在这套倒排之上的。当你对一段文本做"包含关键词"的搜索时，tantivy 会先<strong>分词</strong>（把句子切成词项）、对每个词项维护"<strong>它出现在哪些文档、出现几次</strong>"的倒排表，查询时再用 <strong>BM25</strong> 这类相关性模型给文档<strong>打分排序</strong>——分数高（既包含查询词、又不是因为该词烂大街）的文档排在前面。
+这和向量检索的"按相似度排序"形成了有趣的对照：<strong>向量检索按"语义相近"排，全文检索按"词项相关"排</strong>。Milvus 把两者都纳入麾下，于是它既能做"<strong>语义搜索</strong>"（找意思相近的），又能做"<strong>关键词搜索</strong>"（找字面命中的），还能把两者<strong>融合</strong>成更强的检索（混合检索，后续课程展开）。BM25 这类全文打分，正是借由 tantivy 倒排实现的。</p>
+
+<p>这里值得把<strong>稀疏向量</strong>和<strong>全文检索</strong>的关系点破，因为它们容易混。第 22 课讲过 Knowhere 的稀疏向量索引（SPARSE_INVERTED_INDEX/WAND），而本课讲 tantivy 的全文倒排——两者<strong>思路相通</strong>（都是倒排 + 打分剪枝），却处在<strong>不同层次</strong>：全文检索面向<strong>原始文本</strong>，自己负责分词、建词表、按 BM25 打分；稀疏向量检索面向<strong>已经向量化</strong>的"词→权重"映射（往往正是某个 BM25/SPLADE 模型的输出），在向量层面做检索。
+换句话说，你既可以让 Milvus <strong>直接对文本</strong>做全文检索（走 tantivy），也可以先把文本<strong>编码成稀疏向量</strong>再做稀疏向量检索（走 Knowhere）。两条路殊途同归，都能实现"按词项命中"的关键词式检索，只是落在了引擎栈的不同位置。理解这层区分，你读 Milvus 文档时就不会被"全文检索""稀疏向量""BM25"这几个词绕晕。</p>
+
+<h2>标量过滤 + 向量 ANN：一次混合查询怎么协同</h2>
+<p>把标量索引和向量索引<strong>合到一次查询里</strong>，才是它们真正的用武之地。考虑一个典型请求："在<strong>类别=数码 且 价格&lt;100</strong> 的商品里，找和这张图<strong>最像</strong>的 10 件"。这里既有<strong>标量过滤</strong>（类别、价格），又有<strong>向量 ANN</strong>（最像）。Milvus 的执行思路是<strong>先筛后搜</strong>：</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>标量过滤（缩小候选）</h4><p>用<strong>标量索引</strong>（bitmap/排序/倒排）快速算出"<strong>满足 类别=数码 且 价格&lt;100</strong>"的行集合——一个<strong>位图（bitset）</strong>。绝大多数不合格的数据在这一步就被<strong>整片排除</strong>。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>向量 ANN（带过滤检索）</h4><p>把这个 bitset 作为<strong>过滤掩码</strong>交给向量检索：在 ANN 搜索（HNSW/IVF）时，<strong>只在通过过滤的行里</strong>找最近邻，不浪费算力在已被排除的数据上。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>归并取 topK</h4><p>各段算出局部结果，归并出全局<strong>最像的 10 件</strong>——它们<strong>既满足标量条件、又向量最相近</strong>。</p></div></div>
+</div>
+
+<p>这里的关键设计是：<strong>标量过滤的结果（bitset）会"喂进"向量检索，让 ANN 在过滤后的子集上跑</strong>，而不是"先做完整 ANN、再事后筛掉不合格的"。后者（先搜后筛）有个致命问题：如果过滤条件很严（比如只有 1% 数据合格），先搜出来的 topK 可能<strong>全被筛光</strong>，导致召回骤降甚至空结果。<strong>先筛后搜</strong>（把过滤掩码下推进 ANN）则保证 topK 是<strong>在合格集合里</strong>选出来的，召回稳定。顺带说一句：这种"<strong>把过滤条件尽量往底层推</strong>"的思路，在数据库里有个通用名字叫<strong>谓词下推（predicate pushdown）</strong>——能在更早、更底层把不合格数据剔除，就别让它流到更贵的后续算子里。Milvus 把标量过滤的 bitset 下推进向量 ANN，正是谓词下推在"向量检索"语境下的体现。
+这正是标量索引<strong>不可或缺</strong>的原因：它让"过滤"这一步<strong>足够快、且能把结果以 bitset 形式精确地交给向量检索</strong>。没有标量索引，过滤要逐行扫；有了它，过滤变成位运算，再把掩码下推给 ANN——标量与向量两套索引，就这样在一次查询里<strong>分工协同</strong>，共同把"带条件的相似检索"做快、做准。</p>
+
+<p>到这里，<strong>第五部分·索引</strong>就讲完了，把四课串成一条线收个尾：第 21 课讲<strong>索引服务</strong>（DataCoord 调度、worker 执行，无 indexnode）；第 22 课讲 <strong>Knowhere 向量索引</strong>（FLAT/IVF/HNSW/DiskANN…的取舍与参数）；第 23 课讲<strong>构建与加载</strong>（sealed 段 → 构建 → 索引文件 → QueryNode 加载，growing 用暴力扫描）；本课讲<strong>标量与全文索引</strong>（倒排/bitmap/排序/ngram/JSON + tantivy 全文，与向量混合检索）。
+四课合起来回答了一个完整的问题：<strong>Milvus 如何把"原始数据"变成"能被各种方式快速检索的资产"</strong>。索引是连接"<strong>写入</strong>"（前四部分）与"<strong>读取</strong>"（后续部分）的<strong>枢纽</strong>——写入把数据落成段，索引把段变得可检索，读取才能在毫秒级里既按相似度找、又按条件筛、还按关键词搜。下一部分，我们就正式进入<strong>查询链路</strong>，看一次 search 请求如何穿过 Proxy、QueryNode、各段索引，最终归并出你要的结果。回头看这四课，你会发现一个反复出现的母题：<strong>用空间换时间</strong>——无论是向量的 HNSW 图、IVF 倒排桶，还是标量的位图、排序数组、tantivy 倒排表，本质都是<strong>预先多存一份"为检索优化过的结构"</strong>，把查询时本来要做的全量扫描，换成查询时的少量跳转。理解了这一点，你就握住了所有索引设计的总钥匙。</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/core/src/index/InvertedIndexTantivy.h</span><span class="ln">InvertedIndexTantivy：倒排/全文标量索引，封装 Rust tantivy（节选）</span></div>
+  <pre><span class="cm">// C++ 侧的标量索引实现，内部调用 Rust 的 tantivy 引擎（经 thirdparty/tantivy 绑定）。</span>
+<span class="cm">// 倒排（等值/字符串）、全文（BM25）都由它接入 Milvus 的段与查询体系。</span>
+<span class="kw">template</span> &lt;<span class="kw">typename</span> T&gt;
+<span class="kw">class</span> InvertedIndexTantivy : <span class="kw">public</span> ScalarIndex&lt;T&gt; {
+    <span class="cm">// Build：读字段数据 → 交给 tantivy 建倒排</span>
+    <span class="cm">// 检索：等值/范围/子串/全文 → 转成 tantivy 查询，返回命中行的 bitset</span>
+};
+<span class="cm">// 另见 BitmapIndex.h（低基数位图）、ScalarIndexSort.h（STL_SORT 范围）、HybridScalarIndex.h（自动选型）。</span></pre>
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  一句话：除了向量索引，Milvus 还为<strong>非向量</strong>检索建<strong>标量索引</strong>（C++ <span class="mono">internal/core/src/index/</span>）——<strong>倒排</strong>（<span class="inline">InvertedIndexTantivy</span>，等值/字符串）、<strong>bitmap</strong>（<span class="inline">BitmapIndex</span>，低基数）、<strong>排序</strong>（<span class="inline">ScalarIndexSort</span> STL_SORT，范围）、<strong>ngram</strong>（子串）、<strong>混合</strong>（<span class="inline">HybridScalarIndex</span> 自动选型）、<strong>JSON</strong>；<strong>全文检索（BM25）</strong>由 Rust 的 <strong>tantivy</strong> 引擎落地（<span class="mono">InvertedIndexTantivy.{cpp,h}</span> + <span class="mono">thirdparty/tantivy</span> 绑定）。混合查询<strong>先筛后搜</strong>：标量索引算出 <strong>bitset</strong> 过滤掩码，下推给向量 ANN，让 ANN 只在合格子集上跑，召回稳定——标量与向量两套索引在一次查询里分工协同。
+</div>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>标量索引加速过滤</strong>：倒排（<span class="mono">InvertedIndexTantivy.h</span>）、bitmap（<span class="mono">BitmapIndex.h</span> 低基数）、排序（<span class="mono">ScalarIndexSort.h</span> STL_SORT 范围）、ngram、混合（<span class="mono">HybridScalarIndex.h</span> 自动选型）、JSON。</li>
+    <li><strong>按数据特征选</strong>：低基数→bitmap、范围→排序、等值/字符串→倒排、子串→ngram、拿不准→Hybrid 自动挑。</li>
+    <li><strong>tantivy = Rust 全文引擎</strong>：倒排与全文经 <span class="inline">InvertedIndexTantivy</span> 封装、由 <span class="mono">thirdparty/tantivy</span> 绑定调用，对应第 2 课"Rust 管全文"。</li>
+    <li><strong>全文检索 BM25</strong>：tantivy 分词、建倒排、按 BM25 相关性打分；与向量"按语义排"形成"按词项排"的互补。</li>
+    <li><strong>混合查询先筛后搜</strong>：标量索引产出 bitset 掩码下推进 ANN，只在合格子集找最近邻；优于"先搜后筛"（严过滤会把 topK 筛空、召回崩）。</li>
+    <li><strong>协同</strong>：标量索引让过滤变位运算、向量索引让相似检索变 ANN，两者在一次"带条件的相似检索"里分工。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. 在带条件的混合查询里，标量过滤与向量 ANN 是如何配合的？</div>
+  <ol class="opts">
+    <li>标量与向量索引各查各的，结果不交互</li>
+    <li>标量索引算出一个 bitset 过滤掩码，下推给向量 ANN，让 ANN 只在合格子集上检索（先筛后搜）；这避免了“先搜后筛”在高选择性过滤下 topK 被筛光、召回骤降的问题</li>
+    <li>先做完整 ANN，再事后丢掉不合格行，永远更优</li>
+    <li>过滤必须逐行扫描，无法用索引加速</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。把过滤掩码下推进 ANN，本质是数据库的“谓词下推”：尽早、尽低剔除不合格数据。先筛后搜保证 topK 是在合格集合里选出来的，召回稳定</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. 下面关于 Milvus 标量与全文索引的描述，哪条是对的？</div>
+  <ol class="opts">
+    <li>bitmap 索引最适合高基数字段</li>
+    <li>标量索引只有一种类型，适用于所有字段</li>
+    <li>标量索引在 C++（internal/core/src/index/）：倒排 InvertedIndexTantivy（等值/字符串）、BitmapIndex（低基数）、ScalarIndexSort（STL_SORT 范围）、ngram（子串）、HybridScalarIndex（自动选型）、JSON；全文 BM25 由 Rust 的 tantivy 引擎落地，经 thirdparty/tantivy 绑定接入</li>
+    <li>全文检索也由 Knowhere 提供</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：C</strong>。不同标量索引各有适用场景：低基数用 bitmap、范围查询用排序、等值/全文用倒排（tantivy）。HybridScalarIndex 会按数据特征自动选型。全文 BM25 由 Rust tantivy 落地，不属于 Knowhere</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>本课把“过滤”这半边交给标量索引、把“相似检索”那半边交给向量索引，再用 bitset 下推让二者协同（先筛后搜 = 谓词下推）。请思考：为什么 Milvus 需要这么多种标量索引（倒排/bitmap/排序/ngram/混合/JSON），而不是一种通吃？全文检索为何要专门引入 Rust 的 tantivy，而不复用向量那套？（可结合第 22 课 Knowhere、第 6 课数据模型。）</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+The indexes of the last three lessons all served <strong>vector search</strong>. But real queries are rarely "pure vector" — they often carry <strong>scalar filters</strong> ("price &lt; 100, category = electronics, listed this week") and <strong>full-text search</strong> ("the product description contains 'waterproof'").
+This lesson covers the acceleration of that <strong>non-vector</strong> half: <strong>scalar indexes</strong> (inverted, bitmap, sort, ngram, hybrid, JSON) make filtering fast and cheap; <strong>full-text search (BM25)</strong> is realized via Rust's <strong>tantivy</strong> engine. Finally we see how <strong>scalar filter + vector ANN</strong> cooperate in a single "hybrid query."
+With this lesson, your full picture of Milvus — "<strong>find by similarity, filter by condition, and search by keyword</strong>" — is complete.
+</p>
+
+<div class="card analogy">
+  <div class="tag">📮 Analogy</div>
+  One last trip to the library. The "catalog cards" of earlier lessons were for "<strong>finding books with similar content</strong>" (vector search). But readers ask other things too:
+  "<strong>published after 2024</strong>" (filter by field range) — you need a list <strong>sorted by publication year</strong> (a sort index);
+  "<strong>hardcover / paperback</strong>," with only a few possible values (low cardinality) — a <strong>"hardcover→which books, paperback→which books" bitmap</strong> is cheapest (bitmap);
+  "<strong>title contains the word 'quantum'</strong>" — you need an <strong>inverted word list of "term → which books"</strong> (inverted index);
+  "<strong>the body text discusses 'waterproof'</strong>" — that demands a proper <strong>search engine</strong> over full text, which also tokenizes and scores relevance (full-text / BM25).
+  None of these is "find a similar vector"; they are "<strong>filter precisely by condition, search relevantly by keyword</strong>." A complex query often needs <strong>both</strong>: first use scalar indexes to quickly drop the vast majority of books, then run vector similarity over the small remaining pile — that's a <strong>hybrid query</strong>.
+</div>
+
+<h2>Scalar indexes: speeding up the filter half</h2>
+<p>Vector search answers "<strong>most like which</strong>"; scalar filtering answers "<strong>does it meet the condition</strong>." If the filter field has no index, then "price &lt; 100" can only be judged by <strong>scanning every row</strong> — as slow as unindexed vector search. <strong>Scalar indexes</strong> exist to speed up exactly this "filter by field value."
+The importance of this is often underrated: in many real workloads, <strong>the filter condition is the main force compressing candidates from "the whole collection" to "a small handful."</strong> Imagine a billion-product collection where "category=electronics and price&lt;100" might cut candidates from a billion to a few hundred thousand — if that cut is slow (scanning a billion rows), even the fastest vector search afterward is dragged down. So scalar indexes are not "icing on the cake" but the other half, <strong>as important as the vector index</strong>, in a hybrid query.
+Milvus's scalar-index implementations live under the C++ core's <span class="mono">internal/core/src/index/</span>, offering several kinds for different <strong>data characteristics</strong>, each good at a class of filters:</p>
+
+<table class="t">
+  <tr><th>Scalar index (header)</th><th>Fit data / query</th><th>Core idea</th></tr>
+  <tr><td><strong>Inverted (<span class="mono">InvertedIndexTantivy.h</span>)</strong></td><td>equality / set (=, IN), strings</td><td>"value → rows holding it" inverted list, backed by tantivy</td></tr>
+  <tr><td><strong>Bitmap (<span class="mono">BitmapIndex.h</span>)</strong></td><td><strong>low-cardinality</strong> fields (gender, status, enums)</td><td>one bitmap per value; filter = bit ops, very fast</td></tr>
+  <tr><td><strong>Sort (<span class="mono">ScalarIndexSort.h</span> / <span class="mono">StringIndexSort.h</span>)</strong></td><td><strong>range</strong> queries (&lt;, &gt;, BETWEEN)</td><td>STL_SORT: sort by value, binary-search the interval</td></tr>
+  <tr><td><strong>Ngram (<span class="mono">NgramInvertedIndex.h</span>)</strong></td><td>substring / fuzzy match (LIKE '%x%')</td><td>build inverted lists over n-gram slices to speed substring queries</td></tr>
+  <tr><td><strong>Hybrid (<span class="mono">HybridScalarIndex.h</span>)</strong></td><td>when unsure which to use</td><td><strong>auto-pick</strong> a suitable scalar index by data characteristics</td></tr>
+  <tr><td><strong>JSON (<span class="mono">JsonHybridScalarIndex.h</span>)</strong></td><td>sub-keys inside JSON / dynamic fields</td><td>build scalar indexes for JSON paths to speed nested-field filtering</td></tr>
+</table>
+
+<p>Reading the table, the key intuition is <strong>"pick the index by data characteristics."</strong> <strong>Low-cardinality</strong> fields (only a few values, e.g. "listed/unlisted") suit <strong>bitmap</strong> best: one bitmap per value, "filter all listed" is just <strong>pulling out the matching bitmap</strong>, and multi-condition AND/OR is direct <strong>bit operations</strong> — extremely fast and space-thrifty.
+<strong>Range</strong> queries (price interval, time interval) suit a <strong>sort index (STL_SORT)</strong>: sort the values, binary-search to pin the interval's ends, everything inside hits as a block. <strong>Equality and string</strong> queries suit <strong>inverted</strong>: directly look up "which rows hold this value."
+When unsure, <strong>HybridScalarIndex</strong> <strong>auto-picks for you</strong> — the same "worry-free" philosophy as Lesson 21's vector AUTOINDEX, applied on the scalar side. Grasp "<strong>match the index to what the data looks like</strong>" and you hold the backbone of scalar-index selection.</p>
+
+<p>Let's give each index a one-line "personality" for long-term memory. <strong>Bitmap</strong> is the king of low cardinality: when a field has only a <strong>handful</strong> of values like "yes/no" or "red/yellow/blue," storing one "which rows have it" bitmap per value reduces filtering to <strong>bit-AND/bit-OR</strong>, fast and thrifty; but if a field has thousands of distinct values (high cardinality, e.g. user IDs), the bitmaps explode and you shouldn't use it.
+The <strong>sort index (STL_SORT)</strong> is the tool for range queries: with values sorted, "price between 50 and 100" only needs a <strong>binary search</strong> for the interval's ends, with everything inside hitting as a block, avoiding row-by-row comparison. <strong>Inverted</strong> targets <strong>equality and strings</strong>: it natively answers "<strong>which rows have this field equal to X</strong>" because it stores exactly the "value → rows" mapping.
+<strong>Ngram</strong> solves the <strong>substring fuzzy match</strong> that inverted can't (<span class="inline">LIKE '%keyword%'</span>): slice a string into small pieces of n consecutive characters and build inverted lists over those pieces, so "contains a substring" is accelerated by hitting the corresponding n-gram slices. Memorize these four personalities and, facing a filter field, you'll <strong>reflexively</strong> pick the right index.</p>
+
+<p>A special word on <strong>JSON / dynamic field</strong> indexes. Recall Lesson 6: Milvus supports dynamic fields and the JSON type, letting you stuff flexibly-structured <strong>nested data</strong> into a row. But flexibility has a cost — filtering on a sub-key inside JSON (e.g. <span class="inline">meta["brand"]</span>) would by default require <strong>parsing each row's JSON</strong> before judging, which is slow.
+<strong>JsonHybridScalarIndex</strong> (<span class="mono">JsonHybridScalarIndex.h</span>) exists for this: it can build scalar indexes for <strong>specific paths</strong> inside JSON, accelerating "nested-field filtering" to the same order as ordinary scalar fields. This lets "dynamic/JSON fields" keep their <strong>schema flexibility</strong> without paying a heavy filter-performance penalty — once more reflecting Milvus's engineering bent toward "<strong>flexibility and performance together</strong>."</p>
+
+<div class="cols">
+  <div class="col"><h4>Vector indexes (last 3 lessons)</h4><p>Answer "<strong>most like which</strong>." Knowhere's HNSW/IVF/DiskANN etc., rank by <strong>semantic similarity</strong>, approximate search (ANN).</p></div>
+  <div class="col"><h4>Scalar indexes (this lesson)</h4><p>Answer "<strong>does it meet the condition</strong>." bitmap/sort/inverted etc., filter precisely by <strong>field value</strong>, producing a bitset.</p></div>
+  <div class="col"><h4>Full-text index (this lesson)</h4><p>Answer "<strong>which documents are most relevant</strong>." tantivy inverted + BM25, score and rank by <strong>term relevance</strong>.</p></div>
+</div>
+
+<p>These three index classes each do their job, yet can be <strong>stacked</strong> in one query — exactly where Milvus beats a "pure vector store": it doesn't only do "find a similar vector," but <strong>unifies</strong> three capabilities — <strong>similarity search, conditional filtering, keyword retrieval</strong> — into one engine, one dataset, one query. Behind this is a plain but important judgment: real-world retrieval is almost <strong>never</strong> "by vector only" or "by condition only," but always a <strong>combination of two or even three</strong> — "among candidates meeting some conditions and textually relevant, find the semantically most alike." Stocking all three index families and making them cooperate is what earns Milvus the name of a real-workload <strong>vector database</strong>, not an isolated "vector-search algorithm library."</p>
+
+<h2>Inverted index and full-text search: Rust's tantivy engine</h2>
+<p>The <strong>inverted</strong> index that keeps recurring above, and "full-text search," share one engine behind them: <strong>tantivy</strong> — a full-text search library written in <strong>Rust</strong> (analogous to Lucene in the Java world). This is the realization of "Rust handles full-text indexing" from Lesson 2's "three-language split."
+Milvus's C++ core <strong>wraps and calls</strong> tantivy through <span class="mono">internal/core/src/index/InvertedIndexTantivy.h</span> (the <span class="inline">InvertedIndexTantivy</span> class); the C++↔Rust bridge is the binding layer (FFI) under <span class="mono">internal/core/thirdparty/tantivy</span>. That is, the "dirty heavy work" of an inverted index — tokenization, building the term table, boolean retrieval, relevance scoring — is all <strong>outsourced to tantivy</strong>, the professional engine, while the C++ side only wires it into Milvus's segment and query system.</p>
+
+<div class="layers">
+  <div class="layer l-app"><span class="badge">Milvus core (C++)</span><span class="name">InvertedIndexTantivy</span><span class="ld">internal/core/src/index/InvertedIndexTantivy.{h,cpp}: wires inverted/full-text into segments &amp; queries</span></div>
+  <div class="layer l-main"><span class="badge">binding (FFI)</span><span class="name">thirdparty/tantivy</span><span class="ld">the C++ ↔ Rust bridge: rust-binding / tantivy-wrapper</span></div>
+  <div class="layer l-core"><span class="badge">engine (Rust)</span><span class="name">tantivy</span><span class="ld">tokenization, inverted term table, boolean retrieval, BM25 relevance scoring</span></div>
+</div>
+
+<p><strong>Full-text search</strong> is built on top of this inverted index. When you search "contains keyword" over a text, tantivy first <strong>tokenizes</strong> (splits the sentence into terms), maintains for each term an inverted list of "<strong>which documents it appears in, and how often</strong>," and at query time uses a relevance model like <strong>BM25</strong> to <strong>score and rank</strong> documents — those scoring high (containing the query terms, and not because the term is ubiquitous) rank first.
+This forms an interesting contrast with vector search's "rank by similarity": <strong>vector search ranks by "semantic closeness," full-text search ranks by "term relevance."</strong> Milvus embraces both, so it can do "<strong>semantic search</strong>" (find similar meaning) and "<strong>keyword search</strong>" (find literal hits), and even <strong>fuse</strong> the two into stronger retrieval (hybrid retrieval, covered later). BM25-style full-text scoring is realized precisely via tantivy's inverted index.</p>
+
+<p>It's worth clarifying the relationship between <strong>sparse vectors</strong> and <strong>full-text search</strong>, since they're easy to confuse. Lesson 22 covered Knowhere's sparse-vector indexes (SPARSE_INVERTED_INDEX/WAND), while this lesson covers tantivy's full-text inverted index — the two share <strong>the same idea</strong> (inverted + scored pruning) yet sit at <strong>different levels</strong>: full-text search targets <strong>raw text</strong>, handling tokenization, term-table building, and BM25 scoring itself; sparse-vector search targets an <strong>already-vectorized</strong> "term→weight" map (often the very output of a BM25/SPLADE model), doing retrieval at the vector level.
+In other words, you can have Milvus do full-text search <strong>directly on text</strong> (via tantivy), or first <strong>encode text into a sparse vector</strong> and do sparse-vector search (via Knowhere). The two paths converge — both achieve "term-hit" keyword-style retrieval — they just land at different spots in the engine stack. Grasp this distinction and you won't get tangled by the words "full-text search," "sparse vector," and "BM25" when reading Milvus docs.</p>
+
+<h2>Scalar filter + vector ANN: how a hybrid query cooperates</h2>
+<p>Putting scalar and vector indexes <strong>into one query</strong> is where they truly shine. Consider a typical request: "among products with <strong>category=electronics and price&lt;100</strong>, find the 10 <strong>most like</strong> this image." Here there is both a <strong>scalar filter</strong> (category, price) and a <strong>vector ANN</strong> (most like). Milvus's approach is <strong>filter first, then search</strong>:</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Scalar filter (shrink candidates)</h4><p>Use <strong>scalar indexes</strong> (bitmap/sort/inverted) to quickly compute the row set "<strong>satisfying category=electronics and price&lt;100</strong>" — a <strong>bitmap (bitset)</strong>. The vast majority of non-qualifying data is <strong>excluded wholesale</strong> at this step.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Vector ANN (filtered search)</h4><p>Hand this bitset as a <strong>filter mask</strong> to vector search: during ANN (HNSW/IVF), find nearest neighbors <strong>only among rows that pass the filter</strong>, wasting no compute on already-excluded data.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Merge for topK</h4><p>Each segment computes local results, merged into the global <strong>10 most alike</strong> — they <strong>both satisfy the scalar condition and are vector-nearest</strong>.</p></div></div>
+</div>
+
+<p>The key design here: <strong>the scalar filter's result (a bitset) is "fed into" vector search so ANN runs over the filtered subset</strong>, rather than "run full ANN first, then discard non-qualifying afterward." The latter (search-then-filter) has a fatal flaw: if the filter is selective (say only 1% of data qualifies), the topK first searched out may be <strong>entirely filtered away</strong>, collapsing recall or even returning nothing. <strong>Filter-then-search</strong> (pushing the filter mask down into ANN) guarantees the topK is chosen <strong>within the qualifying set</strong>, with stable recall. As an aside: this "<strong>push the filter condition as low as possible</strong>" idea has a general name in databases — <strong>predicate pushdown</strong> — eliminate non-qualifying data as early and as low as you can, rather than letting it flow into more expensive downstream operators. Milvus pushing the scalar-filter bitset down into vector ANN is precisely predicate pushdown in the "vector search" context.
+This is exactly why scalar indexes are <strong>indispensable</strong>: they make "filtering" <strong>fast enough, and able to hand the result to vector search precisely as a bitset</strong>. Without scalar indexes, filtering scans row by row; with them, filtering becomes bit operations, then the mask is pushed down to ANN — the two index families thus <strong>divide labor and cooperate</strong> in one query, jointly making "conditional similarity search" both fast and accurate.</p>
+
+<p>That completes <strong>Part 5 · Indexing</strong>; let's tie the four lessons into one line. Lesson 21 covered the <strong>index service</strong> (DataCoord schedules, a worker executes, no indexnode); Lesson 22, <strong>Knowhere vector indexes</strong> (the tradeoffs and params of FLAT/IVF/HNSW/DiskANN…); Lesson 23, <strong>build and load</strong> (sealed segment → build → index files → QueryNode loads, growing uses brute force); this lesson, <strong>scalar and full-text indexes</strong> (inverted/bitmap/sort/ngram/JSON + tantivy full-text, hybrid with vectors).
+Together the four answer one complete question: <strong>how does Milvus turn "raw data" into "an asset searchable fast in every way"</strong>. Indexing is the <strong>hub</strong> connecting "<strong>writes</strong>" (the first four parts) and "<strong>reads</strong>" (later parts) — writes land data into segments, indexes make segments searchable, and only then can reads, in milliseconds, find by similarity, filter by condition, and search by keyword. The next part formally enters the <strong>query path</strong>, watching how a search request traverses the Proxy, QueryNodes, and per-segment indexes to finally merge into the result you asked for. Looking back over these four lessons, you will spot a recurring motif: <strong>trading space for time</strong> — whether it is the vector HNSW graph, IVF inverted buckets, or the scalar bitmap, sorted array, and tantivy inverted list, each is essentially <strong>storing an extra "search-optimized structure" up front</strong>, converting the full scan you would otherwise do at query time into a few cheap jumps. Grasp this and you hold the master key to every index design.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/core/src/index/InvertedIndexTantivy.h</span><span class="ln">InvertedIndexTantivy: inverted/full-text scalar index wrapping Rust tantivy (excerpt)</span></div>
+  <pre><span class="cm">// The C++-side scalar-index implementation, internally calling Rust's tantivy engine (via the thirdparty/tantivy binding).</span>
+<span class="cm">// Inverted (equality/string) and full-text (BM25) are both wired into Milvus's segment &amp; query system through it.</span>
+<span class="kw">template</span> &lt;<span class="kw">typename</span> T&gt;
+<span class="kw">class</span> InvertedIndexTantivy : <span class="kw">public</span> ScalarIndex&lt;T&gt; {
+    <span class="cm">// Build: read field data -> hand to tantivy to build the inverted index</span>
+    <span class="cm">// Query: equality/range/substring/full-text -> translate to a tantivy query, return a bitset of matching rows</span>
+};
+<span class="cm">// See also BitmapIndex.h (low-cardinality bitmap), ScalarIndexSort.h (STL_SORT range), HybridScalarIndex.h (auto-pick).</span></pre>
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: beyond vector indexes, Milvus builds <strong>scalar indexes</strong> for <strong>non-vector</strong> lookups (C++ <span class="mono">internal/core/src/index/</span>) — <strong>inverted</strong> (<span class="inline">InvertedIndexTantivy</span>, equality/string), <strong>bitmap</strong> (<span class="inline">BitmapIndex</span>, low-cardinality), <strong>sort</strong> (<span class="inline">ScalarIndexSort</span> STL_SORT, range), <strong>ngram</strong> (substring), <strong>hybrid</strong> (<span class="inline">HybridScalarIndex</span>, auto-pick), <strong>JSON</strong>; <strong>full-text search (BM25)</strong> is realized by Rust's <strong>tantivy</strong> engine (<span class="mono">InvertedIndexTantivy.{cpp,h}</span> + the <span class="mono">thirdparty/tantivy</span> binding). A hybrid query <strong>filters first, then searches</strong>: scalar indexes compute a <strong>bitset</strong> filter mask, pushed down to vector ANN so it runs over the qualifying subset, keeping recall stable — scalar and vector index families cooperate in a single query.
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Scalar indexes speed filtering</strong>: inverted (<span class="mono">InvertedIndexTantivy.h</span>), bitmap (<span class="mono">BitmapIndex.h</span>, low-cardinality), sort (<span class="mono">ScalarIndexSort.h</span> STL_SORT, range), ngram, hybrid (<span class="mono">HybridScalarIndex.h</span>, auto-pick), JSON.</li>
+    <li><strong>Pick by data characteristics</strong>: low-cardinality→bitmap, range→sort, equality/string→inverted, substring→ngram, unsure→Hybrid auto-picks.</li>
+    <li><strong>tantivy = Rust full-text engine</strong>: inverted and full-text are wrapped by <span class="inline">InvertedIndexTantivy</span> and called via the <span class="mono">thirdparty/tantivy</span> binding, matching Lesson 2's "Rust handles full-text."</li>
+    <li><strong>Full-text BM25</strong>: tantivy tokenizes, builds inverted lists, and scores by BM25 relevance; complements vector's "rank by semantics" with "rank by term relevance."</li>
+    <li><strong>Hybrid query filters first</strong>: scalar indexes produce a bitset mask pushed down into ANN to find neighbors only in the qualifying subset; better than "search-then-filter" (selective filters empty the topK and crash recall).</li>
+    <li><strong>Cooperation</strong>: scalar indexes turn filtering into bit ops, vector indexes turn similarity search into ANN; the two divide labor in one "conditional similarity search."</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. In a conditional hybrid query, how do scalar filtering and vector ANN cooperate?</div>
+  <ol class="opts">
+    <li>Scalar and vector indexes query independently and never interact</li>
+    <li>The scalar index computes a bitset filter mask and pushes it down into vector ANN so ANN searches only the qualifying subset (filter-then-search); this avoids 'search-then-filter' where, under a selective filter, the topK gets filtered away and recall collapses</li>
+    <li>Always run full ANN first then discard non-qualifying rows, which is always better</li>
+    <li>Filtering must scan row by row and can't be accelerated by an index</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. Pushing the filter mask into ANN is essentially database 'predicate pushdown': eliminate non-qualifying data as early and low as possible. Filter-then-search guarantees the topK is chosen within the qualifying set, with stable recall</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Which statement about Milvus scalar and full-text indexes is correct?</div>
+  <ol class="opts">
+    <li>Bitmap indexes are best for high-cardinality fields</li>
+    <li>There is only one scalar index type, used for all fields</li>
+    <li>Scalar indexes live in C++ (internal/core/src/index/): inverted InvertedIndexTantivy (equality/string), BitmapIndex (low-cardinality), ScalarIndexSort (STL_SORT range), ngram (substring), HybridScalarIndex (auto-pick), JSON; full-text BM25 is delivered by Rust's tantivy engine via the thirdparty/tantivy binding</li>
+    <li>Full-text search is also provided by Knowhere</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. Different scalar indexes fit different cases: bitmap for low cardinality, sort for range queries, inverted (tantivy) for equality/full-text. HybridScalarIndex auto-picks by data characteristics. Full-text BM25 is delivered by Rust tantivy, not Knowhere</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson hands the 'filter' half to scalar indexes and the 'similarity search' half to vector indexes, then makes them cooperate via bitset pushdown (filter-then-search = predicate pushdown). Consider: why does Milvus need so many scalar index types (inverted/bitmap/sort/ngram/hybrid/JSON) rather than one-size-fits-all? Why introduce Rust's tantivy specifically for full-text instead of reusing the vector stack? (Tie in Lesson 22 Knowhere and Lesson 6 data model.)</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="23-index-build-and-load.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">构建与加载索引</span><span class="lang-en">Index build &amp;amp; load</span></div></a><a class="next" href="../index.html"><div class="dir"><span class="lang-zh">完成 →</span><span class="lang-en">Done →</span></div><div class="ttl"><span class="lang-zh">返回目录</span><span class="lang-en">Back to index</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>

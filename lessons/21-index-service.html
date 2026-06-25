@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>21 · 索引服务 / The index service - Milvus 图解教程</title>
+<meta name="description" content="第五部分 · 索引｜索引服务 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="21 · 索引服务 / The index service - Milvus 图解教程">
+<meta property="og:description" content="第五部分 · 索引｜索引服务 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="21 · 索引服务 / The index service - Milvus 图解教程">
+<meta name="twitter:description" content="第五部分 · 索引｜索引服务 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.timeline .tl-row { display: flex; align-items: flex-start; gap: .6rem; padding: .12rem 0; }
+.timeline .tl-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: .45rem; }
+.timeline .tl-t { font-family: ui-monospace, monospace; font-weight: 700; color: var(--accent-ink); min-width: 2.4rem; font-size: .82rem; flex-shrink: 0; margin-top: .18rem; }
+.timeline .tl-c { font-size: .9rem; color: var(--muted); }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第五部分 · 索引</span><span class="lang-en">Part 5 · Indexing</span></span>
+    <span class="pill">21 / 24</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:87%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第五部分 · 索引</span><span class="lang-en">Part 5 · Indexing</span></div>
+    <h1><span class="lang-zh">索引服务</span><span class="lang-en">The index service</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+前四部分我们把"写入"讲透了：一行数据从 Proxy 进门、Append 进 WAL、攒成 growing 段、flush 成 binlog、再被 compaction 合并整洁。可到此为止，这些 sealed 段里的向量还只是一堆<strong>原始数据</strong>——要查"最像谁"，只能把查询向量和每一条库内向量<strong>逐个算距离</strong>（brute force，暴力扫描）。段一多、向量一多，这种扫法就慢得不可接受。
+这一课起进入第五部分<strong>索引</strong>：先讲<strong>索引服务</strong>——谁来决定给哪些段建索引、谁真正动手建、建出来的东西又如何变成"可被查询加载"的资产。
+关键结论先摆出来：<strong>建索引由 DataCoord 调度、由一个 worker（datanode）执行——没有独立的 indexnode 进程</strong>（回忆第 9、12 课的"协调器调度、节点执行"）。
+</p>
+
+<div class="card analogy">
+  <div class="tag">📚 生活类比</div>
+  还记得那座"一架书 = 一族册子"的图书馆吗？书都上架了，可读者想找"讲向量检索的书"，难道要一架一架翻过去？那太慢了。真正高效的图书馆，会为每个书架做一套<strong>目录卡片</strong>（索引）：按主题、按作者排好，查的人翻一翻卡片就能直奔目标。
+  但目录不会自己长出来。<strong>馆长</strong>（DataCoord）盯着全馆的账本，决定"<strong>哪些书架还没目录、该建什么样的目录</strong>"，然后把任务派下去；真正<strong>埋头读书架、一张张写卡片</strong>的，是<strong>馆员助手</strong>（worker）。馆长只管<strong>调度与登记</strong>，不亲自抄卡片；助手只管<strong>干活</strong>，干完把卡片交回、登记进总目录。
+  注意：这里<strong>没有第三个"专职抄卡片的部门"</strong>——抄卡片的活就由平时管书库的助手顺手兼着干。记住这一点，你就抓住了 Milvus 索引服务的骨架。
+</div>
+
+<h2>为什么需要索引服务：从暴力扫描到可加载的索引</h2>
+<p>第 5 课讲 ANN 时我们就埋过伏笔：在高维向量上做<strong>精确</strong>的最近邻，注定要和每条数据比一遍，代价随数据量<strong>线性</strong>增长。一个集合可能有上亿条向量、成百上千个 sealed 段，逐条算距离的<strong>暴力扫描</strong>在线上根本扛不住。
+索引就是为这件事而生：用一次<strong>离线的预处理</strong>（建图、聚类、量化……），把数据组织成一种"<strong>查的时候能跳过大半</strong>"的结构，从而把检索从"扫全部"压成"只看一小撮候选"。代价是这次预处理本身<strong>很重</strong>——要读出整段数据、跑复杂算法、再把结果写回存储。换句话说，索引是一笔<strong>"先苦后甜"</strong>的买卖：建的时候多花一次力气，之后每一次查询都<strong>反复受益</strong>，把这笔预处理成本摊薄到无数次检索头上。</p>
+
+<p>正因为建索引<strong>又重又慢</strong>，它不能塞进写入主链路（那会拖垮写入延迟），必须作为一项<strong>后台任务</strong>，在数据<strong>已经 sealed（不可变）</strong>之后异步地做——这和上一课 compaction 的哲学一脉相承：<strong>把"快速记账"和"慢慢整理"解耦</strong>。
+于是就需要一套"<strong>索引服务</strong>"来回答三个问题：<strong>给哪些段建</strong>（调度）、<strong>谁来建</strong>（执行）、<strong>建完怎么用</strong>（让 QueryNode 能加载）。这三问，正是这一课的主线。</p>
+
+<p>这里值得把"建索引到底有多重"想具体些。以最常见的图索引 HNSW 为例：要给一个段里几十万、上百万条向量建图，算法得为<strong>每个点反复搜索它的近邻、连边、再分层组织</strong>，是个计算量随数据量超线性增长的活；IVF 系要先对全段向量<strong>聚类</strong>（跑 k-means）、再把每条向量分配到桶里；带量化的 IVF_PQ 还要额外训练<strong>码本</strong>。这些都意味着：建索引会<strong>吃掉大量 CPU/内存、读出整段数据、产出不小的索引文件</strong>。
+把这样一桩重活放进写入链路，等于让每次写入都去等一次"全段重算"，写入延迟会瞬间崩坏。所以 Milvus 的选择毫无悬念——<strong>写入只管把数据快速落成段，建索引留到后台、在不可变的 sealed 段上慢慢做</strong>。这就是"索引必须是后台服务"背后那条朴素却硬核的工程理由。</p>
+
+<div class="cols">
+  <div class="col"><h4>没有索引（暴力扫描）</h4><p>查询向量要和段里<strong>每一条</strong>库内向量算距离，代价 <span class="mono">O(N)</span> 随数据量线性增长。段越多、向量越多，越慢。growing 段（还没建索引）就是这么查的——能用，但只适合<strong>小数据量</strong>。</p></div>
+  <div class="col"><h4>有索引（ANN）</h4><p>预先把向量组织成图 / 倒排桶 / 量化码，查询时<strong>只探一小撮候选</strong>，代价接近 <span class="mono">O(log N)</span> 或亚线性。代价是建索引这次预处理很重，所以放到后台、在 sealed 段上做。</p></div>
+</div>
+
+<h2>谁拥有、谁构建：DataCoord 调度 + worker 执行</h2>
+<p>这是本课<strong>最容易记错</strong>的一点，请务必坐实：建索引<strong>不存在</strong>一个叫 "indexnode" 的独立进程。它的分工，和第 12 课讲 DataCoord、第 17 课讲 DataNode 的主旋律完全一致——<strong>协调器管调度、节点管执行</strong>。</p>
+
+<p><strong>DataCoord 是大脑</strong>：它拥有<strong>索引的元数据</strong>（哪个集合的哪个字段建了什么索引、每个段的索引到了哪个状态），代码在 <span class="mono">internal/datacoord/index_service.go</span>（对外 RPC，如 <span class="inline">CreateIndex</span>）、<span class="mono">index_meta.go</span>（元数据）、<span class="mono">index_inspector.go</span>（巡检：发现"还没建索引的 sealed 段"并生成构建任务）。它<strong>不</strong>亲自读向量、跑算法。</p>
+
+<p><strong>worker 是手脚</strong>：真正读出段的 binlog、调 Knowhere 跑建索引算法、把索引文件写回对象存储的，是一个 <strong>worker</strong>——在当下的架构里，这个 worker 跑在 <strong>datanode</strong> 上（代码在 <span class="mono">internal/datanode/index/task_index.go</span> 的 <span class="inline">indexBuildTask</span>）。
+它实现了 <span class="inline">workerpb.IndexNodeClient</span> 这个 gRPC 接口——<strong>注意：接口名里虽有 "IndexNode" 字样，但那只是历史遗留的协议名，并不代表存在一个独立的 indexnode 进程</strong>。这一点和第 17 课"流式写入交给 StreamingNode、DataNode 退居后台做 compaction 与建索引"完全吻合。</p>
+
+<p>在 worker 内部，一个构建任务大致是三个动作：<strong>读</strong>——把段的向量 binlog 从对象存储拉出来、拼装成内存里的数据集；<strong>建</strong>——把这份数据集连同索引类型与参数交给 <strong>Knowhere</strong>，让它跑真正的算法（建图 / 聚类 / 训练码本）；<strong>写</strong>——把 Knowhere 的产物序列化成索引文件、写回对象存储，再把路径上报 DataCoord。
+worker 是"<strong>纯手脚</strong>"：它完全<strong>不关心</strong>哪个段"<strong>该不该</strong>"建——那个决策完全归 DataCoord 的巡检器。这种"<strong>协调器决策、worker 计算</strong>"的干净切分，正是整套机制能横向扩展的根本：多加几个 worker，就能并行建更多段，而 DataCoord 始终是那个唯一记账的大脑。</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">DataCoord</div><div class="nd">拥有索引元数据 · 巡检 sealed 段 · 生成构建任务</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">构建任务队列</div><div class="nd">每个 sealed 段一个任务 · 分派给 worker</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">datanode worker</div><div class="nd">实现 IndexNodeClient · 读 binlog · 调 Knowhere · 写索引文件</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">回写元数据</div><div class="nd">索引文件路径登记 · 段标记"已建索引"</div></div>
+</div>
+
+<h2>索引的生命周期：CreateIndex → 段级构建任务 → 索引文件 → 可加载</h2>
+<p>把一次建索引<strong>从头到尾</strong>串起来，是理解索引服务的最好方式。它分四步，每一步都对应上面图里的一段：</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>CreateIndex（声明意图）</h4><p class="mono">index_service.go · CreateIndex</p><p>用户对某<strong>字段</strong>声明"我要建索引"（指定索引类型与参数）。DataCoord 把这条<strong>索引定义</strong>记进元数据——这是<strong>集合级</strong>的声明，<strong>还没</strong>真正去算任何一个段。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>段级构建任务</h4><p class="mono">index_inspector.go · createIndexForSegment</p><p>巡检器周期性扫描：凡是<strong>已 sealed、却还没建这套索引</strong>的段，就为它生成<strong>一个构建任务</strong>。一个集合有多少 sealed 段，就会派出多少个任务（每段一个）。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>worker 构建索引文件</h4><p class="mono">datanode/index · indexBuildTask</p><p>worker 领到任务：<strong>读出该段的向量 binlog</strong> → 调 <strong>Knowhere</strong> 跑建索引（建图 / 聚类 / 量化）→ 把产物<strong>索引文件</strong>写进对象存储（回忆第 18 课的 <span class="mono">index_files</span> 前缀）。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>登记 → 可加载</h4><p>worker 把索引文件路径<strong>回写 DataCoord 元数据</strong>，该段被标记为"<strong>已建索引</strong>"。至此索引成为一份<strong>持久资产</strong>；当集合被加载时，QueryNode 就能<strong>加载</strong>它来做 ANN（下一课、第 23 课展开）。</p></div></div>
+</div>
+
+<p>这条生命周期里有个常被忽略的关键：<strong>CreateIndex 是"声明"，不是"立即建好"</strong>。你调用 CreateIndex 之后，已存在的 sealed 段会被<strong>逐段异步</strong>地建；而<strong>之后新产生</strong>的 sealed 段（来自持续写入与 flush），也会被巡检器<strong>自动补建</strong>同一套索引。
+所以"建索引"不是一次性动作，而是一个<strong>持续生效的策略</strong>：只要这套索引定义还在，DataCoord 就会确保"<strong>每一个 sealed 段最终都建上它</strong>"。这也解释了为什么 <span class="inline">GetIndexState</span> / <span class="inline">DescribeIndex</span> 这类接口要返回"已建/在建/总数"的进度——因为建索引天然是一个<strong>渐进收敛</strong>的过程。</p>
+
+<h2>为什么"按段"建索引：粒度、失败与重试</h2>
+<p>请特别留意上面反复出现的一个词：<strong>"每个 sealed 段一个构建任务"</strong>。索引服务的调度粒度，<strong>不是集合、不是分区，而是段</strong>。这个选择不是随意的，它直接来自前面几部分的设计：段是 Milvus 里<strong>不可变、可独立处理</strong>的最小数据单元——只有 sealed 段（数据已冻结）才适合建索引，因为建索引算法需要<strong>看到一份固定不变的数据</strong>；growing 段还在不断接收新行，建了也会立刻过时，所以 growing 段干脆<strong>不建索引</strong>，查询时对它用暴力扫描（下一课、第 23 课会再强调这一点）。</p>
+
+<p>按段建索引带来三个实打实的好处。其一是<strong>可并行</strong>：成百上千个段的构建任务互不依赖，可以<strong>同时分派</strong>给多个 worker 并行跑，把一个大集合的"建索引"摊成许多小任务并发完成。其二是<strong>可增量</strong>：写入持续产生新段，巡检器只需为<strong>新出现的、还没建的段</strong>派任务，已经建好的段<strong>无需重做</strong>——索引随数据"自然生长"。其三是<strong>失败隔离</strong>：某个段的构建任务失败（worker 崩了、读 binlog 出错），影响的只是<strong>那一个段</strong>，DataCoord 重新派一次即可，不牵连其它已建好的段。</p>
+
+<div class="cellgroup">
+  <div class="cg-cap">同一集合的若干 sealed 段，各自独立成一个构建任务，可并行、可增量、失败可单独重试</div>
+  <div class="cells">
+    <div class="cell dim"><span class="lab">段 #1</span><span class="q">已建索引 ✓</span></div>
+    <div class="cell dim"><span class="lab">段 #2</span><span class="q">已建索引 ✓</span></div>
+    <div class="cell hl"><span class="lab">段 #3</span><span class="q">构建中…</span></div>
+    <div class="cell sep"><span class="lab">段 #4</span><span class="q">失败→重试</span></div>
+    <div class="cell"><span class="lab">段 #5（growing）</span><span class="q">不建·暴力扫描</span></div>
+  </div>
+</div>
+
+<p>正因为有这套"<strong>段级任务 + 状态机 + 重试</strong>"的机制，索引服务才能在一个<strong>持续写入、节点会崩、网络会抖</strong>的分布式环境里，稳稳地把"每个段最终都建上索引"这件事推进到底。
+这也是 DataCoord 要<strong>拥有索引元数据</strong>的根本原因：它必须为每个段<strong>记账</strong>——这个段建到了哪一步、用的哪份索引定义、索引文件落在哪里、失败了几次。没有这本账，分布式下的"渐进收敛"就无从谈起。你可以把 <span class="mono">index_meta.go</span> 理解成这本"<strong>索引总账</strong>"，把 <span class="mono">index_inspector.go</span> 理解成那位<strong>不断对账、发现缺口就补派任务</strong>的巡检员。</p>
+
+<table class="t">
+  <tr><th>阶段</th><th>谁负责</th><th>产出 / 状态</th></tr>
+  <tr><td><strong>CreateIndex</strong></td><td>Proxy→DataCoord</td><td>把索引定义写进元数据（集合级声明）</td></tr>
+  <tr><td><strong>巡检 & 派任务</strong></td><td>DataCoord（inspector）</td><td>每个未建索引的 sealed 段 → 一个构建任务</td></tr>
+  <tr><td><strong>构建</strong></td><td>datanode worker</td><td>读 binlog · 调 Knowhere · 写索引文件到对象存储</td></tr>
+  <tr><td><strong>登记</strong></td><td>worker→DataCoord</td><td>索引文件路径入元数据 · 段标记"已建索引"</td></tr>
+  <tr><td><strong>加载</strong></td><td>QueryNode</td><td>集合加载时把索引读入内存 / mmap，供 ANN 检索</td></tr>
+</table>
+
+<p>关于<strong>auto-index（自动索引）</strong>：很多用户并不想纠结"该选 HNSW 还是 IVF、参数怎么调"。Milvus 提供 <strong>AUTOINDEX</strong>——你只声明"给这个字段建索引"，由系统<strong>按字段类型与数据规模自动挑选</strong>一套合理的索引类型与参数。
+它的本质仍然走上面这条完全相同的链路：CreateIndex 声明 → 巡检派任务 → worker 用 Knowhere 构建 → 登记可加载；只是"选哪种索引、参数填多少"这步从<strong>用户手填</strong>变成了<strong>系统代选</strong>。对初学者，AUTOINDEX 是最省心的默认；想精调时再换成具体类型（下一课逐一拆解各家索引）。</p>
+
+<p>这里还要把"索引服务"和后面两课的关系<strong>提前接上</strong>，免得你把它们割裂着记。本课讲的是"<strong>建索引这件事如何被调度与执行</strong>"，是<strong>控制流</strong>的视角；下一课（第 22 课）会钻进 worker 调用的那个 <strong>Knowhere</strong> 库内部，看它到底有哪些<strong>向量索引家族</strong>（FLAT/IVF/HNSW/DiskANN……）、各自的取舍与参数；再下一课（第 23 课）则顺着<strong>数据流</strong>，把"sealed 段的原始向量 → worker 构建 → 索引文件落对象存储 → QueryNode 加载进内存或 mmap"这条物理路径走一遍。
+三课是同一件事的三个切面：<strong>谁调度（本课）、用什么算法（第 22 课）、数据怎么流动（第 23 课）</strong>。把它们叠在一起，你才算真正看懂了 Milvus 的索引。</p>
+
+<p>最后留一个值得回味的设计观感：索引服务几乎<strong>完整复刻</strong>了 compaction 的那套范式——都由 <strong>DataCoord 调度</strong>、都在 <strong>datanode worker</strong> 上执行、都只作用于<strong>不可变的 sealed 段</strong>、都把结果<strong>写回对象存储</strong>再<strong>原子地登记进元数据</strong>、都是"<strong>不打扰写入主链路</strong>"的后台任务。
+这不是巧合，而是 Milvus 反复使用的同一套<strong>后台维护任务骨架</strong>：把"慢而重、但能让读更快"的活，从前台剥离，交给协调器在系统空闲时摊销地做。理解了 compaction，你几乎<strong>不费力</strong>就能理解索引服务；而理解了这套通用骨架，你也就握住了 Milvus 整个"写完之后"世界的钥匙。</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/datacoord/index_service.go</span><span class="ln">CreateIndex：声明索引定义，由 DataCoord 受理（节选）</span></div>
+  <pre><span class="cm">// DataCoord 对外 RPC：受理"给某字段建索引"的声明，写进索引元数据。</span>
+<span class="cm">// 注意：这里只"登记意图"，真正的逐段构建由 inspector 异步派发给 worker。</span>
+<span class="kw">func</span> (s *Server) <span class="fn">CreateIndex</span>(ctx context.Context, req *indexpb.CreateIndexRequest) (*commonpb.Status, error) {
+    <span class="cm">// 健康检查、参数校验、分配 indexID……</span>
+    <span class="cm">// 把 index 定义写入 meta；之后 index_inspector 巡检 sealed 段、逐段派构建任务。</span>
+}</pre>
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  一句话：sealed 段里的向量若不建索引，就只能<strong>暴力逐条扫</strong>（慢）。索引服务把"建索引"做成一项<strong>后台任务</strong>——<strong>DataCoord 调度</strong>（<span class="mono">index_service.go</span>/<span class="mono">index_meta.go</span>/<span class="mono">index_inspector.go</span>：拥有元数据、巡检 sealed 段、<strong>每段派一个构建任务</strong>），<strong>datanode worker 执行</strong>（<span class="inline">indexBuildTask</span>，实现 <span class="inline">workerpb.IndexNodeClient</span>，<strong>没有独立 indexnode 进程</strong>：读 binlog、调 Knowhere、写索引文件、回写元数据）。CreateIndex 是<strong>声明</strong>而非立即建好，新段会被<strong>自动补建</strong>；AUTOINDEX 让系统代选类型与参数。
+</div>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>为何要索引</strong>：不建索引只能暴力 <span class="mono">O(N)</span> 逐条算距离；索引用一次重的离线预处理换查询时的"只看一小撮候选"。</li>
+    <li><strong>调度 vs 执行</strong>：DataCoord 拥有索引元数据并调度（<span class="mono">index_service.go</span> 的 <span class="inline">CreateIndex</span>、<span class="mono">index_inspector.go</span>）；datanode worker 执行（<span class="inline">indexBuildTask</span>）。</li>
+    <li><strong>没有 indexnode</strong>：worker 实现 <span class="inline">workerpb.IndexNodeClient</span>，但那只是协议名——构建跑在 datanode 上，<strong>不存在</strong>独立 indexnode 进程（呼应第 9、17 课）。</li>
+    <li><strong>生命周期</strong>：CreateIndex（声明）→ 每个 sealed 段一个构建任务 → worker 读 binlog·调 Knowhere·写索引文件 → 登记后可被 QueryNode 加载。</li>
+    <li><strong>声明而非即建</strong>：已存在的段逐段异步建，新 sealed 段自动补建；进度可经 <span class="inline">GetIndexState</span>/<span class="inline">DescribeIndex</span> 查询。</li>
+    <li><strong>AUTOINDEX</strong>：系统按字段类型与规模自动挑选索引类型与参数，链路不变，只是把"选型"自动化。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. 在 Milvus 里，谁负责调度索引构建、谁真正执行构建？</div>
+  <ol class="opts">
+    <li>QueryNode 在加载段时顺便构建索引</li>
+    <li>Proxy 收到请求后直接在本地构建</li>
+    <li>DataCoord 拥有索引元数据与调度（internal/datacoord/index_service.go 的 CreateIndex、index_inspector.go），把每个 sealed 段的构建任务派给一个 worker；worker 实现 workerpb 的 IndexNodeClient 协议执行构建，并不存在独立的 indexnode 进程</li>
+    <li>RootCoord 负责构建所有索引</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：C</strong>。“IndexNodeClient”只是历史遗留的协议名；执行索引构建的是 datanode 上的 worker，没有单独的 indexnode 进程。调度（DataCoord）与执行（worker）分离，正是控制面/数据面分工的延续</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. 一次 CreateIndex 请求之后，索引是如何从“一条声明”变成“可加载的文件”的？</div>
+  <ol class="opts">
+    <li>整张表一次性构建成一个全局索引文件</li>
+    <li>CreateIndex 把索引定义写进元数据；随后每个 sealed 段各派生一个构建任务，worker 读该段 binlog、调 Knowhere 建索引、把索引文件写回对象存储，QueryNode 之后即可加载</li>
+    <li>索引只存在内存里，从不落盘</li>
+    <li>growing 段也会立刻被构建索引</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。索引以“段”为单位构建：只有 sealed（已封口、不可变）段才值得建索引，growing 段仍用暴力扫描（详见第 23 课）。声明—派任务—建文件—可加载，是一条异步流水线</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>本课强调“没有独立的 indexnode 进程，构建跑在实现 IndexNodeClient 协议的 worker 上”。请思考：为什么 Milvus 选择把索引构建做成“由 DataCoord 调度、按段派发给 worker”的异步任务，而不是在写入时同步建索引？这种设计对写入吞吐、资源弹性、以及 auto-index 自动选型分别带来什么好处？（可结合第 12 课 DataCoord、第 23 课构建与加载。）</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+The first four parts nailed the write path: a row enters through the Proxy, is Appended to the WAL, accumulates into a growing segment, is flushed to binlogs, and is later merged tidy by compaction. But up to here, the vectors in those sealed segments are still just <strong>raw data</strong> — to ask "most like which?", you can only compute the distance from the query vector to <strong>every single</strong> stored vector (brute force). With many segments and many vectors, that scan becomes unacceptably slow.
+From here we enter Part 5, <strong>Indexing</strong>: first the <strong>index service</strong> — who decides which segments get an index, who actually builds it, and how the result becomes a "loadable" asset.
+The headline conclusion up front: <strong>index build is scheduled by DataCoord and executed by a worker (a datanode) — there is NO separate indexnode process</strong> (recall the "coordinators schedule, nodes execute" theme from Lessons 9 and 12).
+</p>
+
+<div class="card analogy">
+  <div class="tag">📮 Analogy</div>
+  Remember that library, "one bookshelf = a family of volumes"? The books are all shelved, but if a reader wants "books on vector search," must they walk the shelves one by one? Too slow. An efficient library builds a set of <strong>catalog cards</strong> (an index) for every shelf: sorted by topic and author, so a searcher flips a few cards and goes straight to the target.
+  But the catalog doesn't grow itself. The <strong>head librarian</strong> (DataCoord) watches the whole library's ledger and decides "<strong>which shelves still lack a catalog, and what kind to build</strong>," then hands out tasks; the one who actually <strong>buries themselves in the shelf and writes cards</strong> is an <strong>assistant</strong> (a worker). The head librarian only <strong>schedules and registers</strong>, never copies cards; the assistant only <strong>does the work</strong>, then hands the cards back and registers them in the master catalog.
+  Note: there is <strong>no third "dedicated card-copying department"</strong> — the card-copying is done on the side by the same assistant who usually tends the stacks. Grasp this and you have the skeleton of Milvus's index service.
+</div>
+
+<h2>Why an index service: from brute force to a loadable index</h2>
+<p>Lesson 5 (on ANN) planted the seed: an <strong>exact</strong> nearest-neighbor over high-dimensional vectors must compare against every datum, with cost growing <strong>linearly</strong> with size. A collection may hold hundreds of millions of vectors across hundreds or thousands of sealed segments; a per-row <strong>brute-force</strong> scan simply can't hold up in production.
+An index exists for exactly this: one <strong>offline preprocessing</strong> pass (build a graph, cluster, quantize…) organizes the data into a structure that lets a query <strong>skip most of it</strong>, compressing retrieval from "scan everything" to "look at a small candidate set." The price is that this preprocessing is itself <strong>heavy</strong> — read out a whole segment, run a complex algorithm, write the result back to storage. In other words, an index is a <strong>"pain now, gain later"</strong> bargain: spend extra effort once at build time, and <strong>every subsequent query reaps the benefit</strong>, amortizing that preprocessing cost across countless retrievals.</p>
+
+<p>Precisely because building an index is <strong>heavy and slow</strong>, it can't sit in the write hot path (it would wreck write latency); it must be a <strong>background task</strong>, done asynchronously after data is <strong>sealed (immutable)</strong> — the very same philosophy as last lesson's compaction: <strong>decouple "fast bookkeeping" from "slow tidying."</strong>
+So we need an "<strong>index service</strong>" to answer three questions: <strong>which segments to build for</strong> (schedule), <strong>who builds</strong> (execute), and <strong>how the result is used</strong> (let QueryNode load it). Those three questions are this lesson's through-line.</p>
+
+<p>It's worth making "just how heavy is an index build" concrete. Take the most common graph index, HNSW: to build a graph over hundreds of thousands or millions of vectors in a segment, the algorithm must <strong>repeatedly search each point's neighbors, link edges, and organize layers</strong> — work whose cost grows super-linearly with size. The IVF family must first <strong>cluster</strong> the whole segment's vectors (run k-means) and assign each vector to a bucket; quantized IVF_PQ additionally trains a <strong>codebook</strong>. All of this means a build <strong>eats lots of CPU/memory, reads out the whole segment, and produces sizeable index files</strong>.
+Putting such a heavy job in the write path would make every write wait for a "full-segment recompute," instantly destroying write latency. So Milvus's choice is a foregone conclusion — <strong>writes only land data into segments fast, and index building is left to the background, done slowly on immutable sealed segments</strong>. That is the plain yet hard engineering reason behind "an index must be a background service."</p>
+
+<div class="cols">
+  <div class="col"><h4>No index (brute force)</h4><p>The query vector computes a distance against <strong>every single</strong> stored vector in a segment, cost <span class="mono">O(N)</span> growing linearly with size. More segments, more vectors, slower. Growing segments (not yet indexed) are queried exactly this way — it works, but only for <strong>small data</strong>.</p></div>
+  <div class="col"><h4>With an index (ANN)</h4><p>Vectors are pre-organized into a graph / inverted buckets / quantized codes; a query <strong>probes only a small candidate set</strong>, cost approaching <span class="mono">O(log N)</span> or sublinear. The cost is the heavy one-time build, so it runs in the background on sealed segments.</p></div>
+</div>
+
+<h2>Who owns, who builds: DataCoord schedules + a worker executes</h2>
+<p>This is the point <strong>most easily misremembered</strong>, so nail it down: index build has <strong>no</strong> separate process called "indexnode." Its division of labor matches the main theme of Lesson 12 (DataCoord) and Lesson 17 (DataNode) exactly — <strong>coordinators schedule, nodes execute</strong>.</p>
+
+<p><strong>DataCoord is the brain</strong>: it owns the <strong>index metadata</strong> (which field of which collection has what index, and the state of each segment's index), with code in <span class="mono">internal/datacoord/index_service.go</span> (the outward RPCs such as <span class="inline">CreateIndex</span>), <span class="mono">index_meta.go</span> (metadata), and <span class="mono">index_inspector.go</span> (inspection: find "sealed segments not yet indexed" and emit build tasks). It does <strong>not</strong> read vectors or run algorithms itself.</p>
+
+<p><strong>The worker is the hands</strong>: the one that actually reads a segment's binlogs, calls Knowhere to run the build algorithm, and writes index files back to object storage is a <strong>worker</strong> — in today's architecture, that worker runs on a <strong>datanode</strong> (code in <span class="mono">internal/datanode/index/task_index.go</span>, the <span class="inline">indexBuildTask</span>).
+It implements the gRPC interface <span class="inline">workerpb.IndexNodeClient</span> — <strong>note: despite the "IndexNode" in the interface name, that is only a legacy protocol name and does NOT imply a separate indexnode process</strong>. This dovetails with Lesson 17: streaming writes went to StreamingNode, and the DataNode stepped back to do compaction and index builds.</p>
+
+<p>Inside the worker, one build task is roughly three moves: <strong>read</strong> — pull the segment's vector binlogs out of object storage and assemble them into an in-memory dataset; <strong>build</strong> — hand that dataset to <strong>Knowhere</strong> with the index type and params and let it run the actual algorithm (build a graph / cluster / train a codebook); <strong>write</strong> — serialize Knowhere's output into index files and write them back to object storage, then report the paths to DataCoord. The worker is "just hands": it knows nothing about which segment "should" be built — that decision belongs entirely to DataCoord's inspector. This clean split of "the coordinator decides, the worker computes" is exactly what makes the whole thing scalable: add more workers and more segments build in parallel, with DataCoord still the single brain keeping the books.</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">DataCoord</div><div class="nd">owns index meta · inspects sealed segments · emits build tasks</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">build task queue</div><div class="nd">one task per sealed segment · dispatched to a worker</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">datanode worker</div><div class="nd">implements IndexNodeClient · reads binlogs · calls Knowhere · writes index files</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">write back meta</div><div class="nd">register index-file paths · mark segment "indexed"</div></div>
+</div>
+
+<h2>The index lifecycle: CreateIndex → per-segment build task → index files → loadable</h2>
+<p>Stringing one build <strong>end to end</strong> is the best way to understand the index service. It is four steps, each mapping to a stage in the diagram above:</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>CreateIndex (declare intent)</h4><p class="mono">index_service.go · CreateIndex</p><p>A user declares "build an index" on a <strong>field</strong> (with an index type and params). DataCoord records this <strong>index definition</strong> into metadata — a <strong>collection-level</strong> declaration that has <strong>not</strong> yet computed any segment.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Per-segment build task</h4><p class="mono">index_inspector.go · createIndexForSegment</p><p>The inspector periodically scans: any segment that is <strong>sealed yet not built for this index</strong> gets <strong>one build task</strong>. As many sealed segments as a collection has, that many tasks go out (one per segment).</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Worker builds index files</h4><p class="mono">datanode/index · indexBuildTask</p><p>The worker takes a task: <strong>read the segment's vector binlogs</strong> → call <strong>Knowhere</strong> to build (graph / cluster / quantize) → write the resulting <strong>index files</strong> to object storage (recall Lesson 18's <span class="mono">index_files</span> prefix).</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Register → loadable</h4><p>The worker <strong>writes the index-file paths back to DataCoord's metadata</strong> and the segment is marked "<strong>indexed</strong>." The index is now a <strong>durable asset</strong>; when the collection is loaded, QueryNode can <strong>load</strong> it for ANN (next lesson, and Lesson 23).</p></div></div>
+</div>
+
+<p>One often-missed key in this lifecycle: <strong>CreateIndex is a "declaration," not "built instantly."</strong> After you call CreateIndex, the already-existing sealed segments are built <strong>segment by segment, asynchronously</strong>; and segments produced <strong>later</strong> (from continued writes and flushes) are <strong>auto-built</strong> with the same index by the inspector.
+So "building an index" is not a one-shot action but a <strong>continuously-in-effect policy</strong>: as long as the index definition exists, DataCoord ensures "<strong>every sealed segment eventually gets it</strong>." This also explains why interfaces like <span class="inline">GetIndexState</span> / <span class="inline">DescribeIndex</span> report progress ("built/building/total") — building an index is inherently a <strong>gradually-converging</strong> process.</p>
+
+<h2>Why build "per segment": granularity, failure, and retry</h2>
+<p>Notice a phrase that keeps recurring above: <strong>"one build task per sealed segment."</strong> The index service's scheduling granularity is <strong>not the collection, not the partition, but the segment</strong>. This is no arbitrary choice; it falls straight out of earlier parts: a segment is Milvus's smallest <strong>immutable, independently-processable</strong> unit of data — only a sealed segment (data frozen) is fit for indexing, because the build algorithm needs to see <strong>a fixed, unchanging dataset</strong>; a growing segment is still receiving new rows, so an index built on it would instantly go stale. Hence growing segments are simply <strong>not indexed</strong> and are queried by brute force (a point the next lesson and Lesson 23 re-emphasize).</p>
+
+<p>Per-segment indexing brings three concrete benefits. First, <strong>parallelism</strong>: the build tasks for hundreds or thousands of segments are mutually independent and can be <strong>dispatched at once</strong> across many workers, spreading a large collection's "build" into many small concurrent tasks. Second, <strong>incrementality</strong>: writes keep producing new segments, and the inspector only needs to emit tasks for the <strong>newly-appeared, not-yet-built</strong> segments; already-built ones <strong>need no redo</strong> — the index "grows naturally" with the data. Third, <strong>failure isolation</strong>: if one segment's build task fails (a worker crashed, a binlog read errored), only <strong>that one segment</strong> is affected; DataCoord simply re-dispatches it, without touching other already-built segments.</p>
+
+<div class="cellgroup">
+  <div class="cg-cap">Several sealed segments of one collection, each an independent build task: parallel, incremental, individually retriable on failure</div>
+  <div class="cells">
+    <div class="cell dim"><span class="lab">seg #1</span><span class="q">indexed ✓</span></div>
+    <div class="cell dim"><span class="lab">seg #2</span><span class="q">indexed ✓</span></div>
+    <div class="cell hl"><span class="lab">seg #3</span><span class="q">building…</span></div>
+    <div class="cell sep"><span class="lab">seg #4</span><span class="q">failed→retry</span></div>
+    <div class="cell"><span class="lab">seg #5 (growing)</span><span class="q">no index · brute force</span></div>
+  </div>
+</div>
+
+<p>It is exactly this "<strong>per-segment task + state machine + retry</strong>" mechanism that lets the index service, in a distributed environment of <strong>continuous writes, crashing nodes, and flaky networks</strong>, steadily drive "every segment eventually gets indexed" to completion.
+This is also the root reason DataCoord must <strong>own the index metadata</strong>: it has to <strong>keep books</strong> for every segment — which step this segment reached, which index definition it uses, where its index files live, how many times it failed. Without this ledger, "gradual convergence" under distribution is impossible. Think of <span class="mono">index_meta.go</span> as that "<strong>index ledger</strong>," and <span class="mono">index_inspector.go</span> as the inspector who <strong>keeps reconciling and re-dispatches a task wherever a gap appears</strong>.</p>
+
+<table class="t">
+  <tr><th>Stage</th><th>Who</th><th>Output / state</th></tr>
+  <tr><td><strong>CreateIndex</strong></td><td>Proxy→DataCoord</td><td>write the index definition to metadata (collection-level)</td></tr>
+  <tr><td><strong>Inspect & emit tasks</strong></td><td>DataCoord (inspector)</td><td>each not-yet-built sealed segment → one build task</td></tr>
+  <tr><td><strong>Build</strong></td><td>datanode worker</td><td>read binlogs · call Knowhere · write index files to object storage</td></tr>
+  <tr><td><strong>Register</strong></td><td>worker→DataCoord</td><td>index-file paths into metadata · mark segment "indexed"</td></tr>
+  <tr><td><strong>Load</strong></td><td>QueryNode</td><td>on collection load, read the index into memory / mmap for ANN</td></tr>
+</table>
+
+<p>On <strong>auto-index</strong>: many users don't want to agonize over "HNSW or IVF, and how to tune the params." Milvus offers <strong>AUTOINDEX</strong> — you merely declare "build an index on this field," and the system <strong>auto-picks</strong> a reasonable index type and params by field type and data scale.
+Its essence still runs the exact same chain: CreateIndex declares → inspector emits tasks → worker builds with Knowhere → register as loadable; only the "which index, what params" step shifts from <strong>user-specified</strong> to <strong>system-chosen</strong>. For beginners, AUTOINDEX is the most worry-free default; switch to a concrete type when you want to fine-tune (next lesson dissects each index family).</p>
+
+<p>Let's also <strong>connect ahead</strong> how this "index service" relates to the next two lessons, so you don't memorize them in isolation. This lesson is about "<strong>how the act of building an index is scheduled and executed</strong>" — a <strong>control-flow</strong> view. The next lesson (22) drills into the <strong>Knowhere</strong> library that the worker calls, seeing exactly which <strong>vector-index families</strong> exist (FLAT/IVF/HNSW/DiskANN…), their tradeoffs and params. The lesson after (23) follows the <strong>data flow</strong>, walking the physical path "sealed segment's raw vectors → worker builds → index files to object storage → QueryNode loads into memory or mmap."
+The three are three facets of one thing: <strong>who schedules (this lesson), with what algorithm (Lesson 22), how data flows (Lesson 23)</strong>. Stack them together and you truly understand Milvus indexing.</p>
+
+<p>Finally, a design observation worth savoring: the index service almost <strong>exactly mirrors</strong> compaction's paradigm — both are <strong>scheduled by DataCoord</strong>, both <strong>execute on a datanode worker</strong>, both act only on <strong>immutable sealed segments</strong>, both <strong>write results to object storage</strong> and then <strong>atomically register them into metadata</strong>, and both are <strong>background tasks that don't disturb the write hot path</strong>.
+This is no coincidence but the same <strong>background-maintenance skeleton</strong> Milvus reuses: peel the "slow and heavy, but makes reads faster" work off the foreground and let the coordinator amortize it when the system is idle. Once you understand compaction, you understand the index service <strong>almost for free</strong>; and once you understand this generic skeleton, you hold the key to Milvus's entire "after the write" world.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/datacoord/index_service.go</span><span class="ln">CreateIndex: declare the index definition, accepted by DataCoord (excerpt)</span></div>
+  <pre><span class="cm">// DataCoord's outward RPC: accept the "build an index on a field" declaration, write it to index meta.</span>
+<span class="cm">// Note: this only "registers intent"; the per-segment build is dispatched asynchronously by the inspector to a worker.</span>
+<span class="kw">func</span> (s *Server) <span class="fn">CreateIndex</span>(ctx context.Context, req *indexpb.CreateIndexRequest) (*commonpb.Status, error) {
+    <span class="cm">// health check, param validation, allocate indexID...</span>
+    <span class="cm">// write the index definition to meta; later index_inspector inspects sealed segments and emits per-segment build tasks.</span>
+}</pre>
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: vectors in a sealed segment, if unindexed, can only be <strong>brute-force scanned row by row</strong> (slow). The index service makes "building an index" a <strong>background task</strong> — <strong>DataCoord schedules</strong> (<span class="mono">index_service.go</span>/<span class="mono">index_meta.go</span>/<span class="mono">index_inspector.go</span>: owns metadata, inspects sealed segments, emits <strong>one build task per segment</strong>), and a <strong>datanode worker executes</strong> (<span class="inline">indexBuildTask</span>, implementing <span class="inline">workerpb.IndexNodeClient</span>, with <strong>no separate indexnode process</strong>: read binlogs, call Knowhere, write index files, write back meta). CreateIndex is a <strong>declaration</strong>, not an instant build; new segments are <strong>auto-built</strong>; AUTOINDEX lets the system pick the type and params.
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Why index</strong>: without one, you can only brute-force <span class="mono">O(N)</span> per-row distances; an index trades a heavy offline preprocess for "look at a small candidate set" at query time.</li>
+    <li><strong>Schedule vs execute</strong>: DataCoord owns index metadata and schedules (<span class="inline">CreateIndex</span> in <span class="mono">index_service.go</span>, <span class="mono">index_inspector.go</span>); a datanode worker executes (<span class="inline">indexBuildTask</span>).</li>
+    <li><strong>No indexnode</strong>: the worker implements <span class="inline">workerpb.IndexNodeClient</span>, but that's just a protocol name — the build runs on a datanode; there is <strong>no</strong> separate indexnode process (echoing Lessons 9 and 17).</li>
+    <li><strong>Lifecycle</strong>: CreateIndex (declare) → one build task per sealed segment → worker reads binlogs · calls Knowhere · writes index files → registered, then loadable by QueryNode.</li>
+    <li><strong>Declare, not instant</strong>: existing segments build asynchronously one by one, new sealed segments auto-build; progress is queryable via <span class="inline">GetIndexState</span>/<span class="inline">DescribeIndex</span>.</li>
+    <li><strong>AUTOINDEX</strong>: the system auto-picks index type and params by field type and scale; the chain is unchanged, only the type-selection is automated.</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. In Milvus, who schedules index build and who actually executes it?</div>
+  <ol class="opts">
+    <li>QueryNode builds the index incidentally while loading segments</li>
+    <li>The Proxy builds it locally right after receiving the request</li>
+    <li>DataCoord owns index metadata and scheduling (CreateIndex in internal/datacoord/index_service.go, index_inspector.go), dispatching a per-sealed-segment build task to a worker; the worker executes via the workerpb IndexNodeClient protocol — there is no separate indexnode process</li>
+    <li>RootCoord builds all indexes</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. 'IndexNodeClient' is only a legacy protocol name; the executor is a worker on a datanode, with no separate indexnode process. Splitting scheduling (DataCoord) from execution (worker) continues the control-plane/data-plane division of labor</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. After a CreateIndex request, how does an index go from 'a declaration' to 'loadable files'?</div>
+  <ol class="opts">
+    <li>The whole table is built in one shot into a single global index file</li>
+    <li>CreateIndex records the index definition in metadata; then each sealed segment spawns a build task, the worker reads that segment's binlogs, calls Knowhere to build, writes index files back to object storage, and QueryNode can then load them</li>
+    <li>The index lives only in memory and is never persisted</li>
+    <li>Growing segments also get an index built immediately</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. Indexes are built per segment: only sealed (closed, immutable) segments are worth indexing, growing ones still use brute force (see Lesson 23). Declare → dispatch task → build files → loadable is an asynchronous pipeline</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson stresses 'no separate indexnode process; the build runs on a worker implementing the IndexNodeClient protocol.' Consider: why does Milvus make index build an asynchronous task 'scheduled by DataCoord, dispatched per segment to a worker' instead of building synchronously at write time? What does this design buy for write throughput, resource elasticity, and auto-index type selection? (Tie in Lesson 12 DataCoord and Lesson 23 build-and-load.)</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="20-delete-and-upsert.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">删除与 Upsert</span><span class="lang-en">Delete &amp;amp; upsert</span></div></a><a class="next" href="22-knowhere.html"><div class="dir"><span class="lang-zh">下一课 →</span><span class="lang-en">Next →</span></div><div class="ttl"><span class="lang-zh">Knowhere 向量索引</span><span class="lang-en">Knowhere vector indexes</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>
