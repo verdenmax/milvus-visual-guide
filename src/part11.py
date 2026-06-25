@@ -436,3 +436,166 @@ Every system has a <strong>capacity ceiling</strong>. If writes outrun flushing,
 </div>
 """,
 }
+
+LESSON_50 = {
+    "zh": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+作为全书的收尾，这一课用一次<strong>巡礼</strong>，把几块"<strong>生产里常用、但前面没专门讲</strong>"的特性串起来过一遍：<strong>RBAC</strong>（权限）、<strong>资源组</strong>（节点隔离）、<strong>数据库</strong>（多租户）、<strong>迭代器</strong>（翻页取数）、<strong>TTL</strong>（数据过期）、<strong>Function</strong>（服务端处理）。每块只讲清"<strong>是什么、解决什么、住在哪</strong>"——它们大多不属核心引擎，但会在你把 Milvus 真正用进业务时<strong>一一登场</strong>。把它们认全，你的 Milvus 地图就<strong>从内核一直补到了生产边缘</strong>。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 类比</div>
+  把这些特性想成一栋<strong>写字楼的物业服务</strong>。<strong>门禁系统</strong>决定谁能进哪层、能开哪扇门（<strong>RBAC</strong>）；把楼层<strong>分区租给不同公司</strong>、互不打扰（<strong>资源组</strong>）；每家公司有<strong>独立的工商注册</strong>、账目分开（<strong>数据库 / 多租户</strong>）；档案室支持<strong>一页页翻阅</strong>而不必一次全搬出来（<strong>迭代器</strong>）；过期文件<strong>到点自动销毁</strong>（<strong>TTL</strong>）；前台能<strong>代收快递并就地加工</strong>（<strong>Function</strong>，如把文本就地转成向量）。
+  这些都不是"盖楼"（核心引擎）的事，而是"<strong>让楼真正能营业、能租给很多家、还安全省心</strong>"的物业能力。一栋楼盖得再好，没有这些，也租不出去、管不起来。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观视角</div>
+  一句话：<strong>RBAC(用户/角色/权限，<span class="inline">rootcoord</span>) 管"谁能做什么"；资源组(<span class="inline">querycoordv2/meta/resource_group.go</span>)把 QueryNode 分组隔离；数据库(<span class="mono">CreateDatabase</span>)在集合之上再加一层多租户；搜索/查询迭代器翻页取大结果集；Collection TTL(<span class="mono">CollectionTTLFieldKey</span>)让数据到点自动过期；Function 模块(<span class="inline">util/function</span>，BM25 / 文本嵌入)在服务端就地把数据加工成向量</strong>。这些是把引擎变成"可运营服务"的那层。
+</div>
+
+<h2>安全：RBAC（用户 / 角色 / 权限）</h2>
+<p>一个真实的库不可能"谁连上都能为所欲为"。Milvus 提供完整的 <strong>RBAC（基于角色的访问控制）</strong>：先有<strong>用户</strong>（带凭证），把<strong>权限</strong>（建集合、插入、搜索、删除……）打包成<strong>角色</strong>，再把角色<strong>授予用户</strong>。这样管权限就不用"一个用户一个用户地配"，而是"<strong>定义几种角色、按角色发牌</strong>"——典型的<strong>读者</strong>角色只能搜不能写、<strong>管理员</strong>角色无所不能。相关能力在 <span class="inline">rootcoord</span>（<span class="mono">CreateRole</span> / <span class="mono">OperatePrivilege</span> / <span class="mono">CreateCredential</span>，见 <span class="inline">ddl_callbacks_rbac_credential.go</span>），还支持<strong>权限组（privilege group）</strong>把一批权限打包、以及内置的 <strong>public 角色</strong>。</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">权限</div><div class="nd">建集合/插入/搜索/删除…</div></div>
+  <div class="arrow">打包成</div>
+  <div class="node hl"><div class="nt">角色</div><div class="nd">如 reader（只读）/ admin（全权）</div></div>
+  <div class="arrow">授予</div>
+  <div class="node"><div class="nt">用户</div><div class="nd">带凭证、按角色拿到权限</div></div>
+</div>
+<p>这里有个值得点出的细节：<strong>权限元数据也是元数据</strong>，所以它走的还是第 14 课那套"<strong>协调器 → Catalog → etcd</strong>"的存取，并通过 DDL 回调在集群里一致地生效——你不必为 RBAC 另学一套机制，它就嵌在你已经懂的那张元数据图里。一句话：<strong>RBAC 回答"谁能对什么做什么"</strong>，是任何多人、多业务共用一个集群时绕不开的第一道门。</p>
+
+<p>这里值得多想一层：<strong>为什么是"基于角色"，而不是直接给用户配权限？</strong>设想一个有几百号人、几十种权限的系统，如果"<strong>每个用户单独配一串权限</strong>"，那光是维护"谁有哪些权限"就会变成一场噩梦——来个新人要手动勾一遍，权限要改一项得逐个用户改。角色这层<strong>中间抽象</strong>把这件事解了套：权限先归拢成<strong>有限的几种角色</strong>（读者、写入者、管理员…），用户只管<strong>领角色</strong>。于是"<strong>一类人该有什么权限</strong>"只需在角色上定义一次，新人入职<strong>发个角色</strong>即可，权限调整<strong>改角色、所有持该角色的人同步生效</strong>。这正是"<strong>多对多关系，用一个中间层解耦</strong>"的经典手法——和你在数据库设计、甚至代码架构里反复见到的"加一层中间抽象"是同一种智慧。RBAC 不是 Milvus 的发明，而是它<strong>遵循了业界成熟的权限模型</strong>，让你已有的运维经验能直接迁移过来。</p>
+
+<h2>隔离与多租户：资源组 + 数据库</h2>
+<p>当很多业务<strong>共用一个集群</strong>时，两个问题立刻冒出来：<strong>算力会不会互相抢？数据会不会互相看见？</strong>Milvus 用两件工具分别回答。<strong>资源组（Resource Group）</strong>解决"<strong>算力隔离</strong>"：它把 <strong>QueryNode 分成若干组</strong>（<span class="inline">querycoordv2/meta/resource_group.go</span>，每组有 <span class="mono">request/limit</span> 的容量配置），让不同业务的集合<strong>加载到不同的节点组</strong>上——这样 A 业务的大查询<strong>压不到</strong> B 业务的节点。需要时还能 <span class="mono">TransferNode</span> 在组间挪节点，弹性调配。</p>
+
+<p>资源组这件事，背后是个很现实的<strong>"吵闹邻居"问题</strong>。设想没有资源组：A 业务和 B 业务的集合<strong>混在同一批 QueryNode</strong> 上，某天 A 跑了一个超大范围的批量检索，把这些节点的 CPU 和内存吃光——结果<strong>B 业务的在线查询也跟着变慢甚至超时</strong>，明明 B 什么都没做错。这就是"吵闹邻居"：<strong>共享资源时，一个租户的行为会殃及另一个</strong>。资源组的解法很直接：<strong>给关键业务划一块专属的节点</strong>，把它和别人的负载<strong>物理隔开</strong>。这和第 13 课 QueryCoord"把段分配到节点"是同一层的事，只不过资源组多加了一道"<strong>这些节点只服务这个组</strong>"的约束。理解了它，你就明白为什么严肃的多租户部署几乎都要用资源组——<strong>隔离不是奢侈，而是多租户共存的前提</strong>。</p>
+<p><strong>数据库（Database）</strong>则解决"<strong>命名与数据隔离</strong>"：它在<strong>集合之上又加了一层</strong>。回忆第 6 课的层级是"集合 → 分区 → 段"；数据库把它再往上扩一层成"<strong>数据库 → 集合 → 分区 → 段</strong>"。不同租户用不同数据库，<strong>集合名互不冲突、权限可按库授予</strong>（<span class="mono">CreateDatabase</span>，默认库 <span class="mono">default</span>）。<strong>资源组管"算力分给谁"、数据库管"数据归谁"</strong>，两者配合，才让一个 Milvus 集群能<strong>体面地服务很多家租户</strong>。下面这张分层图把多租户的层级摆清。</p>
+
+<div class="layers">
+  <div class="layer l-main"><div class="lh"><span class="badge">数据库</span><span class="name">Database（多租户的最外层）</span></div><div class="ld">不同租户用不同库；集合名互不冲突、权限/配额可按库管(默认库 default)</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">集合·分区</span><span class="name">Collection → Partition（第 6 课）</span></div><div class="ld">一个库下的表与切分；段(Segment)是其下的物理单位</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">资源组</span><span class="name">Resource Group（算力隔离，正交一层）</span></div><div class="ld">把 QueryNode 分组，让不同业务的加载/查询落在不同节点组，互不抢算力</div></div>
+</div>
+
+<h2>取数的便利：迭代器 与 TTL</h2>
+<p>两个小而实用的特性，专治"大结果"和"老数据"。<strong>迭代器（Search / Query Iterator）</strong>解决"<strong>结果太多、一次取不完</strong>"：普通搜索返回 topK，但有时你要<strong>遍历海量匹配</strong>（比如导出所有满足条件的行）。迭代器让你像<strong>翻页</strong>一样分批取——取一批、记住位置、再取下一批，而不必把几百万条结果<strong>一次性塞进内存</strong>。它在 Proxy 的搜索/查询路径里实现，是把"检索"从"只取最像的几条"扩展到"<strong>可遍历的数据访问</strong>"的关键。</p>
+<p><strong>TTL（Time To Live，存活时间）</strong>解决"<strong>老数据该自动清走</strong>"：给集合设一个 TTL（<span class="mono">CollectionTTLFieldKey</span> / <span class="mono">collection.ttl.seconds</span>），<strong>超过这个寿命的数据会被自动判定为过期</strong>、在后续的 compaction（第 19 课）里被清理掉，查询时也不再可见。这对"<strong>只关心最近一段时间</strong>"的场景（日志、会话、时效性内容）极其省心——你不用写定时任务手动删旧数据，<strong>设个 TTL，系统替你忘掉过期的</strong>。它复用的正是第 19、20 课你已经懂的 compaction 与"按条件剔除可见行"的机制：TTL 不过是给"该不该看见这行"的判断，多加了一条"<strong>它过期了吗</strong>"。</p>
+
+<p>把迭代器和 TTL 放在一起看，会发现它们其实是<strong>同一种成熟度的体现</strong>：一个能用进生产的数据库，光"<strong>存得下、搜得到</strong>"还不够，还得照顾<strong>真实数据的全生命周期与全访问模式</strong>。数据会<strong>变老</strong>——所以要有 TTL 帮你自动清理，而不是任由旧数据无限堆积、拖慢查询、吃光磁盘。结果会<strong>很多</strong>——所以要有迭代器让你能<strong>从容地分批取走</strong>，而不是被"一次只给 topK"卡住、或被"一次全给"撑爆内存。这些特性单看都不起眼，却恰恰是<strong>区分"能跑的 demo"和"扛得住生产的系统"</strong>的地方。Milvus 把这些"<strong>不性感但必要</strong>"的能力一点点补齐，正说明它是个<strong>认真面向生产</strong>的项目——而你能读懂它们各自解决什么问题、复用了哪些你已经学过的机制（compaction、可见性、Proxy 查询路径），也说明你对 Milvus 的理解，已经从"<strong>它怎么工作</strong>"长到了"<strong>怎么把它用好</strong>"。</p>
+
+<h2>服务端处理：Function 模块</h2>
+<p>最后一站，是一个让 Milvus 越来越"<strong>开箱即用</strong>"的方向：<strong>Function（函数）模块</strong>（<span class="inline">internal/util/function</span>）。传统用法里，"<strong>把文本变成向量</strong>"这件事是在<strong>客户端</strong>做的——你先用一个模型把文本转成 embedding，再把向量插进 Milvus。Function 模块把这一步<strong>搬进了服务端</strong>：你直接插入<strong>原始文本</strong>，Milvus 用配置好的 function <strong>就地把它加工成向量</strong>再存。</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">插入原始文本</div><div class="nd">客户端只发文本，不发向量</div></div>
+  <div class="arrow">服务端 function</div>
+  <div class="node hl"><div class="nt">BM25 / 嵌入模型</div><div class="nd">就地把文本→稀疏/稠密向量</div></div>
+  <div class="arrow">入库</div>
+  <div class="node"><div class="nt">向量字段</div><div class="nd">写检索用同一套向量化逻辑</div></div>
+</div>
+<p>典型的两类：<strong>BM25 function</strong>（<span class="mono">FunctionType_BM25</span>）把文本就地转成<strong>稀疏向量</strong>（正是第 24、48 课全文检索/混合检索要用的那种）；<strong>文本嵌入 function</strong>则在服务端调用嵌入模型，把文本转成<strong>稠密向量</strong>。这带来的好处是<strong>简化客户端</strong>：业务只管插原始数据，"<strong>怎么向量化</strong>"交给服务端统一处理，既少了客户端的模型依赖，又保证了<strong>写入和检索用的是同一套向量化逻辑</strong>（否则两边模型不一致，检索质量会悄悄崩坏）。这也呼应了第 48 课——Milvus 正越来越多地把"<strong>检索增强</strong>"该有的能力（混合检索、重排、服务端嵌入）<strong>内建进来</strong>，让它从一个"<strong>纯向量存取引擎</strong>"长成一个"<strong>开箱即用的检索平台</strong>"。</p>
+
+<p>Function 模块还藏着一个不易察觉、却极重要的<strong>正确性保障</strong>：写入和检索<strong>用同一套向量化逻辑</strong>。想想看，如果向量化在客户端做，你很容易踩这个坑——<strong>写入时用模型 A 把文档转成向量入库，检索时却用模型 B（或同模型的不同版本）把查询转成向量</strong>，两套向量"不在同一个空间里"，算出来的距离<strong>毫无意义</strong>，检索质量会<strong>悄无声息地崩坏</strong>，还极难排查（代码不报错、只是结果变差）。把向量化收进服务端的 Function，就<strong>从源头上杜绝</strong>了这种不一致：写也好、查也好，都走<strong>同一个 function</strong>，保证落在同一个向量空间。这是个很好的例子，说明"<strong>把易错的事统一收口</strong>"的价值——和第 40 课"配置收口 paramtable"、第 44 课"错误收口 merr"是同一种工程审美：<strong>让正确成为默认，让易错无处发生</strong>。</p>
+
+<table class="t">
+  <tr><th>特性</th><th>解决什么</th><th>住在哪</th></tr>
+  <tr><td><strong>RBAC</strong></td><td>谁能对什么做什么（安全）</td><td class="mono">rootcoord（角色/权限/凭证）</td></tr>
+  <tr><td><strong>资源组</strong></td><td>算力隔离：业务间不抢节点</td><td class="mono">querycoordv2/meta/resource_group</td></tr>
+  <tr><td><strong>数据库</strong></td><td>多租户：命名与数据隔离</td><td class="mono">rootcoord（集合之上一层）</td></tr>
+  <tr><td><strong>迭代器</strong></td><td>翻页遍历海量结果</td><td>Proxy 搜索/查询路径</td></tr>
+  <tr><td><strong>TTL</strong></td><td>老数据到点自动过期清理</td><td>compaction + 可见性(第 19/20 课)</td></tr>
+  <tr><td><strong>Function</strong></td><td>服务端就地把文本变向量</td><td class="mono">util/function（BM25/嵌入）</td></tr>
+</table>
+
+<p style="margin-top:1rem">巡礼到此，整份《Milvus 图解教程》——从"什么是向量数据库"，到写入/查询/索引/流式/C++ 内核，到 API、可观测、配置、部署、贡献，再到这一部分的进阶特性——<strong>就真正画上句号了</strong>。你手里这张 Milvus 地图，已经<strong>从最核心的引擎，一直铺到了生产运营的边缘</strong>。愿它陪你把一个庞大的系统，看成一幅可以理解、可以动手、也可以参与的图景。<strong>去用它、去改它、去贡献它吧。</strong></p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>RBAC</strong>：用户→角色→权限(rootcoord)，按角色发牌管"谁能做什么"；权限元数据走第 14 课的元数据存取，含权限组与内置 public 角色。</li>
+    <li><strong>隔离/多租户</strong>：资源组(<span class="inline">querycoordv2/meta/resource_group</span>)把 QueryNode 分组隔离算力；数据库(<span class="mono">CreateDatabase</span>)在集合之上加一层、隔离命名与数据。算力归谁 + 数据归谁。</li>
+    <li><strong>迭代器 / TTL</strong>：迭代器像翻页一样分批遍历海量结果(不一次塞内存)；Collection TTL 让老数据到点自动过期、随 compaction 清理(复用第 19/20 课)。</li>
+    <li><strong>Function</strong>：服务端就地把文本加工成向量——BM25→稀疏向量、嵌入模型→稠密向量；简化客户端、保证写检索向量化一致。Milvus 正长成开箱即用的检索平台。</li>
+  </ul>
+</div>
+""",
+    "en": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+To close the guide, this lesson is a <strong>quick tour</strong> of several features that are "<strong>common in production but not covered before</strong>": <strong>RBAC</strong> (permissions), <strong>resource groups</strong> (node isolation), <strong>databases</strong> (multi-tenancy), <strong>iterators</strong> (paging), <strong>TTL</strong> (data expiry), and <strong>Function</strong> (server-side processing). Each gets a "<strong>what it is, what it solves, where it lives</strong>" — most aren't core engine, but they show up one by one as you put Milvus to real use. Learn them all and your Milvus map <strong>extends from the kernel all the way to the production edge</strong>.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of these as an <strong>office building's facility services</strong>. An <strong>access-control system</strong> decides who enters which floor and opens which door (<strong>RBAC</strong>); floors are <strong>zoned and rented to different companies</strong> without interference (<strong>resource groups</strong>); each company has its own <strong>business registration</strong> with separate books (<strong>databases / multi-tenancy</strong>); the archive room lets you <strong>browse page by page</strong> rather than haul everything out at once (<strong>iterators</strong>); expired files are <strong>auto-shredded on schedule</strong> (<strong>TTL</strong>); and the front desk can <strong>receive and process deliveries on the spot</strong> (<strong>Function</strong>, e.g. turning text into vectors right there).
+  None of this is "constructing the building" (the core engine); it's the facility power that <strong>makes the building actually rentable to many tenants, safely and effortlessly</strong>. However well built, without these a building can't be leased or managed.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>RBAC (users/roles/privileges, <span class="inline">rootcoord</span>) governs "who can do what"; resource groups (<span class="inline">querycoordv2/meta/resource_group.go</span>) partition QueryNodes for isolation; databases (<span class="mono">CreateDatabase</span>) add a multi-tenancy layer above collections; search/query iterators page through large result sets; Collection TTL (<span class="mono">CollectionTTLFieldKey</span>) auto-expires old data; the Function module (<span class="inline">util/function</span>, BM25 / text embedding) turns data into vectors server-side</strong>. This is the layer that turns an engine into an operable service.
+</div>
+
+<h2>Security: RBAC (users / roles / privileges)</h2>
+<p>A real database can't let "anyone who connects do anything". Milvus offers full <strong>RBAC (role-based access control)</strong>: there are <strong>users</strong> (with credentials), <strong>privileges</strong> (create collection, insert, search, delete…) are bundled into <strong>roles</strong>, and roles are <strong>granted to users</strong>. So managing permissions isn't "configure user by user" but "<strong>define a few roles and deal them out</strong>" — a typical <strong>reader</strong> role can only search, an <strong>admin</strong> role can do everything. The capabilities live in <span class="inline">rootcoord</span> (<span class="mono">CreateRole</span> / <span class="mono">OperatePrivilege</span> / <span class="mono">CreateCredential</span>, see <span class="inline">ddl_callbacks_rbac_credential.go</span>), with <strong>privilege groups</strong> bundling a set of privileges and a built-in <strong>public role</strong>.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">privileges</div><div class="nd">create coll/insert/search/delete…</div></div>
+  <div class="arrow">bundled into</div>
+  <div class="node hl"><div class="nt">role</div><div class="nd">e.g. reader (read-only) / admin (full)</div></div>
+  <div class="arrow">granted to</div>
+  <div class="node"><div class="nt">user</div><div class="nd">with credentials, gets privileges by role</div></div>
+</div>
+<p>A worthwhile detail: <strong>permission metadata is metadata too</strong>, so it travels the same Lesson 14 path of "<strong>coordinator → Catalog → etcd</strong>" and takes effect consistently across the cluster via DDL callbacks — you needn't learn a separate mechanism for RBAC; it's embedded in the metadata picture you already know. In a line: <strong>RBAC answers "who can do what to what"</strong>, the first gate you can't skip whenever many people or workloads share one cluster.</p>
+
+<h2>Isolation &amp; multi-tenancy: resource groups + databases</h2>
+<p>When many workloads <strong>share one cluster</strong>, two questions arise immediately: <strong>will they fight over compute? will they see each other's data?</strong> Milvus answers each with a tool. <strong>Resource Groups</strong> solve <strong>compute isolation</strong>: they <strong>partition QueryNodes into groups</strong> (<span class="inline">querycoordv2/meta/resource_group.go</span>, each with a <span class="mono">request/limit</span> capacity config), so different workloads' collections <strong>load onto different node groups</strong> — workload A's big query <strong>can't crush</strong> workload B's nodes. When needed, <span class="mono">TransferNode</span> moves nodes between groups for elastic allocation.</p>
+<p><strong>Databases</strong> solve <strong>naming and data isolation</strong>: they add <strong>another layer above collections</strong>. Recall Lesson 6's hierarchy "collection → partition → segment"; databases extend it upward into "<strong>database → collection → partition → segment</strong>". Different tenants use different databases, so <strong>collection names don't clash and permissions can be granted per database</strong> (<span class="mono">CreateDatabase</span>, default DB <span class="mono">default</span>). <strong>Resource groups govern "who gets compute", databases govern "whose data is whose"</strong>; together they let one Milvus cluster <strong>serve many tenants gracefully</strong>. The layered diagram lays out the multi-tenancy hierarchy.</p>
+
+<div class="layers">
+  <div class="layer l-main"><div class="lh"><span class="badge">database</span><span class="name">Database (the outermost multi-tenancy layer)</span></div><div class="ld">different tenants use different DBs; collection names don't clash, permissions/quota per DB (default DB: default)</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">coll·part</span><span class="name">Collection → Partition (Lesson 6)</span></div><div class="ld">tables and partitioning within a DB; Segment is the physical unit below</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">res group</span><span class="name">Resource Group (compute isolation, an orthogonal layer)</span></div><div class="ld">partition QueryNodes so different workloads' loads/queries land on different node groups, no compute contention</div></div>
+</div>
+
+<h2>Convenient retrieval: iterators &amp; TTL</h2>
+<p>Two small, practical features for "big results" and "old data". <strong>Iterators (Search / Query Iterator)</strong> solve "<strong>too many results to fetch at once</strong>": a normal search returns topK, but sometimes you must <strong>traverse a huge match set</strong> (e.g. export all qualifying rows). Iterators let you fetch in batches like <strong>turning pages</strong> — take a batch, remember the position, take the next — without <strong>cramming millions of results into memory at once</strong>. Implemented in the Proxy search/query path, they're key to extending "search" from "fetch just the most similar few" to "<strong>traversable data access</strong>".</p>
+<p><strong>TTL (Time To Live)</strong> solves "<strong>old data should auto-clear</strong>": set a TTL on a collection (<span class="mono">CollectionTTLFieldKey</span> / <span class="mono">collection.ttl.seconds</span>), and <strong>data past that lifespan is automatically judged expired</strong>, cleaned up in later compaction (Lesson 19), and no longer visible to queries. For "<strong>only the recent window matters</strong>" cases (logs, sessions, time-sensitive content) it's a huge relief — no cron job to delete old data manually; <strong>set a TTL and the system forgets the expired for you</strong>. It reuses exactly the compaction and "exclude rows by condition from visibility" mechanisms you learned in Lessons 19–20: TTL just adds one more clause to "should this row be visible" — "<strong>has it expired?</strong>".</p>
+
+<h2>Server-side processing: the Function module</h2>
+<p>The last stop is a direction making Milvus increasingly "<strong>batteries-included</strong>": the <strong>Function module</strong> (<span class="inline">internal/util/function</span>). Traditionally, "<strong>turn text into vectors</strong>" happens on the <strong>client</strong> — you first run a model to embed the text, then insert the vectors into Milvus. The Function module <strong>moves this step server-side</strong>: you insert <strong>raw text</strong> directly, and Milvus uses a configured function to <strong>turn it into vectors on the spot</strong> before storing.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">insert raw text</div><div class="nd">client sends text, not vectors</div></div>
+  <div class="arrow">server-side function</div>
+  <div class="node hl"><div class="nt">BM25 / embedding model</div><div class="nd">text → sparse/dense vector on the spot</div></div>
+  <div class="arrow">store</div>
+  <div class="node"><div class="nt">vector field</div><div class="nd">write &amp; search share one vectorization</div></div>
+</div>
+<p>Two typical kinds: a <strong>BM25 function</strong> (<span class="mono">FunctionType_BM25</span>) turns text into <strong>sparse vectors</strong> (exactly what Lessons 24 and 48's full-text/hybrid search need); a <strong>text-embedding function</strong> calls an embedding model server-side to turn text into <strong>dense vectors</strong>. The benefit is a <strong>simpler client</strong>: the workload just inserts raw data, and "<strong>how to vectorize</strong>" is handled uniformly server-side — fewer client model dependencies, and a guarantee that <strong>writes and searches use the same vectorization logic</strong> (else mismatched models on the two sides quietly wreck search quality). This echoes Lesson 48 — Milvus increasingly <strong>builds in</strong> the capabilities retrieval-augmentation needs (hybrid search, reranking, server-side embedding), growing from a "<strong>pure vector store</strong>" into a "<strong>batteries-included retrieval platform</strong>".</p>
+
+<table class="t">
+  <tr><th>Feature</th><th>What it solves</th><th>Where it lives</th></tr>
+  <tr><td><strong>RBAC</strong></td><td>who can do what to what (security)</td><td class="mono">rootcoord (roles/privileges/creds)</td></tr>
+  <tr><td><strong>Resource group</strong></td><td>compute isolation: workloads don't fight for nodes</td><td class="mono">querycoordv2/meta/resource_group</td></tr>
+  <tr><td><strong>Database</strong></td><td>multi-tenancy: naming &amp; data isolation</td><td class="mono">rootcoord (a layer above collections)</td></tr>
+  <tr><td><strong>Iterator</strong></td><td>page through huge result sets</td><td>Proxy search/query path</td></tr>
+  <tr><td><strong>TTL</strong></td><td>old data auto-expires &amp; is cleaned</td><td>compaction + visibility (L19/20)</td></tr>
+  <tr><td><strong>Function</strong></td><td>turn text into vectors server-side</td><td class="mono">util/function (BM25/embedding)</td></tr>
+</table>
+
+<p style="margin-top:1rem">With this tour, the whole <strong>Milvus Visual Guide</strong> — from "what is a vector database", through write/query/indexing/streaming/the C++ core, through API, observability, config, deployment, contributing, to this part's advanced features — <strong>truly comes to a close</strong>. The Milvus map in your hands now <strong>stretches from the innermost engine all the way to the production edge</strong>. May it help you see a vast system as a landscape you can understand, work with, and join. <strong>Go use it, change it, contribute to it.</strong></p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>RBAC</strong>: users→roles→privileges (rootcoord), dealing out by role to govern "who can do what"; permission metadata travels Lesson 14's metadata path, with privilege groups and a built-in public role.</li>
+    <li><strong>Isolation/multi-tenancy</strong>: resource groups (<span class="inline">querycoordv2/meta/resource_group</span>) partition QueryNodes for compute isolation; databases (<span class="mono">CreateDatabase</span>) add a layer above collections for naming/data isolation. Who gets compute + whose data is whose.</li>
+    <li><strong>Iterators / TTL</strong>: iterators page through huge result sets (no cramming memory); Collection TTL auto-expires old data, cleaned by compaction (reusing L19/20).</li>
+    <li><strong>Function</strong>: vectorize text server-side — BM25→sparse, embedding model→dense; simpler clients, consistent write/search vectorization. Milvus is growing into a batteries-included retrieval platform.</li>
+  </ul>
+</div>
+""",
+}

@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 49 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 50 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
@@ -377,6 +377,7 @@ details[open] > summary { list-style: none; }
   <li>Bulk import: the second write path</li>
   <li>Hybrid search & reranking</li>
   <li>Quota, rate-limiting & backpressure</li>
+  <li>Advanced features tour</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -9205,6 +9206,133 @@ Every system has a <strong>capacity ceiling</strong>. If writes outrun flushing,
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
     <li>This lesson says good self-protection is 'not a rigid wall but a rein that tightens smoothly with pressure'. Please: (1) describe QuotaCenter's 'collect→compute→push' loop in your own words, and why rate decisions must sit at a center with a global view (tie to Lesson 9's control plane). (2) Explain why 'two brakes' are needed — what goes wrong with only throttle, or only deny? (3) ErrServiceRateLimit is designed as 'retriable (System)' not 'non-retriable (Input)' — what does that mean for client behavior, and how does it echo Lesson 44's merr Input/System split?</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Advanced features tour</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+To close the guide, this lesson is a <strong>quick tour</strong> of several features that are "<strong>common in production but not covered before</strong>": <strong>RBAC</strong> (permissions), <strong>resource groups</strong> (node isolation), <strong>databases</strong> (multi-tenancy), <strong>iterators</strong> (paging), <strong>TTL</strong> (data expiry), and <strong>Function</strong> (server-side processing). Each gets a "<strong>what it is, what it solves, where it lives</strong>" — most aren't core engine, but they show up one by one as you put Milvus to real use. Learn them all and your Milvus map <strong>extends from the kernel all the way to the production edge</strong>.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of these as an <strong>office building's facility services</strong>. An <strong>access-control system</strong> decides who enters which floor and opens which door (<strong>RBAC</strong>); floors are <strong>zoned and rented to different companies</strong> without interference (<strong>resource groups</strong>); each company has its own <strong>business registration</strong> with separate books (<strong>databases / multi-tenancy</strong>); the archive room lets you <strong>browse page by page</strong> rather than haul everything out at once (<strong>iterators</strong>); expired files are <strong>auto-shredded on schedule</strong> (<strong>TTL</strong>); and the front desk can <strong>receive and process deliveries on the spot</strong> (<strong>Function</strong>, e.g. turning text into vectors right there).
+  None of this is "constructing the building" (the core engine); it's the facility power that <strong>makes the building actually rentable to many tenants, safely and effortlessly</strong>. However well built, without these a building can't be leased or managed.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>RBAC (users/roles/privileges, <span class="inline">rootcoord</span>) governs "who can do what"; resource groups (<span class="inline">querycoordv2/meta/resource_group.go</span>) partition QueryNodes for isolation; databases (<span class="mono">CreateDatabase</span>) add a multi-tenancy layer above collections; search/query iterators page through large result sets; Collection TTL (<span class="mono">CollectionTTLFieldKey</span>) auto-expires old data; the Function module (<span class="inline">util/function</span>, BM25 / text embedding) turns data into vectors server-side</strong>. This is the layer that turns an engine into an operable service.
+</div>
+
+<h2>Security: RBAC (users / roles / privileges)</h2>
+<p>A real database can't let "anyone who connects do anything". Milvus offers full <strong>RBAC (role-based access control)</strong>: there are <strong>users</strong> (with credentials), <strong>privileges</strong> (create collection, insert, search, delete…) are bundled into <strong>roles</strong>, and roles are <strong>granted to users</strong>. So managing permissions isn't "configure user by user" but "<strong>define a few roles and deal them out</strong>" — a typical <strong>reader</strong> role can only search, an <strong>admin</strong> role can do everything. The capabilities live in <span class="inline">rootcoord</span> (<span class="mono">CreateRole</span> / <span class="mono">OperatePrivilege</span> / <span class="mono">CreateCredential</span>, see <span class="inline">ddl_callbacks_rbac_credential.go</span>), with <strong>privilege groups</strong> bundling a set of privileges and a built-in <strong>public role</strong>.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">privileges</div><div class="nd">create coll/insert/search/delete…</div></div>
+  <div class="arrow">bundled into</div>
+  <div class="node hl"><div class="nt">role</div><div class="nd">e.g. reader (read-only) / admin (full)</div></div>
+  <div class="arrow">granted to</div>
+  <div class="node"><div class="nt">user</div><div class="nd">with credentials, gets privileges by role</div></div>
+</div>
+<p>A worthwhile detail: <strong>permission metadata is metadata too</strong>, so it travels the same Lesson 14 path of "<strong>coordinator → Catalog → etcd</strong>" and takes effect consistently across the cluster via DDL callbacks — you needn't learn a separate mechanism for RBAC; it's embedded in the metadata picture you already know. In a line: <strong>RBAC answers "who can do what to what"</strong>, the first gate you can't skip whenever many people or workloads share one cluster.</p>
+
+<h2>Isolation &amp; multi-tenancy: resource groups + databases</h2>
+<p>When many workloads <strong>share one cluster</strong>, two questions arise immediately: <strong>will they fight over compute? will they see each other's data?</strong> Milvus answers each with a tool. <strong>Resource Groups</strong> solve <strong>compute isolation</strong>: they <strong>partition QueryNodes into groups</strong> (<span class="inline">querycoordv2/meta/resource_group.go</span>, each with a <span class="mono">request/limit</span> capacity config), so different workloads' collections <strong>load onto different node groups</strong> — workload A's big query <strong>can't crush</strong> workload B's nodes. When needed, <span class="mono">TransferNode</span> moves nodes between groups for elastic allocation.</p>
+<p><strong>Databases</strong> solve <strong>naming and data isolation</strong>: they add <strong>another layer above collections</strong>. Recall Lesson 6's hierarchy "collection → partition → segment"; databases extend it upward into "<strong>database → collection → partition → segment</strong>". Different tenants use different databases, so <strong>collection names don't clash and permissions can be granted per database</strong> (<span class="mono">CreateDatabase</span>, default DB <span class="mono">default</span>). <strong>Resource groups govern "who gets compute", databases govern "whose data is whose"</strong>; together they let one Milvus cluster <strong>serve many tenants gracefully</strong>. The layered diagram lays out the multi-tenancy hierarchy.</p>
+
+<div class="layers">
+  <div class="layer l-main"><div class="lh"><span class="badge">database</span><span class="name">Database (the outermost multi-tenancy layer)</span></div><div class="ld">different tenants use different DBs; collection names don't clash, permissions/quota per DB (default DB: default)</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">coll·part</span><span class="name">Collection → Partition (Lesson 6)</span></div><div class="ld">tables and partitioning within a DB; Segment is the physical unit below</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">res group</span><span class="name">Resource Group (compute isolation, an orthogonal layer)</span></div><div class="ld">partition QueryNodes so different workloads' loads/queries land on different node groups, no compute contention</div></div>
+</div>
+
+<h2>Convenient retrieval: iterators &amp; TTL</h2>
+<p>Two small, practical features for "big results" and "old data". <strong>Iterators (Search / Query Iterator)</strong> solve "<strong>too many results to fetch at once</strong>": a normal search returns topK, but sometimes you must <strong>traverse a huge match set</strong> (e.g. export all qualifying rows). Iterators let you fetch in batches like <strong>turning pages</strong> — take a batch, remember the position, take the next — without <strong>cramming millions of results into memory at once</strong>. Implemented in the Proxy search/query path, they're key to extending "search" from "fetch just the most similar few" to "<strong>traversable data access</strong>".</p>
+<p><strong>TTL (Time To Live)</strong> solves "<strong>old data should auto-clear</strong>": set a TTL on a collection (<span class="mono">CollectionTTLFieldKey</span> / <span class="mono">collection.ttl.seconds</span>), and <strong>data past that lifespan is automatically judged expired</strong>, cleaned up in later compaction (Lesson 19), and no longer visible to queries. For "<strong>only the recent window matters</strong>" cases (logs, sessions, time-sensitive content) it's a huge relief — no cron job to delete old data manually; <strong>set a TTL and the system forgets the expired for you</strong>. It reuses exactly the compaction and "exclude rows by condition from visibility" mechanisms you learned in Lessons 19–20: TTL just adds one more clause to "should this row be visible" — "<strong>has it expired?</strong>".</p>
+
+<h2>Server-side processing: the Function module</h2>
+<p>The last stop is a direction making Milvus increasingly "<strong>batteries-included</strong>": the <strong>Function module</strong> (<span class="inline">internal/util/function</span>). Traditionally, "<strong>turn text into vectors</strong>" happens on the <strong>client</strong> — you first run a model to embed the text, then insert the vectors into Milvus. The Function module <strong>moves this step server-side</strong>: you insert <strong>raw text</strong> directly, and Milvus uses a configured function to <strong>turn it into vectors on the spot</strong> before storing.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">insert raw text</div><div class="nd">client sends text, not vectors</div></div>
+  <div class="arrow">server-side function</div>
+  <div class="node hl"><div class="nt">BM25 / embedding model</div><div class="nd">text → sparse/dense vector on the spot</div></div>
+  <div class="arrow">store</div>
+  <div class="node"><div class="nt">vector field</div><div class="nd">write &amp; search share one vectorization</div></div>
+</div>
+<p>Two typical kinds: a <strong>BM25 function</strong> (<span class="mono">FunctionType_BM25</span>) turns text into <strong>sparse vectors</strong> (exactly what Lessons 24 and 48's full-text/hybrid search need); a <strong>text-embedding function</strong> calls an embedding model server-side to turn text into <strong>dense vectors</strong>. The benefit is a <strong>simpler client</strong>: the workload just inserts raw data, and "<strong>how to vectorize</strong>" is handled uniformly server-side — fewer client model dependencies, and a guarantee that <strong>writes and searches use the same vectorization logic</strong> (else mismatched models on the two sides quietly wreck search quality). This echoes Lesson 48 — Milvus increasingly <strong>builds in</strong> the capabilities retrieval-augmentation needs (hybrid search, reranking, server-side embedding), growing from a "<strong>pure vector store</strong>" into a "<strong>batteries-included retrieval platform</strong>".</p>
+
+<table class="t">
+  <tr><th>Feature</th><th>What it solves</th><th>Where it lives</th></tr>
+  <tr><td><strong>RBAC</strong></td><td>who can do what to what (security)</td><td class="mono">rootcoord (roles/privileges/creds)</td></tr>
+  <tr><td><strong>Resource group</strong></td><td>compute isolation: workloads don't fight for nodes</td><td class="mono">querycoordv2/meta/resource_group</td></tr>
+  <tr><td><strong>Database</strong></td><td>multi-tenancy: naming &amp; data isolation</td><td class="mono">rootcoord (a layer above collections)</td></tr>
+  <tr><td><strong>Iterator</strong></td><td>page through huge result sets</td><td>Proxy search/query path</td></tr>
+  <tr><td><strong>TTL</strong></td><td>old data auto-expires &amp; is cleaned</td><td>compaction + visibility (L19/20)</td></tr>
+  <tr><td><strong>Function</strong></td><td>turn text into vectors server-side</td><td class="mono">util/function (BM25/embedding)</td></tr>
+</table>
+
+<p style="margin-top:1rem">With this tour, the whole <strong>Milvus Visual Guide</strong> — from "what is a vector database", through write/query/indexing/streaming/the C++ core, through API, observability, config, deployment, contributing, to this part's advanced features — <strong>truly comes to a close</strong>. The Milvus map in your hands now <strong>stretches from the innermost engine all the way to the production edge</strong>. May it help you see a vast system as a landscape you can understand, work with, and join. <strong>Go use it, change it, contribute to it.</strong></p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>RBAC</strong>: users→roles→privileges (rootcoord), dealing out by role to govern "who can do what"; permission metadata travels Lesson 14's metadata path, with privilege groups and a built-in public role.</li>
+    <li><strong>Isolation/multi-tenancy</strong>: resource groups (<span class="inline">querycoordv2/meta/resource_group</span>) partition QueryNodes for compute isolation; databases (<span class="mono">CreateDatabase</span>) add a layer above collections for naming/data isolation. Who gets compute + whose data is whose.</li>
+    <li><strong>Iterators / TTL</strong>: iterators page through huge result sets (no cramming memory); Collection TTL auto-expires old data, cleaned by compaction (reusing L19/20).</li>
+    <li><strong>Function</strong>: vectorize text server-side — BM25→sparse, embedding model→dense; simpler clients, consistent write/search vectorization. Milvus is growing into a batteries-included retrieval platform.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. When tenants share one Milvus cluster, what do resource groups and databases each solve?</div>
+  <ol class="opts">
+    <li>Resource groups manage data, databases manage compute</li>
+    <li>They're identical, just aliases</li>
+    <li>Both are mere config with no real isolation</li>
+    <li>Resource groups solve 'compute isolation' (partition QueryNodes so workloads don't fight for nodes); databases solve 'naming & data isolation' (a layer above collections, so collection names don't clash and permissions can be granted per DB)</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. A shared cluster raises two questions: do they fight for compute, and can they see each other's data. Resource groups (querycoordv2/meta/resource_group.go) split QueryNodes into groups (each with request/limit capacity), loading different workloads' collections onto different node groups so A's big query can't crush B's nodes (the 'noisy neighbor' problem), with TransferNode to move nodes when needed. Databases (CreateDatabase, default 'default') add a 'database' layer above 'collection→partition→segment', so tenants use different DBs with non-clashing names and per-DB permissions/quota. Resource groups govern 'who gets compute', databases 'whose data is whose'.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. About RBAC, iterators, and TTL, which statement is correct?</div>
+  <ol class="opts">
+    <li>RBAC must configure every privilege per user, no roles</li>
+    <li>RBAC deals out by 'user→role→privilege' (permission metadata via L14's path); iterators page through huge result sets in batches; TTL auto-expires old data, cleaned by compaction (reusing L19/20)</li>
+    <li>Iterators require cramming all results into memory at once</li>
+    <li>TTL requires you to write a cron job to delete old data</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. RBAC: bundle privileges into roles, grant to users (rootcoord's CreateRole/OperatePrivilege/CreateCredential), dealing out by role rather than per-user; permission is metadata too, via coordinator→Catalog→etcd (L14); with privilege groups and a built-in public role. The role middle-layer decouples a 'many-to-many' relation — a classic move. Iterators (Proxy search/query path) page through large result sets in batches, no need to cram memory. TTL (CollectionTTLFieldKey/collection.ttl.seconds) auto-expires over-aged data, cleaned in compaction, invisible to queries — just one more 'has it expired?' clause on visibility, reusing L19/20, no manual deletion.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Milvus's Function module (e.g. BM25, text embedding) moves 'vectorization' server-side. The biggest benefit?</div>
+  <ol class="opts">
+    <li>Remove the need for vector fields</li>
+    <li>Simpler clients (insert raw text only) and a guarantee that writes and searches use the same vectorization — avoiding mismatched models silently wrecking search quality</li>
+    <li>Purely to add one more API</li>
+    <li>Make vectors take less disk</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. Traditionally the client vectorizes text then inserts; the Function module (internal/util/function) moves this server-side: insert raw text, and a configured function vectorizes on the spot — BM25 (FunctionType_BM25)→sparse vectors (for L24/48 full-text/hybrid), text embedding→dense vectors. One benefit is simpler clients (fewer model deps); the more crucial one is correctness: writes and searches go through the same function, guaranteeing the same vector space. Otherwise write-with-model-A, search-with-model-B yields incomparable vectors, meaningless distances, and silently wrecked search quality that's hard to debug. Same aesthetic as L40/44's 'funnel error-prone things to one place'.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson toured six production features as 'the layer that turns an engine into an operable service'. Please: (1) imagine deploying Milvus for three mutually-distrusting teams in your company to share — how would you combine RBAC / resource groups / databases for 'each minds their own, no interference'? (2) Give one scenario suited to TTL and one suited to iterators, and say which previously-learned mechanisms each reuses. (3) Having read the whole guide, what still lies between 'understanding how Milvus works' and 'being able to use/improve it well'? Which of those gaps did this part (advanced topics) fill?</li>
   </ul>
 </div>
 </div>

@@ -3156,6 +3156,67 @@ QUIZZES = {
             },
         ],
     },
+    "50-advanced-features-tour.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "多租户共用一个 Milvus 集群时，资源组和数据库各解决什么问题？",
+                    "en": "When tenants share one Milvus cluster, what do resource groups and databases each solve?",
+                },
+                "opts": [
+                    {"zh": "资源组解决“算力隔离”(把 QueryNode 分组，业务间不抢节点)；数据库解决“命名与数据隔离”(在集合之上加一层，集合名不冲突、权限可按库授予)", "en": "Resource groups solve 'compute isolation' (partition QueryNodes so workloads don't fight for nodes); databases solve 'naming & data isolation' (a layer above collections, so collection names don't clash and permissions can be granted per DB)"},
+                    {"zh": "两者完全相同，只是别名", "en": "They're identical, just aliases"},
+                    {"zh": "资源组管数据、数据库管算力", "en": "Resource groups manage data, databases manage compute"},
+                    {"zh": "两者都只是配置项、没有实际隔离作用", "en": "Both are mere config with no real isolation"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "共用集群有两个问题：算力会不会互抢、数据会不会互相看见。资源组(querycoordv2/meta/resource_group.go)把 QueryNode 分成若干组(各有 request/limit 容量)，不同业务的集合加载到不同节点组，A 的大查询压不到 B 的节点(解“吵闹邻居”)，必要时 TransferNode 挪节点。数据库(CreateDatabase，默认 default)在“集合→分区→段”之上加一层“数据库”，不同租户用不同库、集合名不冲突、权限/配额按库管。资源组管“算力分给谁”、数据库管“数据归谁”。",
+                    "en": "A shared cluster raises two questions: do they fight for compute, and can they see each other's data. Resource groups (querycoordv2/meta/resource_group.go) split QueryNodes into groups (each with request/limit capacity), loading different workloads' collections onto different node groups so A's big query can't crush B's nodes (the 'noisy neighbor' problem), with TransferNode to move nodes when needed. Databases (CreateDatabase, default 'default') add a 'database' layer above 'collection→partition→segment', so tenants use different DBs with non-clashing names and per-DB permissions/quota. Resource groups govern 'who gets compute', databases 'whose data is whose'.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "关于 RBAC、迭代器、TTL，下面哪个说法正确？",
+                    "en": "About RBAC, iterators, and TTL, which statement is correct?",
+                },
+                "opts": [
+                    {"zh": "RBAC 用“用户→角色→权限”按角色发牌(权限元数据走第14课元数据存取)；迭代器像翻页一样分批遍历海量结果；TTL 让老数据到点自动过期、随 compaction 清理(复用第19/20课)", "en": "RBAC deals out by 'user→role→privilege' (permission metadata via L14's path); iterators page through huge result sets in batches; TTL auto-expires old data, cleaned by compaction (reusing L19/20)"},
+                    {"zh": "RBAC 必须为每个用户单独配每条权限，不能用角色", "en": "RBAC must configure every privilege per user, no roles"},
+                    {"zh": "迭代器要求一次性把所有结果塞进内存", "en": "Iterators require cramming all results into memory at once"},
+                    {"zh": "TTL 需要你写定时任务手动删除旧数据", "en": "TTL requires you to write a cron job to delete old data"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "RBAC：把权限打包成角色、授予用户(rootcoord 的 CreateRole/OperatePrivilege/CreateCredential)，按角色发牌而非逐用户配；权限也是元数据，走协调器→Catalog→etcd(第14课)；有权限组与内置 public 角色。用角色这层中间抽象解耦“多对多”，是经典手法。迭代器(Proxy 搜索/查询路径)分批翻页取大结果集，不必一次塞内存。TTL(CollectionTTLFieldKey/collection.ttl.seconds)让超寿命数据自动判过期、在 compaction 里清理、查询不可见——只是给“可见性判断”多加一条“过期了吗”，复用第19/20课，无需手动删。",
+                    "en": "RBAC: bundle privileges into roles, grant to users (rootcoord's CreateRole/OperatePrivilege/CreateCredential), dealing out by role rather than per-user; permission is metadata too, via coordinator→Catalog→etcd (L14); with privilege groups and a built-in public role. The role middle-layer decouples a 'many-to-many' relation — a classic move. Iterators (Proxy search/query path) page through large result sets in batches, no need to cram memory. TTL (CollectionTTLFieldKey/collection.ttl.seconds) auto-expires over-aged data, cleaned in compaction, invisible to queries — just one more 'has it expired?' clause on visibility, reusing L19/20, no manual deletion.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "Milvus 的 Function 模块(如 BM25、文本嵌入)把“向量化”搬到服务端，最大的好处是什么？",
+                    "en": "Milvus's Function module (e.g. BM25, text embedding) moves 'vectorization' server-side. The biggest benefit?",
+                },
+                "opts": [
+                    {"zh": "简化客户端(只插原始文本)，且保证写入与检索用同一套向量化逻辑——避免两边模型不一致导致检索质量悄悄崩坏", "en": "Simpler clients (insert raw text only) and a guarantee that writes and searches use the same vectorization — avoiding mismatched models silently wrecking search quality"},
+                    {"zh": "让向量占用的磁盘更小", "en": "Make vectors take less disk"},
+                    {"zh": "让 Milvus 不再需要向量字段", "en": "Remove the need for vector fields"},
+                    {"zh": "纯粹为了多一个 API", "en": "Purely to add one more API"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "传统做法在客户端把文本转向量再插入；Function 模块(internal/util/function)把这步搬进服务端：直接插原始文本，由配置的 function 就地向量化——BM25(FunctionType_BM25)→稀疏向量(第24/48课全文/混合检索用)、文本嵌入→稠密向量。好处一是简化客户端(少了模型依赖)；好处二也是更关键的正确性保障：写和查都走同一个 function，保证落在同一向量空间。否则写用模型 A、查用模型 B，两套向量不可比、距离无意义、检索质量会无声崩坏且极难排查。这与第40/44课“把易错的事统一收口”同一种审美。",
+                    "en": "Traditionally the client vectorizes text then inserts; the Function module (internal/util/function) moves this server-side: insert raw text, and a configured function vectorizes on the spot — BM25 (FunctionType_BM25)→sparse vectors (for L24/48 full-text/hybrid), text embedding→dense vectors. One benefit is simpler clients (fewer model deps); the more crucial one is correctness: writes and searches go through the same function, guaranteeing the same vector space. Otherwise write-with-model-A, search-with-model-B yields incomparable vectors, meaningless distances, and silently wrecked search quality that's hard to debug. Same aesthetic as L40/44's 'funnel error-prone things to one place'.",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "这一课巡礼了六个生产特性，并说它们是“把引擎变成可运营服务”的那层。请：(1) 设想你要把 Milvus 部署给公司里三个互不信任的业务团队共用，你会怎么组合使用 RBAC / 资源组 / 数据库来做到“各管各的、互不干扰”？(2) 举一个适合用 TTL 的场景和一个适合用迭代器的场景，并说明它们各自复用了你前面学过的哪些机制。(3) 通读全书后，你认为“理解 Milvus 如何工作”和“能把 Milvus 用好/改好”之间，还差哪些东西？这一部分(进阶专题)补上了其中的哪些？",
+                "en": "This lesson toured six production features as 'the layer that turns an engine into an operable service'. Please: (1) imagine deploying Milvus for three mutually-distrusting teams in your company to share — how would you combine RBAC / resource groups / databases for 'each minds their own, no interference'? (2) Give one scenario suited to TTL and one suited to iterators, and say which previously-learned mechanisms each reuses. (3) Having read the whole guide, what still lies between 'understanding how Milvus works' and 'being able to use/improve it well'? Which of those gaps did this part (advanced topics) fill?",
+            },
+        ],
+    },
 }
 
 

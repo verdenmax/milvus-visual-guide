@@ -145,6 +145,8 @@ PAGES = [
      "第十一部分 · 进阶专题（选读）", "Part 11 · Advanced topics (optional)"),
     ("49-quota-and-rate-limiting.html", "配额、限流与背压", "Quota, rate-limiting & backpressure",
      "第十一部分 · 进阶专题（选读）", "Part 11 · Advanced topics (optional)"),
+    ("50-advanced-features-tour.html", "进阶特性巡礼", "Advanced features tour",
+     "第十一部分 · 进阶专题（选读）", "Part 11 · Advanced topics (optional)"),
 ]
 
 
@@ -684,6 +686,8 @@ SUBTITLES = {
                                      "multiple vector fields · HybridSearch with N SubReqs run in parallel · fusion rankers: RRF (by rank)/WeightedRanker/model reranking · fused mainly at the Proxy"),
     "49-quota-and-rate-limiting.html": ("自我保护(背压) · QuotaCenter(RootCoord)收指标→算限速→下发 Proxy · 两档刹车：限速 vs forceDeny · RateLimitInterceptor 回可重试 ErrServiceRateLimit",
                                         "self-protection (backpressure) · QuotaCenter (RootCoord) collects metrics→computes limits→pushes to Proxies · two brakes: throttle vs forceDeny · RateLimitInterceptor returns retriable ErrServiceRateLimit"),
+    "50-advanced-features-tour.html": ("巡礼六大生产特性：RBAC(权限) · 资源组(算力隔离) · 数据库(多租户) · 迭代器(翻页) · TTL(自动过期) · Function(服务端向量化)",
+                                       "a tour of six production features: RBAC (permissions) · resource groups (compute isolation) · databases (multi-tenancy) · iterators (paging) · TTL (auto-expiry) · Function (server-side vectorization)"),
 }
 
 
