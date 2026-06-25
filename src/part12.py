@@ -1060,3 +1060,261 @@ instinctively dodge the deep-paging trap when designing "fetch many results" fea
 </ul></div>
 """,
 }
+
+
+LESSON_55 = {
+    "zh": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+为什么打开 Milvus 的源码，会看到 Go 和 C++ 两套代码并存，中间还夹着一层叫 cgo 的桥？这不是历史包袱，而是一个深思熟虑的设计：
+<strong>把最吃性能的计算交给 C++，把分布式编排交给 Go，让两种语言各自做最擅长的事</strong>。这一课讲的，就是这条"两种语言、一套系统"的主线。</p>
+
+<div class="card analogy"><div class="tag">🏎️ 打个比方</div>
+<p>想象一支赛车队：车子的<strong>引擎</strong>是手工打造、压榨到极限的精密机器（C++ 内核），而包裹引擎的<strong>底盘、座舱、电子系统</strong>则要舒适、好维护、方便改装（Go 编排）。
+你不会用打造引擎的方式去做座椅，也不会用做座椅的方式去造引擎——<strong>每一部分都用最适合它的工艺</strong>。Milvus 就是这样一台车：
+C++ 的引擎负责"算得飞快"，Go 的底盘负责"调度得灵活"，cgo 则是把两者拧在一起的传动轴。</p></div>
+
+<h2>目标：为什么要用两种语言</h2>
+<p>一个分布式向量数据库，身上其实压着两类<strong>性质完全不同</strong>的活儿。一类是<strong>极致的数值计算</strong>：在上亿条向量里算距离、走索引、做归并——
+这要榨干 CPU 的 SIMD 指令、用上 GPU、精细管理内存布局，对性能锱铢必较。另一类是<strong>复杂的分布式编排</strong>：节点之间收发 RPC、协调者调度任务、管理元数据与一致性——
+这要的是高并发下的开发效率、成熟的网络生态、不容易写错的并发模型。<strong>没有哪一种语言能把这两件事都做到最好</strong>：纯 Go 跑不出手工调优的数值内核的速度，
+纯 C++ 写起分布式编排又笨重、易错、迭代慢。Milvus 的选择很务实——<strong>哪类活儿，就用哪种语言</strong>。</p>
+
+<p>如果硬要"一种语言走到底"，会怎样？假设全用 C++：你确实能把数值算到飞快，但写起协调者之间的 RPC、goroutine 那样的高并发调度、动态的元数据管理，
+会被手动内存管理、繁琐的并发原语、漫长的编译反复拖累，迭代速度慢到难以演进一个活跃的分布式系统。反过来全用 Go：分布式逻辑写得飞快，
+但一到"在亿级向量上算距离"，垃圾回收的停顿、缺乏对 SIMD/GPU 的贴身控制，会让性能差出一个数量级。<strong>两难之下，Milvus 干脆不二选一，
+而是让两种语言在各自的主场作战。</strong></p>
+
+<div class="card macro"><div class="tag">🗺️ 大图景</div>
+<p>把系统按"语言"分层：上层是 <strong>Go</strong> 的世界——协调者、各类节点、RPC、调度、元数据；下层是 <strong>C++</strong> 的世界——segcore 内核与 Knowhere 索引库，
+承包所有最重的计算；中间一层薄薄的 <strong>cgo</strong> 桥把两者连起来；还点缀着一点 <strong>Rust</strong>（tantivy 全文索引）。前面学过的每一个"快"，几乎都落在 C++ 那层；
+每一个"调度、协调、容错"，几乎都落在 Go 那层。</p></div>
+
+<div class="layers">
+  <div class="layer l-app"><div class="lh"><span class="badge">Go</span><span class="name">编排层：协调者 / 节点 / RPC / 调度</span></div><div class="ld">分布式逻辑、并发、元数据——开发效率优先（第 9-13 课）</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">cgo</span><span class="name">语言桥（薄而关键）</span></div><div class="ld">粗粒度、零拷贝地把调用送进内核，并带上下文（第 34 课）</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">C++</span><span class="name">内核层：segcore + Knowhere</span></div><div class="ld">过滤 / 检索 / 归并 / 列式 / SIMD / GPU——性能优先（第 22/27/34 课）</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">Rust</span><span class="name">tantivy 全文索引</span></div><div class="ld">BM25 全文，被 C++ 调用（第 24 课）</div></div>
+</div>
+
+<h2>热路径在 C++：把最重的算到极致</h2>
+<p>哪些活儿被划进 C++ 内核？答案是<strong>一切最吃性能的计算</strong>。QueryNode 加载段之后，每次检索都经 cgo 调进 <strong>segcore</strong>：由 expr/exec 做标量过滤、
+由 index 模块走 ANN 检索、由 reduce 收敛出段内 topK（第 27、28、29 课全在这一层）。而真正的向量索引算法（HNSW、IVF、PQ……）则来自专门的 <strong>Knowhere</strong> 库
+（它统一封装了 Faiss、HNSWlib、DiskANN、cuVS 等，第 22 课）。为什么非 C++ 不可？因为这一层要做的事——<strong>精细的内存布局、列式分块、SIMD 向量化、GPU 加速</strong>——
+都需要贴着硬件编程，而 C++ 正是这种"榨干机器"的语言。把段的数据布局、距离计算、索引类型这些<strong>最关键的数据结构与算法只实现一次</strong>，
+查询时用它、建索引时也用它，这正是 Milvus "快"的底层来源。</p>
+
+<p>这里还有一个常被忽略的妙处：C++ 内核<strong>同时服务"查询"和"建索引"两条路径</strong>（第 34 课）。查询时，QueryNode 调进来做过滤、检索、归并；
+建索引时，建索引的 worker 也调进来，把一个段的原始向量交给 Knowhere 做成索引。换句话说，无论"读"还是"建索引"，最重的那部分计算都落在
+<strong>同一套 C++ 内核</strong>里——关键的数据结构与算法只实现一次、两边复用，既省事、又不会出现"两套代码算得不一致"的隐患。
+把易变、专门的算法收进 Knowhere，把稳定的系统骨架留在 Go，是另一层"让专业的归专业"。</p>
+
+<p>那"贴着硬件编程"到底意味着什么？举几个具体的：把向量按<strong>列式</strong>摆放，让一次距离计算能连续读取内存、对缓存友好；
+用 <strong>SIMD</strong> 指令一条指令同时算多个维度的乘加；把热数据按 <strong>mmap</strong> 摊在内存里、冷数据留在磁盘；需要时再把整批向量丢上 <strong>GPU</strong> 并行。
+这些手段，每一个都要求对内存布局和指令集有精细的掌控——这恰恰是 C++（以及它背后成熟的数值计算生态）的看家本领，也是 Go 这类带垃圾回收、抽象层更高的语言难以企及的。</p>
+
+<h2>编排在 Go：把分布式做得灵活</h2>
+<p>那 Go 负责什么？<strong>把这台机器组织成一个集群</strong>。协调者（rootcoord / datacoord / querycoord）做调度、定序、管元数据；各类节点
+（proxy / querynode / datanode / streamingnode）收发请求、消费日志、加载段（第 9-13 课）。这些活儿的共同点是：<strong>并发多、网络重、要快速迭代、还要容错</strong>。
+Go 在这里如鱼得水——goroutine 让高并发代码写起来简单，gRPC 生态成熟，垃圾回收省去手动内存管理的心智负担，编译快、还能部署成一个二进制（第 42 课）。
+如果硬要用 C++ 写这一层，开发效率会断崖式下降、并发 bug 会层出不穷。<strong>把分布式逻辑交给 Go，等于把"人写代码的效率"也当成一种要优化的资源。</strong></p>
+
+<p>具体到代码体验，这种分工的好处立竿见影。Go 的 goroutine 让"同时处理成千上万个连接、并发消费多个日志分片"这类代码写起来几乎是顺手的事，
+而在 C++ 里实现等价的并发，往往要小心翼翼地玩线程池、锁和回调，bug 还防不胜防。垃圾回收虽然带来一点停顿，但它把"谁该释放这块内存"这个分布式系统里最容易出错的问题直接消解掉了。
+再加上一条命令编译、产物是单个静态二进制——部署、灰度、回滚都简单。<strong>这些"不起眼的开发效率"，累加起来就是一个能持续快速演进的系统。</strong></p>
+
+<div class="flow">
+  <div class="node"><div class="nt">QueryNode（Go）</div><div class="nd">收到检索、整批参数</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">cgo 桥</div><div class="nd">一次粗粒度调用 · 零拷贝</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">segcore（C++）</div><div class="nd">批量算几千条向量</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">返回（Go）</div><div class="nd">拿回段内 topK</div></div>
+</div>
+
+<h2>桥要薄：cgo 的纪律</h2>
+<p>两种语言之间的那座桥（cgo）不是免费的。每一次跨语言调用都有<strong>固定开销</strong>（栈切换、参数编排），而且 Go 的内存和 C++ 的内存<strong>互不认识</strong>，
+长期持有对方的指针并不安全。所以 Milvus 给 cgo 立了铁律：<strong>粗粒度调用、零拷贝传数据</strong>——别一行一次地调，而是把<strong>一整段的检索打包成一次调用</strong>，
+让 C++ 一口气算完几千条向量再返回；数据靠共享内存或直接传指针、避免来回拷贝（比如 mmap 的数据就直接被 C++ 读那块映射区）。把"跨桥次数"压到最少、
+把"每次过桥的负载"做到最大，正是用好 cgo 的关键，也是为什么第 29 课强调"批量检索（大 nq）划算"——批越大，那点固定开销就摊得越薄。这座桥还不只传数据，
+也传<strong>上下文</strong>：trace、超时、错误码都要跟着过去，跨语言的检索才不会在可观测性上"掉线"。</p>
+
+<p>反过来看，如果违反了这条纪律会怎样？设想有人图省事，把检索写成"每比对一条向量就过一次 cgo 桥"——那么算一亿条向量，就要过一亿次桥，
+每次那点固定开销累加起来，足以把性能拖垮到不可用。这正是"边界设计"成为性能隐形战场的原因：真正决定快慢的，往往不是某个算法，
+而是<strong>你有没有把跨语言、跨网络、跨进程的边界设计成"少次数、大批量"</strong>。Milvus 在 cgo 这道边界上反复强调粗粒度与零拷贝，本质就是在守护这条性能生命线。</p>
+
+<p>内存模型的割裂也值得多说一句。Go 有垃圾回收、会移动对象，C++ 手动管理、对象地址稳定——两边的指针不能随便交给对方长期持有，否则 GC 一动，
+C++ 手里的指针就悬空了。所以 cgo 边界上传数据，要么拷贝一份过去（小数据可以，大数据太贵），要么用 C++ 这边分配、双方都能稳定访问的内存
+（比如 mmap 区、或专门的缓冲区）。理解了这层约束，你就明白为什么 Milvus 的内核接口里，除了"查询参数"和"结果"，还总夹着一些不起眼的句柄、缓冲区和状态码——
+它们正是让两套运行时安全协作的黏合剂。</p>
+
+<h2>代价与取舍</h2>
+<p>两种语言一套系统，代价主要有两块。其一，<strong>那座桥的开销与约束</strong>：cgo 调用有固定成本、内存模型割裂，逼着你把接口设计成"粗粒度、零拷贝、批量"——
+这是一种持续的设计纪律，稍不注意就会让性能在边界处悄悄漏掉。其二，<strong>构建更复杂</strong>：要先用 conan/cmake 编出 C++ 库，再用 cgo 链接、编出 Go 二进制，
+两段式构建（第 42 课）比纯 Go 项目门槛高得多。但换来的回报，是任何单一语言都给不了的：<strong>C++ 那层榨出了硬件的极限性能，Go 那层换来了分布式的开发效率与迭代速度</strong>，
+还能在合适处引入 Rust（tantivy）这样更现代的工具。一句话：<strong>语言只是工具、不是信仰；让每一层都用最趁手的工具，正是 Milvus 既快又好演进的底层智慧。</strong></p>
+
+<p>顺便回应一个常见的问题：既然追求极致性能，为什么内核不用 Rust？答案还是"历史与生态"。Milvus 起步时，向量检索成熟的内核库——尤其是 Knowhere/Faiss 这一脉——
+和各种 GPU 计算工具链，几乎都是 C++ 的世界；用 C++ 写内核，能<strong>直接复用这些高性能积木</strong>，而不必重造轮子。后来 Milvus 也确实引入了一点 Rust
+（第 24 课的 tantivy 全文索引就是 Rust 写、再包给 C++ 调用），说明它并不排斥更现代的语言——<strong>用什么、用在哪，只取决于哪个生态最成熟、哪种迁移最划算</strong>。
+这正是"工具不是信仰"的最好注脚。</p>
+
+<p>把这一课放回整个第十二部分来看，它和前几课其实是同一种智慧的不同侧面：日志即数据，是让"协作"收敛到一份共享日志；存算分离，是让"状态"收敛到共享存储；
+而两种语言一套系统，是让"实现"各归其位、各用所长。它们共同指向一个朴素却深刻的工程原则——<strong>把复杂系统拆成边界清晰、各司其职的部分，再用尽量薄的接口把它们连起来</strong>。
+读懂了这一点，你看 Milvus 就不再是一堆零件，而是一套贯通的设计哲学。</p>
+
+<div class="card key"><div class="tag">📌 本课要点</div>
+<ul>
+  <li><strong>两类活儿</strong>：极致数值计算（算距离 / 索引 / 归并）vs 复杂分布式编排（RPC / 调度 / 元数据），没有单一语言能都做到最好。</li>
+  <li><strong>热路径在 C++</strong>：segcore + Knowhere 承包过滤 / 检索 / 归并 + 列式 / SIMD / GPU，关键算法只实现一次。</li>
+  <li><strong>编排在 Go</strong>：协调者与节点做调度、网络、容错——把"人写代码的效率"也当成一种资源来优化。</li>
+  <li><strong>cgo 要薄</strong>：粗粒度、零拷贝、批量过桥，还要带上 trace / 超时 / 错误码等上下文；批越大固定开销摊越薄。</li>
+  <li><strong>取舍</strong>：代价是桥的开销 + 两段式构建；回报是"硬件极限性能 + 分布式开发效率"的双赢，语言是工具不是信仰。</li>
+</ul></div>
+""",
+    "en": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Why does opening Milvus's source show Go and C++ side by side, with a layer called cgo wedged between? Not legacy baggage, but a deliberate
+design: <strong>give the most performance-critical computation to C++, give distributed orchestration to Go, and let each language do what it's
+best at</strong>. This lesson is about that "two languages, one system" throughline.</p>
+
+<div class="card analogy"><div class="tag">🏎️ An analogy</div>
+<p>Picture a racing team: the car's <strong>engine</strong> is a hand-built, squeezed-to-the-limit precision machine (the C++ kernel), while the
+<strong>chassis, cockpit, and electronics</strong> wrapping it must be comfortable, maintainable, easy to modify (the Go orchestration). You
+wouldn't build the seats the way you build the engine, nor build the engine the way you build the seats — <strong>each part uses the craft that
+suits it</strong>. Milvus is exactly such a car: the C++ engine handles "compute blazingly fast", the Go chassis handles "schedule flexibly", and
+cgo is the driveshaft bolting the two together.</p></div>
+
+<h2>The goal: why two languages</h2>
+<p>A distributed vector database actually carries two kinds of work of <strong>utterly different nature</strong>. One is <strong>extreme numeric
+computation</strong>: computing distances, walking indexes, merging over hundreds of millions of vectors — squeezing the CPU's SIMD, using the
+GPU, finely managing memory layout, every cycle counting. The other is <strong>complex distributed orchestration</strong>: nodes exchanging RPCs,
+coordinators scheduling tasks, managing metadata and consistency — wanting development velocity under high concurrency, a mature networking
+ecosystem, a concurrency model that's hard to get wrong. <strong>No single language does both best</strong>: pure Go can't match a hand-tuned
+numeric kernel's speed, and pure C++ makes distributed orchestration clumsy, error-prone, slow to iterate. Milvus's choice is pragmatic —
+<strong>whichever kind of work, use whichever language</strong>.</p>
+
+<p>What if you forced "one language all the way"? Say all C++: you'd indeed compute numerics blazingly fast, but writing inter-coordinator RPC,
+goroutine-style high-concurrency scheduling, and dynamic metadata management would be dragged down again and again by manual memory management,
+fiddly concurrency primitives, and long compiles, iterating too slowly to evolve a living distributed system. Conversely, all Go: distributed
+logic flies, but the moment you "compute distances over hundreds of millions of vectors", GC pauses and the lack of close control over SIMD/GPU
+put performance an order of magnitude behind. <strong>Caught between the two, Milvus simply refuses to choose, letting each language fight on its
+home turf.</strong></p>
+
+<div class="card macro"><div class="tag">🗺️ The big picture</div>
+<p>Layer the system by "language": the upper world is <strong>Go</strong> — coordinators, the various nodes, RPC, scheduling, metadata; the lower
+world is <strong>C++</strong> — the segcore kernel and the Knowhere index library, taking on all the heaviest computation; a thin <strong>cgo</strong>
+bridge in the middle joins them; with a dash of <strong>Rust</strong> (the tantivy full-text index). Almost every "fast" you've learned lands in
+the C++ tier; almost every "schedule, coordinate, tolerate faults" lands in the Go tier.</p></div>
+
+<div class="layers">
+  <div class="layer l-app"><div class="lh"><span class="badge">Go</span><span class="name">orchestration: coordinators / nodes / RPC / scheduling</span></div><div class="ld">distributed logic, concurrency, metadata — dev velocity first (L9-13)</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">cgo</span><span class="name">the language bridge (thin but critical)</span></div><div class="ld">push calls into the kernel coarse-grained, zero-copy, carrying context (L34)</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">C++</span><span class="name">kernel: segcore + Knowhere</span></div><div class="ld">filter / search / reduce / columnar / SIMD / GPU — performance first (L22/27/34)</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">Rust</span><span class="name">tantivy full-text index</span></div><div class="ld">BM25 full-text, called by C++ (L24)</div></div>
+</div>
+
+<h2>The hot path in C++: compute the heaviest to the limit</h2>
+<p>Which work is drawn into the C++ kernel? All the most performance-critical computation. After a QueryNode loads a segment, every search crosses
+cgo into <strong>segcore</strong>: expr/exec does scalar filtering, the index module does ANN search, reduce converges the in-segment topK (Lessons
+27, 28, 29 all happen in this tier). And the actual vector index algorithms (HNSW, IVF, PQ…) come from the dedicated <strong>Knowhere</strong>
+library (which uniformly wraps Faiss, HNSWlib, DiskANN, cuVS, etc., Lesson 22). Why must it be C++? Because what this tier does — <strong>fine memory
+layout, columnar chunking, SIMD vectorization, GPU acceleration</strong> — needs programming close to the hardware, and C++ is exactly that
+"squeeze the machine" language. Implementing the segment's data layout, distance computation, and index types — the most critical data structures
+and algorithms — <strong>only once</strong>, used at both query and index-build time, is the underlying source of Milvus's speed.</p>
+
+<p>A frequently-overlooked beauty here: the C++ kernel <strong>serves both the "query" and "index-build" paths at once</strong> (Lesson 34). At
+query time, the QueryNode calls in to filter, search, and merge; at index-build time, the build worker also calls in, handing a segment's raw
+vectors to Knowhere to make an index. In other words, whether "read" or "build index", the heaviest computation lands in <strong>the same C++
+kernel</strong> — the critical data structures and algorithms are implemented once and reused on both sides, saving effort and removing the
+hazard of "two codebases computing inconsistently". Tucking the volatile, specialized algorithms into Knowhere and leaving the stable system
+skeleton in Go is another layer of "let the specialists specialize".</p>
+
+<p>So what does "programming close to the hardware" actually mean? A few concretes: laying vectors out <strong>columnar</strong> so one distance
+computation reads memory contiguously, cache-friendly; using <strong>SIMD</strong> to multiply-add several dimensions per instruction; spreading
+hot data in memory via <strong>mmap</strong> while cold stays on disk; and tossing whole batches of vectors onto the <strong>GPU</strong> when
+needed. Each of these demands fine control over memory layout and instruction set — exactly C++'s forte (and that of the mature numeric-computing
+ecosystem behind it), and exactly what a GC'd, higher-abstraction language like Go struggles to match.</p>
+
+<h2>Orchestration in Go: make the distributed part flexible</h2>
+<p>So what does Go handle? <strong>Organizing this machine into a cluster</strong>. Coordinators (rootcoord / datacoord / querycoord) schedule,
+order, and manage metadata; the various nodes (proxy / querynode / datanode / streamingnode) exchange requests, consume the log, load segments
+(Lessons 9-13). What these share: <strong>heavy concurrency, heavy networking, fast iteration, fault tolerance</strong>. Go thrives here —
+goroutines make high-concurrency code simple, the gRPC ecosystem is mature, garbage collection removes the mental load of manual memory
+management, compilation is fast, and it deploys as a single binary (Lesson 42). Force this tier into C++ and development velocity falls off a
+cliff while concurrency bugs proliferate. <strong>Handing distributed logic to Go treats "the efficiency of humans writing code" as a resource to
+optimize too.</strong></p>
+
+<p>In day-to-day code, the dividend of this split is immediate. Go's goroutines make code like "handle thousands of connections at once,
+concurrently consume several log shards" almost effortless, whereas implementing equivalent concurrency in C++ usually means gingerly juggling
+thread pools, locks, and callbacks, with bugs hard to ward off. Garbage collection brings a little pause, but it dissolves outright "who should
+free this memory", the most error-prone problem in a distributed system. Add one-command compilation into a single static binary — deploy,
+canary, and rollback all simple. <strong>These "unglamorous bits of dev velocity", added up, are a system that can keep evolving fast.</strong></p>
+
+<div class="flow">
+  <div class="node"><div class="nt">QueryNode (Go)</div><div class="nd">receives the search, a whole batch of params</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">cgo bridge</div><div class="nd">one coarse-grained call · zero-copy</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">segcore (C++)</div><div class="nd">crunch thousands of vectors in a batch</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">return (Go)</div><div class="nd">get the in-segment topK back</div></div>
+</div>
+
+<h2>The bridge must be thin: cgo's discipline</h2>
+<p>The bridge between the two languages (cgo) isn't free. Every cross-language call has a <strong>fixed overhead</strong> (stack switching,
+argument marshaling), and Go's memory and C++'s memory <strong>don't recognize each other</strong> — holding the other's pointer long-term is
+unsafe. So Milvus sets cgo an iron rule: <strong>coarse-grained calls, zero-copy data</strong> — don't call once per row, but <strong>pack a whole
+segment's search into one call</strong>, letting C++ crunch thousands of vectors in one go before returning; data is passed by shared memory or
+direct pointers, avoiding copying back and forth (mmap'd data, for instance, is read straight from the mapped region by C++). Keeping "the number
+of crossings" minimal and "the payload per crossing" maximal is the key to using cgo well — and why Lesson 29 stresses that "batched search (large
+nq) pays off": the bigger the batch, the thinner that fixed overhead is amortized. The bridge carries not just data but <strong>context</strong>:
+trace, timeout, error codes must travel across too, so a cross-language search doesn't "go dark" on observability.</p>
+
+<p>Conversely, what if you broke this discipline? Imagine someone, for convenience, writing a search as "cross the cgo bridge once per vector
+compared" — then computing a hundred million vectors crosses the bridge a hundred million times, and that small fixed overhead, summed, is enough
+to drag performance into the unusable. This is why "boundary design" is performance's hidden battlefield: what really decides speed is often not
+some algorithm but <strong>whether you designed the cross-language, cross-network, cross-process boundaries as "few crossings, big
+batches"</strong>. Milvus's repeated insistence on coarse-grained and zero-copy at the cgo boundary is, at heart, guarding this performance
+lifeline.</p>
+
+<p>The split memory model is worth one more word. Go has garbage collection and moves objects; C++ manages manually with stable object addresses
+— neither side's pointer can be casually held by the other long-term, or once the GC moves things, the pointer C++ holds dangles. So passing data
+across the cgo boundary either copies it over (fine for small data, too expensive for big) or uses memory allocated on the C++ side that both can
+access stably (an mmap region, or a dedicated buffer). Grasp this constraint and you see why Milvus's kernel interfaces, besides "query params"
+and "results", are always dotted with unassuming handles, buffers, and status codes — they are the glue that lets the two runtimes cooperate
+safely.</p>
+
+<h2>The payoff and the tradeoff</h2>
+<p>Two languages, one system, costs you mainly two things. First, <strong>the bridge's overhead and constraints</strong>: cgo calls have a fixed
+cost and a split memory model, forcing you to design interfaces as "coarse-grained, zero-copy, batched" — a continuous design discipline, and a
+moment's inattention lets performance quietly leak at the boundary. Second, <strong>a more complex build</strong>: you must first compile the C++
+libs with conan/cmake, then link via cgo and compile the Go binary, a two-stage build (Lesson 42) far higher-friction than a pure-Go project. But
+the reward is what no single language can give: <strong>the C++ tier squeezes the hardware's limit performance, the Go tier buys distributed
+development velocity and iteration speed</strong>, and you can bring in a more modern tool like Rust (tantivy) where it fits. In one line:
+<strong>a language is a tool, not a faith; letting every tier use the handiest tool is the underlying wisdom behind Milvus being both fast and
+easy to evolve.</strong></p>
+
+<p>To answer a common question in passing: if it's peak performance you want, why not Rust for the kernel? Again, "history and ecosystem". When
+Milvus started, the mature vector-search kernel libraries — especially the Knowhere/Faiss lineage — and the various GPU compute toolchains were
+almost entirely a C++ world; writing the kernel in C++ <strong>reuses those high-performance building blocks directly</strong> instead of
+reinventing them. Milvus did later bring in a little Rust (Lesson 24's tantivy full-text index is written in Rust and wrapped for C++ to call),
+showing it isn't hostile to more modern languages — <strong>what to use, and where, depends only on which ecosystem is most mature and which
+migration is cheapest</strong>. That is the best footnote to "a tool, not a faith".</p>
+
+<p>Put this lesson back into Part 12 as a whole, and it's a different facet of the same wisdom as the lessons before: log as data converges
+"collaboration" onto one shared log; storage-compute separation converges "state" onto shared storage; and two-languages-one-system lets
+"implementation" each go to its place and play to its strength. Together they point at one plain yet profound engineering principle —
+<strong>split a complex system into parts with clear boundaries and distinct duties, then connect them with the thinnest possible
+interfaces</strong>. Grasp this and Milvus stops being a pile of parts and becomes one coherent design philosophy.</p>
+
+<div class="card key"><div class="tag">📌 Key points</div>
+<ul>
+  <li><strong>Two kinds of work</strong>: extreme numeric computation (distances / index / merge) vs complex distributed orchestration (RPC / scheduling / metadata) — no single language does both best.</li>
+  <li><strong>Hot path in C++</strong>: segcore + Knowhere take on filter / search / merge + columnar / SIMD / GPU, the critical algorithms implemented only once.</li>
+  <li><strong>Orchestration in Go</strong>: coordinators and nodes do scheduling, networking, fault tolerance — treating "the efficiency of humans writing code" as a resource to optimize.</li>
+  <li><strong>cgo must be thin</strong>: coarse-grained, zero-copy, batched crossings, carrying context (trace / timeout / error codes); the bigger the batch, the thinner the fixed overhead.</li>
+  <li><strong>Tradeoff</strong>: the cost is the bridge's overhead + a two-stage build; the reward is a win-win of "hardware-limit performance + distributed dev velocity" — a language is a tool, not a faith.</li>
+</ul></div>
+""",
+}

@@ -3557,6 +3557,76 @@ QUIZZES = {
             },
         ],
     },
+    "55-design-two-languages.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "Milvus 为什么同时用 Go 和 C++（中间夹一层 cgo）？",
+                    "en": "Why does Milvus use both Go and C++ (with a cgo layer between)?",
+                },
+                "opts": [
+                    {
+                        "zh": "它身上有两类性质迥异的活儿：极致数值计算(算距离/索引/归并，要 SIMD/GPU/精细内存)与复杂分布式编排(RPC/调度/元数据，要并发与开发效率)；没有单一语言都最优，于是热路径用 C++(segcore+Knowhere)、编排用 Go，靠一层薄 cgo 连接",
+                        "en": "It carries two kinds of work of very different nature: extreme numeric computation (distance/index/merge, needing SIMD/GPU/fine memory) and complex distributed orchestration (RPC/scheduling/metadata, needing concurrency & dev velocity); no single language is best at both, so the hot path is C++ (segcore+Knowhere), orchestration is Go, joined by a thin cgo bridge",
+                    },
+                    {"zh": "历史遗留：本来是 Go，后来逐步重写成 C++", "en": "Legacy: it was Go and got gradually rewritten into C++"},
+                    {"zh": "C++ 写前端，Go 写后端", "en": "C++ for the frontend, Go for the backend"},
+                    {"zh": "两种语言做同一件事，互为冗余备份", "en": "The two languages do the same thing, as redundant backups"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "把吃性能的计算交给 C++、把分布式编排交给 Go，是让两种语言各打自己的主场。它不是历史包袱、不是前后端、更不是冗余——而是“哪类活儿用哪种语言”的务实分工",
+                    "en": "Giving performance-critical computation to C++ and distributed orchestration to Go lets each language fight on its home turf. It's not legacy, not front/back-end, not redundancy — but a pragmatic 'whichever work, whichever language' split",
+                },
+            },
+            {
+                "q": {
+                    "zh": "cgo 这层桥的“纪律”是什么，为什么要有它？",
+                    "en": "What is the cgo bridge's 'discipline', and why?",
+                },
+                "opts": [
+                    {
+                        "zh": "每次跨语言调用有固定开销、且 Go/C++ 内存互不认识，所以要<strong>粗粒度、零拷贝</strong>：把一整段检索打包成一次批量调用、用共享内存/指针传数据，还要带上 trace/超时/错误码等上下文——批越大，固定开销摊越薄",
+                        "en": "Every cross-language call has fixed overhead and Go/C++ memory don't recognize each other, so calls must be <strong>coarse-grained, zero-copy</strong>: pack a whole segment's search into one batched call, pass by shared memory/pointers, and carry context (trace/timeout/error) — the bigger the batch, the thinner the fixed overhead",
+                    },
+                    {"zh": "为图省事，每比对一条向量就过一次桥", "en": "For convenience, cross the bridge once per vector compared"},
+                    {"zh": "每次调用都把数据来回完整拷贝两份", "en": "Fully copy data both ways on every call"},
+                    {"zh": "cgo 是免费的，想调多频繁都行", "en": "cgo is free, so call it as often as you like"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "把“跨桥次数”压到最少、“每次过桥负载”做到最大，是用好 cgo 的命门(也是第 29 课“大 nq 划算”的原因)。每行一调会被固定开销拖垮——边界设计是性能的隐形战场",
+                    "en": "Minimizing 'crossings' and maximizing 'payload per crossing' is the key to using cgo well (and why Lesson 29's 'large nq pays off'). One-call-per-row gets crushed by fixed overhead — boundary design is performance's hidden battlefield",
+                },
+            },
+            {
+                "q": {
+                    "zh": "“两种语言一套系统”的取舍是什么？为什么内核是 C++ 而不是 Rust？",
+                    "en": "What's the tradeoff of 'two languages, one system', and why is the kernel C++ rather than Rust?",
+                },
+                "opts": [
+                    {
+                        "zh": "代价是桥的开销/约束 + 两段式构建(conan/cmake 编 C++ 再 cgo 链接编 Go)；回报是硬件极限性能 + 分布式开发效率。选 C++ 是因历史与生态(Knowhere/Faiss/GPU 工具链都是 C++)；Milvus 也按需引入了 Rust(tantivy)——语言是工具不是信仰",
+                        "en": "The cost is the bridge's overhead/constraints + a two-stage build (conan/cmake for C++ then cgo-link the Go binary); the reward is hardware-limit performance + distributed dev velocity. C++ was chosen for history/ecosystem (Knowhere/Faiss/GPU toolchains are C++); Milvus still added Rust (tantivy) where it fit — a language is a tool, not a faith",
+                    },
+                    {"zh": "没有任何取舍，纯赚", "en": "There is no tradeoff, pure gain"},
+                    {"zh": "Milvus 禁止使用 Rust", "en": "Milvus forbids using Rust"},
+                    {"zh": "两语言分工反而比纯 Go 更慢", "en": "The two-language split is actually slower than pure Go"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "用桥的开销和两段式构建的复杂度，换来任何单一语言都给不了的“极限性能+开发效率”双赢。C++ 是为复用成熟数值生态而选，并非排斥 Rust——tantivy 就是 Rust 写的",
+                    "en": "Paying the bridge's overhead and a two-stage build's complexity buys a 'limit performance + dev velocity' win no single language gives. C++ was chosen to reuse the mature numeric ecosystem, not out of hostility to Rust — tantivy is Rust",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课说“语言是工具不是信仰，让每一层用最趁手的工具”。请思考：(1) C++ 内核“同时服务查询和建索引两条路径”——把关键算法只实现一次有什么好处？这和把易变算法收进 Knowhere、把稳定骨架留在 Go 是同一种智慧吗？(2) 为什么说“边界设计是性能的隐形战场”？试用 cgo 的“粗粒度/零拷贝”解释：真正决定快慢的常常不是某个算法，而是边界怎么设计。(3) 把第 51~55 课连起来看(日志/时间戳/存算分离/分而治之/两种语言)，它们共同指向哪一条更抽象的工程原则？",
+                "en": "This lesson says 'a language is a tool, not a faith; let every tier use the handiest tool'. Consider: (1) the C++ kernel 'serves both the query and index-build paths' — what's the benefit of implementing the critical algorithms only once? Is that the same wisdom as tucking volatile algorithms into Knowhere while leaving the stable skeleton in Go? (2) Why is 'boundary design performance's hidden battlefield'? Explain via cgo's 'coarse-grained/zero-copy': what really decides speed is often not an algorithm but how the boundary is designed. (3) Stringing Lessons 51–55 together (log / timestamp / storage-compute / divide-and-conquer / two languages), which more abstract engineering principle do they jointly point to?",
+            },
+        ],
+    },
 }
 
 

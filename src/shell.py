@@ -155,6 +155,8 @@ PAGES = [
      "第十二部分 · 设计专题（综合）", "Part 12 · Design themes (synthesis)"),
     ("54-design-scale-to-billions.html", "扩展到十亿级：分而治之的艺术", "Scaling to billions: the art of divide-and-conquer",
      "第十二部分 · 设计专题（综合）", "Part 12 · Design themes (synthesis)"),
+    ("55-design-two-languages.html", "两种语言，一套系统：C++ 内核与 Go 编排的分工", "Two languages, one system: the C++ kernel / Go orchestration split",
+     "第十二部分 · 设计专题（综合）", "Part 12 · Design themes (synthesis)"),
 ]
 
 
@@ -704,6 +706,8 @@ SUBTITLES = {
                                                   "three-tier decoupling: control plane (etcd holds state) / compute (stateless nodes) / storage (object storage holds bytes) · object storage = transfer warehouse between build & load · mmap serves data larger than RAM · a dead node is reassigned + reloaded from storage, recovering in seconds"),
     "54-design-scale-to-billions.html": ("分而治之：分(切段摊到分片)→搜(各段并行算局部 topK)→并(三层归并出全局 topK) · 各局部 topK 的并集必含全局 topK，每层只搬 K 个 · 每段建索引+过滤下推让小块也快 · 召回由段内精度决定",
                                          "divide and conquer: split (segments over shards) → search (segments compute local topK in parallel) → combine (three-level merge into a global topK) · the union of local topKs contains the global topK, each layer moves only K · per-segment index + filter pushdown make small blocks fast · recall is set by in-segment precision"),
+    "55-design-two-languages.html": ("两类活儿用两种语言：C++ 内核(segcore+Knowhere)承包过滤/检索/归并+SIMD/GPU，Go 编排做调度/RPC/容错 · cgo 桥要薄(粗粒度/零拷贝/带上下文) · 语言是工具不是信仰",
+                                     "two kinds of work, two languages: the C++ kernel (segcore+Knowhere) does filter/search/merge + SIMD/GPU, Go orchestration does scheduling/RPC/fault-tolerance · the cgo bridge must be thin (coarse-grained/zero-copy/carries context) · a language is a tool, not a faith"),
 }
 
 
