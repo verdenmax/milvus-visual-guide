@@ -379,7 +379,7 @@ html[data-lang="zh"] .lang-en { display: none !important; }
   <div class="cf-head"><span class="dot"></span><span class="path">internal/storage/stats.go</span><span class="ln">PrimaryKeyStats：段级主键摘要（节选）</span></div>
   <pre><span class="kw">type</span> PrimaryKeyStats <span class="kw">struct</span> {
     FieldID int64                            <span class="cm">// 主键字段</span>
-    Min, Max int64                           <span class="cm">// 主键区间，用于范围剪枝</span>
+    MaxPk, MinPk PrimaryKey                  <span class="cm">// 主键上下界（真实 PK 边界）</span>
     BF       bloomfilter.BloomFilterInterface <span class="cm">// 布隆过滤器：快速"查无此主键"</span>
 }</pre>
 </div>
@@ -580,7 +580,7 @@ When the next lessons cover delete routing and Lesson 20 covers delete and upser
   <div class="cf-head"><span class="dot"></span><span class="path">internal/storage/stats.go</span><span class="ln">PrimaryKeyStats: a segment-level PK summary (excerpt)</span></div>
   <pre><span class="kw">type</span> PrimaryKeyStats <span class="kw">struct</span> {
     FieldID int64                            <span class="cm">// the PK field</span>
-    Min, Max int64                           <span class="cm">// PK range, for range pruning</span>
+    MaxPk, MinPk PrimaryKey                  <span class="cm">// real PK bounds</span>
     BF       bloomfilter.BloomFilterInterface <span class="cm">// bloom filter: quick "no such PK"</span>
 }</pre>
 </div>

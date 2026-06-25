@@ -3847,7 +3847,7 @@ or carried a dynamic field not in the schema (Lesson 6). <span class="mono">chec
   <pre><span class="cm">// validate/fill primary key, return the batch IDs; auto-ID allocates here</span>
 it.result.IDs, err = checkPrimaryFieldData(ctx, allFields, it.schema, it.insertMsg)
 <span class="kw">if</span> err != <span class="kw">nil</span> {
-    mlog.Warn(ctx, <span class="st">"check primary field data error"</span>, mlog.Err(err))
+    mlog.Warn(ctx, <span class="st">"check primary field data and hash primary key failed"</span>, mlog.Err(err))
     <span class="kw">return</span> err
 }</pre>
 </div>
@@ -4509,7 +4509,7 @@ When the next lessons cover delete routing and Lesson 20 covers delete and upser
   <div class="cf-head"><span class="dot"></span><span class="path">internal/storage/stats.go</span><span class="ln">PrimaryKeyStats: a segment-level PK summary (excerpt)</span></div>
   <pre><span class="kw">type</span> PrimaryKeyStats <span class="kw">struct</span> {
     FieldID int64                            <span class="cm">// the PK field</span>
-    Min, Max int64                           <span class="cm">// PK range, for range pruning</span>
+    MaxPk, MinPk PrimaryKey                  <span class="cm">// real PK bounds</span>
     BF       bloomfilter.BloomFilterInterface <span class="cm">// bloom filter: quick "no such PK"</span>
 }</pre>
 </div>
@@ -4917,17 +4917,17 @@ The system takes PK X and <strong>asks each segment's bloom</strong>: "could thi
 </div>
 
 <p>The bloom filter's "<strong>never a false negative</strong>" property is the <strong>lifeline of correctness</strong> here: if it says "definitely not," it <strong>truly isn't</strong>, so a skipped segment never wrongly misses a row that should be deleted; while its occasional "false positive" (says maybe, a closer look finds nothing) at most causes <strong>a little wasted work</strong>, never a wrong delete.
-This asymmetric guarantee of "<strong>rather over-check than ever miss</strong>" is exactly the foundation on which delete routing can confidently prune. In Milvus this bloom filter is held by <span class="inline">FieldStats</span> (<span class="mono">internal/storage/field_stats.go</span>) — it carries the field's min/max and that <span class="inline">BF</span> (<span class="inline">bloomfilter.BloomFilterInterface</span>), the <strong>decision basis</strong> for "which segments a delete should land on."</p>
+This asymmetric guarantee of "<strong>rather over-check than ever miss</strong>" is exactly the foundation on which delete routing can confidently prune. In Milvus this bloom filter is held by <span class="inline">PrimaryKeyStats</span> (<span class="mono">internal/storage/stats.go</span>) — it carries the PK bounds (<span class="inline">MaxPk</span>/<span class="inline">MinPk</span>) and that <span class="inline">BF</span> (<span class="inline">bloomfilter.BloomFilterInterface</span>), exposed via <span class="inline">BloomFilterSet</span>/<span class="inline">pkoracle</span>, the <strong>decision basis</strong> for "which segments a delete should land on."</p>
 
 <p>It's worth appreciating bloom routing's significance at <strong>scale</strong>: a large collection may have thousands of segments, and if every delete stuffed its tombstone indiscriminately into each one, the cost of a delete would <strong>balloon linearly</strong> with the segment count, with the vast majority of tombstones landing on segments that "don't hold the PK at all" — pure waste.
 The bloom filter compresses this from "<strong>broadcast to all segments</strong>" down to "<strong>precise delivery to a few candidate segments</strong>" — at the price of one tiny probabilistic bitmap per segment, it <strong>greatly shrinks</strong> the delete write volume and leaves far fewer tombstones for later Level0DeleteCompaction to process. This is the classic engineering tradeoff of "<strong>spend a little summary space to save a lot of blind I/O</strong>," two sides of the same mechanism as Lesson 18's bloom helping queries "<strong>skip whole segments</strong>": <strong>queries use it to skip irrelevant segments, deletes use it to deliver only to relevant ones</strong>.</p>
 
 <div class="codefile">
-  <div class="cf-head"><span class="dot"></span><span class="path">internal/storage/field_stats.go</span><span class="ln">FieldStats: a segment-level field summary, with bloom filter (excerpt)</span></div>
-  <pre><span class="kw">type</span> FieldStats <span class="kw">struct</span> {
-    FieldID int64                            <span class="cm">// the field (incl. PK)</span>
-    Max, Min ScalarFieldValue                <span class="cm">// range, for range pruning</span>
-    BF       bloomfilter.BloomFilterInterface <span class="cm">// bloom: quick "no such PK"; routes deletes</span>
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/storage/stats.go</span><span class="ln">PrimaryKeyStats: a segment-level PK summary, with bloom filter (excerpt)</span></div>
+  <pre><span class="kw">type</span> PrimaryKeyStats <span class="kw">struct</span> {
+    PkType   int64                            <span class="cm">// the PK type</span>
+    MaxPk, MinPk PrimaryKey                   <span class="cm">// PK upper/lower bounds</span>
+    BF       bloomfilter.BloomFilterInterface <span class="cm">// bloom: routes deletes to candidate segments</span>
 }</pre>
 </div>
 
@@ -4984,14 +4984,14 @@ But it leaves one question unanswered: <strong>how exactly is that guarantee tim
 
 <div class="card macro">
   <div class="tag">🌍 Big picture</div>
-  In one line: on append-only storage, <strong>a delete is not an erase but stamping a timestamped tombstone</strong> — it enters the WAL as a <strong>delete message</strong>, settles into an <strong>L0 deltalog</strong>, is routed by <strong>bloom filters</strong> (<span class="inline">FieldStats</span>'s <span class="inline">BF</span>, <span class="mono">internal/storage/field_stats.go</span>) to segments that might hold the PK, and is finally physically applied by <strong>Level0DeleteCompaction</strong> (Lesson 19). <strong>upsert = delete + insert</strong> (same PK, a new version with later ts). Unifying it all is <strong>timestamp-based MVCC</strong>: read at guarantee-ts T, a row is visible ⇔ insert ts ≤ T and no tombstone with ts ≤ T voids it; how T is set is decided by the consistency level (Lesson 30).
+  In one line: on append-only storage, <strong>a delete is not an erase but stamping a timestamped tombstone</strong> — it enters the WAL as a <strong>delete message</strong>, settles into an <strong>L0 deltalog</strong>, is routed by <strong>bloom filters</strong> (<span class="inline">PrimaryKeyStats</span>'s <span class="inline">BF</span>, <span class="mono">internal/storage/stats.go</span>) to segments that might hold the PK, and is finally physically applied by <strong>Level0DeleteCompaction</strong> (Lesson 19). <strong>upsert = delete + insert</strong> (same PK, a new version with later ts). Unifying it all is <strong>timestamp-based MVCC</strong>: read at guarantee-ts T, a row is visible ⇔ insert ts ≤ T and no tombstone with ts ≤ T voids it; how T is set is decided by the consistency level (Lesson 30).
 </div>
 
 <div class="card key">
   <div class="tag">📌 Key points</div>
   <ul>
     <li><strong>Delete is a tombstone</strong>: a delete becomes a WAL delete message (PK + ts), settling into L0 delete data / deltalogs, with no in-place erase.</li>
-    <li><strong>Bloom routing</strong>: ask each segment's bloom with the to-delete PK (<span class="inline">FieldStats.BF</span>, <span class="mono">internal/storage/field_stats.go</span>); "definitely not" segments are skipped, the tombstone lands only on "maybe" segments; no false negatives guarantees no wrong delete.</li>
+    <li><strong>Bloom routing</strong>: ask each segment's bloom with the to-delete PK (<span class="inline">PrimaryKeyStats.BF</span>, <span class="mono">internal/storage/stats.go</span>); "definitely not" segments are skipped, the tombstone lands only on "maybe" segments; no false negatives guarantees no wrong delete.</li>
     <li><strong>Physical apply</strong>: L0 tombstones are truly sunk and applied into segments by Level0DeleteCompaction (Lesson 19); the write side only books fast.</li>
     <li><strong>upsert = delete + insert</strong>: for the same PK, delete then insert, old and new versions distinguished by ts; reuses all delete and insert machinery, no special path.</li>
     <li><strong>Timestamp-based MVCC</strong>: read at guarantee-ts T, a row is visible ⇔ insert ts ≤ T and no tombstone with ts ≤ T; the same data with a different T is a different snapshot, reads and writes never block.</li>

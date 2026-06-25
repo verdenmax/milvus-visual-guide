@@ -372,7 +372,7 @@ html[data-lang="zh"] .lang-en { display: none !important; }
   <pre><span class="cm">// 校验/补全主键，返回这批行的 IDs；autoID 时在此分配</span>
 it.result.IDs, err = checkPrimaryFieldData(ctx, allFields, it.schema, it.insertMsg)
 <span class="kw">if</span> err != <span class="kw">nil</span> {
-    mlog.Warn(ctx, <span class="st">"check primary field data error"</span>, mlog.Err(err))
+    mlog.Warn(ctx, <span class="st">"check primary field data and hash primary key failed"</span>, mlog.Err(err))
     <span class="kw">return</span> err
 }</pre>
 </div>
@@ -606,7 +606,7 @@ or carried a dynamic field not in the schema (Lesson 6). <span class="mono">chec
   <pre><span class="cm">// validate/fill primary key, return the batch IDs; auto-ID allocates here</span>
 it.result.IDs, err = checkPrimaryFieldData(ctx, allFields, it.schema, it.insertMsg)
 <span class="kw">if</span> err != <span class="kw">nil</span> {
-    mlog.Warn(ctx, <span class="st">"check primary field data error"</span>, mlog.Err(err))
+    mlog.Warn(ctx, <span class="st">"check primary field data and hash primary key failed"</span>, mlog.Err(err))
     <span class="kw">return</span> err
 }</pre>
 </div>

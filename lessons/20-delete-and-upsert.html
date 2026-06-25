@@ -379,17 +379,17 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 </div>
 
 <p>布隆过滤器"<strong>绝不漏报</strong>"的特性在这里是<strong>正确性的命脉</strong>：它说"肯定没有"就<strong>一定没有</strong>，所以被跳过的段绝不会冤枉地漏掉一个本该删的行；而它偶尔"误报"（说可能有、细查却没有）顶多<strong>多做一点无用功</strong>，绝不会错删。
-这种"<strong>宁可多查、绝不漏查</strong>"的非对称保证，恰恰是删除路由能放心剪枝的根基。Milvus 里这张布隆过滤器由 <span class="inline">FieldStats</span>（<span class="mono">internal/storage/field_stats.go</span>）持有——它装着字段的 min/max 与那张 <span class="inline">BF</span>（<span class="inline">bloomfilter.BloomFilterInterface</span>），是"删除该落到哪些段"这个问题的<strong>判定依据</strong>。</p>
+这种"<strong>宁可多查、绝不漏查</strong>"的非对称保证，恰恰是删除路由能放心剪枝的根基。Milvus 里这张布隆过滤器由 <span class="inline">PrimaryKeyStats</span>（<span class="mono">internal/storage/stats.go</span>）持有——它装着主键的上下界（<span class="inline">MaxPk</span>/<span class="inline">MinPk</span>）与那张 <span class="inline">BF</span>（<span class="inline">bloomfilter.BloomFilterInterface</span>），经 <span class="inline">BloomFilterSet</span>/<span class="inline">pkoracle</span> 暴露，是"删除该落到哪些段"这个问题的<strong>判定依据</strong>。</p>
 
 <p>值得体会布隆路由在<strong>规模</strong>上的意义：一个大集合可能有上千个段，若每条删除都把墓碑无差别地塞进每一个段，那么删除的代价会随段数<strong>线性膨胀</strong>，且绝大多数墓碑都落在"根本不含此主键"的段上，纯属浪费。
 布隆过滤器把这件事从"<strong>广播给所有段</strong>"压成"<strong>精准投递给少数候选段</strong>"——它用每段一张小小的概率位图，换来删除写入量的<strong>大幅收缩</strong>，也让后续 Level0DeleteCompaction 要处理的墓碑量小得多。这是典型的"<strong>用一点点摘要空间，省下大量盲目 I/O</strong>"的工程权衡，与第 18 课讲查询时布隆帮忙"<strong>整段跳过</strong>"是同一个机制的一体两面：<strong>查询靠它跳过无关段，删除靠它只投相关段</strong>。</p>
 
 <div class="codefile">
-  <div class="cf-head"><span class="dot"></span><span class="path">internal/storage/field_stats.go</span><span class="ln">FieldStats：段级字段摘要，含布隆过滤器（节选）</span></div>
-  <pre><span class="kw">type</span> FieldStats <span class="kw">struct</span> {
-    FieldID int64                            <span class="cm">// 字段（含主键）</span>
-    Max, Min ScalarFieldValue                <span class="cm">// 区间，用于范围剪枝</span>
-    BF       bloomfilter.BloomFilterInterface <span class="cm">// 布隆：快速"查无此主键"，删除据此路由</span>
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/storage/stats.go</span><span class="ln">PrimaryKeyStats：段级主键摘要，含布隆过滤器（节选）</span></div>
+  <pre><span class="kw">type</span> PrimaryKeyStats <span class="kw">struct</span> {
+    PkType   int64                            <span class="cm">// 主键类型</span>
+    MaxPk, MinPk PrimaryKey                   <span class="cm">// 主键上下界</span>
+    BF       bloomfilter.BloomFilterInterface <span class="cm">// 布隆：删除据此路由到候选段</span>
 }</pre>
 </div>
 
@@ -446,14 +446,14 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 
 <div class="card macro">
   <div class="tag">🌍 宏观理解</div>
-  一句话：在只追加的存储上，<strong>删除不是抹除而是盖一枚带时间戳的墓碑</strong>——它作为<strong>删除消息</strong>进 WAL、沉淀为 <strong>L0 deltalog</strong>，靠<strong>布隆过滤器</strong>（<span class="inline">FieldStats</span> 的 <span class="inline">BF</span>，<span class="mono">internal/storage/field_stats.go</span>）路由到可能含此主键的段，最终由 <strong>Level0DeleteCompaction</strong> 物理应用（第 19 课）。<strong>upsert = 删除 + 插入</strong>（同主键、更晚 ts 的新版本）。统一这一切的是<strong>按时间戳的 MVCC</strong>：以保证时间戳 T 读，一行可见 ⇔ 插入 ts ≤ T 且无 ts ≤ T 的墓碑作废它；T 怎么定由一致性级别决定（第 30 课）。
+  一句话：在只追加的存储上，<strong>删除不是抹除而是盖一枚带时间戳的墓碑</strong>——它作为<strong>删除消息</strong>进 WAL、沉淀为 <strong>L0 deltalog</strong>，靠<strong>布隆过滤器</strong>（<span class="inline">PrimaryKeyStats</span> 的 <span class="inline">BF</span>，<span class="mono">internal/storage/stats.go</span>）路由到可能含此主键的段，最终由 <strong>Level0DeleteCompaction</strong> 物理应用（第 19 课）。<strong>upsert = 删除 + 插入</strong>（同主键、更晚 ts 的新版本）。统一这一切的是<strong>按时间戳的 MVCC</strong>：以保证时间戳 T 读，一行可见 ⇔ 插入 ts ≤ T 且无 ts ≤ T 的墓碑作废它；T 怎么定由一致性级别决定（第 30 课）。
 </div>
 
 <div class="card key">
   <div class="tag">📌 本课要点</div>
   <ul>
     <li><strong>删除即墓碑</strong>：delete 变成 WAL 里的删除消息（主键+ts），沉淀为 L0 删除数据 / deltalog，不原地抹除。</li>
-    <li><strong>布隆路由</strong>：拿待删主键逐段问布隆（<span class="inline">FieldStats.BF</span>，<span class="mono">internal/storage/field_stats.go</span>），"肯定没有"的段跳过，只把墓碑落到"可能含"的段；绝不漏报保证不错删。</li>
+    <li><strong>布隆路由</strong>：拿待删主键逐段问布隆（<span class="inline">PrimaryKeyStats.BF</span>，<span class="mono">internal/storage/stats.go</span>），"肯定没有"的段跳过，只把墓碑落到"可能含"的段；绝不漏报保证不错删。</li>
     <li><strong>物理应用</strong>：L0 墓碑由 Level0DeleteCompaction 真正下沉应用进段（第 19 课），写入侧只快速记账。</li>
     <li><strong>upsert = delete + insert</strong>：同主键先删后插，新旧版本按 ts 区分；复用删除与插入的全部机制，无需特殊路径。</li>
     <li><strong>按时间戳的 MVCC</strong>：以保证时间戳 T 读，一行可见 ⇔ 插入 ts ≤ T 且无 ts ≤ T 的墓碑；同一数据换 T 即换快照，读写互不阻塞。</li>
@@ -553,17 +553,17 @@ The system takes PK X and <strong>asks each segment's bloom</strong>: "could thi
 </div>
 
 <p>The bloom filter's "<strong>never a false negative</strong>" property is the <strong>lifeline of correctness</strong> here: if it says "definitely not," it <strong>truly isn't</strong>, so a skipped segment never wrongly misses a row that should be deleted; while its occasional "false positive" (says maybe, a closer look finds nothing) at most causes <strong>a little wasted work</strong>, never a wrong delete.
-This asymmetric guarantee of "<strong>rather over-check than ever miss</strong>" is exactly the foundation on which delete routing can confidently prune. In Milvus this bloom filter is held by <span class="inline">FieldStats</span> (<span class="mono">internal/storage/field_stats.go</span>) — it carries the field's min/max and that <span class="inline">BF</span> (<span class="inline">bloomfilter.BloomFilterInterface</span>), the <strong>decision basis</strong> for "which segments a delete should land on."</p>
+This asymmetric guarantee of "<strong>rather over-check than ever miss</strong>" is exactly the foundation on which delete routing can confidently prune. In Milvus this bloom filter is held by <span class="inline">PrimaryKeyStats</span> (<span class="mono">internal/storage/stats.go</span>) — it carries the PK bounds (<span class="inline">MaxPk</span>/<span class="inline">MinPk</span>) and that <span class="inline">BF</span> (<span class="inline">bloomfilter.BloomFilterInterface</span>), exposed via <span class="inline">BloomFilterSet</span>/<span class="inline">pkoracle</span>, the <strong>decision basis</strong> for "which segments a delete should land on."</p>
 
 <p>It's worth appreciating bloom routing's significance at <strong>scale</strong>: a large collection may have thousands of segments, and if every delete stuffed its tombstone indiscriminately into each one, the cost of a delete would <strong>balloon linearly</strong> with the segment count, with the vast majority of tombstones landing on segments that "don't hold the PK at all" — pure waste.
 The bloom filter compresses this from "<strong>broadcast to all segments</strong>" down to "<strong>precise delivery to a few candidate segments</strong>" — at the price of one tiny probabilistic bitmap per segment, it <strong>greatly shrinks</strong> the delete write volume and leaves far fewer tombstones for later Level0DeleteCompaction to process. This is the classic engineering tradeoff of "<strong>spend a little summary space to save a lot of blind I/O</strong>," two sides of the same mechanism as Lesson 18's bloom helping queries "<strong>skip whole segments</strong>": <strong>queries use it to skip irrelevant segments, deletes use it to deliver only to relevant ones</strong>.</p>
 
 <div class="codefile">
-  <div class="cf-head"><span class="dot"></span><span class="path">internal/storage/field_stats.go</span><span class="ln">FieldStats: a segment-level field summary, with bloom filter (excerpt)</span></div>
-  <pre><span class="kw">type</span> FieldStats <span class="kw">struct</span> {
-    FieldID int64                            <span class="cm">// the field (incl. PK)</span>
-    Max, Min ScalarFieldValue                <span class="cm">// range, for range pruning</span>
-    BF       bloomfilter.BloomFilterInterface <span class="cm">// bloom: quick "no such PK"; routes deletes</span>
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/storage/stats.go</span><span class="ln">PrimaryKeyStats: a segment-level PK summary, with bloom filter (excerpt)</span></div>
+  <pre><span class="kw">type</span> PrimaryKeyStats <span class="kw">struct</span> {
+    PkType   int64                            <span class="cm">// the PK type</span>
+    MaxPk, MinPk PrimaryKey                   <span class="cm">// PK upper/lower bounds</span>
+    BF       bloomfilter.BloomFilterInterface <span class="cm">// bloom: routes deletes to candidate segments</span>
 }</pre>
 </div>
 
@@ -620,14 +620,14 @@ But it leaves one question unanswered: <strong>how exactly is that guarantee tim
 
 <div class="card macro">
   <div class="tag">🌍 Big picture</div>
-  In one line: on append-only storage, <strong>a delete is not an erase but stamping a timestamped tombstone</strong> — it enters the WAL as a <strong>delete message</strong>, settles into an <strong>L0 deltalog</strong>, is routed by <strong>bloom filters</strong> (<span class="inline">FieldStats</span>'s <span class="inline">BF</span>, <span class="mono">internal/storage/field_stats.go</span>) to segments that might hold the PK, and is finally physically applied by <strong>Level0DeleteCompaction</strong> (Lesson 19). <strong>upsert = delete + insert</strong> (same PK, a new version with later ts). Unifying it all is <strong>timestamp-based MVCC</strong>: read at guarantee-ts T, a row is visible ⇔ insert ts ≤ T and no tombstone with ts ≤ T voids it; how T is set is decided by the consistency level (Lesson 30).
+  In one line: on append-only storage, <strong>a delete is not an erase but stamping a timestamped tombstone</strong> — it enters the WAL as a <strong>delete message</strong>, settles into an <strong>L0 deltalog</strong>, is routed by <strong>bloom filters</strong> (<span class="inline">PrimaryKeyStats</span>'s <span class="inline">BF</span>, <span class="mono">internal/storage/stats.go</span>) to segments that might hold the PK, and is finally physically applied by <strong>Level0DeleteCompaction</strong> (Lesson 19). <strong>upsert = delete + insert</strong> (same PK, a new version with later ts). Unifying it all is <strong>timestamp-based MVCC</strong>: read at guarantee-ts T, a row is visible ⇔ insert ts ≤ T and no tombstone with ts ≤ T voids it; how T is set is decided by the consistency level (Lesson 30).
 </div>
 
 <div class="card key">
   <div class="tag">📌 Key points</div>
   <ul>
     <li><strong>Delete is a tombstone</strong>: a delete becomes a WAL delete message (PK + ts), settling into L0 delete data / deltalogs, with no in-place erase.</li>
-    <li><strong>Bloom routing</strong>: ask each segment's bloom with the to-delete PK (<span class="inline">FieldStats.BF</span>, <span class="mono">internal/storage/field_stats.go</span>); "definitely not" segments are skipped, the tombstone lands only on "maybe" segments; no false negatives guarantees no wrong delete.</li>
+    <li><strong>Bloom routing</strong>: ask each segment's bloom with the to-delete PK (<span class="inline">PrimaryKeyStats.BF</span>, <span class="mono">internal/storage/stats.go</span>); "definitely not" segments are skipped, the tombstone lands only on "maybe" segments; no false negatives guarantees no wrong delete.</li>
     <li><strong>Physical apply</strong>: L0 tombstones are truly sunk and applied into segments by Level0DeleteCompaction (Lesson 19); the write side only books fast.</li>
     <li><strong>upsert = delete + insert</strong>: for the same PK, delete then insert, old and new versions distinguished by ts; reuses all delete and insert machinery, no special path.</li>
     <li><strong>Timestamp-based MVCC</strong>: read at guarantee-ts T, a row is visible ⇔ insert ts ≤ T and no tombstone with ts ≤ T; the same data with a different T is a different snapshot, reads and writes never block.</li>
