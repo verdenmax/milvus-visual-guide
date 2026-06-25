@@ -147,6 +147,8 @@ PAGES = [
      "第十一部分 · 进阶专题（选读）", "Part 11 · Advanced topics (optional)"),
     ("50-advanced-features-tour.html", "进阶特性巡礼", "Advanced features tour",
      "第十一部分 · 进阶专题（选读）", "Part 11 · Advanced topics (optional)"),
+    ("51-design-log-as-data.html", "日志即数据：为什么整个系统都围着 WAL 转", "Log as data: why the whole system orbits the WAL",
+     "第十二部分 · 设计专题（综合）", "Part 12 · Design themes (synthesis)"),
 ]
 
 
@@ -688,6 +690,8 @@ SUBTITLES = {
                                         "self-protection (backpressure) · QuotaCenter (RootCoord) collects metrics→computes limits→pushes to Proxies · two brakes: throttle vs forceDeny · RateLimitInterceptor returns retriable ErrServiceRateLimit"),
     "50-advanced-features-tour.html": ("巡礼六大生产特性：RBAC(权限) · 资源组(算力隔离) · 数据库(多租户) · 迭代器(翻页) · TTL(自动过期) · Function(服务端向量化)",
                                        "a tour of six production features: RBAC (permissions) · resource groups (compute isolation) · databases (multi-tenancy) · iterators (paging) · TTL (auto-expiry) · Function (server-side vectorization)"),
+    "51-design-log-as-data.html": ("贯穿全书的第一条设计主线 · WAL 是唯一事实来源、段/索引/副本都是派生 · 写=追加(盖 TimeTick)、记上即成功 · 一份日志多方按需重放(落段/边写边查/复制/恢复)",
+                                   "the first design throughline · the WAL is the one source of truth, segments/indexes/replicas are derived · write=append (stamp TimeTick), logged=success · one log replayed on demand by many (flush/query-while-write/replicate/recover)"),
 }
 
 

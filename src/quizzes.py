@@ -3277,6 +3277,76 @@ QUIZZES = {
             },
         ],
     },
+    "51-design-log-as-data.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "“日志即数据”这条设计主线里，什么才是“唯一事实来源”？",
+                    "en": "In the 'log as data' design throughline, what is the 'single source of truth'?",
+                },
+                "opts": [
+                    {
+                        "zh": "WAL（只追加的日志）是唯一事实来源；段、索引、备集群副本都是从它物化出来的派生视图，写入只要追加进日志就算成功",
+                        "en": "The WAL (append-only log) is the one source of truth; segments, indexes, and replica clusters are all derived views materialized from it, and a write counts as success once appended to the log",
+                    },
+                    {"zh": "段才是真相，WAL 只是崩溃时用的备份", "en": "Segments are the truth; the WAL is just a backup used on crash"},
+                    {"zh": "索引是唯一权威，其余都从索引重建", "en": "The index is the sole authority; everything else is rebuilt from it"},
+                    {"zh": "每个节点各存一份权威数据，互不为准", "en": "Each node keeps its own authoritative copy, none canonical"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "Milvus 把因果倒过来：先有日志，段/索引/副本都是日志重放出来的派生品，可随时丢弃重建。这正是“写=追加、记上即成功”得以成立的前提",
+                    "en": "Milvus inverts causality: the log comes first, and segments/indexes/replicas are derivatives replayed from it, discardable and rebuildable anytime. That is exactly what makes 'write = append, logged = success' possible",
+                },
+            },
+            {
+                "q": {
+                    "zh": "为什么一次写入“记进日志就立刻返回成功”，而不等落盘/建索引？",
+                    "en": "Why does a write 'return success the moment it's logged' instead of waiting for flush/index?",
+                },
+                "opts": [
+                    {
+                        "zh": "因为日志才是真相——真相记下就一定能补出段和索引；这把重活移出关键路径，写热路径只剩一次无锁顺序追加，于是“写得快”和“查得快”被解耦",
+                        "en": "Because the log is the truth — once recorded, segments and indexes are guaranteed to catch up; this moves the heavy work off the hot path, leaving the write path a single lock-free append, decoupling 'write fast' from 'query fast'",
+                    },
+                    {"zh": "因为刷盘是瞬间完成的，没有耗时", "en": "Because flushing is instantaneous and takes no time"},
+                    {"zh": "因为客户端并不关心数据是否持久化", "en": "Because the client doesn't care whether data is persisted"},
+                    {"zh": "因为索引是在写入时同步建好的", "en": "Because the index is built synchronously at write time"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "把段、索引这些“重活”挪到后台另一条时间线，关键路径只剩顺序追加（几乎无锁竞争），写入吞吐的上限就被打开了。代价是物化延迟，由 growing 段暴力扫描兜住最新数据",
+                    "en": "Pushing the heavy work (segments, indexes) onto a background timeline leaves only a sequential append on the hot path (almost no lock contention), lifting the write-throughput ceiling. The cost is materialization latency, covered by growing-segment brute force for the freshest data",
+                },
+            },
+            {
+                "q": {
+                    "zh": "“一份日志、多方按需重放”靠什么保证不同消费者重放出一致的结果？",
+                    "en": "What guarantees that 'one log, many parties replaying on demand' yields a consistent result across consumers?",
+                },
+                "opts": [
+                    {
+                        "zh": "靠单调递增的 TimeTick 让重放具有确定性：同一段日志谁来重放、重放几次结果都相同；各消费者只记好自己的 checkpoint、互不直接 RPC 调用",
+                        "en": "The monotonically increasing TimeTick makes replay deterministic: the same log yields the same result no matter who replays it or how often; each consumer just tracks its own checkpoint, with no direct RPC calls between them",
+                    },
+                    {"zh": "要求所有消费者必须同时在线才能同步", "en": "It requires every consumer to be online at the same time to sync"},
+                    {"zh": "重放顺序是随机的，所以结果可以不同", "en": "Replay order is random, so results may differ"},
+                    {"zh": "由 Proxy 通过 RPC 逐个通知每个消费者", "en": "The Proxy notifies each consumer one by one over RPC"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "确定性重放 = 严格有序的日志 + 单调 TimeTick。共享日志把“谁调用谁”的耦合化解成“各自盯日志、各记 checkpoint”，所以新增消费者（再加个备集群/审计管道）不用改写入侧一行代码",
+                    "en": "Deterministic replay = a strictly ordered log + a monotonic TimeTick. The shared log dissolves 'who calls whom' coupling into 'each watches the log, each keeps a checkpoint', so adding a consumer (another backup/audit pipeline) changes not one line of the write side",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课的核心是“主次反转”：WAL 从单机数据库里的“崩溃恢复副产品”，变成了 Milvus 里的“唯一事实来源”，而段和索引降格为派生数据。请思考：(1) 这个反转让“整个系统最该保护的东西”变成了什么？为此 WAL 后端必须把哪些能力（可靠存储/长期保留/严格有序）做到极致？(2) “真相不动、视图随便换”这个自由度，在“换索引类型”和“滚动升级索引格式”这两件事上分别怎么体现？(3) 试用一句话向同事解释：为什么说读懂了“日志即数据”，就读懂了 Milvus 写入路径、流式系统、复制三者为什么长成那样？",
+                "en": "This lesson's core is the 'inversion of primary and secondary': the WAL goes from a single-node DB's 'crash-recovery by-product' to Milvus's 'one source of truth', while segments and indexes are demoted to derived data. Consider: (1) what does this inversion make 'the thing the whole system must most protect'? Which capabilities (reliable storage / long retention / strict ordering) must the WAL backend therefore perfect? (2) How does the 'truth stays put, views swap freely' latitude show up in 'changing index type' and 'rolling-upgrading the index format'? (3) In one sentence to a colleague: why does understanding 'log as data' mean understanding why Milvus's write path, streaming system, and replication all look the way they do?",
+            },
+        ],
+    },
 }
 
 

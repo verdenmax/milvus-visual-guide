@@ -70,4 +70,5 @@ CONTENT = {
     "48-hybrid-search-rerank.html": part11.LESSON_48,
     "49-quota-and-rate-limiting.html": part11.LESSON_49,
     "50-advanced-features-tour.html": part11.LESSON_50,
+    "51-design-log-as-data.html": part12.LESSON_51,
 }

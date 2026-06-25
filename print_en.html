@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 50 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 51 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
@@ -378,6 +378,7 @@ details[open] > summary { list-style: none; }
   <li>Hybrid search & reranking</li>
   <li>Quota, rate-limiting & backpressure</li>
   <li>Advanced features tour</li>
+  <li>Log as data: why the whole system orbits the WAL</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -9507,6 +9508,211 @@ To close the guide, this lesson is a <strong>quick tour</strong> of several feat
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
     <li>This lesson toured six production features as 'the layer that turns an engine into an operable service'. Please: (1) imagine deploying Milvus for three mutually-distrusting teams in your company to share — how would you combine RBAC / resource groups / databases for 'each minds their own, no interference'? (2) Give one scenario suited to TTL and one suited to iterators, and say which previously-learned mechanisms each reuses. (3) Having read the whole guide, what still lies between 'understanding how Milvus works' and 'being able to use/improve it well'? Which of those gaps did this part (advanced topics) fill?</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Log as data: why the whole system orbits the WAL</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+By now you've met every part of Milvus: the Proxy, the coordinators, DataNode, QueryNode, segcore… But what fuses them into one
+machine isn't any single part — it's a handful of <strong>design throughlines</strong>. This part is about those "whys". The first,
+and most fundamental: <strong>log as data</strong>.</p>
+
+<div class="card analogy"><div class="tag">🍜 An analogy</div>
+<p>Picture a busy noodle shop: every order is <strong>first written onto one ever-growing ticket roll</strong> (that's the log). The
+kitchen board, the customer receipts, the day's ledger — all are <strong>copies transcribed from that roll</strong>. The roll is the
+one truth: as long as it survives, a scorched board or a lost receipt can simply be re-transcribed from it. Milvus treats data the way
+this shop treats its ticket roll — <strong>record the event in the log first; everything else is a copy of the log</strong>.</p></div>
+
+<h2>The goal: why "log as data" is the foundation</h2>
+<p>A traditional database's instinct is "<strong>a write means editing the table</strong>": insert a row and land it straight into a
+segment and an index. Milvus inverts this — <strong>a write's first act is to append one entry to an append-only log (WAL,
+Write-Ahead Log)</strong>, and once it's logged the write returns as success. Segments, indexes, replicas — all the "visible forms of
+data" — are <strong>derivatives materialized from the log afterward</strong>. Why so contorted? Because if "write" and "query" share
+one structure that must be edited constantly, you're forced to choose between "<strong>writing fast</strong>" and "<strong>querying
+fast</strong>": query-fast needs intricate indexes, which slow writes; write-fast leaves indexes alone, which slows queries. Pulling
+the log out as the truth dissolves that tension — writes just append at top speed, while the segments and indexes used for queries
+materialize lazily in the background, <strong>without dragging each other down</strong>. More crucial still is <strong>crash
+recovery</strong>: a process can die at any moment, and a half-edited in-memory segment would vanish with the data; but with an ordered
+log, "recovery" is merely <strong>replaying the log from the last mark</strong> — losing not a single already-logged write.</p>
+
+<p>Set the two worldviews side by side: a traditional database casts the "table" as the star and the log as insurance — editing the
+table is <strong>synchronous</strong> and the index must update on the spot, so high-concurrency writes contend for locks and wait on
+indexing; Milvus casts the "log" as the star and segments as snapshots of the truth, so a write is just <strong>lock-free queuing at the
+tail of the log</strong>, with segments and indexes generated lazily on another timeline. It is exactly this swap of perspective that lets
+Milvus do "hundreds of thousands of writes per second" and "millisecond search over billions of vectors" at once. A concrete scene: a
+DataNode is flushing an in-memory growing segment to object storage and the process dies halfway. In the "write = edit the table" world
+that half-segment might be a pile of corrupt garbage; in the "log as data" world it doesn't matter — that data still sits in the WAL, the
+successor replays from the checkpoint, the missing part fills back in, and the world before and after the crash is identical.
+<strong>A crash is no longer a disaster, just "read again from the mark"</strong>.</p>
+
+<div class="card macro"><div class="tag">🗺️ The big picture</div>
+<p>Think of the whole system as "<strong>one trunk + several derivatives</strong>": the WAL is the trunk (the one truth), and
+segments/binlogs, indexes, and the replica cluster are all <strong>derived views hanging off it</strong>. Every module you've studied
+is doing one thing around this trunk — either <strong>writing into the log</strong> (the Proxy) or <strong>reading from it to
+materialize something</strong> (DataNode, QueryNode, the replicator). Grasp this trunk and you grasp why Milvus's write path,
+streaming system, and replication all look the way they do.</p></div>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">Proxy</div><div class="nd">append write</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">WAL · the one truth</div><div class="nd">append in order · stamp TimeTick</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">DataNode</div><div class="nd">land segments / binlog</div></div>
+  <div class="node"><div class="nt">QueryNode</div><div class="nd">consume the tail · queryable</div></div>
+  <div class="node"><div class="nt">Replicator</div><div class="nd">replay into the backup</div></div>
+</div>
+
+<h2>Write side: define "success" as "written to the log"</h2>
+<p>An insert reaches the Proxy; after it validates, fills the primary key, and hashes by PK into shards, its <strong>core action is
+just one</strong>: call <span class="inline">streaming.WAL().AppendMessages(...)</span> to append the batch into the WAL (Lessons 15,
+16). The WAL is owned by the StreamingNode, and on write a <strong>TimeTick interceptor</strong> stamps it with a <strong>monotonically
+increasing timestamp</strong> (Lessons 16, 31) — a stamp that later becomes the shared basis for global ordering, MVCC visibility, and
+tsafe waiting (Lesson 30). The instant it is logged, the write <strong>returns as success</strong> to the client, with no waiting for
+segments to flush or indexes to build. "Why is that enough?" — because the log is the truth, and <strong>once the truth is recorded,
+all the materialization can take its time and is guaranteed to catch up</strong>. One PChannel maps to one backend topic; within a
+shard TimeTick is strictly ordered, across shards highly parallel (Lesson 31), so "fast and ordered" both hold at once. The WAL backend
+is even swappable: RocksMQ by default for standalone, Pulsar traditionally for clusters, the in-house Woodpecker officially recommended
+for new instances — yet the upper layers needn't care, depending only on the abstract semantics "<strong>append, ordered,
+replayable</strong>".</p>
+
+<h2>Materialize side: segments and indexes are "products" of the log</h2>
+<p>The log is recorded — so how does "visible data" appear? Through <strong>those who consume the log</strong>. DataNode follows the log,
+accumulating messages into in-memory growing segments and, when full or timed out, <strong>flushing them into immutable binlog
+files</strong> in object storage (Lesson 17); later a DataNode worker <strong>builds the ANN index</strong> on a segment (Lessons 21,
+23). Note the direction of causality here: <strong>it is not "segment first, then logged" but "log first, and the segment is the result
+of replaying the log"</strong>. This also explains a point that often confuses newcomers — segments and indexes <strong>can be discarded
+and rebuilt at any time</strong>, because they aren't the truth, only one materialized form of it; while the log survives, they can be
+re-transcribed. Grasp this and you see why Milvus dares to keep growing segments in memory and let multiple data forms trail the log
+asynchronously: <strong>as long as the WAL survives, anything dropped can be replayed back from scratch</strong>.</p>
+
+<p>Seeing segments and indexes as "derived" also brings an unexpected flexibility: since they are regenerated from the log anyway,
+<strong>"changing how you materialize" is almost free</strong>. Want a different index type on a field? Just rebuild — the raw vectors lie
+safely in the binlogs the whole time. Want to upgrade the index-engine format? New segments use the new format while old ones stay
+compatible, with no service interruption during the rolling upgrade (Lesson 23). This "<strong>truth stays put, views swap freely</strong>"
+latitude is a dividend you get only after decoupling data from its materialized forms — you'll see it again when we cover storage-compute
+separation and self-healing.</p>
+
+<div class="layers">
+  <div class="layer l-main"><div class="lh"><span class="badge">truth</span><span class="name">WAL (append-only log)</span></div><div class="ld">the one source of truth · ordered · replayable</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">derived</span><span class="name">segments / binlog</span></div><div class="ld">materialized by DataNode replaying the log (L17)</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">derived</span><span class="name">indexes</span></div><div class="ld">built on segments, rebuildable anytime (L21/L23)</div></div>
+  <div class="layer l-app"><div class="lh"><span class="badge">derived</span><span class="name">replica cluster</span></div><div class="ld">arrived by replaying the same log (L33)</div></div>
+</div>
+
+<h2>Consume side: one log, many parties replaying on demand</h2>
+<p>The loveliest thing about a log: <strong>the same log can be replayed by many parties, each at its own pace</strong>, without dealing
+with one another directly. The QueryNode's delegator <strong>watches the tail of the log</strong>, folding the freshest writes into the
+queryable range, which is what makes "query-while-you-write" possible (Lesson 26). Even <strong>DDL like create-collection or
+schema-change</strong> rides the same log on the same timeline, so structural and data changes are naturally ordered (Lesson 32).
+<strong>Cross-cluster replication</strong> is more direct still — the backup cluster only has to <strong>replay the same log</strong> to
+hold identical data; the replicate interceptor even deliberately <strong>doesn't re-stamp</strong>, preserving the original TimeTick so
+both sides' ordering stays strictly identical (Lesson 33). Even <strong>crash recovery</strong> is the same move: a node dies and its
+successor simply <strong>resumes replaying from the checkpoint</strong> (Lesson 31). This is "<strong>one log, many parties replaying on
+demand</strong>" — nobody calls anybody directly; each just watches the same ever-growing log and advances at its own rhythm. Reducing
+"collaboration" to "sharing one append-only log" is the root reason this architecture can be both complex and orderly.</p>
+
+<p>You might ask: couldn't DataNode, QueryNode, and the replicator just notify each other over RPC to stay in sync? They could, but it
+would be brittle. A direct call means <strong>the caller must know who the callee is, where it is, and whether it's still alive</strong>; a
+restart on either side can drop messages and demand compensation. "Sharing one log" dissolves all that coupling into one simple contract —
+<strong>just record the position you've consumed to (your checkpoint), and on restart resume reading from there</strong>. Want to add a new
+kind of consumer (another backup cluster, an audit pipeline)? Not one line of the write side changes; it subscribes to the log and replays
+from the start on its own. This "<strong>open-ended extensibility</strong>" is the log architecture's most underrated benefit.</p>
+
+<p>One level deeper: what lets "many parties replaying the same log" reach a <strong>consistent result</strong> is that monotonically
+increasing TimeTick. Because every message carries a strictly increasing stamp, "replay" is <strong>deterministic</strong> — the same
+stretch of log yields exactly the same result no matter who replays it or how many times. This is why we kept stressing that
+"<strong>the timestamp is the thread that stitches everything together</strong>": it serves read consistency, yes, but it is also the
+underlying guarantee that lets the whole "log as data" system stay self-consistent; without it, multiple consumers replaying independently
+could reach mutually contradictory worlds.</p>
+
+<div class="trace">
+  <div class="tcap"><b>one write @TimeTick=105</b>: logged = success; each consumer catches up at its own pace</div>
+  <div class="stations">
+    <div class="stn"><h5>WAL</h5><div class="cellrow"><span class="vc hot">105 logged</span></div><div class="tlab">returns success now</div></div>
+    <div class="stn"><h5>DataNode</h5><div class="cellrow"><span class="vc">consumed to 105</span></div><div class="tlab">lands segment / binlog</div></div>
+    <div class="stn"><h5>QueryNode</h5><div class="cellrow"><span class="vc">consumed to 103</span></div><div class="tlab">tsafe=103, catching up</div></div>
+    <div class="stn"><h5>backup</h5><div class="cellrow"><span class="vc dim">replayed to 101</span></div><div class="tlab">replication lag</div></div>
+  </div>
+</div>
+
+<h2>The payoff and the tradeoff: inversion of primary and secondary</h2>
+<p>No design is free. Treating the log as truth costs you, first, <strong>materialization latency</strong>: the write returns instantly,
+but its turning into "a segment an index can search efficiently" waits on background work — which is exactly why growing segments use
+brute force to cover the freshest data (Lesson 7). The second, deeper cost is the <strong>"inversion of primary and secondary"</strong>:
+in a traditional single-node database the WAL is a <strong>by-product</strong> that exists only for crash recovery, with the table as the
+star; in Milvus, <strong>the WAL takes over as the one truth, and segments and indexes are demoted to derived data</strong>. That means
+<strong>the log itself becomes the thing the whole system must most carefully protect</strong> — it must be stored reliably, replayable
+long-term, strictly ordered.</p>
+
+<p>So what does "guarding one log" concretely mean? It means the WAL backend must take "reliable storage" to the limit: once a message is
+acknowledged, a power cut or a crash must not lose it; it must support <strong>long retention and replay from any position</strong>, or a
+far-behind consumer (say a freshly scaled-out node) could never catch up; and it must guarantee <strong>strict ordering within a
+shard</strong>, because once order scrambles, the replayed world differs from the original. This is why Milvus invests so heavily in WAL
+backends — from reusing mature Pulsar/Kafka to building the vector-DB-tailored Woodpecker — all of it about guarding "that one log you must
+guard" more durably, cheaply, and operably.</p>
+
+<p>But the reward is enormous: write and query are decoupled (each scales independently, neither drags the
+other), recovery degenerates into replay (simple and lossless), and the many consumers are independent (writing, flushing, querying,
+replicating each run on their own). In one line: <strong>at the cost of "you must guard one log", you buy the simplicity and
+self-consistency of the entire distributed system</strong>. This is the shared bedrock of every design in the lessons that follow.</p>
+
+<div class="card key"><div class="tag">📌 Key points</div>
+<ul>
+  <li><strong>Log is the truth</strong>: the WAL is the one source of truth; segments / indexes / replicas are <strong>derived views</strong> materialized from it.</li>
+  <li><strong>Write = append</strong>: the Proxy appends data into the WAL, stamps a monotonic TimeTick, and <strong>returns success once logged</strong> — no waiting on flush / index.</li>
+  <li><strong>Derivatives are rebuildable</strong>: segments and indexes can be discarded and rebuilt anytime because the truth is in the log — this is what lets Milvus materialize asynchronously.</li>
+  <li><strong>One log, many replayers</strong>: DataNode lands segments, QueryNode queries-while-writing, the replicator replays, crash recovery resumes — each watches the log at its own pace.</li>
+  <li><strong>Tradeoff = primary/secondary inversion</strong>: the cost is materialization latency + having to guard the log; the reward is <strong>write/query decoupling, recovery-as-replay, and independent consumers</strong>.</li>
+</ul></div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. In the 'log as data' design throughline, what is the 'single source of truth'?</div>
+  <ol class="opts">
+    <li>The WAL (append-only log) is the one source of truth; segments, indexes, and replica clusters are all derived views materialized from it, and a write counts as success once appended to the log</li>
+    <li>Each node keeps its own authoritative copy, none canonical</li>
+    <li>Segments are the truth; the WAL is just a backup used on crash</li>
+    <li>The index is the sole authority; everything else is rebuilt from it</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. Milvus inverts causality: the log comes first, and segments/indexes/replicas are derivatives replayed from it, discardable and rebuildable anytime. That is exactly what makes 'write = append, logged = success' possible</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Why does a write 'return success the moment it's logged' instead of waiting for flush/index?</div>
+  <ol class="opts">
+    <li>Because the log is the truth — once recorded, segments and indexes are guaranteed to catch up; this moves the heavy work off the hot path, leaving the write path a single lock-free append, decoupling 'write fast' from 'query fast'</li>
+    <li>Because the client doesn't care whether data is persisted</li>
+    <li>Because the index is built synchronously at write time</li>
+    <li>Because flushing is instantaneous and takes no time</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. Pushing the heavy work (segments, indexes) onto a background timeline leaves only a sequential append on the hot path (almost no lock contention), lifting the write-throughput ceiling. The cost is materialization latency, covered by growing-segment brute force for the freshest data</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. What guarantees that 'one log, many parties replaying on demand' yields a consistent result across consumers?</div>
+  <ol class="opts">
+    <li>The monotonically increasing TimeTick makes replay deterministic: the same log yields the same result no matter who replays it or how often; each consumer just tracks its own checkpoint, with no direct RPC calls between them</li>
+    <li>The Proxy notifies each consumer one by one over RPC</li>
+    <li>It requires every consumer to be online at the same time to sync</li>
+    <li>Replay order is random, so results may differ</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. Deterministic replay = a strictly ordered log + a monotonic TimeTick. The shared log dissolves 'who calls whom' coupling into 'each watches the log, each keeps a checkpoint', so adding a consumer (another backup/audit pipeline) changes not one line of the write side</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson's core is the 'inversion of primary and secondary': the WAL goes from a single-node DB's 'crash-recovery by-product' to Milvus's 'one source of truth', while segments and indexes are demoted to derived data. Consider: (1) what does this inversion make 'the thing the whole system must most protect'? Which capabilities (reliable storage / long retention / strict ordering) must the WAL backend therefore perfect? (2) How does the 'truth stays put, views swap freely' latitude show up in 'changing index type' and 'rolling-upgrading the index format'? (3) In one sentence to a colleague: why does understanding 'log as data' mean understanding why Milvus's write path, streaming system, and replication all look the way they do?</li>
   </ul>
 </div>
 </div>
