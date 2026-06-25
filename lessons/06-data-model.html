@@ -471,6 +471,35 @@ Milvus 就会<strong>自动</strong>根据这个字段的值把 entity 散列到
 <strong>"我的查询几乎总会带哪个过滤条件？"</strong>——那个字段，往往就是最好的分区键候选。一个小提醒：分区键一旦在建集合时指定就固定下来，
 所以这又是一个需要在 schema 设计阶段就想清楚的决定，和前面说的"维度、主键"一样，属于"开局定终身"的那类选择。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="集合按分区键把数据分到不同分区，分区内再切成段，段里是一行行实体；查询按分区键只搜相关分区">
+    <rect x="40" y="42" width="232" height="40" rx="8" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <text x="156" y="67" text-anchor="middle" class="mono" style="fill:var(--ink)">row { user_id: 42, vec, … }</text>
+    <line x1="272" y1="62" x2="310" y2="62" style="stroke:var(--line);stroke-width:2"/><path d="M310,62 l-11,-5 l0,10 z" style="fill:var(--line)"/>
+    <rect x="312" y="42" width="150" height="40" rx="8" style="fill:var(--accent-soft);stroke:var(--accent)"/>
+    <text x="387" y="67" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">hash(分区键)</text>
+    <line x1="462" y1="62" x2="512" y2="62" style="stroke:var(--accent);stroke-width:2"/><path d="M512,62 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <text x="600" y="56" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">user=42 → 分区 A</text>
+    <text x="600" y="76" text-anchor="middle" style="fill:var(--muted)">查询带 user=42 只搜 A</text>
+    <path d="M387,84 C387,108 218,108 218,130" style="fill:none;stroke:var(--accent);stroke-width:1.5;stroke-dasharray:5 4"/>
+    <path d="M218,132 l-5,-11 l10,1 z" style="fill:var(--accent)"/>
+    <rect x="40" y="104" width="680" height="168" rx="12" style="fill:none;stroke:var(--accent);stroke-width:1.5"/>
+    <text x="56" y="125" style="fill:var(--accent-ink);font-weight:700">collection（集合）</text>
+    <rect x="58" y="132" width="320" height="130" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="74" y="152" style="fill:var(--accent-ink);font-weight:700">partition A · user=42</text>
+    <rect x="74" y="160" width="140" height="92" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="144" y="178" text-anchor="middle" style="fill:var(--ink)">segment</text>
+    <circle cx="100" cy="206" r="4" style="fill:var(--muted)"/><circle cx="124" cy="206" r="4" style="fill:var(--muted)"/><circle cx="148" cy="206" r="4" style="fill:var(--muted)"/><circle cx="172" cy="206" r="4" style="fill:var(--muted)"/>
+    <text x="144" y="240" text-anchor="middle" style="fill:var(--faint)">⊃ entities（行）</text>
+    <rect x="222" y="160" width="140" height="92" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="292" y="178" text-anchor="middle" style="fill:var(--ink)">segment</text>
+    <circle cx="248" cy="206" r="4" style="fill:var(--muted)"/><circle cx="272" cy="206" r="4" style="fill:var(--muted)"/><circle cx="296" cy="206" r="4" style="fill:var(--muted)"/>
+    <rect x="398" y="132" width="304" height="130" rx="10" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <text x="414" y="152" style="fill:var(--muted)">partition B · user=99</text>
+    <rect x="414" y="160" width="132" height="92" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="480" y="178" text-anchor="middle" style="fill:var(--muted)">segment</text>
+    <rect x="554" y="160" width="132" height="92" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="620" y="178" text-anchor="middle" style="fill:var(--muted)">segment</text>
+  </svg>
+  <div class="figcap"><b>逐层切小：collection ⊃ partition ⊃ segment ⊃ entity</b>：<span class="mono">hash(分区键)</span> 把每行<b>自动路由</b>到某个分区；查询带上分区键就<b>只搜对应分区</b>，先在数据层剪掉一大片无关数据。</div>
+</div>
+
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>定义 schema</h4><p>声明字段：主键、向量字段（带 dim）、若干标量字段；可选开启动态字段、指定分区键。</p></div></div>
   <div class="step"><div class="num">2</div><div class="sc"><h4>创建 collection</h4><p>schema 落定，collection 诞生；维度、主键、度量等元信息从此固定。</p></div></div>
@@ -759,6 +788,35 @@ few million for one tenant", then the ANN index quickly finds nearest neighbors 
 designing a collection you'll consciously ask: <strong>"which filter will almost every query carry?"</strong> — that field is often the best
 partition-key candidate. A small reminder: the partition key, once specified at collection creation, is fixed — so this is another
 decision to settle at schema-design time, in the same "set once for life" category as dimension and primary key.</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="A collection routes data into partitions by partition key; each partition splits into segments; segments hold rows; a query searches only the relevant partition">
+    <rect x="40" y="42" width="232" height="40" rx="8" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <text x="156" y="67" text-anchor="middle" class="mono" style="fill:var(--ink)">row { user_id: 42, vec, … }</text>
+    <line x1="272" y1="62" x2="310" y2="62" style="stroke:var(--line);stroke-width:2"/><path d="M310,62 l-11,-5 l0,10 z" style="fill:var(--line)"/>
+    <rect x="312" y="42" width="160" height="40" rx="8" style="fill:var(--accent-soft);stroke:var(--accent)"/>
+    <text x="392" y="67" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">hash(partition key)</text>
+    <line x1="472" y1="62" x2="520" y2="62" style="stroke:var(--accent);stroke-width:2"/><path d="M520,62 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <text x="610" y="56" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">user=42 → partition A</text>
+    <text x="610" y="76" text-anchor="middle" style="fill:var(--muted)">a query with user=42 hits only A</text>
+    <path d="M392,84 C392,108 218,108 218,130" style="fill:none;stroke:var(--accent);stroke-width:1.5;stroke-dasharray:5 4"/>
+    <path d="M218,132 l-5,-11 l10,1 z" style="fill:var(--accent)"/>
+    <rect x="40" y="104" width="680" height="168" rx="12" style="fill:none;stroke:var(--accent);stroke-width:1.5"/>
+    <text x="56" y="125" style="fill:var(--accent-ink);font-weight:700">collection</text>
+    <rect x="58" y="132" width="320" height="130" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="74" y="152" style="fill:var(--accent-ink);font-weight:700">partition A · user=42</text>
+    <rect x="74" y="160" width="140" height="92" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="144" y="178" text-anchor="middle" style="fill:var(--ink)">segment</text>
+    <circle cx="100" cy="206" r="4" style="fill:var(--muted)"/><circle cx="124" cy="206" r="4" style="fill:var(--muted)"/><circle cx="148" cy="206" r="4" style="fill:var(--muted)"/><circle cx="172" cy="206" r="4" style="fill:var(--muted)"/>
+    <text x="144" y="240" text-anchor="middle" style="fill:var(--faint)">⊃ entities (rows)</text>
+    <rect x="222" y="160" width="140" height="92" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="292" y="178" text-anchor="middle" style="fill:var(--ink)">segment</text>
+    <circle cx="248" cy="206" r="4" style="fill:var(--muted)"/><circle cx="272" cy="206" r="4" style="fill:var(--muted)"/><circle cx="296" cy="206" r="4" style="fill:var(--muted)"/>
+    <rect x="398" y="132" width="304" height="130" rx="10" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <text x="414" y="152" style="fill:var(--muted)">partition B · user=99</text>
+    <rect x="414" y="160" width="132" height="92" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="480" y="178" text-anchor="middle" style="fill:var(--muted)">segment</text>
+    <rect x="554" y="160" width="132" height="92" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="620" y="178" text-anchor="middle" style="fill:var(--muted)">segment</text>
+  </svg>
+  <div class="figcap"><b>Slicing down: collection ⊃ partition ⊃ segment ⊃ entity</b>: <span class="mono">hash(partition key)</span> <b>auto-routes</b> each row into a partition; a query carrying the partition key <b>searches only that partition</b>, pruning a huge swath of data up front.</div>
+</div>
 
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>Define the schema</h4><p>Declare fields: primary key, vector field (with dim), some scalar fields; optionally enable dynamic field and set a partition key.</p></div></div>

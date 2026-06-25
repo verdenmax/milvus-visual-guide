@@ -398,6 +398,40 @@ IVF 要先跑一遍聚类。线上系统不仅要考虑"查得快不快"，也�
 打个比方：nlist 像是把仓库分成多少个货区（一次定好），nprobe 像是这次取货你愿意跑几个货区——跑得多自然更不容易漏，但也更费腿。
 这两个旋钮一个管"结构"、一个管"每次查询的力度"，配合起来就能把 IVF 精确地摆在三角里你想要的位置。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="IVF 把向量空间聚成 6 个桶，查询只在最近的 2 个桶里精算，其余 4 桶跳过">
+    <polygon points="60,56 213,56 203,168 60,158" style="fill:var(--panel-2);stroke:var(--line);stroke-width:1.2;opacity:.7"/>
+    <polygon points="367,56 520,56 520,162 378,172" style="fill:var(--panel-2);stroke:var(--line);stroke-width:1.2;opacity:.7"/>
+    <polygon points="60,158 203,168 193,276 60,276" style="fill:var(--panel-2);stroke:var(--line);stroke-width:1.2;opacity:.7"/>
+    <polygon points="378,172 520,162 520,276 367,276" style="fill:var(--panel-2);stroke:var(--line);stroke-width:1.2;opacity:.7"/>
+    <polygon points="213,56 367,56 378,172 203,168" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:2"/>
+    <polygon points="203,168 378,172 367,276 193,276" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:2"/>
+    <text x="84" y="150" style="fill:var(--faint)">跳过</text>
+    <text x="84" y="262" style="fill:var(--faint)">跳过</text>
+    <text x="478" y="150" style="fill:var(--faint)">跳过</text>
+    <text x="478" y="262" style="fill:var(--faint)">跳过</text>
+    <path d="M129,108 l12,0 M135,102 l0,12" style="stroke:var(--muted);stroke-width:2"/>
+    <path d="M442,108 l12,0 M448,102 l0,12" style="stroke:var(--muted);stroke-width:2"/>
+    <path d="M119,220 l12,0 M125,214 l0,12" style="stroke:var(--muted);stroke-width:2"/>
+    <path d="M444,222 l12,0 M450,216 l0,12" style="stroke:var(--muted);stroke-width:2"/>
+    <path d="M286,110 l12,0 M292,104 l0,12" style="stroke:var(--accent-ink);stroke-width:2"/>
+    <path d="M279,224 l12,0 M285,218 l0,12" style="stroke:var(--accent-ink);stroke-width:2"/>
+    <circle cx="270" cy="92" r="3.5" style="fill:var(--accent)"/><circle cx="318" cy="100" r="3.5" style="fill:var(--accent)"/><circle cx="248" cy="138" r="3.5" style="fill:var(--accent)"/>
+    <circle cx="258" cy="206" r="3.5" style="fill:var(--accent)"/><circle cx="322" cy="214" r="3.5" style="fill:var(--accent)"/><circle cx="300" cy="252" r="3.5" style="fill:var(--accent)"/>
+    <line x1="292" y1="168" x2="292" y2="116" style="stroke:var(--accent);stroke-width:1.5;stroke-dasharray:4 3"/>
+    <line x1="292" y1="168" x2="286" y2="218" style="stroke:var(--accent);stroke-width:1.5;stroke-dasharray:4 3"/>
+    <circle cx="292" cy="168" r="7" style="fill:var(--accent)"/>
+    <circle cx="292" cy="168" r="12" style="fill:none;stroke:var(--accent);stroke-width:1.5"/>
+    <text x="292" y="158" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">q</text>
+    <text x="552" y="86" style="fill:var(--muted)">nlist=6 · nprobe=2</text>
+    <rect x="552" y="102" width="16" height="16" rx="3" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="576" y="115" style="fill:var(--ink)">桶内精算</text>
+    <rect x="552" y="132" width="16" height="16" rx="3" style="fill:var(--panel-2);stroke:var(--line)"/><text x="576" y="145" style="fill:var(--ink)">其余跳过</text>
+    <path d="M554,172 l12,0 M560,166 l0,12" style="stroke:var(--muted);stroke-width:2"/><text x="576" y="177" style="fill:var(--ink)">桶中心</text>
+    <circle cx="560" cy="200" r="5" style="fill:var(--accent)"/><text x="576" y="205" style="fill:var(--ink)">查询 q</text>
+  </svg>
+  <div class="figcap"><b>只在最近的桶里精算</b>：k-means 把全库聚成 <span class="mono">nlist=6</span> 个桶，查询 <span class="mono">q</span> 只探离它<b>最近的 nprobe=2 个桶</b>（精确比对），其余 <b>4 桶直接跳过</b>——这就是 IVF "跳过大半数据"的来历，也是 <span class="mono">nprobe</span> 调大召回更高的原因。</div>
+</div>
+
 <div class="trace">
   <div class="tcap"><b>IVF 搜索</b>：全库分成 6 个桶，查询只探最近的 2 个（nprobe=2），其余 4 桶直接跳过</div>
   <div class="stations">
@@ -431,6 +465,46 @@ IVF 要先跑一遍聚类。线上系统不仅要考虑"查得快不快"，也�
 查询时从<strong>顶层稀疏图</strong>的一个入口出发，每一步都跳到"离查询更近"的邻居，像高速公路换到省道再换到小路，<strong>几跳就逼近目标</strong>。
 三个旋钮：<span class="inline">M</span> 是每个节点的连边数（图多密，影响内存与召回），<span class="inline">efConstruction</span> 是建图时的候选宽度（建得多细），
 <span class="inline">ef</span> 是查询时的候选宽度——<strong>ef 越大，搜得越广，召回越高但越慢</strong>。</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="HNSW 多层图上的贪心搜索：从顶层稀疏图入口出发，逐层下沉，几跳逼近最近邻">
+    <text x="18" y="76" style="fill:var(--muted)">顶层·稀疏</text>
+    <text x="18" y="162" style="fill:var(--muted)">中间层</text>
+    <text x="18" y="252" style="fill:var(--muted)">底层·稠密</text>
+    <polyline points="120,72 330,72 560,72" style="fill:none;stroke:var(--line);stroke-width:1.5;opacity:.6"/>
+    <polyline points="160,158 300,158 440,158 580,158 680,158" style="fill:none;stroke:var(--line);stroke-width:1.5;opacity:.6"/>
+    <polyline points="110,248 190,248 270,248 350,248 430,248 510,248 590,248 670,248" style="fill:none;stroke:var(--line);stroke-width:1.5;opacity:.6"/>
+    <line x1="330" y1="80" x2="300" y2="150" style="stroke:var(--line);stroke-width:1;stroke-dasharray:3 4;opacity:.5"/>
+    <line x1="440" y1="166" x2="430" y2="240" style="stroke:var(--line);stroke-width:1;stroke-dasharray:3 4;opacity:.5"/>
+    <circle cx="330" cy="72" r="7" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="560" cy="72" r="7" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="160" cy="158" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="580" cy="158" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="680" cy="158" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="110" cy="248" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="190" cy="248" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="270" cy="248" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="350" cy="248" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="510" cy="248" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="590" cy="248" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="670" cy="248" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <line x1="130" y1="72" x2="319" y2="72" style="stroke:var(--accent);stroke-width:3"/>
+    <path d="M321,72 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <line x1="326" y1="80" x2="304" y2="148" style="stroke:var(--accent);stroke-width:3"/>
+    <path d="M302,150 l1,-12 l8,7 z" style="fill:var(--accent)"/>
+    <line x1="311" y1="158" x2="429" y2="158" style="stroke:var(--accent);stroke-width:3"/>
+    <path d="M431,158 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <line x1="438" y1="166" x2="431" y2="238" style="stroke:var(--accent);stroke-width:3"/>
+    <path d="M430,240 l-3,-11 l9,4 z" style="fill:var(--accent)"/>
+    <circle cx="120" cy="72" r="9" style="fill:var(--accent);stroke:var(--accent)"/>
+    <text x="120" y="50" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">入口</text>
+    <circle cx="300" cy="158" r="7" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:2"/>
+    <circle cx="440" cy="158" r="7" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:2"/>
+    <circle cx="430" cy="248" r="11" style="fill:var(--teal);stroke:var(--teal)"/>
+    <text x="430" y="278" text-anchor="middle" style="fill:var(--teal);font-weight:700">最近邻 ✓</text>
+  </svg>
+  <div class="figcap"><b>在多层图上"几跳"逼近</b>：从<b>顶层稀疏图</b>的入口大跨步出发，每步贪心跳向更近的邻居，<b>逐层下沉</b>到更密的层，最后在底层收敛到最近邻——<b>整条路径只访问全库极小一部分节点</b>。</div>
+</div>
 
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>顶层入口</h4><p>从最稀疏的一层选一个入口节点，先做"大跨步"逼近。</p></div></div>
@@ -654,6 +728,40 @@ warehouse into (decided once), nprobe is how many zones you're willing to walk t
 costs more legwork. One knob governs "structure", the other "the effort per query"; together they place IVF precisely where you want
 it in the triangle.</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="IVF clusters the vector space into 6 buckets; the query refines only the 2 nearest buckets and skips the other 4">
+    <polygon points="60,56 213,56 203,168 60,158" style="fill:var(--panel-2);stroke:var(--line);stroke-width:1.2;opacity:.7"/>
+    <polygon points="367,56 520,56 520,162 378,172" style="fill:var(--panel-2);stroke:var(--line);stroke-width:1.2;opacity:.7"/>
+    <polygon points="60,158 203,168 193,276 60,276" style="fill:var(--panel-2);stroke:var(--line);stroke-width:1.2;opacity:.7"/>
+    <polygon points="378,172 520,162 520,276 367,276" style="fill:var(--panel-2);stroke:var(--line);stroke-width:1.2;opacity:.7"/>
+    <polygon points="213,56 367,56 378,172 203,168" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:2"/>
+    <polygon points="203,168 378,172 367,276 193,276" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:2"/>
+    <text x="80" y="150" style="fill:var(--faint)">skip</text>
+    <text x="80" y="262" style="fill:var(--faint)">skip</text>
+    <text x="478" y="150" style="fill:var(--faint)">skip</text>
+    <text x="478" y="262" style="fill:var(--faint)">skip</text>
+    <path d="M129,108 l12,0 M135,102 l0,12" style="stroke:var(--muted);stroke-width:2"/>
+    <path d="M442,108 l12,0 M448,102 l0,12" style="stroke:var(--muted);stroke-width:2"/>
+    <path d="M119,220 l12,0 M125,214 l0,12" style="stroke:var(--muted);stroke-width:2"/>
+    <path d="M444,222 l12,0 M450,216 l0,12" style="stroke:var(--muted);stroke-width:2"/>
+    <path d="M286,110 l12,0 M292,104 l0,12" style="stroke:var(--accent-ink);stroke-width:2"/>
+    <path d="M279,224 l12,0 M285,218 l0,12" style="stroke:var(--accent-ink);stroke-width:2"/>
+    <circle cx="270" cy="92" r="3.5" style="fill:var(--accent)"/><circle cx="318" cy="100" r="3.5" style="fill:var(--accent)"/><circle cx="248" cy="138" r="3.5" style="fill:var(--accent)"/>
+    <circle cx="258" cy="206" r="3.5" style="fill:var(--accent)"/><circle cx="322" cy="214" r="3.5" style="fill:var(--accent)"/><circle cx="300" cy="252" r="3.5" style="fill:var(--accent)"/>
+    <line x1="292" y1="168" x2="292" y2="116" style="stroke:var(--accent);stroke-width:1.5;stroke-dasharray:4 3"/>
+    <line x1="292" y1="168" x2="286" y2="218" style="stroke:var(--accent);stroke-width:1.5;stroke-dasharray:4 3"/>
+    <circle cx="292" cy="168" r="7" style="fill:var(--accent)"/>
+    <circle cx="292" cy="168" r="12" style="fill:none;stroke:var(--accent);stroke-width:1.5"/>
+    <text x="292" y="158" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">q</text>
+    <text x="552" y="86" style="fill:var(--muted)">nlist=6 · nprobe=2</text>
+    <rect x="552" y="102" width="16" height="16" rx="3" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="576" y="115" style="fill:var(--ink)">refined</text>
+    <rect x="552" y="132" width="16" height="16" rx="3" style="fill:var(--panel-2);stroke:var(--line)"/><text x="576" y="145" style="fill:var(--ink)">skipped</text>
+    <path d="M554,172 l12,0 M560,166 l0,12" style="stroke:var(--muted);stroke-width:2"/><text x="576" y="177" style="fill:var(--ink)">centroid</text>
+    <circle cx="560" cy="200" r="5" style="fill:var(--accent)"/><text x="576" y="205" style="fill:var(--ink)">query q</text>
+  </svg>
+  <div class="figcap"><b>Refine only the nearest buckets</b>: k-means clusters all vectors into <span class="mono">nlist=6</span> buckets; query <span class="mono">q</span> probes only the <b>nearest nprobe=2 buckets</b> (exact compare) and <b>skips the other 4</b> — that is how IVF "skips most of the data", and why a larger <span class="mono">nprobe</span> lifts recall.</div>
+</div>
+
 <div class="trace">
   <div class="tcap"><b>IVF search</b>: all vectors split into 6 buckets, the query probes only the nearest 2 (nprobe=2), skipping the other 4</div>
   <div class="stations">
@@ -694,6 +802,46 @@ hops to the neighbor "closer to the query" — like going from highway to arteri
 hops</strong>. Three knobs: <span class="inline">M</span> is edges per node (graph density, affects memory and recall),
 <span class="inline">efConstruction</span> is the candidate width at build time (how finely it's built), and <span class="inline">ef</span> is the
 candidate width at query time — <strong>larger ef searches wider, higher recall but slower</strong>.</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Greedy search on the HNSW multi-layer graph: start at an entry on the sparse top layer, descend layer by layer, reach the nearest neighbor in a few hops">
+    <text x="18" y="76" style="fill:var(--muted)">top · sparse</text>
+    <text x="18" y="162" style="fill:var(--muted)">middle</text>
+    <text x="18" y="252" style="fill:var(--muted)">bottom · dense</text>
+    <polyline points="120,72 330,72 560,72" style="fill:none;stroke:var(--line);stroke-width:1.5;opacity:.6"/>
+    <polyline points="160,158 300,158 440,158 580,158 680,158" style="fill:none;stroke:var(--line);stroke-width:1.5;opacity:.6"/>
+    <polyline points="110,248 190,248 270,248 350,248 430,248 510,248 590,248 670,248" style="fill:none;stroke:var(--line);stroke-width:1.5;opacity:.6"/>
+    <line x1="330" y1="80" x2="300" y2="150" style="stroke:var(--line);stroke-width:1;stroke-dasharray:3 4;opacity:.5"/>
+    <line x1="440" y1="166" x2="430" y2="240" style="stroke:var(--line);stroke-width:1;stroke-dasharray:3 4;opacity:.5"/>
+    <circle cx="330" cy="72" r="7" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="560" cy="72" r="7" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="160" cy="158" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="580" cy="158" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="680" cy="158" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="110" cy="248" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="190" cy="248" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="270" cy="248" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="350" cy="248" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="510" cy="248" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="590" cy="248" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="670" cy="248" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <line x1="130" y1="72" x2="319" y2="72" style="stroke:var(--accent);stroke-width:3"/>
+    <path d="M321,72 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <line x1="326" y1="80" x2="304" y2="148" style="stroke:var(--accent);stroke-width:3"/>
+    <path d="M302,150 l1,-12 l8,7 z" style="fill:var(--accent)"/>
+    <line x1="311" y1="158" x2="429" y2="158" style="stroke:var(--accent);stroke-width:3"/>
+    <path d="M431,158 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <line x1="438" y1="166" x2="431" y2="238" style="stroke:var(--accent);stroke-width:3"/>
+    <path d="M430,240 l-3,-11 l9,4 z" style="fill:var(--accent)"/>
+    <circle cx="120" cy="72" r="9" style="fill:var(--accent);stroke:var(--accent)"/>
+    <text x="120" y="50" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">entry</text>
+    <circle cx="300" cy="158" r="7" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:2"/>
+    <circle cx="440" cy="158" r="7" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:2"/>
+    <circle cx="430" cy="248" r="11" style="fill:var(--teal);stroke:var(--teal)"/>
+    <text x="430" y="278" text-anchor="middle" style="fill:var(--teal);font-weight:700">nearest ✓</text>
+  </svg>
+  <div class="figcap"><b>A few hops on a multi-layer graph</b>: start with a big stride from an entry on the <b>sparse top layer</b>, greedily hop toward closer neighbors, <b>descend layer by layer</b> to denser layers, and converge on the nearest neighbor at the bottom — <b>visiting only a tiny fraction of all nodes</b>.</div>
+</div>
 
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>Top-layer entry</h4><p>Pick an entry node on the sparsest layer and take big strides toward the query.</p></div></div>

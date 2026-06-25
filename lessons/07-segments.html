@@ -490,6 +490,43 @@ vchannel 的名字其实就是在 pchannel 名字后面拼上 collection ID 和�
 而不是像关系库那样一行行存。比如一个段里有 id、vector、price 三个字段，它会把所有 id 存一块、所有 vector 存一块、所有 price 存一块。
 落盘后，每个字段对应一份 <span class="inline">binlog</span> 文件。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="列式布局：把按行的实体重组成按字段连续存储，每个字段一份 binlog">
+    <text x="40" y="52" style="fill:var(--muted)">逻辑：3 行实体</text>
+    <rect x="40" y="64" width="252" height="36" rx="7" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <rect x="48" y="70" width="40" height="24" rx="5" style="fill:var(--blue-soft,var(--accent-soft));stroke:var(--blue)"/><text x="68" y="87" text-anchor="middle" class="mono" style="fill:var(--blue)">1</text>
+    <rect x="94" y="70" width="112" height="24" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="150" y="87" text-anchor="middle" style="fill:var(--accent-ink)">vec</text>
+    <rect x="212" y="70" width="72" height="24" rx="5" style="fill:var(--amber-soft,var(--accent-soft));stroke:var(--amber)"/><text x="248" y="87" text-anchor="middle" class="mono" style="fill:var(--amber)">9.9</text>
+    <rect x="40" y="106" width="252" height="36" rx="7" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <rect x="48" y="112" width="40" height="24" rx="5" style="fill:var(--blue-soft,var(--accent-soft));stroke:var(--blue)"/><text x="68" y="129" text-anchor="middle" class="mono" style="fill:var(--blue)">2</text>
+    <rect x="94" y="112" width="112" height="24" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="150" y="129" text-anchor="middle" style="fill:var(--accent-ink)">vec</text>
+    <rect x="212" y="112" width="72" height="24" rx="5" style="fill:var(--amber-soft,var(--accent-soft));stroke:var(--amber)"/><text x="248" y="129" text-anchor="middle" class="mono" style="fill:var(--amber)">3.5</text>
+    <rect x="40" y="148" width="252" height="36" rx="7" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <rect x="48" y="154" width="40" height="24" rx="5" style="fill:var(--blue-soft,var(--accent-soft));stroke:var(--blue)"/><text x="68" y="171" text-anchor="middle" class="mono" style="fill:var(--blue)">3</text>
+    <rect x="94" y="154" width="112" height="24" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="150" y="171" text-anchor="middle" style="fill:var(--accent-ink)">vec</text>
+    <rect x="212" y="154" width="72" height="24" rx="5" style="fill:var(--amber-soft,var(--accent-soft));stroke:var(--amber)"/><text x="248" y="171" text-anchor="middle" class="mono" style="fill:var(--amber)">7.0</text>
+    <line x1="300" y1="124" x2="340" y2="124" style="stroke:var(--line);stroke-width:2"/><path d="M340,124 l-11,-5 l0,10 z" style="fill:var(--line)"/>
+    <text x="320" y="114" text-anchor="middle" style="fill:var(--muted)">按列</text>
+    <text x="352" y="52" style="fill:var(--muted)">物理：同字段连续存 · 各一份 binlog</text>
+    <text x="354" y="86" style="fill:var(--blue);font-weight:700">id</text>
+    <rect x="404" y="68" width="34" height="28" rx="5" style="fill:var(--blue-soft,var(--accent-soft));stroke:var(--blue)"/><text x="421" y="87" text-anchor="middle" class="mono" style="fill:var(--blue)">1</text>
+    <rect x="440" y="68" width="34" height="28" rx="5" style="fill:var(--blue-soft,var(--accent-soft));stroke:var(--blue)"/><text x="457" y="87" text-anchor="middle" class="mono" style="fill:var(--blue)">2</text>
+    <rect x="476" y="68" width="34" height="28" rx="5" style="fill:var(--blue-soft,var(--accent-soft));stroke:var(--blue)"/><text x="493" y="87" text-anchor="middle" class="mono" style="fill:var(--blue)">3</text>
+    <text x="528" y="86" style="fill:var(--muted)">→ 1 份 binlog</text>
+    <text x="354" y="142" style="fill:var(--accent-ink);font-weight:700">vector</text>
+    <rect x="404" y="124" width="34" height="28" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="421" y="143" text-anchor="middle" style="fill:var(--accent-ink)">v</text>
+    <rect x="440" y="124" width="34" height="28" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="457" y="143" text-anchor="middle" style="fill:var(--accent-ink)">v</text>
+    <rect x="476" y="124" width="34" height="28" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="493" y="143" text-anchor="middle" style="fill:var(--accent-ink)">v</text>
+    <text x="528" y="142" style="fill:var(--muted)">→ 1 份 binlog</text>
+    <text x="354" y="198" style="fill:var(--amber);font-weight:700">price</text>
+    <rect x="404" y="180" width="44" height="28" rx="5" style="fill:var(--amber-soft,var(--accent-soft));stroke:var(--amber)"/><text x="426" y="199" text-anchor="middle" class="mono" style="fill:var(--amber)">9.9</text>
+    <rect x="450" y="180" width="44" height="28" rx="5" style="fill:var(--amber-soft,var(--accent-soft));stroke:var(--amber)"/><text x="472" y="199" text-anchor="middle" class="mono" style="fill:var(--amber)">3.5</text>
+    <rect x="496" y="180" width="44" height="28" rx="5" style="fill:var(--amber-soft,var(--accent-soft));stroke:var(--amber)"/><text x="518" y="199" text-anchor="middle" class="mono" style="fill:var(--amber)">7.0</text>
+    <text x="556" y="198" style="fill:var(--muted)">→ 1 份 binlog</text>
+  </svg>
+  <div class="figcap"><b>按列存，不按行存</b>：同一字段的所有值<b>连续放在一起</b>，每个字段落成<b>一份 binlog</b>。向量检索"整列拿出来批量算距离"因此极快（缓存友好、可向量化）；标量过滤也只需扫相关列。</div>
+</div>
+
 <p>为什么用列式？因为向量检索的访问模式是"<strong>把某一列（向量列）整批拿出来算距离</strong>"，列式布局让这种<strong>批量、连续</strong>的访问极其高效（缓存友好、可向量化计算）；
 标量过滤也类似——只需扫描相关的那几列，不必把整行读出来。<strong>列式 + 按段切分 + 日志驱动</strong>，这三件事合起来，就构成了 Milvus 存储层的骨架。</p>
 
@@ -501,6 +538,40 @@ vchannel 的名字其实就是在 pchannel 名字后面拼上 collection ID 和�
 <h2>把几件事串起来：一条数据的一生</h2>
 <p>到这里，我们可以把前面所有概念拼成一张完整的图，看一条数据从写入到被检索经历了什么。下面这张表把<strong>各个阶段</strong>、它所在的<strong>段状态</strong>、
 <strong>存放位置</strong>和<strong>能否被查到</strong>对照起来——这正是"边写边查"和"日志即数据"在现实中的样子：</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="一条数据的一生：从 WAL 日志，到内存增长段、封存段，到对象存储、建索引；进了日志就已落地、全程可查">
+    <rect x="18" y="80" width="132" height="92" rx="10" style="fill:var(--amber-soft);stroke:var(--amber);stroke-width:1.5"/>
+    <text x="84" y="106" text-anchor="middle" style="fill:var(--amber);font-weight:700">① WAL 日志</text>
+    <text x="84" y="130" text-anchor="middle" style="fill:var(--muted)">pchannel</text>
+    <text x="84" y="156" text-anchor="middle" style="fill:var(--ink)">唯一真相</text>
+    <rect x="160" y="80" width="132" height="92" rx="10" style="fill:var(--blue-soft);stroke:var(--blue);stroke-width:1.5"/>
+    <text x="226" y="106" text-anchor="middle" style="fill:var(--blue);font-weight:700">② Growing</text>
+    <text x="226" y="130" text-anchor="middle" style="fill:var(--muted)">内存</text>
+    <text x="226" y="156" text-anchor="middle" style="fill:var(--teal);font-weight:700">✓ 立即可查</text>
+    <rect x="302" y="80" width="132" height="92" rx="10" style="fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5"/>
+    <text x="368" y="106" text-anchor="middle" style="fill:var(--purple);font-weight:700">③ Sealed</text>
+    <text x="368" y="130" text-anchor="middle" style="fill:var(--muted)">内存→刷盘</text>
+    <text x="368" y="156" text-anchor="middle" style="fill:var(--teal);font-weight:700">✓ 只读</text>
+    <rect x="444" y="80" width="132" height="92" rx="10" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:1.5"/>
+    <text x="510" y="106" text-anchor="middle" style="fill:var(--teal);font-weight:700">④ Flushed</text>
+    <text x="510" y="130" text-anchor="middle" style="fill:var(--muted)">对象存储</text>
+    <text x="510" y="156" text-anchor="middle" style="fill:var(--teal);font-weight:700">✓ 不怕崩溃</text>
+    <rect x="586" y="80" width="132" height="92" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="652" y="106" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">⑤ Indexed</text>
+    <text x="652" y="130" text-anchor="middle" style="fill:var(--muted)">+ 索引文件</text>
+    <text x="652" y="156" text-anchor="middle" style="fill:var(--teal);font-weight:700">✓ 高效</text>
+    <path d="M150,126 l12,0 M160,126 l-9,-4 l0,8 z" style="stroke:var(--line);fill:var(--line);stroke-width:2"/>
+    <path d="M292,126 l12,0 M302,126 l-9,-4 l0,8 z" style="stroke:var(--line);fill:var(--line);stroke-width:2"/>
+    <path d="M434,126 l12,0 M444,126 l-9,-4 l0,8 z" style="stroke:var(--line);fill:var(--line);stroke-width:2"/>
+    <path d="M576,126 l12,0 M586,126 l-9,-4 l0,8 z" style="stroke:var(--line);fill:var(--line);stroke-width:2"/>
+    <path d="M160,196 L718,196" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:5 4"/>
+    <path d="M160,196 l0,-8 M718,196 l0,-8" style="stroke:var(--teal);stroke-width:1.5"/>
+    <text x="439" y="220" text-anchor="middle" style="fill:var(--teal);font-weight:700">进了日志即已落地 · 查询同时扫 Growing + Sealed 再归并</text>
+    <text x="439" y="250" text-anchor="middle" style="fill:var(--muted)">压缩/删除替代后 → Dropped（✗，等待 GC 回收）</text>
+  </svg>
+  <div class="figcap"><b>一条数据的一生</b>：写进 <b>WAL</b> 那一刻就"已落地"。它先在<b>内存 Growing 段</b>立即可查，写满转 <b>Sealed</b>、刷成<b>对象存储里的 binlog</b>、再建<b>索引</b>高效检索——<b>查询永远同时看 Growing(最新) 与 Sealed(历史)</b>，所以"刚写就能搜到"。</div>
+</div>
 
 <table class="t">
   <thead><tr><th>阶段</th><th>段状态</th><th>数据在哪</th><th>是否可查</th><th>说明</th></tr></thead>
@@ -744,6 +815,43 @@ so a slow one doesn't drag the others and each scales on its own. This is what "
 rather than row by row as in relational databases. E.g., a segment with id, vector, and price fields stores all ids together, all vectors together, all prices together.
 After flushing, each field corresponds to one <span class="inline">binlog</span> file.</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Columnar layout: regroup row-oriented entities into per-field contiguous storage, one binlog per field">
+    <text x="40" y="52" style="fill:var(--muted)">logical: 3 rows</text>
+    <rect x="40" y="64" width="252" height="36" rx="7" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <rect x="48" y="70" width="40" height="24" rx="5" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="68" y="87" text-anchor="middle" class="mono" style="fill:var(--blue)">1</text>
+    <rect x="94" y="70" width="112" height="24" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="150" y="87" text-anchor="middle" style="fill:var(--accent-ink)">vec</text>
+    <rect x="212" y="70" width="72" height="24" rx="5" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="248" y="87" text-anchor="middle" class="mono" style="fill:var(--amber)">9.9</text>
+    <rect x="40" y="106" width="252" height="36" rx="7" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <rect x="48" y="112" width="40" height="24" rx="5" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="68" y="129" text-anchor="middle" class="mono" style="fill:var(--blue)">2</text>
+    <rect x="94" y="112" width="112" height="24" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="150" y="129" text-anchor="middle" style="fill:var(--accent-ink)">vec</text>
+    <rect x="212" y="112" width="72" height="24" rx="5" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="248" y="129" text-anchor="middle" class="mono" style="fill:var(--amber)">3.5</text>
+    <rect x="40" y="148" width="252" height="36" rx="7" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <rect x="48" y="154" width="40" height="24" rx="5" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="68" y="171" text-anchor="middle" class="mono" style="fill:var(--blue)">3</text>
+    <rect x="94" y="154" width="112" height="24" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="150" y="171" text-anchor="middle" style="fill:var(--accent-ink)">vec</text>
+    <rect x="212" y="154" width="72" height="24" rx="5" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="248" y="171" text-anchor="middle" class="mono" style="fill:var(--amber)">7.0</text>
+    <line x1="300" y1="124" x2="340" y2="124" style="stroke:var(--line);stroke-width:2"/><path d="M340,124 l-11,-5 l0,10 z" style="fill:var(--line)"/>
+    <text x="320" y="114" text-anchor="middle" style="fill:var(--muted)">by field</text>
+    <text x="352" y="52" style="fill:var(--muted)">physical: each field contiguous · one binlog each</text>
+    <text x="354" y="86" style="fill:var(--blue);font-weight:700">id</text>
+    <rect x="404" y="68" width="34" height="28" rx="5" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="421" y="87" text-anchor="middle" class="mono" style="fill:var(--blue)">1</text>
+    <rect x="440" y="68" width="34" height="28" rx="5" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="457" y="87" text-anchor="middle" class="mono" style="fill:var(--blue)">2</text>
+    <rect x="476" y="68" width="34" height="28" rx="5" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="493" y="87" text-anchor="middle" class="mono" style="fill:var(--blue)">3</text>
+    <text x="528" y="86" style="fill:var(--muted)">→ 1 binlog</text>
+    <text x="354" y="142" style="fill:var(--accent-ink);font-weight:700">vector</text>
+    <rect x="404" y="124" width="34" height="28" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="421" y="143" text-anchor="middle" style="fill:var(--accent-ink)">v</text>
+    <rect x="440" y="124" width="34" height="28" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="457" y="143" text-anchor="middle" style="fill:var(--accent-ink)">v</text>
+    <rect x="476" y="124" width="34" height="28" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="493" y="143" text-anchor="middle" style="fill:var(--accent-ink)">v</text>
+    <text x="528" y="142" style="fill:var(--muted)">→ 1 binlog</text>
+    <text x="354" y="198" style="fill:var(--amber);font-weight:700">price</text>
+    <rect x="404" y="180" width="44" height="28" rx="5" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="426" y="199" text-anchor="middle" class="mono" style="fill:var(--amber)">9.9</text>
+    <rect x="450" y="180" width="44" height="28" rx="5" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="472" y="199" text-anchor="middle" class="mono" style="fill:var(--amber)">3.5</text>
+    <rect x="496" y="180" width="44" height="28" rx="5" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="518" y="199" text-anchor="middle" class="mono" style="fill:var(--amber)">7.0</text>
+    <text x="556" y="198" style="fill:var(--muted)">→ 1 binlog</text>
+  </svg>
+  <div class="figcap"><b>Columnar, not row-wise</b>: all values of one field sit <b>contiguously together</b>, each field flushed as <b>one binlog</b>. Vector search "pulls a whole column out and computes distances in bulk" — hence very fast (cache-friendly, vectorizable); scalar filtering scans only the relevant columns.</div>
+</div>
+
 <p>Why columnar? Because vector search's access pattern is "<strong>pull a whole column (the vector column) out in bulk and compute distances</strong>," and columnar layout makes such <strong>bulk, contiguous</strong> access extremely efficient (cache-friendly, vectorizable);
 scalar filtering is similar—scan only the relevant columns, no need to read whole rows. <strong>Columnar + per-segment chunking + log-driven</strong>—these three together form the skeleton of Milvus's storage layer.</p>
 
@@ -754,6 +862,40 @@ Segment, column, log, and index now close the loop.</p>
 <h2>Tying it together: the life of one row</h2>
 <p>Now we can assemble everything into one complete picture of what a row goes through from write to search. The table below maps each <strong>stage</strong> to its <strong>segment state</strong>,
 <strong>where the data lives</strong>, and <strong>whether it's searchable</strong>—this is "search while writing" and "log as data" in real life:</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="The life of one row: from the WAL log, to the in-memory growing and sealed segments, to object storage and an index; once in the log it has landed and stays searchable">
+    <rect x="18" y="80" width="132" height="92" rx="10" style="fill:var(--amber-soft);stroke:var(--amber);stroke-width:1.5"/>
+    <text x="84" y="106" text-anchor="middle" style="fill:var(--amber);font-weight:700">① WAL log</text>
+    <text x="84" y="130" text-anchor="middle" style="fill:var(--muted)">pchannel</text>
+    <text x="84" y="156" text-anchor="middle" style="fill:var(--ink)">only truth</text>
+    <rect x="160" y="80" width="132" height="92" rx="10" style="fill:var(--blue-soft);stroke:var(--blue);stroke-width:1.5"/>
+    <text x="226" y="106" text-anchor="middle" style="fill:var(--blue);font-weight:700">② Growing</text>
+    <text x="226" y="130" text-anchor="middle" style="fill:var(--muted)">memory</text>
+    <text x="226" y="156" text-anchor="middle" style="fill:var(--teal);font-weight:700">✓ instantly</text>
+    <rect x="302" y="80" width="132" height="92" rx="10" style="fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5"/>
+    <text x="368" y="106" text-anchor="middle" style="fill:var(--purple);font-weight:700">③ Sealed</text>
+    <text x="368" y="130" text-anchor="middle" style="fill:var(--muted)">mem→flush</text>
+    <text x="368" y="156" text-anchor="middle" style="fill:var(--teal);font-weight:700">✓ read-only</text>
+    <rect x="444" y="80" width="132" height="92" rx="10" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:1.5"/>
+    <text x="510" y="106" text-anchor="middle" style="fill:var(--teal);font-weight:700">④ Flushed</text>
+    <text x="510" y="130" text-anchor="middle" style="fill:var(--muted)">object store</text>
+    <text x="510" y="156" text-anchor="middle" style="fill:var(--teal);font-weight:700">✓ crash-proof</text>
+    <rect x="586" y="80" width="132" height="92" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="652" y="106" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">⑤ Indexed</text>
+    <text x="652" y="130" text-anchor="middle" style="fill:var(--muted)">+ index files</text>
+    <text x="652" y="156" text-anchor="middle" style="fill:var(--teal);font-weight:700">✓ efficient</text>
+    <path d="M150,126 l12,0 M160,126 l-9,-4 l0,8 z" style="stroke:var(--line);fill:var(--line);stroke-width:2"/>
+    <path d="M292,126 l12,0 M302,126 l-9,-4 l0,8 z" style="stroke:var(--line);fill:var(--line);stroke-width:2"/>
+    <path d="M434,126 l12,0 M444,126 l-9,-4 l0,8 z" style="stroke:var(--line);fill:var(--line);stroke-width:2"/>
+    <path d="M576,126 l12,0 M586,126 l-9,-4 l0,8 z" style="stroke:var(--line);fill:var(--line);stroke-width:2"/>
+    <path d="M160,196 L718,196" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:5 4"/>
+    <path d="M160,196 l0,-8 M718,196 l0,-8" style="stroke:var(--teal);stroke-width:1.5"/>
+    <text x="439" y="220" text-anchor="middle" style="fill:var(--teal);font-weight:700">in the log = landed · a query scans Growing + Sealed together, then merges</text>
+    <text x="439" y="250" text-anchor="middle" style="fill:var(--muted)">after compaction/delete → Dropped (✗, awaiting GC)</text>
+  </svg>
+  <div class="figcap"><b>The life of one row</b>: the moment it's in the <b>WAL</b> it has "landed". It is searchable instantly in the in-memory <b>Growing</b> segment, then sealed, flushed to a <b>binlog in object storage</b>, and <b>indexed</b> for efficient search — a query <b>always scans both Growing (newest) and Sealed (historical)</b>, which is why "just written" is immediately searchable.</div>
+</div>
 
 <table class="t">
   <thead><tr><th>Stage</th><th>Segment state</th><th>Where data lives</th><th>Searchable?</th><th>Note</th></tr></thead>

@@ -568,34 +568,40 @@ QueryNode（也是 Go）找出该搜哪些段后，把"段内的相似度计算"
 各自按需扩缩容、互不拖累。注意：<strong>对你写的代码而言，两者毫无区别</strong>——同样的 <span class="inline">create_collection / insert / search</span>，底层从"一个进程"长成"一个集群"，API 与概念完全一致。</p>
 
 <div class="fig">
-  <svg viewBox="0 0 760 300" role="img" aria-label="同一套逻辑角色，物理上落成单机一个进程或集群多个独立 Pod 两种形态">
-    <text x="40" y="26" style="fill:var(--muted)">逻辑视图 · 一张图</text>
-    <rect x="40" y="40" width="170" height="216" rx="12" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
-    <text x="125" y="66" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">一个集合 · 一套 API</text>
-    <rect x="60" y="80" width="130" height="36" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="125" y="103" text-anchor="middle" style="fill:var(--ink)">MixCoord 大脑</text>
-    <rect x="60" y="122" width="130" height="36" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="125" y="145" text-anchor="middle" style="fill:var(--ink)">Proxy 门面</text>
-    <rect x="60" y="164" width="130" height="36" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="125" y="187" text-anchor="middle" style="fill:var(--ink)">QueryNode 查</text>
-    <rect x="60" y="206" width="130" height="36" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="125" y="229" text-anchor="middle" style="fill:var(--ink)">DataNode 写</text>
-    <line x1="214" y1="148" x2="258" y2="148" style="stroke:var(--line);stroke-width:2"/>
-    <path d="M258,148 l-11,-5 l0,10 z" style="fill:var(--line)"/>
-    <text x="236" y="138" text-anchor="middle" style="fill:var(--muted)">物理上</text>
-    <text x="272" y="26" style="fill:var(--muted)">Standalone · 单机：塞进<tspan style="fill:var(--blue);font-weight:700">一个进程</tspan></text>
-    <rect x="272" y="40" width="472" height="72" rx="10" style="fill:var(--panel-2);stroke:var(--blue);stroke-width:1.5;stroke-dasharray:6 4"/>
-    <rect x="286" y="62" width="102" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="337" y="82" text-anchor="middle" style="fill:var(--ink)">MixCoord</text>
-    <rect x="402" y="62" width="102" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="453" y="82" text-anchor="middle" style="fill:var(--ink)">Proxy</text>
-    <rect x="518" y="62" width="102" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="569" y="82" text-anchor="middle" style="fill:var(--ink)">QueryNode</text>
-    <rect x="634" y="62" width="102" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="685" y="82" text-anchor="middle" style="fill:var(--ink)">DataNode</text>
-    <text x="272" y="148" style="fill:var(--muted)">Cluster · 集群：每个组件<tspan style="fill:var(--teal);font-weight:700">独立 Pod</tspan>，各自扩缩</text>
-    <rect x="286" y="162" width="102" height="44" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="337" y="188" text-anchor="middle" style="fill:var(--ink)">MixCoord</text>
-    <rect x="402" y="162" width="102" height="44" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="453" y="188" text-anchor="middle" style="fill:var(--ink)">Proxy</text>
-    <rect x="526" y="168" width="102" height="44" rx="8" style="fill:var(--panel-2);stroke:var(--line)"/>
-    <rect x="518" y="162" width="102" height="44" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="569" y="188" text-anchor="middle" style="fill:var(--ink)">QueryNode</text>
-    <text x="626" y="158" text-anchor="middle" style="fill:var(--teal);font-weight:700">×N</text>
-    <rect x="642" y="168" width="102" height="44" rx="8" style="fill:var(--panel-2);stroke:var(--line)"/>
-    <rect x="634" y="162" width="102" height="44" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="685" y="188" text-anchor="middle" style="fill:var(--ink)">DataNode</text>
-    <text x="742" y="158" text-anchor="middle" style="fill:var(--teal);font-weight:700">×N</text>
+  <svg viewBox="0 0 760 300" role="img" aria-label="同样这六个组件，物理上落成单机一个进程或集群多个独立 Pod 两种形态">
+    <text x="40" y="26" style="fill:var(--muted)">逻辑视图 · 六个组件</text>
+    <rect x="40" y="40" width="192" height="236" rx="12" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="136" y="64" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">一个集合 · 一套 API</text>
+    <rect x="58" y="76" width="156" height="28" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="136" y="95" text-anchor="middle" style="fill:var(--ink)">MixCoord</text>
+    <rect x="58" y="108" width="156" height="28" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="136" y="127" text-anchor="middle" style="fill:var(--ink)">Proxy</text>
+    <rect x="58" y="140" width="156" height="28" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="136" y="159" text-anchor="middle" style="fill:var(--ink)">QueryNode</text>
+    <rect x="58" y="172" width="156" height="28" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="136" y="191" text-anchor="middle" style="fill:var(--ink)">DataNode</text>
+    <rect x="58" y="204" width="156" height="28" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="136" y="223" text-anchor="middle" style="fill:var(--ink)">StreamingNode</text>
+    <rect x="58" y="236" width="156" height="28" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="136" y="255" text-anchor="middle" style="fill:var(--ink)">CDC</text>
+    <line x1="234" y1="158" x2="270" y2="158" style="stroke:var(--line);stroke-width:2"/>
+    <path d="M270,158 l-11,-5 l0,10 z" style="fill:var(--line)"/>
+    <text x="252" y="148" text-anchor="middle" style="fill:var(--muted)">物理上</text>
+    <text x="278" y="26" style="fill:var(--muted)">Standalone · 单机：塞进<tspan style="fill:var(--blue);font-weight:700">一个进程</tspan></text>
+    <rect x="278" y="36" width="466" height="104" rx="10" style="fill:var(--panel-2);stroke:var(--blue);stroke-width:1.5;stroke-dasharray:6 4"/>
+    <rect x="290" y="52" width="140" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="360" y="72" text-anchor="middle" style="fill:var(--ink)">MixCoord</text>
+    <rect x="440" y="52" width="140" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="510" y="72" text-anchor="middle" style="fill:var(--ink)">Proxy</text>
+    <rect x="590" y="52" width="140" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="660" y="72" text-anchor="middle" style="fill:var(--ink)">QueryNode</text>
+    <rect x="290" y="92" width="140" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="360" y="112" text-anchor="middle" style="fill:var(--ink)">DataNode</text>
+    <rect x="440" y="92" width="140" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="510" y="112" text-anchor="middle" style="fill:var(--ink)">StreamingNode</text>
+    <rect x="590" y="92" width="140" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="660" y="112" text-anchor="middle" style="fill:var(--ink)">CDC</text>
+    <text x="278" y="160" style="fill:var(--muted)">Cluster · 集群：每个组件<tspan style="fill:var(--teal);font-weight:700">独立 Pod</tspan>，各自扩缩</text>
+    <rect x="290" y="172" width="140" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="360" y="197" text-anchor="middle" style="fill:var(--ink)">MixCoord</text>
+    <rect x="440" y="172" width="140" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="510" y="197" text-anchor="middle" style="fill:var(--ink)">Proxy</text>
+    <rect x="596" y="178" width="140" height="40" rx="8" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <rect x="590" y="172" width="140" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="660" y="197" text-anchor="middle" style="fill:var(--ink)">QueryNode</text>
+    <text x="724" y="170" text-anchor="middle" style="fill:var(--teal);font-weight:700">×N</text>
+    <rect x="296" y="230" width="140" height="40" rx="8" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <rect x="290" y="224" width="140" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="360" y="249" text-anchor="middle" style="fill:var(--ink)">DataNode</text>
+    <text x="424" y="222" text-anchor="middle" style="fill:var(--teal);font-weight:700">×N</text>
+    <rect x="440" y="224" width="140" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="510" y="249" text-anchor="middle" style="fill:var(--ink)">StreamingNode</text>
+    <rect x="590" y="224" width="140" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="660" y="249" text-anchor="middle" style="fill:var(--ink)">CDC</text>
   </svg>
-  <div class="figcap"><b>逻辑一张图，物理两种形态</b>：同样的 <span class="mono">create_collection / insert / search</span>，<b>Standalone</b> 把所有角色塞进一个进程，<b>Cluster</b> 把每个角色拆成独立 Pod、按需扩缩——<b>对你的代码毫无区别</b>。</div>
+  <div class="figcap"><b>逻辑一张图，物理两种形态</b>：同样这<b>六个组件</b>（含承载 WAL 的 StreamingNode 与跨集群复制的 CDC），<b>Standalone</b> 把它们塞进一个进程，<b>Cluster</b> 把每个拆成独立 Pod、按需扩缩——<b>对你的代码毫无区别</b>。</div>
 </div>
 
 <div class="cols">
@@ -793,34 +799,40 @@ processes they live in".</p>
 <span class="inline">create_collection / insert / search</span>; the underside just grows from "one process" to "one cluster", with the same API and concepts.</p>
 
 <div class="fig">
-  <svg viewBox="0 0 760 300" role="img" aria-label="One set of logical roles takes two physical shapes: a single standalone process, or many independent cluster Pods">
-    <text x="40" y="26" style="fill:var(--muted)">logical view · one picture</text>
-    <rect x="40" y="40" width="170" height="216" rx="12" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
-    <text x="125" y="66" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">one collection · one API</text>
-    <rect x="60" y="80" width="130" height="36" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="125" y="103" text-anchor="middle" style="fill:var(--ink)">MixCoord brain</text>
-    <rect x="60" y="122" width="130" height="36" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="125" y="145" text-anchor="middle" style="fill:var(--ink)">Proxy facade</text>
-    <rect x="60" y="164" width="130" height="36" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="125" y="187" text-anchor="middle" style="fill:var(--ink)">QueryNode read</text>
-    <rect x="60" y="206" width="130" height="36" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="125" y="229" text-anchor="middle" style="fill:var(--ink)">DataNode write</text>
-    <line x1="214" y1="148" x2="258" y2="148" style="stroke:var(--line);stroke-width:2"/>
-    <path d="M258,148 l-11,-5 l0,10 z" style="fill:var(--line)"/>
-    <text x="236" y="138" text-anchor="middle" style="fill:var(--muted)">physically</text>
-    <text x="272" y="26" style="fill:var(--muted)">Standalone: packed into <tspan style="fill:var(--blue);font-weight:700">one process</tspan></text>
-    <rect x="272" y="40" width="472" height="72" rx="10" style="fill:var(--panel-2);stroke:var(--blue);stroke-width:1.5;stroke-dasharray:6 4"/>
-    <rect x="286" y="62" width="102" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="337" y="82" text-anchor="middle" style="fill:var(--ink)">MixCoord</text>
-    <rect x="402" y="62" width="102" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="453" y="82" text-anchor="middle" style="fill:var(--ink)">Proxy</text>
-    <rect x="518" y="62" width="102" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="569" y="82" text-anchor="middle" style="fill:var(--ink)">QueryNode</text>
-    <rect x="634" y="62" width="102" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="685" y="82" text-anchor="middle" style="fill:var(--ink)">DataNode</text>
-    <text x="272" y="148" style="fill:var(--muted)">Cluster: each component an <tspan style="fill:var(--teal);font-weight:700">independent Pod</tspan>, scaled on its own</text>
-    <rect x="286" y="162" width="102" height="44" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="337" y="188" text-anchor="middle" style="fill:var(--ink)">MixCoord</text>
-    <rect x="402" y="162" width="102" height="44" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="453" y="188" text-anchor="middle" style="fill:var(--ink)">Proxy</text>
-    <rect x="526" y="168" width="102" height="44" rx="8" style="fill:var(--panel-2);stroke:var(--line)"/>
-    <rect x="518" y="162" width="102" height="44" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="569" y="188" text-anchor="middle" style="fill:var(--ink)">QueryNode</text>
-    <text x="626" y="158" text-anchor="middle" style="fill:var(--teal);font-weight:700">×N</text>
-    <rect x="642" y="168" width="102" height="44" rx="8" style="fill:var(--panel-2);stroke:var(--line)"/>
-    <rect x="634" y="162" width="102" height="44" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="685" y="188" text-anchor="middle" style="fill:var(--ink)">DataNode</text>
-    <text x="742" y="158" text-anchor="middle" style="fill:var(--teal);font-weight:700">×N</text>
+  <svg viewBox="0 0 760 300" role="img" aria-label="Those same six components take two physical shapes: a single standalone process, or many independent cluster Pods">
+    <text x="40" y="26" style="fill:var(--muted)">logical view · six components</text>
+    <rect x="40" y="40" width="192" height="236" rx="12" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="136" y="64" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">one collection · one API</text>
+    <rect x="58" y="76" width="156" height="28" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="136" y="95" text-anchor="middle" style="fill:var(--ink)">MixCoord</text>
+    <rect x="58" y="108" width="156" height="28" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="136" y="127" text-anchor="middle" style="fill:var(--ink)">Proxy</text>
+    <rect x="58" y="140" width="156" height="28" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="136" y="159" text-anchor="middle" style="fill:var(--ink)">QueryNode</text>
+    <rect x="58" y="172" width="156" height="28" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="136" y="191" text-anchor="middle" style="fill:var(--ink)">DataNode</text>
+    <rect x="58" y="204" width="156" height="28" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="136" y="223" text-anchor="middle" style="fill:var(--ink)">StreamingNode</text>
+    <rect x="58" y="236" width="156" height="28" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="136" y="255" text-anchor="middle" style="fill:var(--ink)">CDC</text>
+    <line x1="234" y1="158" x2="270" y2="158" style="stroke:var(--line);stroke-width:2"/>
+    <path d="M270,158 l-11,-5 l0,10 z" style="fill:var(--line)"/>
+    <text x="252" y="148" text-anchor="middle" style="fill:var(--muted)">physically</text>
+    <text x="278" y="26" style="fill:var(--muted)">Standalone: packed into <tspan style="fill:var(--blue);font-weight:700">one process</tspan></text>
+    <rect x="278" y="36" width="466" height="104" rx="10" style="fill:var(--panel-2);stroke:var(--blue);stroke-width:1.5;stroke-dasharray:6 4"/>
+    <rect x="290" y="52" width="140" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="360" y="72" text-anchor="middle" style="fill:var(--ink)">MixCoord</text>
+    <rect x="440" y="52" width="140" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="510" y="72" text-anchor="middle" style="fill:var(--ink)">Proxy</text>
+    <rect x="590" y="52" width="140" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="660" y="72" text-anchor="middle" style="fill:var(--ink)">QueryNode</text>
+    <rect x="290" y="92" width="140" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="360" y="112" text-anchor="middle" style="fill:var(--ink)">DataNode</text>
+    <rect x="440" y="92" width="140" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="510" y="112" text-anchor="middle" style="fill:var(--ink)">StreamingNode</text>
+    <rect x="590" y="92" width="140" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="660" y="112" text-anchor="middle" style="fill:var(--ink)">CDC</text>
+    <text x="278" y="160" style="fill:var(--muted)">Cluster: each component an <tspan style="fill:var(--teal);font-weight:700">independent Pod</tspan>, scaled on its own</text>
+    <rect x="290" y="172" width="140" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="360" y="197" text-anchor="middle" style="fill:var(--ink)">MixCoord</text>
+    <rect x="440" y="172" width="140" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="510" y="197" text-anchor="middle" style="fill:var(--ink)">Proxy</text>
+    <rect x="596" y="178" width="140" height="40" rx="8" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <rect x="590" y="172" width="140" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="660" y="197" text-anchor="middle" style="fill:var(--ink)">QueryNode</text>
+    <text x="724" y="170" text-anchor="middle" style="fill:var(--teal);font-weight:700">×N</text>
+    <rect x="296" y="230" width="140" height="40" rx="8" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <rect x="290" y="224" width="140" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="360" y="249" text-anchor="middle" style="fill:var(--ink)">DataNode</text>
+    <text x="424" y="222" text-anchor="middle" style="fill:var(--teal);font-weight:700">×N</text>
+    <rect x="440" y="224" width="140" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="510" y="249" text-anchor="middle" style="fill:var(--ink)">StreamingNode</text>
+    <rect x="590" y="224" width="140" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="660" y="249" text-anchor="middle" style="fill:var(--ink)">CDC</text>
   </svg>
-  <div class="figcap"><b>One logical picture, two physical shapes</b>: the same <span class="mono">create_collection / insert / search</span> — <b>Standalone</b> packs every role into one process, <b>Cluster</b> splits each into an independent Pod that scales on demand — <b>identical to your code</b>.</div>
+  <div class="figcap"><b>One logical picture, two physical shapes</b>: those same <b>six components</b> (including StreamingNode that carries the WAL and CDC for cross-cluster replication) — <b>Standalone</b> packs them into one process, <b>Cluster</b> splits each into an independent Pod that scales on demand — <b>identical to your code</b>.</div>
 </div>
 
 <div class="cols">

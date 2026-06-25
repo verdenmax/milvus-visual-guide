@@ -795,34 +795,40 @@ processes they live in".</p>
 <span class="inline">create_collection / insert / search</span>; the underside just grows from "one process" to "one cluster", with the same API and concepts.</p>
 
 <div class="fig">
-  <svg viewBox="0 0 760 300" role="img" aria-label="One set of logical roles takes two physical shapes: a single standalone process, or many independent cluster Pods">
-    <text x="40" y="26" style="fill:var(--muted)">logical view · one picture</text>
-    <rect x="40" y="40" width="170" height="216" rx="12" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
-    <text x="125" y="66" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">one collection · one API</text>
-    <rect x="60" y="80" width="130" height="36" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="125" y="103" text-anchor="middle" style="fill:var(--ink)">MixCoord brain</text>
-    <rect x="60" y="122" width="130" height="36" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="125" y="145" text-anchor="middle" style="fill:var(--ink)">Proxy facade</text>
-    <rect x="60" y="164" width="130" height="36" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="125" y="187" text-anchor="middle" style="fill:var(--ink)">QueryNode read</text>
-    <rect x="60" y="206" width="130" height="36" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="125" y="229" text-anchor="middle" style="fill:var(--ink)">DataNode write</text>
-    <line x1="214" y1="148" x2="258" y2="148" style="stroke:var(--line);stroke-width:2"/>
-    <path d="M258,148 l-11,-5 l0,10 z" style="fill:var(--line)"/>
-    <text x="236" y="138" text-anchor="middle" style="fill:var(--muted)">physically</text>
-    <text x="272" y="26" style="fill:var(--muted)">Standalone: packed into <tspan style="fill:var(--blue);font-weight:700">one process</tspan></text>
-    <rect x="272" y="40" width="472" height="72" rx="10" style="fill:var(--panel-2);stroke:var(--blue);stroke-width:1.5;stroke-dasharray:6 4"/>
-    <rect x="286" y="62" width="102" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="337" y="82" text-anchor="middle" style="fill:var(--ink)">MixCoord</text>
-    <rect x="402" y="62" width="102" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="453" y="82" text-anchor="middle" style="fill:var(--ink)">Proxy</text>
-    <rect x="518" y="62" width="102" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="569" y="82" text-anchor="middle" style="fill:var(--ink)">QueryNode</text>
-    <rect x="634" y="62" width="102" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="685" y="82" text-anchor="middle" style="fill:var(--ink)">DataNode</text>
-    <text x="272" y="148" style="fill:var(--muted)">Cluster: each component an <tspan style="fill:var(--teal);font-weight:700">independent Pod</tspan>, scaled on its own</text>
-    <rect x="286" y="162" width="102" height="44" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="337" y="188" text-anchor="middle" style="fill:var(--ink)">MixCoord</text>
-    <rect x="402" y="162" width="102" height="44" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="453" y="188" text-anchor="middle" style="fill:var(--ink)">Proxy</text>
-    <rect x="526" y="168" width="102" height="44" rx="8" style="fill:var(--panel-2);stroke:var(--line)"/>
-    <rect x="518" y="162" width="102" height="44" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="569" y="188" text-anchor="middle" style="fill:var(--ink)">QueryNode</text>
-    <text x="626" y="158" text-anchor="middle" style="fill:var(--teal);font-weight:700">×N</text>
-    <rect x="642" y="168" width="102" height="44" rx="8" style="fill:var(--panel-2);stroke:var(--line)"/>
-    <rect x="634" y="162" width="102" height="44" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="685" y="188" text-anchor="middle" style="fill:var(--ink)">DataNode</text>
-    <text x="742" y="158" text-anchor="middle" style="fill:var(--teal);font-weight:700">×N</text>
+  <svg viewBox="0 0 760 300" role="img" aria-label="Those same six components take two physical shapes: a single standalone process, or many independent cluster Pods">
+    <text x="40" y="26" style="fill:var(--muted)">logical view · six components</text>
+    <rect x="40" y="40" width="192" height="236" rx="12" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="136" y="64" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">one collection · one API</text>
+    <rect x="58" y="76" width="156" height="28" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="136" y="95" text-anchor="middle" style="fill:var(--ink)">MixCoord</text>
+    <rect x="58" y="108" width="156" height="28" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="136" y="127" text-anchor="middle" style="fill:var(--ink)">Proxy</text>
+    <rect x="58" y="140" width="156" height="28" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="136" y="159" text-anchor="middle" style="fill:var(--ink)">QueryNode</text>
+    <rect x="58" y="172" width="156" height="28" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="136" y="191" text-anchor="middle" style="fill:var(--ink)">DataNode</text>
+    <rect x="58" y="204" width="156" height="28" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="136" y="223" text-anchor="middle" style="fill:var(--ink)">StreamingNode</text>
+    <rect x="58" y="236" width="156" height="28" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="136" y="255" text-anchor="middle" style="fill:var(--ink)">CDC</text>
+    <line x1="234" y1="158" x2="270" y2="158" style="stroke:var(--line);stroke-width:2"/>
+    <path d="M270,158 l-11,-5 l0,10 z" style="fill:var(--line)"/>
+    <text x="252" y="148" text-anchor="middle" style="fill:var(--muted)">physically</text>
+    <text x="278" y="26" style="fill:var(--muted)">Standalone: packed into <tspan style="fill:var(--blue);font-weight:700">one process</tspan></text>
+    <rect x="278" y="36" width="466" height="104" rx="10" style="fill:var(--panel-2);stroke:var(--blue);stroke-width:1.5;stroke-dasharray:6 4"/>
+    <rect x="290" y="52" width="140" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="360" y="72" text-anchor="middle" style="fill:var(--ink)">MixCoord</text>
+    <rect x="440" y="52" width="140" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="510" y="72" text-anchor="middle" style="fill:var(--ink)">Proxy</text>
+    <rect x="590" y="52" width="140" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="660" y="72" text-anchor="middle" style="fill:var(--ink)">QueryNode</text>
+    <rect x="290" y="92" width="140" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="360" y="112" text-anchor="middle" style="fill:var(--ink)">DataNode</text>
+    <rect x="440" y="92" width="140" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="510" y="112" text-anchor="middle" style="fill:var(--ink)">StreamingNode</text>
+    <rect x="590" y="92" width="140" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="660" y="112" text-anchor="middle" style="fill:var(--ink)">CDC</text>
+    <text x="278" y="160" style="fill:var(--muted)">Cluster: each component an <tspan style="fill:var(--teal);font-weight:700">independent Pod</tspan>, scaled on its own</text>
+    <rect x="290" y="172" width="140" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="360" y="197" text-anchor="middle" style="fill:var(--ink)">MixCoord</text>
+    <rect x="440" y="172" width="140" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="510" y="197" text-anchor="middle" style="fill:var(--ink)">Proxy</text>
+    <rect x="596" y="178" width="140" height="40" rx="8" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <rect x="590" y="172" width="140" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="660" y="197" text-anchor="middle" style="fill:var(--ink)">QueryNode</text>
+    <text x="724" y="170" text-anchor="middle" style="fill:var(--teal);font-weight:700">×N</text>
+    <rect x="296" y="230" width="140" height="40" rx="8" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <rect x="290" y="224" width="140" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="360" y="249" text-anchor="middle" style="fill:var(--ink)">DataNode</text>
+    <text x="424" y="222" text-anchor="middle" style="fill:var(--teal);font-weight:700">×N</text>
+    <rect x="440" y="224" width="140" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="510" y="249" text-anchor="middle" style="fill:var(--ink)">StreamingNode</text>
+    <rect x="590" y="224" width="140" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="660" y="249" text-anchor="middle" style="fill:var(--ink)">CDC</text>
   </svg>
-  <div class="figcap"><b>One logical picture, two physical shapes</b>: the same <span class="mono">create_collection / insert / search</span> — <b>Standalone</b> packs every role into one process, <b>Cluster</b> splits each into an independent Pod that scales on demand — <b>identical to your code</b>.</div>
+  <div class="figcap"><b>One logical picture, two physical shapes</b>: those same <b>six components</b> (including StreamingNode that carries the WAL and CDC for cross-cluster replication) — <b>Standalone</b> packs them into one process, <b>Cluster</b> splits each into an independent Pod that scales on demand — <b>identical to your code</b>.</div>
 </div>
 
 <div class="cols">
@@ -1290,6 +1296,30 @@ constants; the three everyday rulers are <span class="inline">L2</span>, <span c
   <strong>larger (closer to 1) is more alike</strong>. It is essentially "normalize first, then take the inner product".</li>
 </ul>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Geometric meaning of three metrics: L2 is the straight-line distance, COSINE is the angle, IP folds in both direction and magnitude">
+    <line x1="110" y1="244" x2="440" y2="244" style="stroke:var(--line);stroke-width:1.5"/>
+    <line x1="110" y1="244" x2="110" y2="64" style="stroke:var(--line);stroke-width:1.5"/>
+    <text x="446" y="248" style="fill:var(--faint)">x</text>
+    <text x="92" y="60" style="fill:var(--faint)">y</text>
+    <line x1="110" y1="244" x2="360" y2="96" style="stroke:var(--accent);stroke-width:2.5"/>
+    <path d="M360,96 l-2,12 l11,-6 z" style="fill:var(--accent)"/>
+    <text x="366" y="92" style="fill:var(--accent-ink);font-weight:700">u</text>
+    <line x1="110" y1="244" x2="420" y2="182" style="stroke:var(--accent);stroke-width:2.5"/>
+    <path d="M420,182 l-11,-2 l5,11 z" style="fill:var(--accent)"/>
+    <text x="428" y="186" style="fill:var(--accent-ink);font-weight:700">v</text>
+    <line x1="360" y1="96" x2="420" y2="182" style="stroke:var(--amber);stroke-width:2;stroke-dasharray:5 4"/>
+    <text x="398" y="128" style="fill:var(--amber);font-weight:700">L2</text>
+    <path d="M162,213 A60,60 0 0 1 169,232" style="fill:none;stroke:var(--purple);stroke-width:2.5"/>
+    <text x="146" y="206" style="fill:var(--purple);font-weight:700">θ</text>
+    <text x="78" y="260" style="fill:var(--faint)">O</text>
+    <rect x="470" y="80" width="16" height="16" rx="3" style="fill:var(--amber)"/><text x="496" y="93" style="fill:var(--ink)">L2 (Euclidean) = straight-line gap · smaller = closer</text>
+    <rect x="470" y="120" width="16" height="16" rx="3" style="fill:var(--purple)"/><text x="496" y="133" style="fill:var(--ink)">COSINE = angle θ · direction only, ignores length</text>
+    <rect x="470" y="160" width="16" height="16" rx="3" style="fill:var(--teal)"/><text x="496" y="173" style="fill:var(--ink)">IP = |u|·|v|·cos θ · direction + magnitude both count</text>
+  </svg>
+  <div class="figcap"><b>Three rulers in one picture</b>: treat vectors as arrows from the origin — <b>L2</b> measures the straight-line gap between the two <b>arrow tips</b>, <b>COSINE</b> measures only the <b>angle θ</b>, and <b>IP</b> folds <b>direction and magnitude</b> together.</div>
+</div>
+
 <div class="cellgroup">
   <div class="cg-cap"><b>One distance computation</b>: query <span class="mono">q</span> times in-store vector <span class="mono">v</span> element-by-element, summed = inner product (IP); L2 instead subtracts, squares, sums</div>
   <div class="cells"><span class="lab">q</span><span class="cell hl">0.90</span><span class="cell hl">0.10</span><span class="cell hl">0.80</span></div>
@@ -1392,6 +1422,36 @@ same holds in hundreds of dimensions): <span class="mono">a = [3, 4]</span> and 
   <tr><td><strong>IP</strong></td><td class="mono">3·4 + 4·3 = 12 + 12</td><td class="mono">24</td><td>similarity, larger = more alike</td></tr>
   <tr><td><strong>COSINE</strong></td><td class="mono">IP ÷ (|a|·|b|) = 24 ÷ 25</td><td class="mono">0.96</td><td>similarity, closer to 1 = more alike</td></tr>
 </table>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Plotting a=[3,4] and b=[4,3]; the three rulers each give a number: L2 about 1.41, IP 24, COSINE 0.96">
+    <line x1="90" y1="250" x2="360" y2="250" style="stroke:var(--line);stroke-width:1.5"/>
+    <line x1="90" y1="250" x2="90" y2="70" style="stroke:var(--line);stroke-width:1.5"/>
+    <text x="78" y="264" style="fill:var(--faint)">O</text>
+    <text x="96" y="84" style="fill:var(--muted)">|a| = |b| = 5</text>
+    <line x1="90" y1="250" x2="198" y2="106" style="stroke:var(--accent);stroke-width:2.5"/>
+    <path d="M198,106 l-2,12 l11,-6 z" style="fill:var(--accent)"/>
+    <text x="150" y="100" class="mono" style="fill:var(--accent-ink);font-weight:700">a=[3,4]</text>
+    <line x1="90" y1="250" x2="234" y2="142" style="stroke:var(--blue);stroke-width:2.5"/>
+    <path d="M234,142 l-11,-1 l4,11 z" style="fill:var(--blue)"/>
+    <text x="240" y="150" class="mono" style="fill:var(--blue);font-weight:700">b=[4,3]</text>
+    <line x1="198" y1="106" x2="234" y2="142" style="stroke:var(--amber);stroke-width:2;stroke-dasharray:5 4"/>
+    <text x="236" y="116" style="fill:var(--amber);font-weight:700">L2=√2</text>
+    <path d="M128,199 A64,64 0 0 1 141,212" style="fill:none;stroke:var(--purple);stroke-width:2.5"/>
+    <text x="116" y="190" style="fill:var(--purple);font-weight:700">θ</text>
+    <text x="388" y="92" style="fill:var(--muted)">same two vectors → three numbers</text>
+    <rect x="388" y="104" width="354" height="52" rx="9" style="fill:var(--panel-2);stroke:var(--amber);stroke-width:1.5"/>
+    <text x="406" y="128" class="mono" style="fill:var(--ink);font-weight:700">L2 = √2 ≈ 1.41</text>
+    <text x="406" y="147" style="fill:var(--muted)">distance · smaller = closer</text>
+    <rect x="388" y="164" width="354" height="52" rx="9" style="fill:var(--panel-2);stroke:var(--teal);stroke-width:1.5"/>
+    <text x="406" y="188" class="mono" style="fill:var(--ink);font-weight:700">IP = 3·4 + 4·3 = 24</text>
+    <text x="406" y="207" style="fill:var(--muted)">similarity · larger = closer</text>
+    <rect x="388" y="224" width="354" height="52" rx="9" style="fill:var(--panel-2);stroke:var(--purple);stroke-width:1.5"/>
+    <text x="406" y="248" class="mono" style="fill:var(--ink);font-weight:700">COSINE = 24 ÷ 25 = 0.96</text>
+    <text x="406" y="267" style="fill:var(--muted)">angle · closer to 1 = closer</text>
+  </svg>
+  <div class="figcap"><b>Same two vectors, what each ruler gives</b>: <span class="mono">a=[3,4]</span> and <span class="mono">b=[4,3]</span> sit a little apart (<b>L2≈1.41</b>) yet point in nearly the same direction (<b>COSINE=0.96</b>) — <b>pick the wrong ruler and the "alike?" verdict can flip</b>.</div>
+</div>
 
 <p>Now <strong>normalize</strong> both vectors (divide each by its magnitude 5): <span class="mono">a' = [0.6, 0.8]</span> and
 <span class="mono">b' = [0.8, 0.6]</span>, then take their inner product: <span class="mono">0.6·0.8 + 0.8·0.6 = 0.96</span> — <strong>exactly the
@@ -1620,6 +1680,40 @@ warehouse into (decided once), nprobe is how many zones you're willing to walk t
 costs more legwork. One knob governs "structure", the other "the effort per query"; together they place IVF precisely where you want
 it in the triangle.</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="IVF clusters the vector space into 6 buckets; the query refines only the 2 nearest buckets and skips the other 4">
+    <polygon points="60,56 213,56 203,168 60,158" style="fill:var(--panel-2);stroke:var(--line);stroke-width:1.2;opacity:.7"/>
+    <polygon points="367,56 520,56 520,162 378,172" style="fill:var(--panel-2);stroke:var(--line);stroke-width:1.2;opacity:.7"/>
+    <polygon points="60,158 203,168 193,276 60,276" style="fill:var(--panel-2);stroke:var(--line);stroke-width:1.2;opacity:.7"/>
+    <polygon points="378,172 520,162 520,276 367,276" style="fill:var(--panel-2);stroke:var(--line);stroke-width:1.2;opacity:.7"/>
+    <polygon points="213,56 367,56 378,172 203,168" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:2"/>
+    <polygon points="203,168 378,172 367,276 193,276" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:2"/>
+    <text x="80" y="150" style="fill:var(--faint)">skip</text>
+    <text x="80" y="262" style="fill:var(--faint)">skip</text>
+    <text x="478" y="150" style="fill:var(--faint)">skip</text>
+    <text x="478" y="262" style="fill:var(--faint)">skip</text>
+    <path d="M129,108 l12,0 M135,102 l0,12" style="stroke:var(--muted);stroke-width:2"/>
+    <path d="M442,108 l12,0 M448,102 l0,12" style="stroke:var(--muted);stroke-width:2"/>
+    <path d="M119,220 l12,0 M125,214 l0,12" style="stroke:var(--muted);stroke-width:2"/>
+    <path d="M444,222 l12,0 M450,216 l0,12" style="stroke:var(--muted);stroke-width:2"/>
+    <path d="M286,110 l12,0 M292,104 l0,12" style="stroke:var(--accent-ink);stroke-width:2"/>
+    <path d="M279,224 l12,0 M285,218 l0,12" style="stroke:var(--accent-ink);stroke-width:2"/>
+    <circle cx="270" cy="92" r="3.5" style="fill:var(--accent)"/><circle cx="318" cy="100" r="3.5" style="fill:var(--accent)"/><circle cx="248" cy="138" r="3.5" style="fill:var(--accent)"/>
+    <circle cx="258" cy="206" r="3.5" style="fill:var(--accent)"/><circle cx="322" cy="214" r="3.5" style="fill:var(--accent)"/><circle cx="300" cy="252" r="3.5" style="fill:var(--accent)"/>
+    <line x1="292" y1="168" x2="292" y2="116" style="stroke:var(--accent);stroke-width:1.5;stroke-dasharray:4 3"/>
+    <line x1="292" y1="168" x2="286" y2="218" style="stroke:var(--accent);stroke-width:1.5;stroke-dasharray:4 3"/>
+    <circle cx="292" cy="168" r="7" style="fill:var(--accent)"/>
+    <circle cx="292" cy="168" r="12" style="fill:none;stroke:var(--accent);stroke-width:1.5"/>
+    <text x="292" y="158" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">q</text>
+    <text x="552" y="86" style="fill:var(--muted)">nlist=6 · nprobe=2</text>
+    <rect x="552" y="102" width="16" height="16" rx="3" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="576" y="115" style="fill:var(--ink)">refined</text>
+    <rect x="552" y="132" width="16" height="16" rx="3" style="fill:var(--panel-2);stroke:var(--line)"/><text x="576" y="145" style="fill:var(--ink)">skipped</text>
+    <path d="M554,172 l12,0 M560,166 l0,12" style="stroke:var(--muted);stroke-width:2"/><text x="576" y="177" style="fill:var(--ink)">centroid</text>
+    <circle cx="560" cy="200" r="5" style="fill:var(--accent)"/><text x="576" y="205" style="fill:var(--ink)">query q</text>
+  </svg>
+  <div class="figcap"><b>Refine only the nearest buckets</b>: k-means clusters all vectors into <span class="mono">nlist=6</span> buckets; query <span class="mono">q</span> probes only the <b>nearest nprobe=2 buckets</b> (exact compare) and <b>skips the other 4</b> — that is how IVF "skips most of the data", and why a larger <span class="mono">nprobe</span> lifts recall.</div>
+</div>
+
 <div class="trace">
   <div class="tcap"><b>IVF search</b>: all vectors split into 6 buckets, the query probes only the nearest 2 (nprobe=2), skipping the other 4</div>
   <div class="stations">
@@ -1660,6 +1754,46 @@ hops to the neighbor "closer to the query" — like going from highway to arteri
 hops</strong>. Three knobs: <span class="inline">M</span> is edges per node (graph density, affects memory and recall),
 <span class="inline">efConstruction</span> is the candidate width at build time (how finely it's built), and <span class="inline">ef</span> is the
 candidate width at query time — <strong>larger ef searches wider, higher recall but slower</strong>.</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Greedy search on the HNSW multi-layer graph: start at an entry on the sparse top layer, descend layer by layer, reach the nearest neighbor in a few hops">
+    <text x="18" y="76" style="fill:var(--muted)">top · sparse</text>
+    <text x="18" y="162" style="fill:var(--muted)">middle</text>
+    <text x="18" y="252" style="fill:var(--muted)">bottom · dense</text>
+    <polyline points="120,72 330,72 560,72" style="fill:none;stroke:var(--line);stroke-width:1.5;opacity:.6"/>
+    <polyline points="160,158 300,158 440,158 580,158 680,158" style="fill:none;stroke:var(--line);stroke-width:1.5;opacity:.6"/>
+    <polyline points="110,248 190,248 270,248 350,248 430,248 510,248 590,248 670,248" style="fill:none;stroke:var(--line);stroke-width:1.5;opacity:.6"/>
+    <line x1="330" y1="80" x2="300" y2="150" style="stroke:var(--line);stroke-width:1;stroke-dasharray:3 4;opacity:.5"/>
+    <line x1="440" y1="166" x2="430" y2="240" style="stroke:var(--line);stroke-width:1;stroke-dasharray:3 4;opacity:.5"/>
+    <circle cx="330" cy="72" r="7" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="560" cy="72" r="7" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="160" cy="158" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="580" cy="158" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="680" cy="158" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="110" cy="248" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="190" cy="248" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="270" cy="248" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="350" cy="248" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="510" cy="248" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="590" cy="248" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <circle cx="670" cy="248" r="6" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <line x1="130" y1="72" x2="319" y2="72" style="stroke:var(--accent);stroke-width:3"/>
+    <path d="M321,72 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <line x1="326" y1="80" x2="304" y2="148" style="stroke:var(--accent);stroke-width:3"/>
+    <path d="M302,150 l1,-12 l8,7 z" style="fill:var(--accent)"/>
+    <line x1="311" y1="158" x2="429" y2="158" style="stroke:var(--accent);stroke-width:3"/>
+    <path d="M431,158 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <line x1="438" y1="166" x2="431" y2="238" style="stroke:var(--accent);stroke-width:3"/>
+    <path d="M430,240 l-3,-11 l9,4 z" style="fill:var(--accent)"/>
+    <circle cx="120" cy="72" r="9" style="fill:var(--accent);stroke:var(--accent)"/>
+    <text x="120" y="50" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">entry</text>
+    <circle cx="300" cy="158" r="7" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:2"/>
+    <circle cx="440" cy="158" r="7" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:2"/>
+    <circle cx="430" cy="248" r="11" style="fill:var(--teal);stroke:var(--teal)"/>
+    <text x="430" y="278" text-anchor="middle" style="fill:var(--teal);font-weight:700">nearest ✓</text>
+  </svg>
+  <div class="figcap"><b>A few hops on a multi-layer graph</b>: start with a big stride from an entry on the <b>sparse top layer</b>, greedily hop toward closer neighbors, <b>descend layer by layer</b> to denser layers, and converge on the nearest neighbor at the bottom — <b>visiting only a tiny fraction of all nodes</b>.</div>
+</div>
 
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>Top-layer entry</h4><p>Pick an entry node on the sparsest layer and take big strides toward the query.</p></div></div>
@@ -2007,6 +2141,35 @@ designing a collection you'll consciously ask: <strong>"which filter will almost
 partition-key candidate. A small reminder: the partition key, once specified at collection creation, is fixed — so this is another
 decision to settle at schema-design time, in the same "set once for life" category as dimension and primary key.</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="A collection routes data into partitions by partition key; each partition splits into segments; segments hold rows; a query searches only the relevant partition">
+    <rect x="40" y="42" width="232" height="40" rx="8" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <text x="156" y="67" text-anchor="middle" class="mono" style="fill:var(--ink)">row { user_id: 42, vec, … }</text>
+    <line x1="272" y1="62" x2="310" y2="62" style="stroke:var(--line);stroke-width:2"/><path d="M310,62 l-11,-5 l0,10 z" style="fill:var(--line)"/>
+    <rect x="312" y="42" width="160" height="40" rx="8" style="fill:var(--accent-soft);stroke:var(--accent)"/>
+    <text x="392" y="67" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">hash(partition key)</text>
+    <line x1="472" y1="62" x2="520" y2="62" style="stroke:var(--accent);stroke-width:2"/><path d="M520,62 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <text x="610" y="56" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">user=42 → partition A</text>
+    <text x="610" y="76" text-anchor="middle" style="fill:var(--muted)">a query with user=42 hits only A</text>
+    <path d="M392,84 C392,108 218,108 218,130" style="fill:none;stroke:var(--accent);stroke-width:1.5;stroke-dasharray:5 4"/>
+    <path d="M218,132 l-5,-11 l10,1 z" style="fill:var(--accent)"/>
+    <rect x="40" y="104" width="680" height="168" rx="12" style="fill:none;stroke:var(--accent);stroke-width:1.5"/>
+    <text x="56" y="125" style="fill:var(--accent-ink);font-weight:700">collection</text>
+    <rect x="58" y="132" width="320" height="130" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="74" y="152" style="fill:var(--accent-ink);font-weight:700">partition A · user=42</text>
+    <rect x="74" y="160" width="140" height="92" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="144" y="178" text-anchor="middle" style="fill:var(--ink)">segment</text>
+    <circle cx="100" cy="206" r="4" style="fill:var(--muted)"/><circle cx="124" cy="206" r="4" style="fill:var(--muted)"/><circle cx="148" cy="206" r="4" style="fill:var(--muted)"/><circle cx="172" cy="206" r="4" style="fill:var(--muted)"/>
+    <text x="144" y="240" text-anchor="middle" style="fill:var(--faint)">⊃ entities (rows)</text>
+    <rect x="222" y="160" width="140" height="92" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="292" y="178" text-anchor="middle" style="fill:var(--ink)">segment</text>
+    <circle cx="248" cy="206" r="4" style="fill:var(--muted)"/><circle cx="272" cy="206" r="4" style="fill:var(--muted)"/><circle cx="296" cy="206" r="4" style="fill:var(--muted)"/>
+    <rect x="398" y="132" width="304" height="130" rx="10" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <text x="414" y="152" style="fill:var(--muted)">partition B · user=99</text>
+    <rect x="414" y="160" width="132" height="92" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="480" y="178" text-anchor="middle" style="fill:var(--muted)">segment</text>
+    <rect x="554" y="160" width="132" height="92" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="620" y="178" text-anchor="middle" style="fill:var(--muted)">segment</text>
+  </svg>
+  <div class="figcap"><b>Slicing down: collection ⊃ partition ⊃ segment ⊃ entity</b>: <span class="mono">hash(partition key)</span> <b>auto-routes</b> each row into a partition; a query carrying the partition key <b>searches only that partition</b>, pruning a huge swath of data up front.</div>
+</div>
+
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>Define the schema</h4><p>Declare fields: primary key, vector field (with dim), some scalar fields; optionally enable dynamic field and set a partition key.</p></div></div>
   <div class="step"><div class="num">2</div><div class="sc"><h4>Create the collection</h4><p>The schema is fixed and the collection is born; dimension, primary key, metric and other metadata become fixed.</p></div></div>
@@ -2295,6 +2458,43 @@ so a slow one doesn't drag the others and each scales on its own. This is what "
 rather than row by row as in relational databases. E.g., a segment with id, vector, and price fields stores all ids together, all vectors together, all prices together.
 After flushing, each field corresponds to one <span class="inline">binlog</span> file.</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Columnar layout: regroup row-oriented entities into per-field contiguous storage, one binlog per field">
+    <text x="40" y="52" style="fill:var(--muted)">logical: 3 rows</text>
+    <rect x="40" y="64" width="252" height="36" rx="7" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <rect x="48" y="70" width="40" height="24" rx="5" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="68" y="87" text-anchor="middle" class="mono" style="fill:var(--blue)">1</text>
+    <rect x="94" y="70" width="112" height="24" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="150" y="87" text-anchor="middle" style="fill:var(--accent-ink)">vec</text>
+    <rect x="212" y="70" width="72" height="24" rx="5" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="248" y="87" text-anchor="middle" class="mono" style="fill:var(--amber)">9.9</text>
+    <rect x="40" y="106" width="252" height="36" rx="7" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <rect x="48" y="112" width="40" height="24" rx="5" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="68" y="129" text-anchor="middle" class="mono" style="fill:var(--blue)">2</text>
+    <rect x="94" y="112" width="112" height="24" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="150" y="129" text-anchor="middle" style="fill:var(--accent-ink)">vec</text>
+    <rect x="212" y="112" width="72" height="24" rx="5" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="248" y="129" text-anchor="middle" class="mono" style="fill:var(--amber)">3.5</text>
+    <rect x="40" y="148" width="252" height="36" rx="7" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <rect x="48" y="154" width="40" height="24" rx="5" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="68" y="171" text-anchor="middle" class="mono" style="fill:var(--blue)">3</text>
+    <rect x="94" y="154" width="112" height="24" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="150" y="171" text-anchor="middle" style="fill:var(--accent-ink)">vec</text>
+    <rect x="212" y="154" width="72" height="24" rx="5" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="248" y="171" text-anchor="middle" class="mono" style="fill:var(--amber)">7.0</text>
+    <line x1="300" y1="124" x2="340" y2="124" style="stroke:var(--line);stroke-width:2"/><path d="M340,124 l-11,-5 l0,10 z" style="fill:var(--line)"/>
+    <text x="320" y="114" text-anchor="middle" style="fill:var(--muted)">by field</text>
+    <text x="352" y="52" style="fill:var(--muted)">physical: each field contiguous · one binlog each</text>
+    <text x="354" y="86" style="fill:var(--blue);font-weight:700">id col</text>
+    <rect x="404" y="68" width="34" height="28" rx="5" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="421" y="87" text-anchor="middle" class="mono" style="fill:var(--blue)">1</text>
+    <rect x="440" y="68" width="34" height="28" rx="5" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="457" y="87" text-anchor="middle" class="mono" style="fill:var(--blue)">2</text>
+    <rect x="476" y="68" width="34" height="28" rx="5" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="493" y="87" text-anchor="middle" class="mono" style="fill:var(--blue)">3</text>
+    <text x="528" y="86" style="fill:var(--muted)">→ 1 binlog</text>
+    <text x="354" y="142" style="fill:var(--accent-ink);font-weight:700">vector col</text>
+    <rect x="404" y="124" width="34" height="28" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="421" y="143" text-anchor="middle" style="fill:var(--accent-ink)">v</text>
+    <rect x="440" y="124" width="34" height="28" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="457" y="143" text-anchor="middle" style="fill:var(--accent-ink)">v</text>
+    <rect x="476" y="124" width="34" height="28" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="493" y="143" text-anchor="middle" style="fill:var(--accent-ink)">v</text>
+    <text x="528" y="142" style="fill:var(--muted)">→ 1 binlog</text>
+    <text x="354" y="198" style="fill:var(--amber);font-weight:700">price col</text>
+    <rect x="404" y="180" width="44" height="28" rx="5" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="426" y="199" text-anchor="middle" class="mono" style="fill:var(--amber)">9.9</text>
+    <rect x="450" y="180" width="44" height="28" rx="5" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="472" y="199" text-anchor="middle" class="mono" style="fill:var(--amber)">3.5</text>
+    <rect x="496" y="180" width="44" height="28" rx="5" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="518" y="199" text-anchor="middle" class="mono" style="fill:var(--amber)">7.0</text>
+    <text x="556" y="198" style="fill:var(--muted)">→ 1 binlog</text>
+  </svg>
+  <div class="figcap"><b>Columnar, not row-wise</b>: all values of one field sit <b>contiguously together</b>, each field flushed as <b>one binlog</b>. Vector search "pulls a whole column out and computes distances in bulk" — hence very fast (cache-friendly, vectorizable); scalar filtering scans only the relevant columns.</div>
+</div>
+
 <p>Why columnar? Because vector search's access pattern is "<strong>pull a whole column (the vector column) out in bulk and compute distances</strong>," and columnar layout makes such <strong>bulk, contiguous</strong> access extremely efficient (cache-friendly, vectorizable);
 scalar filtering is similar—scan only the relevant columns, no need to read whole rows. <strong>Columnar + per-segment chunking + log-driven</strong>—these three together form the skeleton of Milvus's storage layer.</p>
 
@@ -2305,6 +2505,40 @@ Segment, column, log, and index now close the loop.</p>
 <h2>Tying it together: the life of one row</h2>
 <p>Now we can assemble everything into one complete picture of what a row goes through from write to search. The table below maps each <strong>stage</strong> to its <strong>segment state</strong>,
 <strong>where the data lives</strong>, and <strong>whether it's searchable</strong>—this is "search while writing" and "log as data" in real life:</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="The life of one row: from the WAL log, to the in-memory growing and sealed segments, to object storage and an index; once in the log it has landed and stays searchable">
+    <rect x="18" y="80" width="132" height="92" rx="10" style="fill:var(--amber-soft);stroke:var(--amber);stroke-width:1.5"/>
+    <text x="84" y="106" text-anchor="middle" style="fill:var(--amber);font-weight:700">① WAL log</text>
+    <text x="84" y="130" text-anchor="middle" style="fill:var(--muted)">pchannel</text>
+    <text x="84" y="156" text-anchor="middle" style="fill:var(--ink)">only truth</text>
+    <rect x="160" y="80" width="132" height="92" rx="10" style="fill:var(--blue-soft);stroke:var(--blue);stroke-width:1.5"/>
+    <text x="226" y="106" text-anchor="middle" style="fill:var(--blue);font-weight:700">② Growing</text>
+    <text x="226" y="130" text-anchor="middle" style="fill:var(--muted)">memory</text>
+    <text x="226" y="156" text-anchor="middle" style="fill:var(--teal);font-weight:700">✓ instantly</text>
+    <rect x="302" y="80" width="132" height="92" rx="10" style="fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5"/>
+    <text x="368" y="106" text-anchor="middle" style="fill:var(--purple);font-weight:700">③ Sealed</text>
+    <text x="368" y="130" text-anchor="middle" style="fill:var(--muted)">mem→flush</text>
+    <text x="368" y="156" text-anchor="middle" style="fill:var(--teal);font-weight:700">✓ read-only</text>
+    <rect x="444" y="80" width="132" height="92" rx="10" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:1.5"/>
+    <text x="510" y="106" text-anchor="middle" style="fill:var(--teal);font-weight:700">④ Flushed</text>
+    <text x="510" y="130" text-anchor="middle" style="fill:var(--muted)">object store</text>
+    <text x="510" y="156" text-anchor="middle" style="fill:var(--teal);font-weight:700">✓ crash-proof</text>
+    <rect x="586" y="80" width="132" height="92" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="652" y="106" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">⑤ Indexed</text>
+    <text x="652" y="130" text-anchor="middle" style="fill:var(--muted)">+ index files</text>
+    <text x="652" y="156" text-anchor="middle" style="fill:var(--teal);font-weight:700">✓ efficient</text>
+    <path d="M150,126 l12,0 M160,126 l-9,-4 l0,8 z" style="stroke:var(--line);fill:var(--line);stroke-width:2"/>
+    <path d="M292,126 l12,0 M302,126 l-9,-4 l0,8 z" style="stroke:var(--line);fill:var(--line);stroke-width:2"/>
+    <path d="M434,126 l12,0 M444,126 l-9,-4 l0,8 z" style="stroke:var(--line);fill:var(--line);stroke-width:2"/>
+    <path d="M576,126 l12,0 M586,126 l-9,-4 l0,8 z" style="stroke:var(--line);fill:var(--line);stroke-width:2"/>
+    <path d="M160,196 L718,196" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:5 4"/>
+    <path d="M160,196 l0,-8 M718,196 l0,-8" style="stroke:var(--teal);stroke-width:1.5"/>
+    <text x="439" y="220" text-anchor="middle" style="fill:var(--teal);font-weight:700">in the log = landed · a query scans Growing + Sealed together, then merges</text>
+    <text x="439" y="250" text-anchor="middle" style="fill:var(--muted)">after compaction/delete → Dropped (✗, awaiting GC)</text>
+  </svg>
+  <div class="figcap"><b>The life of one row</b>: the moment it's in the <b>WAL</b> it has "landed". It is searchable instantly in the in-memory <b>Growing</b> segment, then sealed, flushed to a <b>binlog in object storage</b>, and <b>indexed</b> for efficient search — a query <b>always scans both Growing (newest) and Sealed (historical)</b>, which is why "just written" is immediately searchable.</div>
+</div>
 
 <table class="t">
   <thead><tr><th>Stage</th><th>Segment state</th><th>Where data lives</th><th>Searchable?</th><th>Note</th></tr></thead>
@@ -2463,6 +2697,34 @@ if a node dies, it holds no exclusive state, so just restart or reload on anothe
 cheap", and "ordered and replayable"</strong>—metadata is small yet must be strongly consistent, vector data is large yet write-rarely read-often,
 and the write log must be strictly ordered and replayable. Handing each to the mature system best suited to it is the core idea of this
 external-dependency design. We unpack them one by one below.</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Three external dependencies: etcd is the ledger (metadata), object storage is the warehouse (binlogs and indexes), the message queue is the log (WAL) — three distinct storage needs">
+    <rect x="20" y="56" width="232" height="206" rx="12" style="fill:var(--panel-2);stroke:var(--blue);stroke-width:1.5"/>
+    <text x="136" y="86" text-anchor="middle" style="fill:var(--blue);font-weight:700">① etcd · ledger</text>
+    <line x1="40" y1="98" x2="232" y2="98" style="stroke:var(--blue);stroke-width:1.5;opacity:.45"/>
+    <rect x="114" y="116" width="44" height="34" rx="4" style="fill:none;stroke:var(--blue);stroke-width:2"/>
+    <line x1="122" y1="127" x2="150" y2="127" style="stroke:var(--blue);stroke-width:2"/><line x1="122" y1="135" x2="150" y2="135" style="stroke:var(--blue);stroke-width:2"/><line x1="122" y1="143" x2="142" y2="143" style="stroke:var(--blue);stroke-width:2"/>
+    <text x="136" y="176" text-anchor="middle" style="fill:var(--ink)">metadata + discovery</text>
+    <rect x="40" y="188" width="192" height="30" rx="8" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="136" y="208" text-anchor="middle" style="fill:var(--blue);font-weight:700">small &amp; critical · consistent</text>
+    <text x="136" y="242" text-anchor="middle" class="mono" style="fill:var(--muted)">etcd (same as K8s)</text>
+    <rect x="264" y="56" width="232" height="206" rx="12" style="fill:var(--panel-2);stroke:var(--teal);stroke-width:1.5"/>
+    <text x="380" y="86" text-anchor="middle" style="fill:var(--teal);font-weight:700">② object store · warehouse</text>
+    <line x1="284" y1="98" x2="476" y2="98" style="stroke:var(--teal);stroke-width:1.5;opacity:.45"/>
+    <rect x="360" y="116" width="18" height="16" rx="2" style="fill:none;stroke:var(--teal);stroke-width:2"/><rect x="382" y="116" width="18" height="16" rx="2" style="fill:none;stroke:var(--teal);stroke-width:2"/><rect x="360" y="134" width="18" height="16" rx="2" style="fill:none;stroke:var(--teal);stroke-width:2"/><rect x="382" y="134" width="18" height="16" rx="2" style="fill:none;stroke:var(--teal);stroke-width:2"/>
+    <text x="380" y="176" text-anchor="middle" style="fill:var(--ink)">binlogs + index files</text>
+    <rect x="284" y="188" width="192" height="30" rx="8" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="380" y="208" text-anchor="middle" style="fill:var(--teal);font-weight:700">big &amp; cheap · near-infinite</text>
+    <text x="380" y="242" text-anchor="middle" class="mono" style="fill:var(--muted)">MinIO / S3 / OSS</text>
+    <rect x="508" y="56" width="232" height="206" rx="12" style="fill:var(--panel-2);stroke:var(--amber);stroke-width:1.5"/>
+    <text x="624" y="86" text-anchor="middle" style="fill:var(--amber);font-weight:700">③ message queue · log</text>
+    <line x1="528" y1="98" x2="720" y2="98" style="stroke:var(--amber);stroke-width:1.5;opacity:.45"/>
+    <rect x="588" y="120" width="16" height="24" rx="2" style="fill:none;stroke:var(--amber);stroke-width:2"/><rect x="606" y="120" width="16" height="24" rx="2" style="fill:none;stroke:var(--amber);stroke-width:2"/><rect x="624" y="120" width="16" height="24" rx="2" style="fill:none;stroke:var(--amber);stroke-width:2"/><rect x="642" y="120" width="16" height="24" rx="2" style="fill:var(--amber-soft);stroke:var(--amber);stroke-width:2"/>
+    <text x="624" y="176" text-anchor="middle" style="fill:var(--ink)">ordered write log (WAL)</text>
+    <rect x="528" y="188" width="192" height="30" rx="8" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="624" y="208" text-anchor="middle" style="fill:var(--amber);font-weight:700">ordered &amp; replayable</text>
+    <text x="624" y="242" text-anchor="middle" class="mono" style="fill:var(--muted)">Pulsar / Kafka / Woodpecker</text>
+  </svg>
+  <div class="figcap"><b>Three dependencies, three storage needs</b>: outsource the <b>ledger</b> (small, critical metadata needing strong consistency), the <b>warehouse</b> (vast, cheap binlogs and indexes), and the <b>log</b> (an ordered, replayable write stream) each to the system best at it — which is why Milvus itself can stay <b>stateless and freely scalable</b>.</div>
+</div>
 
 <h3>① etcd — metadata and service discovery</h3>
 <p><strong>etcd</strong> is a <strong>strongly consistent distributed key-value store</strong>. Milvus uses it to hold all <strong>metadata</strong>: which collections exist, their schemas, each segment's state and location, index metadata, etc.;
