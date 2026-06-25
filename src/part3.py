@@ -436,8 +436,8 @@ Proxy 把这些复杂度<strong>全部封装</strong>在身后。于是后端怎
   <div class="node"><div class="nt">节点</div><div class="nd">QueryNode / DataNode 干活</div></div>
 </div>
 
-<h2>三道关卡：校验、鉴权、限流</h2>
-<p>请求进了 Proxy，并不会立刻被执行，而要先过三道<strong>拦截器（interceptor）</strong>。这是 gRPC 的标准玩法：在真正的业务方法之前，
+<h2>四道关卡：鉴权、权限、数据库路由、限流</h2>
+<p>请求进了 Proxy，并不会立刻被执行，而要先过四道<strong>拦截器（interceptor）</strong>。这是 gRPC 的标准玩法：在真正的业务方法之前，
 串接一组中间件，逐个把关。Milvus 把它们拆成独立文件，职责清晰：</p>
 
 <ul>
@@ -525,7 +525,7 @@ Proxy 把这些复杂度<strong>全部封装</strong>在身后。于是后端怎
 
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>接收请求</h4><p>gRPC/REST 打到 Proxy 的 milvuspb 方法，如 <span class="mono">Search</span>。</p></div></div>
-  <div class="step"><div class="num">2</div><div class="sc"><h4>三道关卡</h4><p>鉴权 → 权限 → 数据库路由 → 限流，拦截器逐个把关。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>四道关卡</h4><p>鉴权 → 权限 → 数据库路由 → 限流，拦截器逐个把关。</p></div></div>
   <div class="step"><div class="num">3</div><div class="sc"><h4>包装成任务、选队列</h4><p>按类型进 ddQueue / dmQueue / dqQueue。</p></div></div>
   <div class="step"><div class="num">4</div><div class="sc"><h4>分配时间戳</h4><p class="mono">tsoAllocator</p><p>向协调者要全局时间戳/ID，定下这条操作的时序。</p></div></div>
   <div class="step"><div class="num">5</div><div class="sc"><h4>执行：扇出</h4><p>DML 写进 WAL/MQ；DQL 把查询发给负责各分片的 QueryNode。</p></div></div>
@@ -629,7 +629,7 @@ Precisely because this "translation" only reads metadata and never writes it, mu
   <div class="node"><div class="nt">nodes</div><div class="nd">QueryNode / DataNode do work</div></div>
 </div>
 
-<h2>Three gates: validate, authenticate, rate-limit</h2>
+<h2>Four gates: auth, privilege, db routing, rate-limit</h2>
 <p>Once a request enters the Proxy it isn't executed right away — it must first pass a chain of <strong>interceptors</strong>. This is standard gRPC practice: before the real business method,
 a set of middlewares vet the request one by one. Milvus splits them into clear, single-purpose files:</p>
 
@@ -718,7 +718,7 @@ ordering on RootCoord's TSO, fan-out and reduce on the shard distribution QueryC
 
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>receive</h4><p>gRPC/REST hits a Proxy milvuspb method, e.g. <span class="mono">Search</span>.</p></div></div>
-  <div class="step"><div class="num">2</div><div class="sc"><h4>three gates</h4><p>auth → privilege → db routing → rate limit, interceptors vet in turn.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>four gates</h4><p>auth → privilege → db routing → rate limit, interceptors vet in turn.</p></div></div>
   <div class="step"><div class="num">3</div><div class="sc"><h4>wrap as task, pick queue</h4><p>route into ddQueue / dmQueue / dqQueue by kind.</p></div></div>
   <div class="step"><div class="num">4</div><div class="sc"><h4>assign timestamp</h4><p class="mono">tsoAllocator</p><p>ask the coordinator for a global timestamp/ID, fixing this op's order.</p></div></div>
   <div class="step"><div class="num">5</div><div class="sc"><h4>execute: fan out</h4><p>DML writes into WAL/MQ; DQL sends the query to the QueryNodes serving each shard.</p></div></div>

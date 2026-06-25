@@ -2815,7 +2815,7 @@ Precisely because this "translation" only reads metadata and never writes it, mu
   <div class="node"><div class="nt">nodes</div><div class="nd">QueryNode / DataNode do work</div></div>
 </div>
 
-<h2>Three gates: validate, authenticate, rate-limit</h2>
+<h2>Four gates: auth, privilege, db routing, rate-limit</h2>
 <p>Once a request enters the Proxy it isn't executed right away — it must first pass a chain of <strong>interceptors</strong>. This is standard gRPC practice: before the real business method,
 a set of middlewares vet the request one by one. Milvus splits them into clear, single-purpose files:</p>
 
@@ -2904,7 +2904,7 @@ ordering on RootCoord's TSO, fan-out and reduce on the shard distribution QueryC
 
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>receive</h4><p>gRPC/REST hits a Proxy milvuspb method, e.g. <span class="mono">Search</span>.</p></div></div>
-  <div class="step"><div class="num">2</div><div class="sc"><h4>three gates</h4><p>auth → privilege → db routing → rate limit, interceptors vet in turn.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>four gates</h4><p>auth → privilege → db routing → rate limit, interceptors vet in turn.</p></div></div>
   <div class="step"><div class="num">3</div><div class="sc"><h4>wrap as task, pick queue</h4><p>route into ddQueue / dmQueue / dqQueue by kind.</p></div></div>
   <div class="step"><div class="num">4</div><div class="sc"><h4>assign timestamp</h4><p class="mono">tsoAllocator</p><p>ask the coordinator for a global timestamp/ID, fixing this op's order.</p></div></div>
   <div class="step"><div class="num">5</div><div class="sc"><h4>execute: fan out</h4><p>DML writes into WAL/MQ; DQL sends the query to the QueryNodes serving each shard.</p></div></div>
