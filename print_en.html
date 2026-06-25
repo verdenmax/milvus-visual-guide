@@ -3734,9 +3734,6 @@ Above that, <span class="mono">MetaKv</span> adds <span class="mono">CompareVers
 a Catalog that needs transactions depends on <span class="mono">TxnKV</span>; service discovery that watches for changes depends on <span class="mono">WatchKV</span>. Implementations live in <span class="mono">internal/kv/etcd</span> (the etcd version) and <span class="mono">internal/kv/mem</span> (an in-memory version for tests).
 Here is the contract stacking from <span class="mono">BaseKV</span> all the way up to <span class="mono">WatchKV</span>:</p>
 
-<p>That <span class="mono">CompareVersionAndSwap</span> (compare-then-swap, i.e. CAS) on <span class="mono">MetaKv</span> deserves a callout: it is the basis of <strong>optimistic locking</strong>. Imagine two coordinator replicas both wanting to edit the same metadata; if each writes blindly, the later write silently overwrites the earlier — a lost update.
-CAS instead "<strong>writes carrying the version I saw</strong>" — the write succeeds only if etcd's version still matches what I read; if someone changed it meanwhile (version moved), the write fails and the caller must re-read and retry. This blocks the read-then-write race at the storage layer, sparing upper layers from rolling their own distributed lock. <strong>Transactions guarantee atomicity of a group of writes; CAS guarantees one write isn't overwritten</strong> — together they uphold metadata correctness under concurrency.</p>
-
 <div class="codefile">
   <div class="cf-head"><span class="dot"></span><span class="path">pkg/kv/kv.go</span><span class="ln">BaseKV → TxnKV → MetaKv → WatchKV</span></div>
   <pre><span class="cm">// the plainest create/read/delete</span>
@@ -3752,6 +3749,9 @@ CAS instead "<strong>writes carrying the version I saw</strong>" — the write s
 <span class="kw">type</span> MetaKv <span class="kw">interface</span> { TxnKV; CompareVersionAndSwap(...) }  <span class="cm">// +CAS (version)</span>
 <span class="kw">type</span> WatchKV <span class="kw">interface</span> { MetaKv; Watch(ctx, key) WatchChan } <span class="cm">// +watch</span></pre>
 </div>
+
+<p>That <span class="mono">CompareVersionAndSwap</span> (compare-then-swap, i.e. CAS) on <span class="mono">MetaKv</span> deserves a callout: it is the basis of <strong>optimistic locking</strong>. Imagine two coordinator replicas both wanting to edit the same metadata; if each writes blindly, the later write silently overwrites the earlier — a lost update.
+CAS instead "<strong>writes carrying the version I saw</strong>" — the write succeeds only if etcd's version still matches what I read; if someone changed it meanwhile (version moved), the write fails and the caller must re-read and retry. This blocks the read-then-write race at the storage layer, sparing upper layers from rolling their own distributed lock. <strong>Transactions guarantee atomicity of a group of writes; CAS guarantees one write isn't overwritten</strong> — together they uphold metadata correctness under concurrency.</p>
 
 <h2>What goes where: etcd vs object storage</h2>
 <p>A common question: with both etcd and object storage, what goes in which? The answer is a single line drawn on <strong>size and role</strong> — <strong>small, critical "metadata" that needs strong consistency and watching goes to etcd; bulky "data and indexes" that only need reliable storage go to object storage</strong>.
