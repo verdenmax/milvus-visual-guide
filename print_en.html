@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 44 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 45 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
@@ -372,6 +372,7 @@ details[open] > summary { list-style: none; }
   <li>Build & run</li>
   <li>Testing</li>
   <li>Code conventions</li>
+  <li>Submitting PRs & contributing</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -8500,6 +8501,119 @@ You can build and test; one gate remains before "<strong>your code can be merged
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
     <li>This lesson says 'an error also carries information about what to do with it'; merr gives errors an identity (code/retriable/Input vs System). Please: (1) with a concrete example (e.g. ErrCollectionNotFound) explain why the same error defaults to System (retriable) internally but is flipped to Input via WrapErrAsInputErrorWhen only at the proxy boundary; (2) explain why add context with merr.Wrap rather than WrapErrXxxErr; (3) these conventions are mostly linter-enforced — discuss what 'solidifying conventions into tools' means for a hundreds-of-contributors open-source project, and what shared engineering aesthetic it shares with Lesson 40's 'config funneling' and Lesson 43's 'don't hand-edit generated files'.</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Submitting PRs & contributing</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+You can build, test, and follow conventions — one step remains: <strong>turn your change into a PR Milvus will accept</strong>. This step has its own rules: the <strong>fork-and-pull</strong> workflow, a <strong>DCO sign-off</strong> on every commit (<span class="mono">-s</span>), a careful <strong>PR title format</strong>, and <strong>issue / design-doc links</strong> that depend on the change type. Plenty of rules — but once you clear them, you go <strong>from this guide's "reader" to a Milvus "contributor"</strong>. This lesson walks the last mile.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Filing a PR is like <strong>submitting a paper to a journal</strong>. You don't shove your draft into the main issue (<strong>you can't push straight to master</strong>); you first <strong>make your own copy</strong> (fork), revise on it, then <strong>go through the formal submission channel</strong> (open a PR). The submission must <strong>follow the format</strong> (title as <span class="mono">type: description</span>), <strong>cite its origin</strong> (link the matching issue / design doc), and be <strong>signed</strong> (DCO sign-off, declaring this code is yours to submit).
+  Miss any one and the "<strong>desk-review bots</strong>" (Mergify, the DCO check, CI) bounce you back <strong>before a human reviewer ever sees it</strong>. This isn't hazing — like a journal's format check, it's so that precious <strong>human review energy</strong> focuses on "<strong>is the code good</strong>", not "<strong>is the format right</strong>".
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>follow fork-and-pull (fork→add upstream→branch→change→<span class="mono">git commit -s</span> to sign DCO→push→open PR→CI+review→merge to master); the PR title is <span class="mono">{type}: {description}</span> (feat/fix/enhance/test/doc/…); link issue and design doc by type (fix needs an issue; feat needs issue+design doc); the body is non-empty</strong>. Bots (DCO/Mergify/CI) gate the format first; only then do humans review.
+</div>
+
+<h2>fork-and-pull: the standard contribution flow</h2>
+<p>Milvus (like most open-source projects) uses <strong>fork-and-pull</strong>. The core idea: <strong>you don't have write access to the official repo, so you work on your own copy and request to "pull" the result back</strong>. The flow is a fixed few steps. First, <strong>fork</strong>: on GitHub, copy <span class="mono">milvus-io/milvus</span> into your own account. Second, <strong>clone and set upstream</strong>: clone your fork locally, then add the official repo as the <span class="mono">upstream</span> remote (<span class="mono">git remote add upstream git@github.com:milvus-io/milvus.git</span>) so you can always <strong>sync the latest official code</strong>.</p>
+<p>Third, <strong>branch and work</strong>: cut a <strong>topic branch</strong> from the latest <span class="mono">upstream/master</span> (<span class="mono">git checkout upstream/master -b my-topic-branch</span>), change code and commit on it. Fourth, <strong>sync and push</strong>: before committing, <span class="mono">git fetch upstream</span>, rebase to resolve conflicts if needed, then push to your own fork (origin). Fifth, <strong>open a PR</strong>: on GitHub, file a Pull Request from your branch to <span class="mono">milvus-io/milvus</span>'s master. Then comes <strong>CI auto-running + maintainer review</strong>; once approved, your code is <strong>merged to master</strong> — congratulations, you're a contributor. This "<strong>everyone revises on a copy, converging via PRs</strong>" model lets thousands of strangers collaborate on one project <strong>without stepping on each other</strong>. The main path, drawn:</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Fork &amp; clone</h4><p>fork <span class="mono">milvus-io/milvus</span> to your account, clone locally, add the <span class="mono">upstream</span> remote.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Topic branch</h4><p>cut a branch from <span class="mono">upstream/master</span>, change code, <span class="mono">git commit -s</span> (with DCO sign-off).</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Sync &amp; push</h4><p><span class="mono">git fetch upstream</span>, rebase to resolve conflicts, push to your fork.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>PR → review → merge</h4><p>file a PR to master; merged after DCO/CI pass + maintainer approval.</p></div></div>
+</div>
+
+<h2>DCO: sign off every commit (-s)</h2>
+<p>There's a gate nearly everyone hits on their first PR — the <strong>DCO (Developer Certificate of Origin)</strong>. The rule is simple: <strong>every commit</strong> message must contain a line <span class="mono">Signed-off-by: Your Name &lt;your@email&gt;</span>. Miss it and the DCO check <strong>turns the PR red</strong>, blocking the merge.</p>
+<p>You needn't type that line — <strong><span class="mono">git commit -s</span></strong> <strong>automatically</strong> appends it to the commit message (<span class="mono">-s</span> = sign-off). What does this line declare? It's a <strong>lightweight legal statement</strong>: you confirm "<strong>this code is mine, or I have the right to submit it under this project's open-source license</strong>". Open-source projects use it to <strong>clarify code provenance and avoid copyright risk</strong> — nobody wants someone sneaking in private code from elsewhere. So DCO isn't bureaucracy but the <strong>trust bedrock of open collaboration</strong>. A common pitfall: if you used AI assistance (like this guide's Copilot), the <strong>actual sign-off must be "you, the developer", on the last line</strong> (<span class="mono">-s</span> uses your git identity automatically); the AI's attribution can be added too, but must not replace your DCO. Signed vs unsigned, compared:</p>
+
+<div class="cols">
+  <div class="col"><h4>✅ git commit -s (signed)</h4><p>the message ends with <span class="mono">Signed-off-by: You &lt;email&gt;</span>. The DCO check passes and the PR proceeds to review. Declares: I have the right to submit this code.</p></div>
+  <div class="col"><h4>❌ forgot -s (unsigned)</h4><p>the commit has no sign-off. The DCO check <strong>turns red and blocks the PR</strong>; you must add the sign-off (a <span class="mono">git rebase</span> can add <span class="mono">-s</span> to past commits) to continue. Every commit needs it.</p></div>
+</div>
+
+<h2>PR title and links: rules by type</h2>
+<p>Past DCO, there are the PR's own <strong>format rules</strong>. Milvus requires PR titles as <span class="mono">{type}: {description}</span>, with <strong>a fixed set of types</strong>: <span class="mono">feat:</span> (new feature), <span class="mono">fix:</span> (bug fix), <span class="mono">enhance:</span> (improvement), <span class="mono">test:</span> (tests), <span class="mono">doc:</span> (docs), plus <span class="mono">auto:</span>, <span class="mono">build(deps):</span> and so on. This prefix isn't just cosmetic — it lets maintainers see the <strong>nature of the change</strong> at a glance and drives downstream <strong>automation rules</strong>.</p>
+<p>The key automation decides, by type, <strong>what must be linked</strong>. <span class="mono">fix:</span> must <strong>link an issue</strong> (write <span class="mono">issue: #123</span> in the PR body) — a bug fix should say which bug. <span class="mono">feat:</span> demands more: besides an issue, it must <strong>link a design doc</strong> (under <span class="inline">docs/design-docs</span>) — a feature needs a design before an implementation; without the design doc, the Mergify bot slaps a <span class="mono">do-not-merge/missing-design-doc</span> label to block the merge. <span class="mono">enhance:</span> depends on size (only large changes — L/XL/XXL — must link an issue). <span class="mono">doc:</span> and <span class="mono">test:</span>, which <strong>don't touch features</strong>, needn't link an issue. Also, the PR <strong>body must be non-empty</strong>; a PR to a 2.x branch must also link the matching master PR (<span class="mono">pr: #123</span>). Memorize these as a table and fill them in at PR time so you won't be bounced.</p>
+
+<table class="t">
+  <tr><th>PR type</th><th>Meaning</th><th>Must link</th></tr>
+  <tr><td class="mono">fix:</td><td>bug fix</td><td>issue (<span class="mono">issue: #123</span>)</td></tr>
+  <tr><td class="mono">feat:</td><td>new feature</td><td>issue + design doc (docs/design-docs)</td></tr>
+  <tr><td class="mono">enhance:</td><td>improvement</td><td>issue only if large (L/XL/XXL)</td></tr>
+  <tr><td class="mono">doc: / test:</td><td>docs / tests</td><td>no issue required</td></tr>
+</table>
+
+<h2>From reader to contributor: you're ready</h2>
+<p>Having come this far, look back at what you now hold. You understand Milvus's <strong>macro architecture</strong> (coordinators and nodes, control vs data plane), have walked the full <strong>write and query</strong> paths, drilled into the <strong>C++ core</strong> to see how "fast" is made, and mapped the outer ring of <strong>API, observability, config, deployment</strong>; now you can also <strong>build it, test it, change it by its conventions, and turn changes into a compliant PR</strong>. That whole set is exactly what a <strong>qualified contributor</strong> has — you're ready.</p>
+<p>The hardest part of filing a PR was never the process but the <strong>courage to take the first step</strong>. Don't wait to "<strong>understand everything</strong>" before acting — no one starts that way. A good start is often a small <span class="mono">good first issue</span>, fixing a typo in the docs, or adding a missing test. The process <strong>becomes familiar once you've done it once</strong>; confidence <strong>builds when your first PR is merged</strong>. Everything in this guide — forty-odd lessons of diagrams, analogies, source, and quizzes — was to <strong>bring you to this step</strong>: so you no longer see Milvus as an inscrutable black box, but read its skeleton, grasp its trade-offs, and <strong>have the nerve to change and contribute to it</strong>. Reaching here, you've walked the road from "<strong>a curious bystander</strong>" to "<strong>a prepared contributor</strong>". The last lesson is a <strong>glossary</strong> for future reference. But the real next step waits for you on GitHub — <strong>go file your first PR</strong>.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>fork-and-pull</strong>: fork→clone+add upstream→branch from upstream/master→change+commit→fetch/rebase→push to fork→PR to master→CI+review→merge.</li>
+    <li><strong>DCO sign-off</strong>: every commit needs <span class="mono">Signed-off-by</span>, auto-added by <span class="mono">git commit -s</span>; it declares you have the right to submit the code, and a missing one blocks the PR.</li>
+    <li><strong>PR title</strong>: <span class="mono">{type}: {description}</span> (feat/fix/enhance/test/doc/…); non-empty body.</li>
+    <li><strong>Link by type</strong>: <span class="mono">fix:</span>→issue; <span class="mono">feat:</span>→issue+design doc (docs/design-docs, else Mergify blocks); <span class="mono">enhance:</span>→issue only if large; <span class="mono">doc:/test:</span>→none. Start from a good first issue and take the first step.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Milvus uses the fork-and-pull workflow. Which description is correct?</div>
+  <ol class="opts">
+    <li>You lack write access to the official repo: fork to your account (origin) to work, add the official as upstream (pull-only); branch from upstream/master, push to origin, file a PR to master, merged after CI+review</li>
+    <li>No branch needed, edit master directly</li>
+    <li>Push changes straight to milvus-io/milvus's master</li>
+    <li>Forking grants write access to the official repo</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. With thousands of contributors, you can't grant everyone write access to the main repo. The fork mechanism: you have full write access to your fork (origin) to change freely; the official repo as upstream is fetch-only, not push. Typical flow: pull latest from upstream→change locally→push to origin→file a PR from origin to upstream→CI+maintainer review→merge to master. Adding upstream also lets you sync before developing, reducing conflicts. This keeps participation open while protecting the main repo's quality.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. About the DCO sign-off (Signed-off-by), which is correct?</div>
+  <ol class="opts">
+    <li>DCO is optional; CI doesn't check it</li>
+    <li>Every commit needs a Signed-off-by, auto-appended by git commit -s; it declares you have the right to submit this code under the project's license, and a missing one blocks the PR via the DCO check</li>
+    <li>An AI tool's attribution can replace your DCO sign-off</li>
+    <li>You only need to sign the first commit once</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. The DCO requires each commit message to contain a line Signed-off-by: Name <email>; git commit -s auto-appends it using your git identity. It's a lightweight statement: you confirm the code is yours or you have the right to submit it under the project's license, clarifying provenance and avoiding copyright risk. Without it the DCO check goes red and blocks the PR — you can git rebase to add -s to past commits then force-push. Note: with AI assistance, the final sign-off must be you the developer; the AI's attribution is additional, not a replacement.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. About the PR title format and per-type linking requirements, which is correct?</div>
+  <ol class="opts">
+    <li>feat only needs an issue, no design doc</li>
+    <li>Title is free-form; bots don't check</li>
+    <li>No PR needs to link any issue</li>
+    <li>Title is {type}: {description} (feat/fix/enhance/test/doc…); fix must link an issue, feat must link issue+design doc (docs/design-docs, else Mergify blocks), enhance needs an issue only if large, doc/test don't; body non-empty</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. Milvus requires PR titles as {type}: {description}, with type fixed to feat (new feature)/fix (bug)/enhance/test/doc/auto/build(deps), so maintainers can identify and drive automation. Linking by type: fix needs an issue (issue: #123); feat needs issue+design doc (under docs/design-docs; missing it, Mergify adds do-not-merge/missing-design-doc to block); enhance needs an issue only if large (L/XL/XXL); doc/test don't. Also the body can't be empty; a PR to a 2.x branch must link the matching master PR (pr: #123).</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson says a PR's format gates (DCO/title/links) are bot-checked first so human review focuses on 'is the code good'. Please: (1) narrate a full contribution from fork to merge in your own words, clarifying how data flows among upstream/origin/local; (2) explain why feat: PRs must link a design doc, and what shared idea this shares with Lesson 44's 'enforce conventions via linters'; (3) as a newcomer who just finished this guide, what first change would you start with (e.g. a good first issue / doc fix / adding a test), and why is starting small a good strategy for taking the first step?</li>
   </ul>
 </div>
 </div>

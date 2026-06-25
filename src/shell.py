@@ -135,6 +135,8 @@ PAGES = [
      "第十部分 · 实践与贡献", "Part 10 · Practice & contributing"),
     ("44-code-conventions.html", "代码约定", "Code conventions",
      "第十部分 · 实践与贡献", "Part 10 · Practice & contributing"),
+    ("45-contributing-prs.html", "提交 PR 与贡献", "Submitting PRs & contributing",
+     "第十部分 · 实践与贡献", "Part 10 · Practice & contributing"),
 ]
 
 
@@ -664,6 +666,8 @@ SUBTITLES = {
                         "go tests must carry -tags dynamic,test and -gcflags=all=-N -l (for mockey patching); two mocks: mockery (generated interfaces)/mockey (runtime functions); make test-go/test-proxy"),
     "44-code-conventions.html": ("merr 错误：Input(不可重试) vs System(可重试)、别用 fmt.Errorf · 日志只用 mlog · import gci 排序(milvus-io 最后) · 生成文件勿手改 · 多由 linter 把关",
                                  "merr errors: Input (not retriable) vs System (retriable), no fmt.Errorf; log only via mlog; gci import order (milvus-io last); don't hand-edit generated files; mostly linter-enforced"),
+    "45-contributing-prs.html": ("fork-and-pull 流程 · DCO 签名 git commit -s · PR 标题 {type}: {描述} · 按类型关联 issue/设计文档 · 机器人(DCO/Mergify/CI)先把关",
+                                 "fork-and-pull flow; DCO sign-off git commit -s; PR title {type}: {desc}; link issue/design-doc by type; bots (DCO/Mergify/CI) gate first"),
 }
 
 

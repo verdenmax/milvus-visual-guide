@@ -2912,6 +2912,67 @@ QUIZZES = {
             },
         ],
     },
+    "45-contributing-prs.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "Milvus 采用 fork-and-pull 协作流程，下面哪个描述正确？",
+                    "en": "Milvus uses the fork-and-pull workflow. Which description is correct?",
+                },
+                "opts": [
+                    {"zh": "你没有官方仓库写权限：fork 到自己账号(origin)干活、加官方为 upstream 只拉不推；从 upstream/master 开分支改、push 到 origin、再向 master 发 PR，CI+评审后合入", "en": "You lack write access to the official repo: fork to your account (origin) to work, add the official as upstream (pull-only); branch from upstream/master, push to origin, file a PR to master, merged after CI+review"},
+                    {"zh": "直接把改动 push 到 milvus-io/milvus 的 master", "en": "Push changes straight to milvus-io/milvus's master"},
+                    {"zh": "fork 后就有了官方仓库的写权限", "en": "Forking grants write access to the official repo"},
+                    {"zh": "不需要分支，直接在 master 上改", "en": "No branch needed, edit master directly"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "贡献者成千上万，不可能给每人开主仓库写权限。fork 机制：你对自己账号下的 fork(origin)有完全写权限，随便改；官方仓库作为 upstream 只能 fetch、不能 push。典型流动：从 upstream 拉最新→本地改→push 到 origin→从 origin 向 upstream 发 PR→CI+维护者评审→合入 master。配 upstream 还能开发前同步最新、减少冲突。这样既不挡参与自由，又守住主仓库质量。",
+                    "en": "With thousands of contributors, you can't grant everyone write access to the main repo. The fork mechanism: you have full write access to your fork (origin) to change freely; the official repo as upstream is fetch-only, not push. Typical flow: pull latest from upstream→change locally→push to origin→file a PR from origin to upstream→CI+maintainer review→merge to master. Adding upstream also lets you sync before developing, reducing conflicts. This keeps participation open while protecting the main repo's quality.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "关于 DCO 签名(Signed-off-by)，下面哪条正确？",
+                    "en": "About the DCO sign-off (Signed-off-by), which is correct?",
+                },
+                "opts": [
+                    {"zh": "每个 commit 都需带 Signed-off-by，用 git commit -s 自动追加；它声明你有权按本项目许可证提交这段代码，缺了 DCO 检查会拦下 PR", "en": "Every commit needs a Signed-off-by, auto-appended by git commit -s; it declares you have the right to submit this code under the project's license, and a missing one blocks the PR via the DCO check"},
+                    {"zh": "只需在第一个 commit 签一次即可", "en": "You only need to sign the first commit once"},
+                    {"zh": "DCO 是可选的，CI 不检查", "en": "DCO is optional; CI doesn't check it"},
+                    {"zh": "AI 工具的署名可以替代你的 DCO 签名", "en": "An AI tool's attribution can replace your DCO sign-off"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "DCO(开发者原创声明)要求每个 commit 信息含一行 Signed-off-by: 姓名 <邮箱>；git commit -s 用你的 git 身份自动追加。它是一份轻量声明：你确认这段代码是你写的、或你有权按本项目开源许可证提交，用于厘清来源、规避版权风险。缺了它 DCO 检查标红、拦下 PR——可用 git rebase 给历史提交补 -s 再强推。注意：用 AI 辅助时，最后一行的 sign-off 必须是你这位开发者，AI 署名只能另加、不能顶替。",
+                    "en": "The DCO requires each commit message to contain a line Signed-off-by: Name <email>; git commit -s auto-appends it using your git identity. It's a lightweight statement: you confirm the code is yours or you have the right to submit it under the project's license, clarifying provenance and avoiding copyright risk. Without it the DCO check goes red and blocks the PR — you can git rebase to add -s to past commits then force-push. Note: with AI assistance, the final sign-off must be you the developer; the AI's attribution is additional, not a replacement.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "关于 PR 标题格式与按类型的关联要求，下面哪个正确？",
+                    "en": "About the PR title format and per-type linking requirements, which is correct?",
+                },
+                "opts": [
+                    {"zh": "标题为 {type}: {描述}(feat/fix/enhance/test/doc…)；fix 须关联 issue，feat 须关联 issue+设计文档(docs/design-docs，否则 Mergify 拦)，enhance 大改才需 issue，doc/test 不强制；body 非空", "en": "Title is {type}: {description} (feat/fix/enhance/test/doc…); fix must link an issue, feat must link issue+design doc (docs/design-docs, else Mergify blocks), enhance needs an issue only if large, doc/test don't; body non-empty"},
+                    {"zh": "标题随便写，机器人不检查", "en": "Title is free-form; bots don't check"},
+                    {"zh": "所有 PR 都不需要关联任何 issue", "en": "No PR needs to link any issue"},
+                    {"zh": "feat 只要有 issue 就行，不需要设计文档", "en": "feat only needs an issue, no design doc"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "Milvus 要求 PR 标题写成 {type}: {描述}，type 固定为 feat(新功能)/fix(修 bug)/enhance(增强)/test/doc/auto/build(deps) 等，便于维护者识别并驱动自动化。按类型关联：fix 须 issue(issue: #123)；feat 须 issue+设计文档(放 docs/design-docs，缺了 Mergify 贴 do-not-merge/missing-design-doc 拦住)；enhance 仅大改(L/XL/XXL)需 issue；doc/test 不强制。此外 body 不能为空；改 2.x 分支还要关联对应 master PR(pr: #123)。",
+                    "en": "Milvus requires PR titles as {type}: {description}, with type fixed to feat (new feature)/fix (bug)/enhance/test/doc/auto/build(deps), so maintainers can identify and drive automation. Linking by type: fix needs an issue (issue: #123); feat needs issue+design doc (under docs/design-docs; missing it, Mergify adds do-not-merge/missing-design-doc to block); enhance needs an issue only if large (L/XL/XXL); doc/test don't. Also the body can't be empty; a PR to a 2.x branch must link the matching master PR (pr: #123).",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课说提 PR 的格式关卡(DCO/标题/关联)由机器人先把关，好让人类评审专注于“代码本身好不好”。请：(1) 把一次贡献从 fork 到合入的完整流程用自己的话讲一遍，说清 upstream/origin/本地三者间数据怎么流动；(2) 解释为什么 feat: 类 PR 要强制关联设计文档，这与第 44 课“用 linter 强制约定”体现了怎样共同的思路；(3) 作为一个刚读完这份指南的新人，你打算从什么样的第一个改动入手(如 good first issue / 文档修正 / 补测试)？为什么从小处起步是迈出第一步的好策略？",
+                "en": "This lesson says a PR's format gates (DCO/title/links) are bot-checked first so human review focuses on 'is the code good'. Please: (1) narrate a full contribution from fork to merge in your own words, clarifying how data flows among upstream/origin/local; (2) explain why feat: PRs must link a design doc, and what shared idea this shares with Lesson 44's 'enforce conventions via linters'; (3) as a newcomer who just finished this guide, what first change would you start with (e.g. a good first issue / doc fix / adding a test), and why is starting small a good strategy for taking the first step?",
+            },
+        ],
+    },
 }
 
 
