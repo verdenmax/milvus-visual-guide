@@ -392,12 +392,12 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>触发封存</h4><p>段写满（达到大小上限）<strong>或</strong>超时——DataCoord 下令把 Growing 段转 Sealed，从此只读。</p></div></div>
   <div class="step"><div class="num">2</div><div class="sc"><h4>刷盘成 binlog</h4><p>把内存里按列组织的数据<strong>序列化成 binlog 文件</strong>，逐字段写入对象存储；写完即 Flushed，数据持久化、不怕崩溃。</p></div></div>
-  <div class="step"><div class="num">3</div><div class="sc"><h4>异步建索引</h4><p>IndexNode 读取 binlog，在其上<strong>构建 ANN 索引</strong>（IVF/HNSW…），索引文件也存进对象存储。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>异步建索引</h4><p>一个 <strong>DataNode 工作进程</strong>读取 binlog，在其上<strong>构建 ANN 索引</strong>（IVF/HNSW…），索引文件也存进对象存储。（注意：现版本没有独立的 indexnode，建索引由 DataNode 承担——详见第 12 课。）</p></div></div>
   <div class="step"><div class="num">4</div><div class="sc"><h4>加载检索</h4><p>QueryNode <strong>加载</strong>封存段及其索引到内存，对外提供高效 ANN 检索；同时 Growing 段补上最新数据。</p></div></div>
 </div>
 
 <p>注意第 3、4 步是<strong>异步</strong>发生的：刷盘和建索引在后台进行，不阻塞写入，也不阻塞对 Growing 段的查询。这种"<strong>写入、刷盘、建索引、加载</strong>各自独立、互不阻塞"的流水线，
-正是 Milvus 把吞吐做高、把延迟做低的关键。每一环都能独立扩展——写得快了就加 DataNode，建索引慢了就加 IndexNode，查得多了就加 QueryNode。</p>
+正是 Milvus 把吞吐做高、把延迟做低的关键。每一环都能独立扩展——写入与建索引都由 DataNode 承担（建索引就跑在 DataNode 工作进程里），所以这两头吃紧就加 DataNode，查得多了就加 QueryNode。</p>
 
 <p>另外还有几个相关状态值得一提：枚举里还有 <span class="inline">Importing</span>（批量导入时的临时段）和 <span class="inline">NotExist</span> 等。
 但对理解主流程，记住 <strong>Growing → Sealed → Flushing → Flushed →（Dropped）</strong>这条主线就够了——它贯穿了一条数据"从内存可变、到落盘不可变、到最终被回收"的一生。</p>
@@ -647,12 +647,12 @@ So "immutable segments + delete logs + compaction" is the clever design that let
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>Trigger seal</h4><p>Segment full (size cap) <strong>or</strong> timeout—DataCoord turns the Growing segment Sealed; read-only from now on.</p></div></div>
   <div class="step"><div class="num">2</div><div class="sc"><h4>Flush to binlog</h4><p><strong>Serialize column-organized in-memory data into binlog files</strong>, written field by field to object storage; once done it is Flushed—persisted, crash-proof.</p></div></div>
-  <div class="step"><div class="num">3</div><div class="sc"><h4>Build index async</h4><p>IndexNode reads binlogs and <strong>builds the ANN index</strong> (IVF/HNSW…); index files also go to object storage.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Build index async</h4><p>A <strong>DataNode worker</strong> reads binlogs and <strong>builds the ANN index</strong> (IVF/HNSW…); index files also go to object storage. (Note: current Milvus has no standalone indexnode — DataNodes do the indexing; see Lesson 12.)</p></div></div>
   <div class="step"><div class="num">4</div><div class="sc"><h4>Load &amp; search</h4><p>QueryNode <strong>loads</strong> the sealed segment and its index into memory for efficient ANN search; Growing segments fill in the freshest data.</p></div></div>
 </div>
 
 <p>Note steps 3 and 4 happen <strong>asynchronously</strong>: flushing and indexing run in the background, blocking neither writes nor queries on Growing segments. This pipeline where
-<strong>writing, flushing, indexing, and loading</strong> are independent and non-blocking is exactly how Milvus achieves high throughput and low latency. Each stage scales independently—add DataNodes to write faster, IndexNodes to index faster, QueryNodes to serve more queries.</p>
+<strong>writing, flushing, indexing, and loading</strong> are independent and non-blocking is exactly how Milvus achieves high throughput and low latency. Each stage scales independently—writing and indexing are both handled by DataNodes (indexing runs inside a DataNode worker), so add DataNodes when either is the bottleneck, and QueryNodes to serve more queries.</p>
 
 <p>A few related states are worth mentioning: the enum also has <span class="inline">Importing</span> (a temporary segment during bulk import) and <span class="inline">NotExist</span>, etc.
 But for the main flow, remembering <strong>Growing → Sealed → Flushing → Flushed → (Dropped)</strong> is enough—it traces a row of data's whole life "from mutable in memory, to immutable on disk, to finally reclaimed."</p>

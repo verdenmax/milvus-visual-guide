@@ -371,7 +371,7 @@ html[data-lang="zh"] .lang-en { display: none !important; }
   <div class="step"><div class="num">3</div><div class="sc"><h4>写索引文件 + 登记</h4><p>把 Knowhere 产出的索引<strong>序列化成索引文件</strong>、写回对象存储（<span class="mono">index_files</span> 前缀），再把文件路径<strong>上报 DataCoord</strong>，段标记"已建索引"。</p></div></div>
 </div>
 
-<p>这里有个常被忽视、却很重要的细节：worker 建索引<strong>读的是 binlog（原始向量），写的是索引文件——两者是<strong>并存</strong>的，索引<strong>不会替换</strong>原始数据</strong>。
+<p>这里有个常被忽视、却很重要的细节：worker 建索引读的是 binlog（原始向量），写的是索引文件——两者是<strong>并存</strong>的，索引<strong>不会替换</strong>原始数据。
 为什么要留着原始向量？因为很多索引（如量化的 IVF_PQ）是<strong>有损</strong>的，检索时可能需要原始向量做<strong>精确重排（rerank）</strong>；而且未来若要<strong>重建索引</strong>（换索引类型、换参数、或索引格式升级），也必须从原始向量重新来过。所以对象存储里，同一个段会同时存着<strong>原始 binlog</strong> 和<strong>索引文件</strong>两份产物，各司其职：原始 binlog 是"<strong>真相</strong>"（可重建一切），索引文件是"<strong>加速副本</strong>"（坏了、过时了都能从原始数据重造）。这也呼应了第 18 课列出的对象存储产物清单：insert_log / delta_log / stats_log / <strong>index_files</strong> 并列共存。</p>
 
 <p>顺带把"构建为什么必须在不可变数据上做"再钉死一遍。worker 读 binlog 建索引时，<strong>必须确信这份数据在构建期间不会变</strong>——否则建到一半数据被改写，建出的索引就和数据对不上了。sealed 段恰好提供了这个保证：它是<strong>只读、不可变</strong>的快照，worker 可以放心地读它、慢慢算，期间不必担心有人在背后改数据。
@@ -481,6 +481,19 @@ Milvus 允许按字段、按场景<strong>精细配置</strong>哪些数据走 m
   <details class="accordion">
     <summary>看答案与解析 <span class="hint">点击展开</span></summary>
     <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。“以最弱节点为准”是兼容性优先于新特性的体现：用一点“暂不使用新格式”的代价，换升级期间全集群始终可加载、不丢服务。这是在线数据库升级的通用保守策略</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. QueryNode 用 mmap 方式加载索引/数据，主要换来了什么、又付出什么代价？</div>
+  <ol class="opts">
+    <li>mmap 只能用于 growing 段</li>
+    <li>既省内存又一定更快，没有任何代价</li>
+    <li>好处是不必把整个索引读进物理内存——靠操作系统按页惰性加载，于是“大于内存”的段也能服务，单机能承载的数据量大增；代价是冷页首次访问要触发缺页、读磁盘，尾延迟可能升高（内存 vs 延迟的取舍）</li>
+    <li>mmap 会把数据复制三份以保证可靠</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：C</strong>。mmap 把“放不放得下”从硬约束变成“放得下多少在内存”的弹性问题：热点页常驻、冷页换出，用可能的缺页延迟换取超出物理内存的容量。是否启用、对哪些字段启用，是典型的容量/延迟权衡（详见第 35 课 mmap）</div></div></div>
   </details>
 </div>
 <div class="card spark">
@@ -637,6 +650,19 @@ With that, the <strong>vector-index</strong> thread is complete: Lesson 21 "who 
   <details class="accordion">
     <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
     <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. 'Defer to the weakest node' embodies compatibility-over-new-features: trade 'not yet using the newest format' for a cluster that stays loadable and loses no service during the upgrade. It's the standard conservative strategy for online database upgrades</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. When a QueryNode loads index/data via mmap, what does it mainly gain and at what cost?</div>
+  <ol class="opts">
+    <li>mmap can only be used for growing segments</li>
+    <li>It saves memory and is always faster, with no cost at all</li>
+    <li>The gain is not having to read the whole index into physical RAM—the OS lazily pages it in on demand, so segments 'larger than memory' can still be served and a node holds far more data; the cost is that a cold page's first access triggers a page fault and disk read, so tail latency may rise (a memory-vs-latency tradeoff)</li>
+    <li>mmap makes three copies of the data for reliability</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. mmap turns 'does it fit?' from a hard limit into an elastic 'how much stays in RAM': hot pages resident, cold pages evicted, trading possible page-fault latency for capacity beyond physical memory. Whether to enable it, and for which fields, is a classic capacity/latency tradeoff (see Lesson 35 mmap)</div></div></div>
   </details>
 </div>
 <div class="card spark">

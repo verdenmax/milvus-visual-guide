@@ -471,7 +471,7 @@ html[data-lang="zh"] .lang-en { display: none !important; }
   <div class="qn">2. delegator 维护一个 tsafe。收到一个带 guarantee ts 的 search 时，它如何用 tsafe？</div>
   <ol class="opts">
     <li>tsafe 总是等于 tMax，所以从不需要等待</li>
-    <li>tsafe 表示“已把 WAL 消费到的时间戳”。若 tsafe ≥ guaranteeTs 则该看到的写入已到齐、立即检索；若 tsafe < guaranteeTs（还没追上）就等到 tsafe 追上再答——这把一致性级别真正兑现</li>
+    <li>tsafe 表示“已把 WAL 消费到的时间戳”。若 tsafe ≥ guaranteeTs 则该看到的写入已到齐、立即检索；若 tsafe &lt; guaranteeTs（还没追上）就等到 tsafe 追上再答——这把一致性级别真正兑现</li>
     <li>tsafe 用来决定 topK 的大小</li>
     <li>tsafe 是对象存储的版本号，与等待无关</li>
   </ol>
@@ -637,7 +637,7 @@ If Lesson 25's Proxy is "<strong>the courier that brings the request to the door
   <div class="qn">2. The delegator maintains a tsafe. When it receives a search carrying a guarantee ts, how does it use tsafe?</div>
   <ol class="opts">
     <li>tsafe always equals tMax, so no waiting is ever needed</li>
-    <li>tsafe is 'up to which timestamp the WAL has been consumed'. If tsafe ≥ guaranteeTs, the writes it should see have arrived, so it searches immediately; if tsafe < guaranteeTs (not caught up), it waits until tsafe catches up before answering — this redeems the consistency level</li>
+    <li>tsafe is 'up to which timestamp the WAL has been consumed'. If tsafe ≥ guaranteeTs, the writes it should see have arrived, so it searches immediately; if tsafe &lt; guaranteeTs (not caught up), it waits until tsafe catches up before answering — this redeems the consistency level</li>
     <li>tsafe decides the size of topK</li>
     <li>tsafe is an object-storage version number, unrelated to waiting</li>
   </ol>

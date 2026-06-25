@@ -414,9 +414,9 @@ Milvus 内置多种索引，让你在<strong>速度、内存、精度</strong>�
   <div class="cg-cap"><b>一次相似检索</b>：查询向量 <span class="mono">q</span> 在 4 条库内向量里找最近的 2 条（topK=2，距离越小越像）</div>
   <div class="cells"><span class="lab">q</span><span class="cell hl">0.90</span><span class="cell hl">0.10</span><span class="cell hl">0.80</span></div>
   <div class="cells"><span class="lab">v1</span><span class="cell">0.88</span><span class="cell">0.12</span><span class="cell">0.79</span><span class="sep">→</span><span class="cell q">距离 0.03 ✓</span></div>
-  <div class="cells"><span class="lab">v2</span><span class="cell">0.20</span><span class="cell">0.95</span><span class="cell">0.15</span><span class="sep">→</span><span class="cell dim">距离 1.42</span></div>
-  <div class="cells"><span class="lab">v3</span><span class="cell">0.85</span><span class="cell">0.05</span><span class="cell">0.83</span><span class="sep">→</span><span class="cell q">距离 0.07 ✓</span></div>
-  <div class="cells"><span class="lab">v4</span><span class="cell">0.10</span><span class="cell">0.30</span><span class="cell">0.90</span><span class="sep">→</span><span class="cell dim">距离 0.96</span></div>
+  <div class="cells"><span class="lab">v2</span><span class="cell">0.20</span><span class="cell">0.95</span><span class="cell">0.15</span><span class="sep">→</span><span class="cell dim">距离 1.28</span></div>
+  <div class="cells"><span class="lab">v3</span><span class="cell">0.85</span><span class="cell">0.05</span><span class="cell">0.83</span><span class="sep">→</span><span class="cell q">距离 0.08 ✓</span></div>
+  <div class="cells"><span class="lab">v4</span><span class="cell">0.10</span><span class="cell">0.30</span><span class="cell">0.90</span><span class="sep">→</span><span class="cell dim">距离 0.83</span></div>
 </div>
 
 <p>选哪种度量，取决于你的向量怎么来：<strong>归一化</strong>过的 embedding 常用 <span class="inline">COSINE</span> 或 <span class="inline">IP</span>（方向越一致越相似），
@@ -672,9 +672,9 @@ the <strong>K</strong> nearest items in the collection (the <strong>topK</strong
   <div class="cg-cap"><b>One similarity search</b>: query vector <span class="mono">q</span> finds the nearest 2 of 4 stored vectors (topK=2; smaller distance = closer)</div>
   <div class="cells"><span class="lab">q</span><span class="cell hl">0.90</span><span class="cell hl">0.10</span><span class="cell hl">0.80</span></div>
   <div class="cells"><span class="lab">v1</span><span class="cell">0.88</span><span class="cell">0.12</span><span class="cell">0.79</span><span class="sep">→</span><span class="cell q">dist 0.03 ✓</span></div>
-  <div class="cells"><span class="lab">v2</span><span class="cell">0.20</span><span class="cell">0.95</span><span class="cell">0.15</span><span class="sep">→</span><span class="cell dim">dist 1.42</span></div>
-  <div class="cells"><span class="lab">v3</span><span class="cell">0.85</span><span class="cell">0.05</span><span class="cell">0.83</span><span class="sep">→</span><span class="cell q">dist 0.07 ✓</span></div>
-  <div class="cells"><span class="lab">v4</span><span class="cell">0.10</span><span class="cell">0.30</span><span class="cell">0.90</span><span class="sep">→</span><span class="cell dim">dist 0.96</span></div>
+  <div class="cells"><span class="lab">v2</span><span class="cell">0.20</span><span class="cell">0.95</span><span class="cell">0.15</span><span class="sep">→</span><span class="cell dim">dist 1.28</span></div>
+  <div class="cells"><span class="lab">v3</span><span class="cell">0.85</span><span class="cell">0.05</span><span class="cell">0.83</span><span class="sep">→</span><span class="cell q">dist 0.08 ✓</span></div>
+  <div class="cells"><span class="lab">v4</span><span class="cell">0.10</span><span class="cell">0.30</span><span class="cell">0.90</span><span class="sep">→</span><span class="cell dim">dist 0.83</span></div>
 </div>
 
 <p>Which metric to pick depends on how your vectors are made: <strong>normalized</strong> embeddings usually use

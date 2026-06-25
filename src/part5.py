@@ -565,7 +565,7 @@ LESSON_23 = {
   <div class="step"><div class="num">3</div><div class="sc"><h4>写索引文件 + 登记</h4><p>把 Knowhere 产出的索引<strong>序列化成索引文件</strong>、写回对象存储（<span class="mono">index_files</span> 前缀），再把文件路径<strong>上报 DataCoord</strong>，段标记"已建索引"。</p></div></div>
 </div>
 
-<p>这里有个常被忽视、却很重要的细节：worker 建索引<strong>读的是 binlog（原始向量），写的是索引文件——两者是<strong>并存</strong>的，索引<strong>不会替换</strong>原始数据</strong>。
+<p>这里有个常被忽视、却很重要的细节：worker 建索引读的是 binlog（原始向量），写的是索引文件——两者是<strong>并存</strong>的，索引<strong>不会替换</strong>原始数据。
 为什么要留着原始向量？因为很多索引（如量化的 IVF_PQ）是<strong>有损</strong>的，检索时可能需要原始向量做<strong>精确重排（rerank）</strong>；而且未来若要<strong>重建索引</strong>（换索引类型、换参数、或索引格式升级），也必须从原始向量重新来过。所以对象存储里，同一个段会同时存着<strong>原始 binlog</strong> 和<strong>索引文件</strong>两份产物，各司其职：原始 binlog 是"<strong>真相</strong>"（可重建一切），索引文件是"<strong>加速副本</strong>"（坏了、过时了都能从原始数据重造）。这也呼应了第 18 课列出的对象存储产物清单：insert_log / delta_log / stats_log / <strong>index_files</strong> 并列共存。</p>
 
 <p>顺带把"构建为什么必须在不可变数据上做"再钉死一遍。worker 读 binlog 建索引时，<strong>必须确信这份数据在构建期间不会变</strong>——否则建到一半数据被改写，建出的索引就和数据对不上了。sealed 段恰好提供了这个保证：它是<strong>只读、不可变</strong>的快照，worker 可以放心地读它、慢慢算，期间不必担心有人在背后改数据。

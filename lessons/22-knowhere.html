@@ -491,6 +491,19 @@ knowhere::IndexEnum::<span class="nb">INDEX_SPARSE_WAND</span>        <span clas
     <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。所有 ANN 索引本质都在“召回—延迟—内存”三角里取舍；调大 nprobe/ef 提召回但更慢。metric（L2/IP/COSINE 等）必须与字段建索引时匹配，否则距离语义错乱、结果无意义</div></div></div>
   </details>
 </div>
+<div class="quiz">
+  <div class="qn">3. Knowhere 与 Faiss、HNSWlib、DiskANN、cuVS 这些库是什么关系？</div>
+  <ol class="opts">
+    <li>Knowhere 负责对象存储，与索引算法无关</li>
+    <li>Knowhere 是一个 C++ 的统一抽象层，把这些第三方 ANN 库封装在同一套接口（建索引/序列化/搜索）之下；Milvus 只面向 Knowhere 编程，新增一种索引算法通常只需在 Knowhere 接入，不必改动 milvus core</li>
+    <li>这些库各自是独立进程，Knowhere 只做 RPC 转发</li>
+    <li>Knowhere 是 Faiss 的一个 Python 绑定</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。把多种 ANN 库统一到一层接口背后，Milvus 就获得了“算法可插拔”：升级或新增索引主要在 Knowhere 完成，core 保持稳定。这正是把专门、易变的算法部分与稳定的系统骨架解耦</div></div></div>
+  </details>
+</div>
 <div class="card spark">
   <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
   <ul>
@@ -652,6 +665,19 @@ knowhere::IndexEnum::<span class="nb">INDEX_SPARSE_WAND</span>        <span clas
   <details class="accordion">
     <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
     <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. Every ANN index trades within the 'recall–latency–memory' triangle; raising nprobe/ef lifts recall but is slower. The metric (L2/IP/COSINE, etc.) must match what the field was indexed with, otherwise distance semantics break and results are meaningless</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. What is the relationship between Knowhere and libraries like Faiss, HNSWlib, DiskANN, and cuVS?</div>
+  <ol class="opts">
+    <li>Knowhere handles object storage and has nothing to do with index algorithms</li>
+    <li>Knowhere is a C++ unified abstraction layer that wraps these third-party ANN libraries behind one interface (build/serialize/search); Milvus programs against Knowhere only, so adding a new index algorithm usually just means integrating it in Knowhere, not changing milvus core</li>
+    <li>Each library is a separate process and Knowhere only does RPC forwarding</li>
+    <li>Knowhere is a Python binding for Faiss</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. By unifying many ANN libraries behind one interface, Milvus gains 'pluggable algorithms': upgrading or adding indexes happens mostly in Knowhere while core stays stable. This decouples the specialized, fast-moving algorithm part from the stable system skeleton</div></div></div>
   </details>
 </div>
 <div class="card spark">

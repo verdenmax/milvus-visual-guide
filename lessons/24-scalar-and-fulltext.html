@@ -472,6 +472,19 @@ Milvus 的 C++ core 通过 <span class="mono">internal/core/src/index/InvertedIn
     <div class="acc-body"><div class="qa"><div class="a"><strong>答案：C</strong>。不同标量索引各有适用场景：低基数用 bitmap、范围查询用排序、等值/全文用倒排（tantivy）。HybridScalarIndex 会按数据特征自动选型。全文 BM25 由 Rust tantivy 落地，不属于 Knowhere</div></div></div>
   </details>
 </div>
+<div class="quiz">
+  <div class="qn">3. Milvus 的全文检索（BM25）大致是怎么工作的？</div>
+  <ol class="opts">
+    <li>全文检索就是对原始字符串做 LIKE 全表扫描</li>
+    <li>文本被分词后建成倒排索引（由 Rust 的 tantivy 引擎落地），查询时按 BM25 相关性打分排序；在 Milvus 里 BM25 的结果以稀疏向量的形式表达，从而能与向量检索统一在同一套 search 框架里</li>
+    <li>BM25 由 Knowhere 的 HNSW 索引实现</li>
+    <li>全文检索必须先把文本转成稠密 embedding 才能查</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。全文检索走的是“分词→倒排→BM25 打分”这条经典信息检索路径，由 tantivy（Rust）落地，不属于 Knowhere。Milvus 把 BM25 输出表达成稀疏向量，于是稀疏（关键词）与稠密（语义）能在同一套检索/混合排序框架里协同（详见第 48 课）</div></div></div>
+  </details>
+</div>
 <div class="card spark">
   <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
   <ul>
@@ -615,6 +628,19 @@ Together the four answer one complete question: <strong>how does Milvus turn "ra
   <details class="accordion">
     <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
     <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. Different scalar indexes fit different cases: bitmap for low cardinality, sort for range queries, inverted (tantivy) for equality/full-text. HybridScalarIndex auto-picks by data characteristics. Full-text BM25 is delivered by Rust tantivy, not Knowhere</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Roughly how does Milvus's full-text search (BM25) work?</div>
+  <ol class="opts">
+    <li>Full-text search is just a LIKE full-table scan over raw strings</li>
+    <li>Text is tokenized into an inverted index (delivered by Rust's tantivy engine), and queries are scored/ranked by BM25 relevance; in Milvus the BM25 result is expressed as sparse vectors, so it unifies with vector search under one search framework</li>
+    <li>BM25 is implemented by Knowhere's HNSW index</li>
+    <li>Full-text search must first convert text into dense embeddings before querying</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. Full-text search follows the classic IR path 'tokenize → inverted index → BM25 scoring,' delivered by tantivy (Rust), not Knowhere. Milvus expresses BM25 output as sparse vectors, so sparse (keyword) and dense (semantic) cooperate under one search/hybrid-ranking framework (see Lesson 48)</div></div></div>
   </details>
 </div>
 <div class="card spark">

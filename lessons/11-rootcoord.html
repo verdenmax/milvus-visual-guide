@@ -465,8 +465,6 @@ c.scheduler = newScheduler(c.ctx, c.idAllocator, c.tsoAllocator)</pre>
 <p>最后别忘了上一课的结论：今天的 RootCoord 并不是一个独立进程，而是和 DataCoord、QueryCoord 一起<strong>跑在 MixCoord 这一个进程里</strong>，扮演其中的"根协调"这一逻辑角色（见第 9 课）。
 所以当我们说"向 RootCoord 要时间戳"，物理上是在和 MixCoord 进程里的那段逻辑通信。把它单独成课，是因为它的<strong>职责边界</strong>清晰且关键：
 谁来定序、谁来发号、谁来守元数据——这三件事，认准 RootCoord 就对了。下一课我们转向写入侧的另一个大脑 <strong>DataCoord</strong>（第 12 课），看段是怎么被分配、封存、落盘的。</p>
-所以当我们说"向 RootCoord 要时间戳"，物理上是在和 MixCoord 进程里的那段逻辑通信。把它单独成课，是因为它的<strong>职责边界</strong>清晰且关键：
-谁来定序、谁来发号、谁来守元数据——这三件事，认准 RootCoord 就对了。下一课我们转向写入侧的另一个大脑 <strong>DataCoord</strong>（第 12 课），看段是怎么被分配、封存、落盘的。</p>
 
 <div class="flow">
   <div class="node"><div class="nt">Proxy</div><div class="nd">DDL / 取时间戳·ID</div></div>

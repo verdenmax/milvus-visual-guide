@@ -665,7 +665,7 @@ So the Proxy-side code is strikingly simple — one <span class="mono">AppendMes
 
 <p>The final, central step: the Proxy calls <span class="inline">streaming.WAL().AppendMessages(ctx, msgs...)</span> to <strong>append</strong> the batch to the WAL.
 This is the essence of the new write path — <strong>Client → Proxy → StreamingClient.Append → StreamingNode → WAL backend</strong> — not the old "Proxy publishes to a message queue, DataNode consumes" model.
-<p>On success the Proxy fills the returned <span class="mono">MaxTimeTick</span> back as this write's timestamp, used for session consistency (what you just wrote is readable next moment).</p>
+On success the Proxy fills the returned <span class="mono">MaxTimeTick</span> back as this write's timestamp, used for session consistency (what you just wrote is readable next moment).</p>
 
 <p>Why take "segmenting" out of the Proxy's hands and defer it to the StreamingNode? Because a segment is <strong>stateful</strong>: how many rows a growing segment can hold and when to seal it depend on this shard's
 <strong>current</strong> write progress, and only the StreamingNode that <strong>exclusively owns</strong> that pchannel knows it most accurately. The Proxy is stateless and replicable (Lesson 10); if each Proxy decided segment IDs
