@@ -2363,6 +2363,67 @@ QUIZZES = {
             },
         ],
     },
+    "36-expr-and-exec.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "Milvus 执行引擎把表达式分成“逻辑（expr/ITypeExpr）”和“物理（exec/Expr::Eval）”两层，主要目的是什么？",
+                    "en": "Milvus's engine splits expressions into 'logical (expr/ITypeExpr)' and 'physical (exec/Expr::Eval)' layers. Why?",
+                },
+                "opts": [
+                    {"zh": "把“算什么(语义、可校验、可优化改写)”与“怎么算得快(向量化执行)”解耦：逻辑层便于校验/优化/借用索引，物理层专注高效执行", "en": "Decouple 'what to compute (semantics, checkable, rewritable)' from 'how to compute fast (vectorized execution)': the logical layer eases validation/optimization/index use, the physical layer focuses on fast execution"},
+                    {"zh": "因为 C++ 不允许一个类同时表达逻辑和执行", "en": "Because C++ forbids one class from expressing both logic and execution"},
+                    {"zh": "纯粹为了多写一些类、显得复杂", "en": "Purely to write more classes and look complex"},
+                    {"zh": "逻辑层负责 GPU、物理层负责 CPU", "en": "The logical layer does GPU, the physical layer does CPU"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "逻辑表达式(ITypeExpr)是带类型、可校验的声明式树，只说“要算什么”，本身不执行；它便于做等价改写——常量折叠/短路(AlwaysTrueExpr)、把刷掉最多行的条件前置、发现范围条件可借标量索引等。物理表达式(Expr::Eval)才是真正会跑的向量化代码。先有干净语义树、再编译成贴硬件的执行码，是成熟查询引擎的通用套路。",
+                    "en": "The logical expression (ITypeExpr) is a typed, checkable declarative tree that only says 'what to compute' and doesn't run; it eases equivalence rewrites — constant folding/short-circuit (AlwaysTrueExpr), putting the most-selective condition first, spotting range conditions that can use a scalar index. The physical expression (Expr::Eval) is the vectorized code that actually runs. A clean semantic tree first, then compile to hardware-hugging code, is standard for mature engines.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "exec 里 Task、Driver、Operator 三者的分工，下面哪个描述最准确？",
+                    "en": "In exec, what's the most accurate division among Task, Driver, and Operator?",
+                },
+                "opts": [
+                    {"zh": "Task=一次完整执行(含状态机)；Driver=像传送带把一批批数据推过算子链(并用 Blocking/StopReason 表达暂停恢复)；Operator=各司其职的物理算子(过滤/检索/分组…)", "en": "Task = one complete execution (with a state machine); Driver = a conveyor pushing batches through the operator chain (using Blocking/StopReason for pause/resume); Operator = single-purpose physical operators (filter/search/group…)"},
+                    {"zh": "三者都是同一个类的别名", "en": "All three are aliases of the same class"},
+                    {"zh": "Task 负责存储、Driver 负责网络、Operator 负责日志", "en": "Task does storage, Driver does networking, Operator does logging"},
+                    {"zh": "Operator 驱动 Driver，Driver 驱动 Task", "en": "Operator drives Driver, Driver drives Task"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "这是一套向量化版的火山(Volcano)流水线。Task(Task.h)代表一次完整执行，有状态机 TaskState(kRunning/kFinished/…)；Driver(Driver.h)像传送带，把一批批数据推过它持有的一串 Operator，并用 BlockingReason/StopReason 表达“为何暂停/何时恢复”，从而让有限线程同时驱动多条流水线；Operator(operator/*)是物理算子基类，FilterBitsNode 产 bitset、VectorSearchNode 做检索等。一次查询=按需把算子拼成一条链。",
+                    "en": "It's a vectorized Volcano pipeline. Task (Task.h) is one complete execution with state machine TaskState (kRunning/kFinished/…); Driver (Driver.h) is a conveyor pushing batches through its chain of Operators, using BlockingReason/StopReason for 'why pause/when resume' so limited threads drive many pipelines; Operator (operator/*) is the physical-operator base — FilterBitsNode produces a bitset, VectorSearchNode searches, etc. One query = assemble a chain on demand.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "为什么说这套引擎“向量化 + 算子可组合”既快又通用？",
+                    "en": "Why is this engine 'vectorized + composable operators' both fast and general?",
+                },
+                "opts": [
+                    {"zh": "向量化=一批批算，摊薄每行固定开销、喂饱 SIMD(快)；算子各封一种能力、遵守“吃一批吐一批”契约，可被 Driver 任意拼成流水线(通用)，新增能力常常只是再加一个算子", "en": "Vectorized = compute by the batch, amortizing per-row fixed cost and feeding SIMD (fast); each operator boxes one capability under a 'consume a batch, emit a batch' contract, so the Driver assembles any pipeline (general), and adding a capability is often just one more operator"},
+                    {"zh": "因为它把所有查询都编译成同一段固定代码", "en": "Because it compiles every query into one fixed piece of code"},
+                    {"zh": "因为它一行一行地解释执行，最灵活", "en": "Because it interprets row by row, which is most flexible"},
+                    {"zh": "因为它不需要任何算子", "en": "Because it needs no operators at all"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "快来自两条腿：向量化(整批流动，把函数调用/虚分派/边界检查摊到一大批行、单行成本趋零，并喂饱 SIMD)与流水线(算子串行流动、各专一事)。通用来自算子可组合：过滤/检索/分组/聚合/迭代过滤各是一个独立 Operator，查询计划要什么就拼什么；机制(Task/Driver/Operator 骨架)与策略(拼哪些算子)分离，新增能力常常只是再加一个算子、老算子一行不改——这就是“对扩展开放、对修改封闭”。",
+                    "en": "Fast rests on two legs: vectorization (flow by the batch, spreading function calls/virtual dispatch/bounds checks over many rows so per-row cost nears zero, feeding SIMD) and pipelining (operators in series, each one thing). General comes from composable operators: filter/search/group/aggregate/iterative-filter are each an independent Operator the plan assembles on demand; separating mechanism (the Task/Driver/Operator skeleton) from policy (which operators) means adding a capability is often just one more operator with no edits to old ones — 'open for extension, closed for modification'.",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课说这条 expr/exec 流水线，正是 segcore 在第 27 课那次 cgo 调用“里面”真正干的活。请把第 35、36 课串起来，完整描述一次“带标量过滤的向量搜索”在 C++ 内核里的旅程：(1) Go 怎么经 cgo 进来；(2) FilterBitsNode 如何在 mmap 的列式分块上向量化求值、产出 bitset；(3) VectorSearchNode 如何只在通过过滤的候选上检索；(4) 结果如何回到 Go。再思考：把“逐行执行”改成“逐批向量化”，为什么常带来数量级的加速？批的大小该如何权衡（联系第 35 课的 chunk 粒度）？",
+                "en": "This lesson says the expr/exec pipeline is exactly what segcore does 'inside' the Lesson 27 cgo call. Stitching Lessons 35 and 36, fully describe one 'vector search with scalar filter' through the C++ core: (1) how Go enters via cgo; (2) how FilterBitsNode evaluates vectorized over mmap'd columnar chunks to produce a bitset; (3) how VectorSearchNode searches only over survivors; (4) how results return to Go. Then consider: why does swapping 'row-at-a-time' for 'batch vectorization' often yield order-of-magnitude speedups? How should batch size be traded off (relate to Lesson 35's chunk granularity)?",
+            },
+        ],
+    },
 }
 
 

@@ -51,4 +51,5 @@ CONTENT = {
     "33-replication-and-cdc.html": part7.LESSON_33,
     "34-core-layout.html": part8.LESSON_34,
     "35-mmap-and-chunks.html": part8.LESSON_35,
+    "36-expr-and-exec.html": part8.LESSON_36,
 }

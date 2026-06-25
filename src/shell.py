@@ -117,6 +117,8 @@ PAGES = [
      "第八部分 · C++ 内核", "Part 8 · C++ core internals"),
     ("35-mmap-and-chunks.html", "mmap 与列式分块", "mmap & chunked columns",
      "第八部分 · C++ 内核", "Part 8 · C++ core internals"),
+    ("36-expr-and-exec.html", "表达式与向量化执行", "Expressions & vectorized execution",
+     "第八部分 · C++ 内核", "Part 8 · C++ core internals"),
 ]
 
 
@@ -628,6 +630,8 @@ SUBTITLES = {
                             "internal/core/src submodule map; Go control plane / C++ compute core; cgo(*_c.h) bridge; query & index-build paths"),
     "35-mmap-and-chunks.html": ("列式存储 · chunked column(ChunkedColumnInterface) · mmap 让数据大于内存 · MmapChunkManager 统一分配",
                                 "columnar storage; chunked column (ChunkedColumnInterface); mmap for data larger than RAM; MmapChunkManager central allocation"),
+    "36-expr-and-exec.html": ("逻辑 ITypeExpr → 物理 Expr::Eval(向量化) · Task/Driver/Operator 流水线 · FilterBitsNode/VectorSearchNode · 算子可组合",
+                              "logical ITypeExpr → physical Expr::Eval (vectorized); Task/Driver/Operator pipeline; FilterBitsNode/VectorSearchNode; composable operators"),
 }
 
 

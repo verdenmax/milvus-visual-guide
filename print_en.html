@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 35 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 36 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
@@ -363,6 +363,7 @@ details[open] > summary { list-style: none; }
   <li>Replication & CDC</li>
   <li>The C++ core layout</li>
   <li>mmap & chunked columns</li>
+  <li>Expressions & vectorized execution</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -7464,6 +7465,128 @@ Last lesson handed us the whole map of the C++ core. Now we zoom into one piece 
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
     <li>This lesson calls mmap 'a little latency for huge capacity', outsourcing 'what's in RAM vs on disk' to the OS. Tie it to Lesson 18 (binlog on disk) and Lesson 34 (central kitchen): (1) Why can a QueryNode with only 64GB RAM serve segments totaling hundreds of GB? Where do hot/cold data live? (2) Why is there often a 'warm-up' effect under mmap (first query on a cold segment is slow, then fast)? (3) If your workload demands low, jitter-free latency on every query, would you prefer mmap or pure in-memory loading, and why? How does this echo Lesson 30's 'freshness/consistency vs performance' trade-off?</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Expressions & vectorized execution</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Lesson 28 followed one query as it turned a filter string into an expression tree, vectorized its way to a bitset, then searched. Now we <strong>lift the hood</strong> on the "<strong>vectorized execution engine</strong>" itself — really a <strong>miniature query engine</strong> living inside every segment: it lowers a "logical expression" into "physical executable code", then runs a <span class="mono">Task → Driver → Operator</span> <strong>pipeline</strong> that pushes data through batch by batch. Source under <span class="inline">internal/core/src/expr</span> and <span class="inline">internal/core/src/exec</span>.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Picture the engine as an <strong>assembly-line factory</strong>. A query plan is the <strong>blueprint</strong> (logical expression: what to filter, what to search); before work starts the blueprint is <strong>translated into concrete work orders</strong> (physical expression: which code each step runs). Then data flows like <strong>trays on a conveyor</strong>, passing one <strong>station (operator)</strong> after another: the first <strong>filters</strong> (keep qualifying rows), the next <strong>searches</strong> (nearest neighbors among them)…
+  The key: each station <strong>handles a whole tray (a batch of rows) at once</strong>, not one item at a time — that's <strong>vectorization</strong>. <span class="mono">Task</span> is the whole work order, <span class="mono">Driver</span> is the <strong>conveyor</strong> pushing trays along, and <span class="mono">Operator</span>s are the stations.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>the engine has two layers — expr builds the filter into a "logical expression tree" (<span class="mono">ITypeExpr</span>); exec lowers it into a "physical executable expression" (<span class="mono">Expr::Eval</span>, evaluating a whole batch) — then a <span class="mono">Task → Driver → Operator</span> pipeline strings filter, search, group-by etc. together and runs them vectorized, batch by batch</strong>. The logical layer owns "what to compute", the physical layer "how to compute it fast", the pipeline "in what order it flows".
+</div>
+
+<h2>Logical vs physical expression: how a plan is "lowered" to executable code</h2>
+<p>Lesson 28 said a filter string (e.g. <span class="mono">age &gt; 30 and city == "NY"</span>) is parsed into an <strong>expression tree</strong>. But there are really <strong>two trees, two layers</strong>, cleanly separated. The first is the <strong>logical expression</strong> in <span class="inline">internal/core/src/expr/ITypeExpr.h</span>: base <span class="mono">ITypeExpr</span> with <span class="mono">ITypeFilterExpr</span> (filter), <span class="mono">ColumnExpr</span> (reference a column), <span class="mono">ValueExpr</span> (constant), <span class="mono">FieldAccessTypeExpr</span>, etc. It expresses "<strong>what to compute</strong>" — a <strong>typed, checkable</strong> declarative tree that itself <strong>doesn't know how to run</strong>.</p>
+<p>The second is the <strong>physical expression</strong> in <span class="inline">internal/core/src/exec/expression/</span>, centered on the <span class="mono">Expr</span> base with key method <span class="mono">Eval(EvalCtx&amp; context, VectorPtr&amp; result)</span>. Note two details in that signature: an input <span class="mono">EvalCtx</span> (execution context: where we are, where the segment's data is) and an output <span class="mono">VectorPtr</span> — a <strong>whole column of results</strong>, not one value. So a physical expression's <span class="mono">Eval</span> <strong>swallows a big batch of rows per call</strong>. Each logical node is "<strong>lowered</strong>" into a matching physical expression: <span class="mono">BinaryRangeExpr</span> (range compare), <span class="mono">CompareExpr</span> (column vs column/value), <span class="mono">ConjunctExpr</span> (AND/OR), <span class="mono">ColumnExpr</span> (fetch a column)… The logical node says "I do a greater-than"; the physical node is "<strong>the vectorized code that actually runs</strong>".</p>
+<p>Why two layers? Because "<strong>expressing intent</strong>" and "<strong>executing efficiently</strong>" are different jobs that hobstruct each other if fused. The logical layer cares only about correct semantics and type matching — easy to validate, optimize, rewrite (e.g. short-circuit an always-true <span class="mono">AlwaysTrueExpr</span>); the physical layer cares only about computing this batch fastest over columnar chunks, specializing by data type, scalar-index presence, etc. This "<strong>logical/physical split</strong>" is the standard play of mature query engines — first a clean semantic tree, then compile it into hardware-hugging execution code. The table contrasts the two layers.</p>
+
+<p>This split hides an often-overlooked benefit: <strong>room to optimize</strong>. While a condition still lives at the "logical tree" layer, not yet compiled to execution code, the engine can apply various <strong>equivalence rewrites</strong> so the final work is smaller. The clearest example is <strong>constant folding and short-circuiting</strong>: an always-true subcondition (<span class="mono">AlwaysTrueExpr</span>) can be dropped from a conjunction outright, never generating an operator; an always-false one can null the whole filter early. Or <strong>reordering</strong>: put the condition that <strong>rejects the most rows</strong> first, so later conditions test only a smaller survivor set. Or <strong>using indexes</strong>: seeing a range like <span class="mono">age &gt; 30</span>, if that field has a scalar index (Lesson 24), the engine can swap "evaluate per row" for "<strong>look up the index to get passing rows directly</strong>". These optimizations are possible precisely because the logical layer buffers between "<strong>intent</strong>" and "<strong>execution</strong>", giving the engine a chance to "<strong>think before it acts</strong>". Compile straight to rigid row-by-row code and none of these rewrites would be on the table.</p>
+
+<table class="t">
+  <tr><th>Dimension</th><th>Logical (expr/ITypeExpr.h)</th><th>Physical (exec/expression/Expr.h)</th></tr>
+  <tr><td>Role</td><td>declare "what to compute" (semantics)</td><td>implement "how to compute fast" (execution)</td></tr>
+  <tr><td>Form</td><td>typed, checkable expression tree</td><td>executable object with <span class="mono">Eval()</span></td></tr>
+  <tr><td>Granularity</td><td>does not execute directly</td><td>one <span class="mono">Eval</span> handles a whole batch (returns <span class="mono">VectorPtr</span>)</td></tr>
+  <tr><td>Typical nodes</td><td>ITypeFilterExpr / ColumnExpr / ValueExpr</td><td>BinaryRangeExpr / CompareExpr / ConjunctExpr</td></tr>
+  <tr><td>Benefit</td><td>easy to validate, optimize, rewrite</td><td>specialize by type/index, hug hardware</td></tr>
+</table>
+
+<h2>The operator pipeline: Task / Driver / Operator</h2>
+<p>With "a physical expression that computes a batch", we still need a <strong>framework</strong> to string steps together and push data through. That's the trio in <span class="inline">internal/core/src/exec</span>: <span class="mono">Task</span>, <span class="mono">Driver</span>, <span class="mono">Operator</span>. It's the classic "<strong>Volcano pipeline</strong>", reworked into a <strong>vectorized</strong> form — each operator emits/consumes a batch, not a row.</p>
+<p><span class="mono">Task</span> (<span class="inline">exec/Task.h</span>) represents <strong>one complete execution</strong>, with its own state machine <span class="mono">TaskState</span> (<span class="mono">kRunning / kFinished / kCanceled / kAborted / kFailed</span>) — from which you read the cases it handles: running, normal finish, cancel, abort, failure. <span class="mono">Driver</span> (<span class="inline">exec/Driver.h</span>) is the real "<strong>transmission</strong>": it holds a chain of <span class="mono">Operator</span>s and, like a conveyor, <strong>pulls from downstream, asks upstream</strong>, pushing batches through the whole chain; when an operator can't yet produce data, the <span class="mono">Driver</span> uses <span class="mono">BlockingReason</span> / <span class="mono">StopReason</span> to express "<strong>why it stopped, when it can resume</strong>", supporting pipeline blocking and recovery.</p>
+<p><span class="mono">Operator</span> (<span class="inline">exec/operator/Operator.h</span>) is the base for all <strong>physical operators</strong>. On top of it Milvus implements a set of single-purpose operators whose names speak for themselves: filtering is <span class="mono">FilterBitsNode</span> (apply the physical expression to data, produce a bitset of which rows pass); vector search is <span class="mono">VectorSearchNode</span> (ANN over the survivors); plus <span class="mono">MvccNode</span> for delete/visibility, <span class="mono">SearchGroupByNode</span> for grouping, <span class="mono">ProjectNode</span> for projection, <span class="mono">AggregationNode</span> for aggregation, and more. <strong>One query = assemble these operators on demand into a pipeline, driven by a Driver, belonging to a Task</strong>. The layered diagram makes the three's relationship clear.</p>
+
+<p>Worth pausing on is how the <span class="mono">Driver</span> uses <span class="mono">BlockingReason</span> / <span class="mono">StopReason</span> to express "<strong>pause and resume</strong>" — not a detail, but the key to running the pipeline efficiently. Imagine a chain where a downstream operator wants data but the upstream one <strong>isn't ready yet</strong> (waiting on a batch faulting in from mmap on disk, or on another branch to join). A naive design would let the thread <strong>spin-wait</strong>, wasting CPU. Milvus instead has the operator honestly report "<strong>what's blocking me</strong>" (<span class="mono">BlockingReason</span>), and the <span class="mono">Driver</span> <strong>suspends it and hands the thread to another pipeline that can do work</strong>, waking it when the condition is met. This "<strong>whoever is blocked yields the stage</strong>" cooperative scheduling lets a limited thread pool <strong>drive many pipelines at once</strong> and keep the CPU fed, instead of one stalled chain dragging everything down. <span class="mono">StopReason</span> describes "<strong>why a pipeline should stop</strong>" — finished, canceled, or failed — echoing the <span class="mono">Task</span>'s state machine <span class="mono">TaskState</span>. So <span class="mono">Task</span> owns "<strong>the life and death of one execution</strong>", <span class="mono">Driver</span> owns "<strong>how data flows and yields between operators</strong>", and <span class="mono">Operator</span> owns "<strong>what each step computes</strong>" — three concerns, one efficient yet controllable engine.</p>
+
+<div class="layers">
+  <div class="layer l-main"><div class="lh"><span class="badge">task</span><span class="name">Task (exec/Task.h, one complete execution)</span></div><div class="ld">holds state machine TaskState: kRunning/kFinished/kCanceled/kAborted/kFailed</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">drive</span><span class="name">Driver (exec/Driver.h, pushes data through the chain)</span></div><div class="ld">conveyor pushing batches; BlockingReason/StopReason for pause &amp; resume</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">station</span><span class="name">Operator × N (exec/operator/*)</span></div><div class="ld">FilterBitsNode(filter→bitset) / VectorSearchNode(search) / MvccNode / GroupByNode …</div></div>
+</div>
+
+<h2>How one query flows through the pipeline</h2>
+<p>Wire the parts together and watch a filtered vector search actually run. Step 1, <strong>build the pipeline</strong>: from the query plan, assemble a chain like "<span class="mono">FilterBitsNode</span> → <span class="mono">VectorSearchNode</span>" under a <span class="mono">Task</span>, driven by a <span class="mono">Driver</span>. Step 2, <strong>filter first</strong>: <span class="mono">FilterBitsNode</span> takes the lowered physical expression and calls <span class="mono">Eval</span> over the segment's columnar chunks chunk by chunk, computing "which rows qualify" <strong>batch by batch</strong> into a bitset. Step 3, <strong>then search</strong>: <span class="mono">VectorSearchNode</span> takes that bitset and runs ANN only over the <strong>survivors</strong> (exactly Lesson 28's "filter-then-search"). Step 4, results flow up the pipeline and the <span class="mono">Task</span> moves to <span class="mono">kFinished</span>.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Build the pipeline</h4><p>from the plan, assemble a <span class="mono">FilterBitsNode</span> → <span class="mono">VectorSearchNode</span> chain under one <span class="mono">Task</span>, driven by a <span class="mono">Driver</span>.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Filter emits a bitset</h4><p><span class="mono">FilterBitsNode</span> calls the physical expression's <span class="mono">Eval</span> over columnar chunks batch by batch — "which rows pass".</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Search takes over</h4><p><span class="mono">VectorSearchNode</span> runs ANN only over the survivors (filter-then-search).</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Gather &amp; return</h4><p>results gather up into the segment's topK; <span class="mono">Task</span> reaches <span class="mono">kFinished</span> and returns to Go via cgo.</p></div></div>
+</div>
+<p>The beauty of this pipeline is that "<strong>by the batch</strong>" runs all the way through. Data isn't repeatedly "fetched—tested—discarded" row by row; it flows <strong>in slabs</strong> between operators: the filter emits a batch of bitset, search consumes a batch of candidates. Two payoffs. One, <strong>amortized fixed cost</strong>: function calls, virtual dispatch, bounds checks — the "tolls paid every time" — are spread over a big batch, so per-row cost approaches zero. Two, <strong>hardware friendliness</strong>: a batch of same-typed data laid contiguously feeds SIMD parallelism and helps the CPU's branch prediction and cache prefetch. Swapping "row-at-a-time interpretation" for "batch-at-a-time vectorization" is often a several- to tens-fold difference — which is why modern analytics/search engines nearly all go vectorized.</p>
+<p>One tie-back to the layer above: Lesson 27 noted an in-segment search enters segcore via cgo from Go's <span class="mono">LocalSegment</span>. <strong>This expr/exec pipeline is exactly what segcore does "inside" that cgo call</strong>. So connect the lenses: Go packs a search across cgo → segcore builds the Task/Driver/operator pipeline → physical expressions evaluate vectorized over the mmap'd columnar chunks (Lesson 35) → the segment's topK is computed and returned to Go. Layer nested in layer, snugly.</p>
+
+<h2>Why this design is both fast and general</h2>
+<p>Step back for the whole picture's elegance. <strong>Fast</strong> rests on two legs: vectorization (compute by the batch, feed SIMD) and pipelining (operators flow in series, each doing one thing). <strong>General</strong> comes from "<strong>composable operators</strong>": filter, search, group-by, aggregate, project, iterative-filter… each capability is an independent operator, and a query plan assembles whatever it needs — one engine, via different operator combinations, serves "pure vector search", "search with scalar filter", "grouped search", "query (fetch) retrieval", and more. That's the benefit of separating <strong>mechanism</strong> (the Task/Driver/Operator pipeline skeleton) from <strong>policy</strong> (which operators to assemble): the skeleton is written once and stays reliable, and adding a new query capability is often just <strong>one more operator</strong>, not a rewritten engine.</p>
+<p>By here, Part 8's tour of the core nears its end: Lesson 34 gave the map, Lesson 35 covered how data is laid out (mmap columnar chunks), this lesson how data is computed (expr lowering + exec pipeline). One last piece remains — when even CPU vectorization can't keep a massive workload fed, can we bring in the <strong>GPU</strong>, that "ten-thousand-core beast", for another gear of speed? That's the next lesson (Lesson 37).</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Two-layer expressions</strong>: logical <span class="mono">ITypeExpr</span> (expr/, declares "what", checkable) is <strong>lowered</strong> into physical <span class="mono">Expr</span> (exec/expression/, <span class="mono">Eval(EvalCtx&amp;, VectorPtr&amp;)</span> evaluates a whole batch).</li>
+    <li><strong>Pipeline trio</strong>: <span class="mono">Task</span> (one execution + state machine TaskState) / <span class="mono">Driver</span> (pushes data through the chain + Blocking/StopReason) / <span class="mono">Operator</span> (physical-operator base).</li>
+    <li><strong>Single-purpose operators</strong>: <span class="mono">FilterBitsNode</span> (filter→bitset), <span class="mono">VectorSearchNode</span> (search), <span class="mono">MvccNode</span>, <span class="mono">SearchGroupByNode</span>, etc.; one query = assemble a chain on demand.</li>
+    <li><strong>Vectorized + pipelined</strong>: flow by the batch to amortize per-row fixed cost and feed SIMD; composable operators make one engine serve all query kinds. This pipeline is precisely what segcore runs inside the cgo call.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Milvus's engine splits expressions into 'logical (expr/ITypeExpr)' and 'physical (exec/Expr::Eval)' layers. Why?</div>
+  <ol class="opts">
+    <li>Decouple 'what to compute (semantics, checkable, rewritable)' from 'how to compute fast (vectorized execution)': the logical layer eases validation/optimization/index use, the physical layer focuses on fast execution</li>
+    <li>The logical layer does GPU, the physical layer does CPU</li>
+    <li>Purely to write more classes and look complex</li>
+    <li>Because C++ forbids one class from expressing both logic and execution</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. The logical expression (ITypeExpr) is a typed, checkable declarative tree that only says 'what to compute' and doesn't run; it eases equivalence rewrites — constant folding/short-circuit (AlwaysTrueExpr), putting the most-selective condition first, spotting range conditions that can use a scalar index. The physical expression (Expr::Eval) is the vectorized code that actually runs. A clean semantic tree first, then compile to hardware-hugging code, is standard for mature engines.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. In exec, what's the most accurate division among Task, Driver, and Operator?</div>
+  <ol class="opts">
+    <li>Task = one complete execution (with a state machine); Driver = a conveyor pushing batches through the operator chain (using Blocking/StopReason for pause/resume); Operator = single-purpose physical operators (filter/search/group…)</li>
+    <li>All three are aliases of the same class</li>
+    <li>Task does storage, Driver does networking, Operator does logging</li>
+    <li>Operator drives Driver, Driver drives Task</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. It's a vectorized Volcano pipeline. Task (Task.h) is one complete execution with state machine TaskState (kRunning/kFinished/…); Driver (Driver.h) is a conveyor pushing batches through its chain of Operators, using BlockingReason/StopReason for 'why pause/when resume' so limited threads drive many pipelines; Operator (operator/*) is the physical-operator base — FilterBitsNode produces a bitset, VectorSearchNode searches, etc. One query = assemble a chain on demand.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Why is this engine 'vectorized + composable operators' both fast and general?</div>
+  <ol class="opts">
+    <li>Because it interprets row by row, which is most flexible</li>
+    <li>Because it needs no operators at all</li>
+    <li>Vectorized = compute by the batch, amortizing per-row fixed cost and feeding SIMD (fast); each operator boxes one capability under a 'consume a batch, emit a batch' contract, so the Driver assembles any pipeline (general), and adding a capability is often just one more operator</li>
+    <li>Because it compiles every query into one fixed piece of code</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. Fast rests on two legs: vectorization (flow by the batch, spreading function calls/virtual dispatch/bounds checks over many rows so per-row cost nears zero, feeding SIMD) and pipelining (operators in series, each one thing). General comes from composable operators: filter/search/group/aggregate/iterative-filter are each an independent Operator the plan assembles on demand; separating mechanism (the Task/Driver/Operator skeleton) from policy (which operators) means adding a capability is often just one more operator with no edits to old ones — 'open for extension, closed for modification'.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson says the expr/exec pipeline is exactly what segcore does 'inside' the Lesson 27 cgo call. Stitching Lessons 35 and 36, fully describe one 'vector search with scalar filter' through the C++ core: (1) how Go enters via cgo; (2) how FilterBitsNode evaluates vectorized over mmap'd columnar chunks to produce a bitset; (3) how VectorSearchNode searches only over survivors; (4) how results return to Go. Then consider: why does swapping 'row-at-a-time' for 'batch vectorization' often yield order-of-magnitude speedups? How should batch size be traded off (relate to Lesson 35's chunk granularity)?</li>
   </ul>
 </div>
 </div>
