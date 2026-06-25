@@ -560,3 +560,178 @@ You can build, test, and follow conventions — one step remains: <strong>turn y
 </div>
 """,
 }
+
+LESSON_46 = {
+    "zh": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+这是全书的<strong>术语速查表</strong>，把前 45 课出现的关键概念按主题归拢成几张表，每条配一句话定义与所属课次，方便你日后<strong>随时回查</strong>。读不懂某个词时，翻到这里、再顺着课次回到正文细看。
+</p>
+
+<h2>一、总览与架构</h2>
+<table class="t">
+  <tr><th>术语</th><th>一句话定义</th><th>课次</th></tr>
+  <tr><td><strong>向量数据库</strong></td><td>以"相似检索(给向量找最近邻 topK)"为核心的数据库，区别于标量库的精确匹配</td><td>第 1 课</td></tr>
+  <tr><td><strong>嵌入 / Embedding</strong></td><td>把文本/图片等映射成高维向量，使"语义相近"变成"距离相近"</td><td>第 4 课</td></tr>
+  <tr><td><strong>ANN(近似最近邻)</strong></td><td>用少量精度换巨大速度的近邻检索，向量库的算法基石</td><td>第 5 课</td></tr>
+  <tr><td><strong>Collection / Partition</strong></td><td>集合=逻辑上的"表"；分区=集合内的数据切分单位</td><td>第 6 课</td></tr>
+  <tr><td><strong>段 / Segment</strong></td><td>数据的物理管理单元；growing(可写)→sealed(只读)→建索引</td><td>第 7 课</td></tr>
+  <tr><td><strong>控制面 / 数据面</strong></td><td>控制面=协调/调度(Go)；数据面=真正搬运与计算数据</td><td>第 9 课</td></tr>
+  <tr><td><strong>协调器 / Coordinator</strong></td><td>管元数据与调度；rootcoord/datacoord/querycoord，可合为 MixCoord</td><td>第 11-13 课</td></tr>
+  <tr><td><strong>Proxy</strong></td><td>用户入口/门面：收请求、鉴权、入队、扇出、归并</td><td>第 10 课</td></tr>
+  <tr><td><strong>QueryNode / DataNode / StreamingNode</strong></td><td>工作节点：分别负责检索、(压缩等)数据处理、消费 WAL 落盘</td><td>第 10、17 课</td></tr>
+</table>
+
+<h2>二、写入路径</h2>
+<table class="t">
+  <tr><th>术语</th><th>一句话定义</th><th>课次</th></tr>
+  <tr><td><strong>WAL(预写日志)</strong></td><td>先把变更写成有序日志、再异步落盘；崩溃靠重放恢复</td><td>第 16、31 课</td></tr>
+  <tr><td><strong>TimeTick / TSO</strong></td><td>全局有序的时间戳(由 TSO 单源发号)，定义"谁先谁后"</td><td>第 16、30 课</td></tr>
+  <tr><td><strong>Flush / Binlog</strong></td><td>把内存中的段刷成磁盘上的列式 binlog 文件(落对象存储)</td><td>第 17、18 课</td></tr>
+  <tr><td><strong>Compaction(压缩)</strong></td><td>把小段/碎片合并、清理已删数据；Mix/Merge/Clustering/L0 等</td><td>第 19 课</td></tr>
+  <tr><td><strong>Delete / 布隆过滤器</strong></td><td>删除按主键标记;PrimaryKeyStats 的 bloom filter 加速"这段有没有它"</td><td>第 20 课</td></tr>
+</table>
+
+<h2>三、查询路径</h2>
+<table class="t">
+  <tr><th>术语</th><th>一句话定义</th><th>课次</th></tr>
+  <tr><td><strong>topK</strong></td><td>一次搜索返回距离最近的 K 条结果</td><td>第 25 课</td></tr>
+  <tr><td><strong>Delegator(委托者)</strong></td><td>QueryNode 上的协调者：扇出到各段、再归并段内 topK</td><td>第 26 课</td></tr>
+  <tr><td><strong>三级 Reduce</strong></td><td>topK 结果的三层归并:段内→节点(delegator)→Proxy</td><td>第 29 课</td></tr>
+  <tr><td><strong>一致性级别</strong></td><td>Strong/Bounded/Session/Eventually/Customized，新鲜度 vs 性能的取舍</td><td>第 30 课</td></tr>
+  <tr><td><strong>保证时间戳</strong></td><td>由一致性级别推出的 GuaranteeTs，决定"至少要看到多新的数据"</td><td>第 30 课</td></tr>
+  <tr><td><strong>先过滤再检索</strong></td><td>标量过滤产出 bitset，向量检索只在通过者上做</td><td>第 28 课</td></tr>
+</table>
+
+<h2>四、索引</h2>
+<table class="t">
+  <tr><th>术语</th><th>一句话定义</th><th>课次</th></tr>
+  <tr><td><strong>HNSW</strong></td><td>分层可导航小世界图索引;在邻居图上贪心走近邻</td><td>第 5、22 课</td></tr>
+  <tr><td><strong>IVF</strong></td><td>倒排+聚类:先定位候选簇、再簇内精算</td><td>第 5、22 课</td></tr>
+  <tr><td><strong>DiskANN / PQ</strong></td><td>磁盘友好的图索引 / 乘积量化压缩(省内存、略损精度)</td><td>第 5、22 课</td></tr>
+  <tr><td><strong>Knowhere</strong></td><td>Milvus 统一的向量索引引擎中台(封装 FAISS 等),CPU/GPU 索引都经它</td><td>第 22 课</td></tr>
+  <tr><td><strong>标量 / 全文索引</strong></td><td>给标量字段(过滤)与文本(BM25,基于 Rust 的 tantivy)建索引</td><td>第 24 课</td></tr>
+  <tr><td><strong>GPU 索引(CAGRA 等)</strong></td><td>类型在 Milvus、算法在 Knowhere/RAFT;编译期 milvus-gpu</td><td>第 37 课</td></tr>
+</table>
+
+<h2>五、C++ 内核</h2>
+<table class="t">
+  <tr><th>术语</th><th>一句话定义</th><th>课次</th></tr>
+  <tr><td><strong>cgo</strong></td><td>Go 与 C++ 之间的 C-ABI 桥(*_c.h);粗粒度调用、数据零拷贝</td><td>第 34 课</td></tr>
+  <tr><td><strong>列式分块 / ChunkedColumn</strong></td><td>段按字段成列、每列切定长块;利于 SIMD 与按块内存管理</td><td>第 35 课</td></tr>
+  <tr><td><strong>mmap</strong></td><td>把 binlog 映射进虚拟内存、按需缺页;让数据大于物理内存</td><td>第 35 课</td></tr>
+  <tr><td><strong>表达式两层 / ITypeExpr</strong></td><td>逻辑 ITypeExpr(算什么)降级为物理 Expr::Eval(向量化执行)</td><td>第 36 课</td></tr>
+  <tr><td><strong>算子流水线 / Task·Driver·Operator</strong></td><td>向量化火山模型:Task(整次)、Driver(推数据)、Operator(各司其职)</td><td>第 36 课</td></tr>
+  <tr><td><strong>SIMD</strong></td><td>单指令多数据:一条指令并行算一批浮点,向量化执行之本</td><td>第 36 课</td></tr>
+</table>
+
+<h2>六、流式系统</h2>
+<table class="t">
+  <tr><th>术语</th><th>一句话定义</th><th>课次</th></tr>
+  <tr><td><strong>StreamingNode</strong></td><td>消费 WAL→flush 落盘的驱动者;DataNode 收窄为压缩等</td><td>第 17、31 课</td></tr>
+  <tr><td><strong>Broadcaster</strong></td><td>DDL/DCL 的多日志广播器:加锁+ACK 保证多 WAL 一致生效</td><td>第 32 课</td></tr>
+  <tr><td><strong>CDC / 复制</strong></td><td>跨集群同步:复制 WAL 并异地重放(传"发生了什么")、星型拓扑</td><td>第 33 课</td></tr>
+  <tr><td><strong>消息队列(MQ)</strong></td><td>WAL 后端:rocksmq(单机)/Pulsar(集群)/Kafka/Woodpecker(推荐)</td><td>第 41 课</td></tr>
+</table>
+
+<h2>七、运维与贡献</h2>
+<table class="t">
+  <tr><th>术语</th><th>一句话定义</th><th>课次</th></tr>
+  <tr><td><strong>milvuspb / MilvusService</strong></td><td>由 milvus-proto 定义的 gRPC 契约;所有 SDK 都照它说话</td><td>第 38 课</td></tr>
+  <tr><td><strong>可观测三支柱</strong></td><td>日志(mlog)/指标(Prometheus)/追踪(OpenTelemetry);靠 ctx 串一个请求</td><td>第 39 课</td></tr>
+  <tr><td><strong>paramtable</strong></td><td>类型安全的配置注册表(ParamItem+GetAsInt);多源按优先级合并、可热更新</td><td>第 40 课</td></tr>
+  <tr><td><strong>merr(Input vs System)</strong></td><td>错误库:Input(怪请求、不可重试) vs System(怪系统/暂时、可重试)</td><td>第 44 课</td></tr>
+  <tr><td><strong>mockery / mockey</strong></td><td>mockery=生成接口假实现;mockey=运行时给函数打补丁(需 -N -l)</td><td>第 43 课</td></tr>
+  <tr><td><strong>测试标志</strong></td><td>Go 测试必带 -tags dynamic,test 与 -gcflags=all=-N -l</td><td>第 43 课</td></tr>
+  <tr><td><strong>DCO / fork-and-pull</strong></td><td>每 commit 须 git commit -s 签名;fork→分支→PR→评审→合入</td><td>第 45 课</td></tr>
+  <tr><td><strong>PR 类型</strong></td><td>feat(须 issue+设计文档)/fix(须 issue)/enhance/doc/test...</td><td>第 45 课</td></tr>
+</table>
+
+<p style="margin-top:1.4rem;color:var(--muted)">读到这里，这份《Milvus 图解教程》就全部结束了。愿这些图、类比与源码,陪你把一个庞大的向量数据库,看成一幅可以理解、也可以参与的图景。<strong>去贡献吧——世界在等你的第一个 PR。</strong></p>
+""",
+    "en": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+This is the guide's <strong>quick-reference glossary</strong>, gathering the key concepts from the first 45 lessons into a few tables by theme, each with a one-line definition and its lesson, for easy <strong>future lookup</strong>. When a term puzzles you, flip here, then follow the lesson back to the full text.
+</p>
+
+<h2>1. Overview &amp; architecture</h2>
+<table class="t">
+  <tr><th>Term</th><th>One-line definition</th><th>Lesson</th></tr>
+  <tr><td><strong>Vector database</strong></td><td>a DB centered on "similarity search (find the nearest-neighbor topK for a vector)", vs scalar DBs' exact match</td><td>L1</td></tr>
+  <tr><td><strong>Embedding</strong></td><td>map text/images into high-dimensional vectors so "semantically close" becomes "near in distance"</td><td>L4</td></tr>
+  <tr><td><strong>ANN (approx. nearest neighbor)</strong></td><td>nearest-neighbor search trading a little accuracy for huge speed; the algorithmic bedrock</td><td>L5</td></tr>
+  <tr><td><strong>Collection / Partition</strong></td><td>collection = a logical "table"; partition = a data-splitting unit within it</td><td>L6</td></tr>
+  <tr><td><strong>Segment</strong></td><td>the physical data unit; growing (writable)→sealed (read-only)→indexed</td><td>L7</td></tr>
+  <tr><td><strong>Control / data plane</strong></td><td>control plane = coordination/scheduling (Go); data plane = actually moving and computing data</td><td>L9</td></tr>
+  <tr><td><strong>Coordinator</strong></td><td>manages metadata &amp; scheduling; rootcoord/datacoord/querycoord, mergeable into MixCoord</td><td>L11-13</td></tr>
+  <tr><td><strong>Proxy</strong></td><td>the user entrance/facade: receive, auth, enqueue, fan out, merge</td><td>L10</td></tr>
+  <tr><td><strong>QueryNode / DataNode / StreamingNode</strong></td><td>worker nodes: search; data processing (compaction etc.); consume WAL &amp; flush</td><td>L10, L17</td></tr>
+</table>
+
+<h2>2. Write path</h2>
+<table class="t">
+  <tr><th>Term</th><th>One-line definition</th><th>Lesson</th></tr>
+  <tr><td><strong>WAL (write-ahead log)</strong></td><td>write changes as an ordered log first, flush asynchronously; recover by replay on crash</td><td>L16, L31</td></tr>
+  <tr><td><strong>TimeTick / TSO</strong></td><td>a globally ordered timestamp (issued by a single-source TSO) defining "who comes first"</td><td>L16, L30</td></tr>
+  <tr><td><strong>Flush / Binlog</strong></td><td>flush an in-memory segment to columnar binlog files on disk (object storage)</td><td>L17, L18</td></tr>
+  <tr><td><strong>Compaction</strong></td><td>merge small/fragmented segments, purge deleted data; Mix/Merge/Clustering/L0 etc.</td><td>L19</td></tr>
+  <tr><td><strong>Delete / bloom filter</strong></td><td>deletes mark by primary key; PrimaryKeyStats' bloom filter speeds "is it in this segment"</td><td>L20</td></tr>
+</table>
+
+<h2>3. Query path</h2>
+<table class="t">
+  <tr><th>Term</th><th>One-line definition</th><th>Lesson</th></tr>
+  <tr><td><strong>topK</strong></td><td>a search returns the K nearest results by distance</td><td>L25</td></tr>
+  <tr><td><strong>Delegator</strong></td><td>the coordinator on a QueryNode: fan out to segments, then merge their topK</td><td>L26</td></tr>
+  <tr><td><strong>Three-level reduce</strong></td><td>three-tier topK merge: in-segment → node (delegator) → Proxy</td><td>L29</td></tr>
+  <tr><td><strong>Consistency levels</strong></td><td>Strong/Bounded/Session/Eventually/Customized; a freshness vs performance trade-off</td><td>L30</td></tr>
+  <tr><td><strong>Guarantee timestamp</strong></td><td>GuaranteeTs derived from the consistency level, deciding "how fresh data must be seen"</td><td>L30</td></tr>
+  <tr><td><strong>Filter-then-search</strong></td><td>scalar filtering yields a bitset; vector search runs only over the survivors</td><td>L28</td></tr>
+</table>
+
+<h2>4. Indexing</h2>
+<table class="t">
+  <tr><th>Term</th><th>One-line definition</th><th>Lesson</th></tr>
+  <tr><td><strong>HNSW</strong></td><td>hierarchical navigable small-world graph index; greedily walk toward neighbors on a graph</td><td>L5, L22</td></tr>
+  <tr><td><strong>IVF</strong></td><td>inverted lists + clustering: locate candidate clusters, then compute within them</td><td>L5, L22</td></tr>
+  <tr><td><strong>DiskANN / PQ</strong></td><td>disk-friendly graph index / product quantization compression (saves RAM, slight accuracy loss)</td><td>L5, L22</td></tr>
+  <tr><td><strong>Knowhere</strong></td><td>Milvus's unified vector index engine (wrapping FAISS etc.); all CPU/GPU indexes go through it</td><td>L22</td></tr>
+  <tr><td><strong>Scalar / full-text index</strong></td><td>index scalar fields (filtering) and text (BM25, via Rust's tantivy)</td><td>L24</td></tr>
+  <tr><td><strong>GPU indexes (CAGRA etc.)</strong></td><td>types in Milvus, algorithms in Knowhere/RAFT; compile-time milvus-gpu</td><td>L37</td></tr>
+</table>
+
+<h2>5. C++ core</h2>
+<table class="t">
+  <tr><th>Term</th><th>One-line definition</th><th>Lesson</th></tr>
+  <tr><td><strong>cgo</strong></td><td>the C-ABI bridge between Go and C++ (*_c.h); coarse-grained calls, zero-copy data</td><td>L34</td></tr>
+  <tr><td><strong>Chunked columns / ChunkedColumn</strong></td><td>a segment is columnar, each column cut into fixed-size chunks; good for SIMD &amp; per-block memory</td><td>L35</td></tr>
+  <tr><td><strong>mmap</strong></td><td>map binlog into virtual memory, fault in on demand; lets data exceed physical RAM</td><td>L35</td></tr>
+  <tr><td><strong>Two-layer expressions / ITypeExpr</strong></td><td>logical ITypeExpr (what) lowered to physical Expr::Eval (vectorized execution)</td><td>L36</td></tr>
+  <tr><td><strong>Operator pipeline / Task·Driver·Operator</strong></td><td>vectorized Volcano model: Task (one run), Driver (push data), Operator (single-purpose)</td><td>L36</td></tr>
+  <tr><td><strong>SIMD</strong></td><td>single instruction, multiple data: compute a batch of floats in one instruction; basis of vectorization</td><td>L36</td></tr>
+</table>
+
+<h2>6. Streaming system</h2>
+<table class="t">
+  <tr><th>Term</th><th>One-line definition</th><th>Lesson</th></tr>
+  <tr><td><strong>StreamingNode</strong></td><td>drives consume-WAL→flush; DataNode narrowed to compaction etc.</td><td>L17, L31</td></tr>
+  <tr><td><strong>Broadcaster</strong></td><td>the multi-log broadcaster for DDL/DCL: lock + ACK so many WALs take effect consistently</td><td>L32</td></tr>
+  <tr><td><strong>CDC / replication</strong></td><td>cross-cluster sync: replicate the WAL and replay remotely ("what happened"); star topology</td><td>L33</td></tr>
+  <tr><td><strong>Message queue (MQ)</strong></td><td>the WAL backend: rocksmq (standalone)/Pulsar (cluster)/Kafka/Woodpecker (recommended)</td><td>L41</td></tr>
+</table>
+
+<h2>7. Operations &amp; contributing</h2>
+<table class="t">
+  <tr><th>Term</th><th>One-line definition</th><th>Lesson</th></tr>
+  <tr><td><strong>milvuspb / MilvusService</strong></td><td>the gRPC contract defined by milvus-proto; every SDK speaks it</td><td>L38</td></tr>
+  <tr><td><strong>Three observability pillars</strong></td><td>logs (mlog) / metrics (Prometheus) / traces (OpenTelemetry); stitch one request via ctx</td><td>L39</td></tr>
+  <tr><td><strong>paramtable</strong></td><td>a type-safe config registry (ParamItem + GetAsInt); multi-source by priority, hot-reloadable</td><td>L40</td></tr>
+  <tr><td><strong>merr (Input vs System)</strong></td><td>the error library: Input (blame request, not retriable) vs System (blame system/transient, retriable)</td><td>L44</td></tr>
+  <tr><td><strong>mockery / mockey</strong></td><td>mockery = generate interface fakes; mockey = patch functions at runtime (needs -N -l)</td><td>L43</td></tr>
+  <tr><td><strong>Test flags</strong></td><td>Go tests must carry -tags dynamic,test and -gcflags=all=-N -l</td><td>L43</td></tr>
+  <tr><td><strong>DCO / fork-and-pull</strong></td><td>every commit needs git commit -s sign-off; fork→branch→PR→review→merge</td><td>L45</td></tr>
+  <tr><td><strong>PR types</strong></td><td>feat (needs issue+design doc)/fix (needs issue)/enhance/doc/test...</td><td>L45</td></tr>
+</table>
+
+<p style="margin-top:1.4rem;color:var(--muted)">And with that, this <strong>Milvus Visual Guide</strong> comes to an end. May these diagrams, analogies, and snippets of source help you see a vast vector database as a landscape you can understand — and join. <strong>Go contribute — the world awaits your first PR.</strong></p>
+""",
+}

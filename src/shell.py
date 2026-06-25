@@ -137,6 +137,8 @@ PAGES = [
      "第十部分 · 实践与贡献", "Part 10 · Practice & contributing"),
     ("45-contributing-prs.html", "提交 PR 与贡献", "Submitting PRs & contributing",
      "第十部分 · 实践与贡献", "Part 10 · Practice & contributing"),
+    ("46-glossary.html", "术语表", "Glossary",
+     "第十部分 · 实践与贡献", "Part 10 · Practice & contributing"),
 ]
 
 
@@ -668,6 +670,8 @@ SUBTITLES = {
                                  "merr errors: Input (not retriable) vs System (retriable), no fmt.Errorf; log only via mlog; gci import order (milvus-io last); don't hand-edit generated files; mostly linter-enforced"),
     "45-contributing-prs.html": ("fork-and-pull 流程 · DCO 签名 git commit -s · PR 标题 {type}: {描述} · 按类型关联 issue/设计文档 · 机器人(DCO/Mergify/CI)先把关",
                                  "fork-and-pull flow; DCO sign-off git commit -s; PR title {type}: {desc}; link issue/design-doc by type; bots (DCO/Mergify/CI) gate first"),
+    "46-glossary.html": ("全书术语速查表：按主题(架构/写入/查询/索引/C++ 内核/流式/运维与贡献)归拢关键概念，每条一句话定义 + 课次",
+                         "the guide's quick-reference glossary: key concepts by theme (architecture/write/query/indexing/C++ core/streaming/ops & contributing), each a one-line definition + lesson"),
 }
 
 

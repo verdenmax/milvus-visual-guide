@@ -63,4 +63,5 @@ CONTENT = {
     "43-testing.html": part10.LESSON_43,
     "44-code-conventions.html": part10.LESSON_44,
     "45-contributing-prs.html": part10.LESSON_45,
+    "46-glossary.html": part10.LESSON_46,
 }
