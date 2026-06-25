@@ -72,4 +72,5 @@ CONTENT = {
     "50-advanced-features-tour.html": part11.LESSON_50,
     "51-design-log-as-data.html": part12.LESSON_51,
     "52-design-query-while-write.html": part12.LESSON_52,
+    "53-design-storage-compute-separation.html": part12.LESSON_53,
 }

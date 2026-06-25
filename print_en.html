@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 52 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 53 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
@@ -380,6 +380,7 @@ details[open] > summary { list-style: none; }
   <li>Advanced features tour</li>
   <li>Log as data: why the whole system orbits the WAL</li>
   <li>Query-while-you-write, correctly: how consistency is forged</li>
+  <li>Storage–compute separation: why nodes can be stateless</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -9914,6 +9915,195 @@ that makes "distributed, query-while-write, and still correct" hold at once.</p>
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
     <li>This lesson turns consistency into a 'how much latency you spend to buy how much freshness' dial. Consider: (1) why does Strong's latency rise under a write surge or a lagging node? How does that relate to 'tsafe advancing per vchannel, waiting for every involved shard to catch up'? (2) If production monitoring shows 'some strong-consistency queries occasionally slow down', which thread would you pull to diagnose it? (3) This lesson and the last (log as data) share one 'truth' — the monotonic timestamp. In a paragraph, explain: the log makes 'writes' fast and the timestamp makes 'reads' fresh-and-correct — how are the two stitched together by the very same timestamp?</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Storage–compute separation: why nodes can be stateless</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+The last two lessons were software throughlines — "the log" and "the timestamp". This one shifts angle to a <strong>physical</strong> design:
+why does Milvus fully separate "compute" from "storage", leaving the working nodes almost "stateless"? Hidden in this is the secret of how it
+scales elastically and fails over in seconds.</p>
+
+<div class="card analogy"><div class="tag">🍳 An analogy</div>
+<p>Picture a central kitchen: the cooks (compute) <strong>stock no ingredients themselves</strong>; all raw material lives in one
+<strong>shared warehouse</strong> (object storage). Add a cook? They just show up and work, because nothing important "lives in" any one cook.
+A cook falls ill? Swap in another, fetch from the warehouse, and the dishes are identical. Milvus's compute nodes are exactly this crew of
+"non-stocking cooks" — <strong>the important bytes are in the warehouse; the nodes only process</strong>.</p></div>
+
+<h2>The goal: why separate "compute" from "storage"</h2>
+<p>Traditional databases often <strong>bind data to local disk</strong>: compute and storage crammed onto one machine. Natural in the
+single-box era, but for cloud-native elastic scaling it has two fatal problems. First, <strong>inflexible scaling</strong>: your workload might
+be "read-heavy, write-light" (a typical search service) or "write-heavy, read-light" (bulk offline loading), yet with compute and storage
+welded together you can't add resources to just one side — you can only clone whole machines, wasteful and clumsy. Second, <strong>costly
+failure</strong>: if the freshest data sits on one machine's local disk, that machine dying means data is lost or must be slowly recovered from
+elsewhere, with degraded service throughout. Milvus's answer is to <strong>fully decouple</strong>: durable bytes go to dedicated object
+storage, and compute nodes degrade into "stateless" processors — <strong>compute and storage scale independently, and a dead node is just
+swapped out</strong>. Not showing off, but the most concrete demand the cloud era makes of a database.</p>
+
+<p>A concrete example makes it click: your search service peaks by day, read-heavy and write-light, so you want to <strong>add a few
+QueryNodes</strong> to carry searches while the write and storage sides stay untouched; at night you bulk-load a big batch offline, so you
+want to <strong>temporarily add a few DataNodes</strong> to speed up building segments and indexes, leaving the read side unaffected.
+Separation makes this "on-demand, local, independent" scaling possible — pour resources into whichever link is strained, spending where it
+counts. In the "compute and storage welded" world, wanting to carry more searches forces you to clone storage along with it, both costly and
+slow.</p>
+
+<p>In fact "stateless" runs deeper than you might think: not just QueryNode, but the write side's StreamingNode too — the WAL it owns
+actually lives in a swappable backend (RocksMQ / Pulsar / Woodpecker), and the node itself is the log's "steward", not its "safe" (Lesson 31).
+<strong>From write to read, from storage to compute, every working node along the chain sediments as little unique state as possible</strong>;
+state lives either in etcd, or in object storage, or in the WAL backend. This consistency is the root of how Milvus achieves elasticity and
+resilience as a whole.</p>
+
+<div class="card macro"><div class="tag">🗺️ The big picture</div>
+<p>See the system as three tiers: the <strong>control plane</strong> (coordinators store metadata in etcd), the <strong>compute tier</strong>
+(stateless DataNode/QueryNode just process), and the <strong>storage tier</strong> (object storage holds the real data and indexes). Each tier
+scales and is replaced independently. This "storage-compute separation" throughline is the physical extension of last lesson's "log as data":
+since segments and indexes are rebuildable derivatives, putting them in shared storage and freeing compute nodes from local state follows
+naturally.</p></div>
+
+<div class="layers">
+  <div class="layer l-part"><div class="lh"><span class="badge">control plane</span><span class="name">coordinators + etcd</span></div><div class="ld">metadata, segment assignment, node health — state lives here (L14)</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">compute tier</span><span class="name">DataNode / QueryNode (stateless)</span></div><div class="ld">only process: build segments/indexes, search; swappable on death</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">storage tier</span><span class="name">object storage (binlog + index files)</span></div><div class="ld">the real bytes, independently scalable, reliable and cheap</div></div>
+</div>
+
+<h2>The durable bytes live elsewhere</h2>
+<p>Data's real "home" is object storage (S3 / MinIO and the like): DataNode flushes segments into binlog files and a worker builds indexes
+into index files, all written to object storage (Lessons 8, 18). This brings a beautiful decoupling — object storage becomes the
+<strong>"transfer warehouse" between the build side (DataNode worker) and the load side (QueryNode)</strong>: the builder just writes index
+files in, the loader just reads them out, and <strong>the two need never communicate directly, nor even know who the other is or whether it's
+online</strong> (Lessons 21, 23). This is exactly last lesson's "share one log, never call each other directly" philosophy, shown again on the
+storage axis: <strong>converge coupling onto one shared intermediary</strong> and every party is unbound.</p>
+
+<p>Why object storage specifically, rather than some distributed file system or database? Because object storage happens to offer exactly
+what Milvus wants most: <strong>near-infinite capacity, pay-as-you-go low cost, very high reliability (replication / erasure coding handled
+internally), and a simple "read/write immutable objects one by one" interface</strong>. And binlogs and index files are precisely
+"write-once, read-many, barely-modified" immutable files — a <strong>perfect match</strong> for object storage's nature. Milvus just slices
+data into segment files and tosses them in; durability, scaling, and disaster recovery are all backstopped by object storage, without writing
+a single line of storage-engine code itself.</p>
+
+<h2>Loading must be cheap: the magic of mmap</h2>
+<p>With bytes in object storage, how does a QueryNode turn them into searchable in-memory structures? The naïve way is to read it all into
+RAM, but then "how much data you can hold" is hard-capped by physical memory. Milvus's key move is <strong>mmap</strong> (memory mapping,
+Lesson 35): map index/data files into the process's address space and <strong>let the OS page them in lazily</strong> — hot pages resident,
+cold pages evicted — so <strong>segments "larger than memory" can still be served</strong> and a node's capacity grows sharply. The cost is
+that a cold page's first access triggers a fault and a disk read, so tail latency may rise; whether to enable it, and for which fields, is a
+classic "capacity vs latency" tradeoff. But whether fully in-memory or mmap, the crux is the same: <strong>a compute node merely "borrows"
+bytes from shared storage temporarily, releasing them when done, sedimenting no irreplaceable state of its own</strong>.</p>
+
+<p>Because a node's memory is just a "cache" layer over shared storage, it brings an operational nicety: <strong>nodes can be "warmed
+up"</strong>. Bring a new QueryNode online and, per QueryCoord's assignment, it loads its segments from object storage — once loaded it can
+serve, with no coordination from other nodes and no touching the data's true body. Likewise, scaling down by simply taking a node offline is
+safe: losing that bit of "cache" in its memory doesn't matter, since the truth has been in object storage all along. This "<strong>memory is
+cache, storage is truth</strong>" relationship is the micro-portrait of stateless elasticity.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">build side</div><div class="nd">DataNode worker writes</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">object storage</div><div class="nd">index files / binlog · transfer warehouse</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">load side</div><div class="nd">QueryNode reads (mmap)</div></div>
+</div>
+
+<h2>State lives in the control plane</h2>
+<p>If compute nodes are all "stateless", where do the <strong>state</strong>s — "who holds which segment, what the cluster looks like now" —
+live? In the <strong>control plane</strong>: metadata is written into etcd via the Catalog/kv layers (Lesson 14), governed by the
+coordinators; QueryCoord assigns segments to QueryNodes and rebalances on join/leave (Lesson 13). So <strong>failover becomes very fast</strong>:
+a QueryNode dies, but it held no unique data anyway — QueryCoord simply <strong>reassigns its segments to other nodes, and the new node reloads
+those segments from object storage</strong>, service recovers quickly, and not a byte is lost. That is "statelessness"'s biggest dividend:
+<strong>nodes become "compute slots" you can freely add, drop, and replace, not "data safes" you must nurse carefully</strong>. You'll see in
+the next lesson, "failure as the default", that this "state-compute separation" is the very physical basis for self-healing.</p>
+
+<p>Why does state go into etcd specifically, rather than also into object storage? Because the two kinds of data have utterly different
+temperaments. Metadata (which collections exist, who holds which segment, whether a node is alive) is <strong>small, critical, needs strong
+consistency, and must be watchable</strong> — change it and the relevant components must know at once; that is exactly etcd's forte (a
+Raft-based strongly-consistent KV, Lesson 14). Bulky, massive data that only needs reliable storage — binlogs, indexes — goes to object
+storage instead. <strong>Small critical state into etcd, big heavy bytes into object storage</strong> — sorting data by its temperament is
+another place this architecture stays crisp.</p>
+
+<p>Putting "state into etcd" also neatly solves "<strong>how a change propagates</strong>": etcd supports watch, so a component can subscribe
+to the slice of metadata it cares about and <strong>be notified the instant it changes</strong> — e.g. QueryCoord reassigns a segment to a new
+node and the relevant parties perceive and act on it instantly. So a scheduling decision like "who should load which segment" propagates and
+takes effect within seconds. Combine "big data in object storage, critical state in watchable etcd" and Milvus can both hold massive data and
+react quickly to cluster change.</p>
+
+<div class="cols">
+  <div class="col"><h4>❌ Compute + storage on local disk</h4><p>Data sits on the node's local disk; scaling means <strong>cloning whole machines</strong>; a node dies and data is lost or slowly recovered. State "lives on" the machine, making the node an untouchable safe.</p></div>
+  <div class="col"><h4>✅ Stateless nodes + shared storage</h4><p>Bytes in object storage, state in etcd, nodes only process. Compute and storage <strong>scale independently</strong>; a failure just swaps a node and reloads from storage — recovery in seconds.</p></div>
+</div>
+
+<h2>The payoff and the tradeoff</h2>
+<p>Separation isn't free. The most direct cost is <strong>an extra network hop</strong>: data isn't on local disk but in remote object storage,
+inherently slower to read than local. Milvus thins this cost with a whole toolkit — growing segments keep the freshest data in memory as a
+backstop (Lesson 7), mmap keeps hot pages resident, layered caches reduce round-trips to the origin, batched reads cut trips. Another cost is
+<strong>more complexity</strong>: you need a reliable object store, a strongly-consistent etcd, and coordinators to orchestrate assignment and
+balancing — which is exactly why Milvus chooses to "<strong>stand on the shoulders of mature components</strong>" (Lesson 8) rather than build
+a storage layer from scratch. But the reward is the three things the cloud era prizes most: <strong>elasticity</strong> (scale on demand,
+locally, independently), <strong>resilience</strong> (stateless nodes, second-scale replacement), and <strong>cost</strong> (cheap object
+storage, pay-as-you-go compute). In one line: <strong>at the cost of "one more hop + more dependencies", you buy the cloud-native constitution
+of "compute and storage each scaling freely, and a dead node being no big deal"</strong>.</p>
+
+<p>Worth noting, this "one network hop" cost is actually spread thin in vector search: a search's bottleneck is usually the CPU/GPU-heavy
+"distance computation", not the "read the index in" step — all the more so when hot segments' pages are already resident via mmap or hit in
+caches. So in practice, the elasticity and resilience that separation brings far outweigh that sliver of extra read latency. This is why
+nearly all modern cloud databases (not just Milvus) have converged on storage-compute separation.</p>
+
+<div class="card key"><div class="tag">📌 Key points</div>
+<ul>
+  <li><strong>Three-tier decoupling</strong>: control plane (etcd holds state) / compute tier (stateless nodes) / storage tier (object storage holds bytes), each scaling and replaceable independently.</li>
+  <li><strong>Object storage = transfer warehouse</strong>: build side writes, load side reads, never communicating directly — the storage version of last lesson's "shared intermediary" philosophy.</li>
+  <li><strong>mmap</strong>: lets segments "larger than memory" still load, hot pages resident, cold evicted — a capacity ↔ latency tradeoff.</li>
+  <li><strong>State in the control plane</strong>: metadata in etcd, segment assignment by QueryCoord; a dead node is reassigned + reloaded from storage, recovering in seconds with zero loss.</li>
+  <li><strong>Tradeoff</strong>: the cost is one more hop + more dependencies; the reward is <strong>elasticity, resilience, cost</strong> — a cloud-native constitution.</li>
+</ul></div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. What does 'storage-compute separation / stateless nodes' concretely mean in Milvus?</div>
+  <ol class="opts">
+    <li>QueryNode persists indexes to its local SSD as the source of truth</li>
+    <li>Each node keeps its own authoritative copy on local disk</li>
+    <li>Storage and compute must be bundled and scaled together</li>
+    <li>Durable bytes (binlog/index) live in object storage, critical state/metadata in etcd, and DataNode/QueryNode only process, sedimenting no irreplaceable local state — so compute and storage scale independently, and a dead node is swapped and reloaded from storage</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. The truth is in object storage, state in etcd, nodes are mere 'compute slots'. Authoritative data on local disk, or bundling compute+storage, is exactly what it avoids — those make scaling clumsy and failure costly</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Why is object storage the data's 'home', and which two sides does it decouple?</div>
+  <ol class="opts">
+    <li>Object storage has ultra-fast random access, so it replaces RAM</li>
+    <li>The build and load sides must hand off the index over RPC</li>
+    <li>It's chosen because it supports in-place edits to files</li>
+    <li>Object storage offers near-infinite, cheap, reliable capacity and an immutable-object interface, a perfect match for write-once binlog/index files; it becomes the transfer warehouse between the build side (worker writes) and load side (QueryNode reads), so the two never talk directly</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. Converging coupling onto one shared immutable intermediary unbinds both sides — the storage version of the 'share one log' philosophy. Object storage is chosen not for fast random reads or in-place edits but for cheap, reliable, massive immutable storage</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. How does statelessness make failover fast, and what's the cost?</div>
+  <ol class="opts">
+    <li>A node holds no unique data, so on failure QueryCoord reassigns its segments and a new node reloads them from object storage (seconds, zero loss); the cost is an extra network hop (thinned by mmap/caches/growing segments) and more dependencies (object store + etcd)</li>
+    <li>There is no cost at all, pure gain</li>
+    <li>Statelessness means data is lost on a crash</li>
+    <li>You must first copy data off the dead node's local disk</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. The truth is in object storage and a node's memory is just a cache, so reassign + reload recovers in seconds with zero loss. The cost (one hop + dependencies) is thin in vector search, since the bottleneck is distance computation, not reading the index</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson splits the system into three tiers: control plane (etcd) / compute (stateless nodes) / storage (object storage). Consider: (1) why does 'small critical state' go to etcd and 'big heavy bytes' to object storage? What goes wrong if you mix the two? (2) This lesson is called the physical extension of last lesson's 'log as data' — since segments/indexes are rebuildable derivatives, putting them in shared storage follows naturally. Can you complete that logical chain? (3) How does this 'state-compute separation' lay the physical basis for the next lesson's 'failure as default / self-healing'? Sketch one complete flow of 'how a dead node recovers losslessly'.</li>
   </ul>
 </div>
 </div>

@@ -151,6 +151,8 @@ PAGES = [
      "第十二部分 · 设计专题（综合）", "Part 12 · Design themes (synthesis)"),
     ("52-design-query-while-write.html", "边写边查还保证正确：一致性是怎么炼成的", "Query-while-you-write, correctly: how consistency is forged",
      "第十二部分 · 设计专题（综合）", "Part 12 · Design themes (synthesis)"),
+    ("53-design-storage-compute-separation.html", "存算分离：为什么节点可以是“无状态”的", "Storage–compute separation: why nodes can be stateless",
+     "第十二部分 · 设计专题（综合）", "Part 12 · Design themes (synthesis)"),
 ]
 
 
@@ -696,6 +698,8 @@ SUBTITLES = {
                                    "the first design throughline · the WAL is the one source of truth, segments/indexes/replicas are derived · write=append (stamp TimeTick), logged=success · one log replayed on demand by many (flush/query-while-write/replicate/recover)"),
     "52-design-query-while-write.html": ("一致性三步走 · TSO 发全局单调戳 → Proxy 按级别算保证时间戳 Tg → QueryNode 等 tsafe≥Tg、segcore 按 MVCC(墓碑)过滤 · 级别=新鲜度↔延迟的旋钮",
                                          "consistency in three steps · TSO issues a global monotonic stamp → Proxy derives guarantee ts Tg by level → QueryNode waits tsafe≥Tg, segcore filters by MVCC (tombstones) · the level is a freshness↔latency dial"),
+    "53-design-storage-compute-separation.html": ("三层解耦：控制面(etcd 存状态)/计算层(无状态节点)/存储层(对象存储装字节) · 对象存储=建/载之间的中转仓库 · mmap 让大于内存也能加载 · 节点挂了重分配+从存储重载，秒级恢复",
+                                                  "three-tier decoupling: control plane (etcd holds state) / compute (stateless nodes) / storage (object storage holds bytes) · object storage = transfer warehouse between build & load · mmap serves data larger than RAM · a dead node is reassigned + reloaded from storage, recovering in seconds"),
 }
 
 

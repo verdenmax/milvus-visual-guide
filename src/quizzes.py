@@ -3417,6 +3417,76 @@ QUIZZES = {
             },
         ],
     },
+    "53-design-storage-compute-separation.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "“存算分离、节点无状态”在 Milvus 里具体指什么？",
+                    "en": "What does 'storage-compute separation / stateless nodes' concretely mean in Milvus?",
+                },
+                "opts": [
+                    {
+                        "zh": "持久字节(binlog/索引)放对象存储、关键状态/元数据放 etcd，DataNode/QueryNode 只管加工、不沉淀不可替代的本地状态——于是算力与存储各自独立扩缩，节点挂了换一个、从存储重载即可",
+                        "en": "Durable bytes (binlog/index) live in object storage, critical state/metadata in etcd, and DataNode/QueryNode only process, sedimenting no irreplaceable local state — so compute and storage scale independently, and a dead node is swapped and reloaded from storage",
+                    },
+                    {"zh": "每个节点在本地盘各存一份权威数据", "en": "Each node keeps its own authoritative copy on local disk"},
+                    {"zh": "存储和计算必须捆绑在一起同步扩缩", "en": "Storage and compute must be bundled and scaled together"},
+                    {"zh": "QueryNode 把索引持久化到本地 SSD 作为真相", "en": "QueryNode persists indexes to its local SSD as the source of truth"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "真相在对象存储、状态在 etcd，节点只是“算力插槽”。本地盘存权威数据、存算捆绑都恰恰是它要避免的——那会让扩容笨重、故障代价高",
+                    "en": "The truth is in object storage, state in etcd, nodes are mere 'compute slots'. Authoritative data on local disk, or bundling compute+storage, is exactly what it avoids — those make scaling clumsy and failure costly",
+                },
+            },
+            {
+                "q": {
+                    "zh": "为什么数据的“家”选对象存储？它解耦了哪两方？",
+                    "en": "Why is object storage the data's 'home', and which two sides does it decouple?",
+                },
+                "opts": [
+                    {
+                        "zh": "对象存储提供近乎无限、廉价、可靠的容量和“读写不可变对象”的接口，与“写一次读多次”的 binlog/索引天作之合；它成了建索引侧(worker 写)与加载侧(QueryNode 读)之间的中转仓库，两边无需直接通信",
+                        "en": "Object storage offers near-infinite, cheap, reliable capacity and an immutable-object interface, a perfect match for write-once binlog/index files; it becomes the transfer warehouse between the build side (worker writes) and load side (QueryNode reads), so the two never talk directly",
+                    },
+                    {"zh": "对象存储随机访问极快，可以直接取代内存", "en": "Object storage has ultra-fast random access, so it replaces RAM"},
+                    {"zh": "选它是因为它支持对文件就地修改", "en": "It's chosen because it supports in-place edits to files"},
+                    {"zh": "建索引侧和加载侧必须用 RPC 交接索引", "en": "The build and load sides must hand off the index over RPC"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "把耦合收敛到一个共享的不可变中间物上，建/载两方就都松绑了——这正是“共享一条日志”哲学的存储版。对象存储不是为随机快读或就地改而选，而是为廉价可靠的海量不可变存储",
+                    "en": "Converging coupling onto one shared immutable intermediary unbinds both sides — the storage version of the 'share one log' philosophy. Object storage is chosen not for fast random reads or in-place edits but for cheap, reliable, massive immutable storage",
+                },
+            },
+            {
+                "q": {
+                    "zh": "“无状态”如何让故障转移变快？代价是什么？",
+                    "en": "How does statelessness make failover fast, and what's the cost?",
+                },
+                "opts": [
+                    {
+                        "zh": "节点没存独有数据，挂了 QueryCoord 把它的段重新分配、新节点从对象存储重载即可(秒级、零丢失)；代价是多一跳网络(用 mmap/缓存/growing 段摊薄)与多依赖(对象存储+etcd)",
+                        "en": "A node holds no unique data, so on failure QueryCoord reassigns its segments and a new node reloads them from object storage (seconds, zero loss); the cost is an extra network hop (thinned by mmap/caches/growing segments) and more dependencies (object store + etcd)",
+                    },
+                    {"zh": "必须先从挂掉节点的本地盘把数据拷出来", "en": "You must first copy data off the dead node's local disk"},
+                    {"zh": "没有任何代价，纯赚", "en": "There is no cost at all, pure gain"},
+                    {"zh": "无状态意味着崩溃时数据会丢", "en": "Statelessness means data is lost on a crash"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "真相在对象存储，节点内存只是缓存，所以重分配+重载就能秒级恢复、零丢失。代价(多一跳+多依赖)在向量检索里被摊得很薄，因为瓶颈在算距离而非读索引",
+                    "en": "The truth is in object storage and a node's memory is just a cache, so reassign + reload recovers in seconds with zero loss. The cost (one hop + dependencies) is thin in vector search, since the bottleneck is distance computation, not reading the index",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课把系统拆成“控制面(etcd)/计算层(无状态节点)/存储层(对象存储)”三层。请思考：(1) 为什么“小而关键的状态”进 etcd、“大而笨重的字节”进对象存储？把这两类数据混在一起会有什么问题？(2) 说这一课是上一课“日志即数据”的物理延伸——既然段/索引是可重建的派生品，把它们放进共享存储就顺理成章。你能把这个逻辑链补全吗？(3) 这套“状态与计算分离”如何为下一课“故障是常态/自愈”打下物理基础？试举一个“节点挂了如何无损恢复”的完整流程。",
+                "en": "This lesson splits the system into three tiers: control plane (etcd) / compute (stateless nodes) / storage (object storage). Consider: (1) why does 'small critical state' go to etcd and 'big heavy bytes' to object storage? What goes wrong if you mix the two? (2) This lesson is called the physical extension of last lesson's 'log as data' — since segments/indexes are rebuildable derivatives, putting them in shared storage follows naturally. Can you complete that logical chain? (3) How does this 'state-compute separation' lay the physical basis for the next lesson's 'failure as default / self-healing'? Sketch one complete flow of 'how a dead node recovers losslessly'.",
+            },
+        ],
+    },
 }
 
 

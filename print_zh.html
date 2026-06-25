@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus 图解学习指南 - 打印版</h1>
-<p style="color:var(--muted)">全 52 课 - 逐课分页。用浏览器 Ctrl/Cmd+P 即可导出 PDF。</p>
+<p style="color:var(--muted)">全 53 课 - 逐课分页。用浏览器 Ctrl/Cmd+P 即可导出 PDF。</p>
 <div class="print-toc"><h2>目录</h2>
 <ol>
   <li>Milvus 是什么</li>
@@ -380,6 +380,7 @@ details[open] > summary { list-style: none; }
   <li>进阶特性巡礼</li>
   <li>日志即数据：为什么整个系统都围着 WAL 转</li>
   <li>边写边查还保证正确：一致性是怎么炼成的</li>
+  <li>存算分离：为什么节点可以是“无状态”的</li>
 </ol></div>
 <section class="lesson-print">
 <h1>Milvus 是什么</h1>
@@ -9778,6 +9779,164 @@ compaction（第 19 课）把墓碑和被覆盖的旧版本真正清理掉——
   <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
   <ul>
     <li>本课把一致性做成了一个“花多少延迟买多少新鲜”的旋钮。请思考：(1) 为什么 Strong 在写入洪峰或某节点消费滞后时延迟会上升？这和“tsafe 按 vchannel 维度推进、要等所有相关分片都追上”有什么关系？(2) 假如线上监控显示“部分强一致查询偶发变慢”，你会顺着哪条线索去排查？(3) 这一课和上一课（日志即数据）共享同一个“真相”——那个单调时间戳。试用一段话说清：日志让“写”飞快、时间戳让“读”既新鲜又对，二者是怎么靠同一枚时间戳缝在一起的？</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>存算分离：为什么节点可以是“无状态”的</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+前两课讲的是"日志"和"时间戳"这两条软件层面的主线。这一课换个角度，看一条<strong>物理层面</strong>的设计：Milvus 为什么要把"计算"和"存储"彻底拆开，
+让干活的节点几乎"不带状态"？这背后，藏着它能弹性扩缩、能秒级故障转移的秘密。</p>
+
+<div class="card analogy"><div class="tag">🍳 打个比方</div>
+<p>想象一家中央厨房：厨师（计算）<strong>自己不囤任何食材</strong>，所有原料都放在一个<strong>共享的大仓库</strong>（对象存储）里。要加一个厨师？直接来上工就行，
+因为没有任何重要的东西"长在"某个厨师身上；某个厨师病倒了？换一个顶上，从仓库取料继续做，菜品分毫不差。Milvus 的计算节点，就是这样一群"不囤货的厨师"——
+<strong>重要的字节都在仓库里，节点只负责加工</strong>。</p></div>
+
+<h2>目标：为什么要把"算"和"存"拆开</h2>
+<p>传统数据库常把数据<strong>绑在本地磁盘</strong>上：计算和存储挤在同一台机器里。这在单机时代很自然，但到了云原生、要随业务弹性伸缩时，它有两个致命问题。
+其一，<strong>扩容不灵活</strong>：你的业务可能"读多写少"（典型的检索服务）或"写多读少"（离线灌一大批数据），可计算和存储绑死在一起，
+想单独给某一头加资源都做不到，只能整机复制，既浪费又笨重。其二，<strong>故障代价高</strong>：如果最新数据就躺在某台机器的本地盘上，这台机器一挂，
+数据要么直接丢失、要么得漫长地从别处恢复，期间服务大打折扣。Milvus 的答案是把两者<strong>彻底解耦</strong>：持久的字节交给专门的对象存储，
+计算节点退化成"无状态"的加工者——<strong>算力和存储各自独立伸缩，节点挂了换一个就行</strong>。这不是为了炫技，而是云时代对一个数据库最实在的要求。</p>
+
+<p>举个具体例子你就懂了：你的检索服务白天流量高峰、读多写少，于是你只想<strong>多加几个 QueryNode</strong> 扛搜索，而写入侧、存储侧原封不动；
+到了夜里要离线灌一大批数据，你又只想<strong>临时加几个 DataNode</strong> 加速建段建索引，读侧不受影响。存算分离让这种"按需、局部、独立"的伸缩成为可能——
+哪一环吃紧就给哪一环加资源，钱花在刀刃上。而在"计算存储绑死"的世界里，你想多扛点搜索，却被迫连存储一起复制，既贵又慢。</p>
+
+<p>其实"无状态"这条原则贯穿得比你想的更彻底：不只是 QueryNode，连写入侧的 StreamingNode 也一样——它掌管的 WAL 真身存在可换的后端
+（RocksMQ / Pulsar / Woodpecker）里，节点本身只是日志的"管家"而非"保险箱"（第 31 课）。<strong>从写到读、从存到算，整条链路上的工作节点都尽量不沉淀独有状态</strong>，
+状态要么在 etcd、要么在对象存储、要么在 WAL 后端。这种一以贯之，正是 Milvus 能整体做到弹性与韧性的根本。</p>
+
+<div class="card macro"><div class="tag">🗺️ 大图景</div>
+<p>把系统分成三层来看：<strong>控制面</strong>（协调者把元数据存进 etcd）、<strong>计算层</strong>（无状态的 DataNode、QueryNode 只管处理）、
+<strong>存储层</strong>（对象存储装着真正的数据与索引）。三层各自独立扩缩、各自可替换。这条"存算分离"的主线，正是上一课"日志即数据"的物理延伸——
+既然段和索引都是可重建的派生品，那把它们放进共享存储、让计算节点不依赖本地状态，就顺理成章了。</p></div>
+
+<div class="layers">
+  <div class="layer l-part"><div class="lh"><span class="badge">控制面</span><span class="name">协调者 + etcd</span></div><div class="ld">元数据、段分配、节点健康——状态住这里（第 14 课）</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">计算层</span><span class="name">DataNode / QueryNode（无状态）</span></div><div class="ld">只管加工：建段、建索引、检索；挂了即可替换</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">存储层</span><span class="name">对象存储（binlog + 索引文件）</span></div><div class="ld">真正的字节，独立扩容、可靠且廉价</div></div>
+</div>
+
+<h2>持久的字节，住在别处</h2>
+<p>数据真正的"家"是对象存储（S3 / MinIO 之类）：DataNode 把段刷成 binlog 文件、worker 把索引建成索引文件，统统写进对象存储（第 8、18 课）。
+这一步带来一个极漂亮的解耦——对象存储成了<strong>建索引一方（DataNode worker）和加载一方（QueryNode）之间的"中转仓库"</strong>：
+建的人只管把索引文件写进去，加载的人只管从里面读出来，<strong>两边根本不用直接通信、甚至不用知道对方是谁、在不在线</strong>（第 21、23 课）。
+这正是上一课"共享一条日志、互不直接调用"那套哲学，在存储维度上的又一次体现：<strong>把耦合收敛到一个共享的中间物上</strong>，参与方就都松绑了。</p>
+
+<p>为什么偏偏选对象存储，而不是某种分布式文件系统或数据库？因为对象存储恰好提供了 Milvus 最想要的几样东西：<strong>近乎无限的容量、按量付费的低成本、
+极高的可靠性（多副本 / 纠删码由它内部搞定）、以及简单的"读写一个个不可变对象"的接口</strong>。而 binlog 和索引文件恰恰都是"写一次、读多次、几乎不改"的不可变文件——
+和对象存储的特性<strong>天作之合</strong>。Milvus 只要把数据切成一个个段文件扔进去，剩下的持久性、扩容、容灾全由对象存储兜底，自己一行存储引擎代码都不用写。</p>
+
+<h2>加载要便宜：mmap 的妙用</h2>
+<p>字节在对象存储里，QueryNode 怎么把它们变成能检索的内存结构？最朴素的办法是全读进内存，但那样"能装多少数据"就被物理内存死死卡住了。
+Milvus 的关键一招是 <strong>mmap</strong>（内存映射，第 35 课）：把索引/数据文件映射进进程地址空间，<strong>由操作系统按页惰性加载</strong>——
+热点页常驻内存、冷页自动换出，于是<strong>"大于内存"的段也能服务</strong>，单机能承载的数据量大幅增加。代价是冷页首次访问要触发缺页、读一次磁盘，
+尾延迟可能升高；所以是否启用、对哪些字段启用，是一个典型的"容量 vs 延迟"权衡。但无论全内存还是 mmap，关键都一样：
+<strong>计算节点只是临时把共享存储里的字节"借"进来用，用完即可释放，自己不沉淀任何不可替代的状态</strong>。</p>
+
+<p>正因为节点的内存只是共享存储的一层"缓存"，它还带来一个运维上的好处：<strong>节点是可以"预热"的</strong>。新加一个 QueryNode 上线，
+它会按 QueryCoord 的分配从对象存储把该负责的段加载进来——加载完就能服务，整个过程不需要任何其他节点配合、也不会动到数据的真身。
+同理，缩容时直接下线一个节点也很安全：它内存里那点"缓存"丢了无所谓，反正真相一直在对象存储里。这种"<strong>内存即缓存、存储即真相</strong>"的关系，
+正是无状态弹性的微观写照。</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">建索引侧</div><div class="nd">DataNode worker 写</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">对象存储</div><div class="nd">索引文件 / binlog · 中转仓库</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">加载侧</div><div class="nd">QueryNode 读（mmap）</div></div>
+</div>
+
+<h2>状态，住在控制面</h2>
+<p>如果计算节点都"无状态"了，那"谁持有哪个段、集群现在长什么样"这些<strong>状态</strong>存哪？答案是<strong>控制面</strong>：元数据通过 Catalog / kv 层写进 etcd（第 14 课）、
+由协调者统一掌管；QueryCoord 负责把段分配给各 QueryNode，并在节点上下线时重新均衡（第 13 课）。于是<strong>故障转移变得极快</strong>：
+一个 QueryNode 挂了，它本来也没存什么独有数据——QueryCoord 只要把它负责的段<strong>重新分配给别的节点，新节点从对象存储把那些段重新加载一遍即可</strong>，
+服务很快恢复，一个字节都不会丢。这就是"无状态"最大的红利：<strong>节点变成了可随意增删替换的"算力插槽"，而不是必须小心呵护的"数据保险箱"</strong>。
+你会在下一课"故障是常态"里看到，这种"状态与计算分离"正是系统能自愈的物理基础。</p>
+
+<p>为什么状态要单独放进 etcd，而不是也丢给对象存储？因为这两类数据的脾气完全不同。元数据（有哪些集合、段在谁手里、节点是否存活）
+<strong>小、关键、要强一致、还要能被监听</strong>——一改动，相关组件得马上知道；这正是 etcd（基于 Raft 的强一致 KV）擅长的（第 14 课）。
+而 binlog、索引这类<strong>大块、海量、只需可靠存放</strong>的数据，则交给对象存储。<strong>小而关键的状态进 etcd，大而笨重的字节进对象存储</strong>——
+按数据的脾气分门别类，是这套架构干净利落的又一处体现。</p>
+
+<p>这套"状态进 etcd"还顺手解决了"<strong>变化怎么传开</strong>"的问题：etcd 支持 watch，组件可以订阅自己关心的那部分元数据，<strong>一有变动立刻被通知</strong>——
+比如 QueryCoord 把某个段重新分配给了新节点，相关方瞬间就能感知并行动。于是"谁该加载哪个段"这种调度决策，能在秒级内传达、生效。
+把"大块数据放对象存储、关键状态放可监听的 etcd"两件事合起来，Milvus 才既能装下海量数据、又能对集群变化快速响应。</p>
+
+<div class="cols">
+  <div class="col"><h4>❌ 计算存储绑在本地盘</h4><p>数据躺在节点本地，扩容只能<strong>整机复制</strong>；节点一挂，数据要么丢、要么漫长恢复。状态"长在"机器上，节点成了不敢碰的保险箱。</p></div>
+  <div class="col"><h4>✅ 无状态节点 + 共享存储</h4><p>字节在对象存储、状态在 etcd，节点只加工。算力与存储<strong>各自独立扩缩</strong>，坏了换一个、从存储重载即可，秒级恢复。</p></div>
+</div>
+
+<h2>代价与取舍</h2>
+<p>存算分离不是没有代价。最直接的，是<strong>多了一跳网络</strong>：数据不在本地盘、而在远端对象存储，读它天然比读本地慢。Milvus 用一整套手段来摊薄这个代价——
+growing 段把最新数据留在内存里兜底（第 7 课）、mmap 让热点页常驻、各级缓存减少回源、批量读减少往返。另一个代价是<strong>系统更复杂</strong>：
+你需要一个可靠的对象存储、一个强一致的 etcd，还要协调者来编排分配与均衡——这也是为什么 Milvus 选择"<strong>站在成熟组件的肩膀上</strong>"（第 8 课），
+而不是自己从头造一套存储。但换来的回报，是云时代最看重的三样东西：<strong>弹性</strong>（按需、局部、独立地扩缩）、<strong>韧性</strong>（节点无状态、秒级替换）、
+<strong>成本</strong>（对象存储廉价、计算按需付费）。一句话：<strong>用"多一跳 + 多依赖"的代价，买来了"算力与存储各自自由伸缩、节点坏了也无所谓"的云原生体质</strong>。</p>
+
+<p>值得一提的是，这"一跳网络"的代价，在向量检索场景里其实被摊得很薄：一次检索的瓶颈往往在"算距离"这种 CPU/GPU 密集的计算上，
+而不在"把索引读进来"这一步——更何况热点段的页早被 mmap 常驻、或被各级缓存命中了。所以现实中，存算分离带来的弹性与韧性，
+远远盖过那一点点额外的读延迟。这也是为什么几乎所有现代云数据库（不止 Milvus）都不约而同走向了存算分离。</p>
+
+<div class="card key"><div class="tag">📌 本课要点</div>
+<ul>
+  <li><strong>三层解耦</strong>：控制面（etcd 存状态）/ 计算层（无状态节点）/ 存储层（对象存储装字节），各自独立扩缩、各自可替换。</li>
+  <li><strong>对象存储 = 中转仓库</strong>：建索引侧写、加载侧读，两边不直接通信——上一课"共享中间物"哲学的存储版。</li>
+  <li><strong>mmap</strong>：让"大于内存"的段也能加载，热点页常驻、冷页换出，是容量 ↔ 延迟的取舍。</li>
+  <li><strong>状态在控制面</strong>：元数据在 etcd、段分配由 QueryCoord 管；节点挂了重分配 + 从存储重载，秒级恢复、零丢失。</li>
+  <li><strong>取舍</strong>：代价是多一跳网络 + 多依赖；回报是<strong>弹性、韧性、成本</strong>——云原生体质。</li>
+</ul></div>
+
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. “存算分离、节点无状态”在 Milvus 里具体指什么？</div>
+  <ol class="opts">
+    <li>QueryNode 把索引持久化到本地 SSD 作为真相</li>
+    <li>每个节点在本地盘各存一份权威数据</li>
+    <li>存储和计算必须捆绑在一起同步扩缩</li>
+    <li>持久字节(binlog/索引)放对象存储、关键状态/元数据放 etcd，DataNode/QueryNode 只管加工、不沉淀不可替代的本地状态——于是算力与存储各自独立扩缩，节点挂了换一个、从存储重载即可</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。真相在对象存储、状态在 etcd，节点只是“算力插槽”。本地盘存权威数据、存算捆绑都恰恰是它要避免的——那会让扩容笨重、故障代价高</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. 为什么数据的“家”选对象存储？它解耦了哪两方？</div>
+  <ol class="opts">
+    <li>对象存储随机访问极快，可以直接取代内存</li>
+    <li>建索引侧和加载侧必须用 RPC 交接索引</li>
+    <li>选它是因为它支持对文件就地修改</li>
+    <li>对象存储提供近乎无限、廉价、可靠的容量和“读写不可变对象”的接口，与“写一次读多次”的 binlog/索引天作之合；它成了建索引侧(worker 写)与加载侧(QueryNode 读)之间的中转仓库，两边无需直接通信</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。把耦合收敛到一个共享的不可变中间物上，建/载两方就都松绑了——这正是“共享一条日志”哲学的存储版。对象存储不是为随机快读或就地改而选，而是为廉价可靠的海量不可变存储</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. “无状态”如何让故障转移变快？代价是什么？</div>
+  <ol class="opts">
+    <li>节点没存独有数据，挂了 QueryCoord 把它的段重新分配、新节点从对象存储重载即可(秒级、零丢失)；代价是多一跳网络(用 mmap/缓存/growing 段摊薄)与多依赖(对象存储+etcd)</li>
+    <li>没有任何代价，纯赚</li>
+    <li>无状态意味着崩溃时数据会丢</li>
+    <li>必须先从挂掉节点的本地盘把数据拷出来</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：A</strong>。真相在对象存储，节点内存只是缓存，所以重分配+重载就能秒级恢复、零丢失。代价(多一跳+多依赖)在向量检索里被摊得很薄，因为瓶颈在算距离而非读索引</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>本课把系统拆成“控制面(etcd)/计算层(无状态节点)/存储层(对象存储)”三层。请思考：(1) 为什么“小而关键的状态”进 etcd、“大而笨重的字节”进对象存储？把这两类数据混在一起会有什么问题？(2) 说这一课是上一课“日志即数据”的物理延伸——既然段/索引是可重建的派生品，把它们放进共享存储就顺理成章。你能把这个逻辑链补全吗？(3) 这套“状态与计算分离”如何为下一课“故障是常态/自愈”打下物理基础？试举一个“节点挂了如何无损恢复”的完整流程。</li>
   </ul>
 </div>
 </div>
