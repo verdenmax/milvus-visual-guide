@@ -517,3 +517,236 @@ cross-cluster <strong>replication and CDC</strong>.</p>
 </div>
 """,
 }
+
+
+LESSON_33 = {
+    "zh": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+这一部分讲到现在，"日志即数据"已经反复出现。这一课是它的<strong>终极兑现</strong>：要把一个集群的数据<strong>同步到另一个集群</strong>（异地容灾、跨地域只读、平滑迁移……），
+最朴素也最强大的办法，不是去逐表逐段地拷贝状态，而是——<strong>把那条 WAL 复制过去，让对方重放一遍</strong>。因为 WAL 是单一事实来源、重放又是确定性的，
+"复制数据"就被优雅地化简成了"<strong>复制一条有序日志 + 重放它</strong>"。这就是 Milvus 的<strong>复制与 CDC（Change Data Capture，变更数据捕获）</strong>。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 生活类比</div>
+  像总行和异地分行<strong>共享同一本流水账</strong>：总行（primary）每记一笔，就把这一笔<strong>原样抄送</strong>给异地分行（secondary），分行照着抄来的账<strong>重放一遍</strong>——
+  既然两边念的是同一本、同一顺序的账，最终的余额自然分毫不差。分行不需要懂任何业务细节，<strong>只要忠实地把抄来的每一笔重放</strong>即可。
+  万一总行所在的城市断网了，异地分行手里有完整的账本副本，<strong>随时能顶上来继续营业</strong>——这正是"容灾"的底气。整套机制里，分行做的事简单到近乎"机械"：收到一笔、按原顺序记一笔、重放一笔，绝不自作主张。正因为"机械"，它才<strong>可靠</strong>。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  一句话：<strong>Milvus 用 CDC 做跨集群的 WAL 复制（星型拓扑）。主集群的 WAL → CDC ChannelReplicator → 备集群的 Proxy → 备集群的 WAL（经 Replicate 拦截器）→ 备集群重放</strong>。
+  因为复制的是<strong>日志本身</strong>、且每条带单调 TimeTick，备集群只要<strong>像普通集群一样消费/重放自己的 WAL</strong>，就能重建出与主集群一致的数据——复制几乎不需要"特殊逻辑"。这正是"日志即数据"埋下的复利：当初为"可靠写入"建的这条日志，如今顺带把"跨集群同步"这道难题也解了。
+</div>
+
+<h2>复制的本质：复制"日志"，而不是复制"状态"</h2>
+<p>同步两个数据库，有两条根本不同的路。一条是<strong>复制状态</strong>：定期把表、段、索引这些"最终结果"整份拷过去——直观，但又重又难：数据在变，拷到一半就不一致了，还得处理增量、冲突、版本。
+另一条是 Milvus 走的<strong>复制日志</strong>：只把"<strong>发生了哪些变更</strong>"这条有序流复制过去，让对方<strong>按同样的顺序重放</strong>，自然得到同样的状态。这正是数据库领域经典的 <strong>CDC（变更数据捕获）</strong>思想——
+不传"现在是什么"，而传"<strong>发生了什么</strong>"。对 Milvus 来说，这条路几乎是<strong>免费</strong>的：它本来就有一条记录了所有变更、带全局顺序、可重放的 WAL；做复制，无非是把这条已有的日志<strong>多一个消费者（异地集群）</strong>而已。
+"把同步问题转化为复制一条有序日志"，是"日志即数据"省下的又一大笔工程。</p>
+
+<p>这个"复制日志"的思路，其实和我们前面反复见到的机制是<strong>同一个故事</strong>。第 31 课说"崩溃后从日志重放恢复状态"，第 26 课说"QueryNode 消费 WAL 尾巴让 growing 数据保持新鲜"——
+它们本质都是"<strong>有人按顺序重放这条日志、从而获得对应的状态</strong>"。复制不过是把这个"重放者"<strong>挪到了另一个集群、另一个地域</strong>而已。换句话说，备集群在 Milvus 眼里并不特殊，
+它就是一个"<strong>恰好把上游日志接到了远方主集群</strong>"的普通消费者。一旦你接受了"<strong>状态 = 日志的重放结果</strong>"这个世界观，"在异地造一份一样的数据"就不再是难题，而几乎是"顺手的事"：
+让异地也念同一本账，余额自然相同。这种"<strong>把看似不同的需求，都还原成对同一条日志的操作</strong>"的统一感，正是这套架构最迷人的地方，也是你读懂它后会由衷赞叹的设计。</p>
+
+<div class="cols">
+  <div class="col"><h4>⚠️ 复制状态（笨办法）</h4><p>整份拷表/段/索引。数据在变就难保证一致，要处理增量、冲突、版本，又重又脆。</p></div>
+  <div class="col"><h4>✅ 复制日志（Milvus / CDC）</h4><p>只复制"发生了哪些变更"的有序流，对方按同序重放即得同状态。复用已有 WAL，几乎零额外机制。</p></div>
+</div>
+
+<h2>数据流：从主集群到备集群</h2>
+<p>把这条复制链路拆开看。主集群（primary）里，<strong>CDC 的 ChannelReplicator</strong>（代码在 <span class="mono">internal/cdc/replication</span>）盯着主集群的 WAL，把一条条变更消息<strong>读出来、转发</strong>给备集群（secondary）；
+备集群的 <strong>Proxy</strong> 接收这些消息，但它不会把它们当成"新写入"重新分配时间戳——而是经过一个特殊的 <strong>Replicate 拦截器</strong>，<strong>原样保留消息里已有的 TimeTick 等元信息</strong>，再写进备集群自己的 WAL。
+之后，备集群就和一个普通集群<strong>完全一样</strong>地消费这条 WAL：StreamingNode 落段、flush binlog，QueryNode 加载段、建索引……一切照旧。整条链路是：</p>
+
+<p>这里最妙的一笔，是那个 <strong>Replicate 拦截器</strong>"<strong>不重新盖戳</strong>"的设计。回忆第 31 课：普通写入进 WAL 时，TimeTick 拦截器会给它盖一个本地的新时间戳。
+但复制来的消息<strong>已经带着主集群盖好的 TimeTick</strong> 了——如果备集群再盖一个自己的，两边的顺序就对不上、数据也就不一致了。所以 Replicate 拦截器的职责恰恰相反：<strong>识别出"这是复制来的消息"，原样保留它的 TimeTick，不要动</strong>。
+正是这"<strong>保留原序</strong>"的一小步，保证了主备两边重放出的<strong>顺序严格一致</strong>，从而状态严格一致。你看，整套复制机制里"特殊"的部分，少到只剩这一个拦截器、只做这一件"别乱盖戳"的事——其余全是复用既有的 WAL 写入、消费、落段、建索引流程。
+<strong>复用得越多、特例越少，系统就越简单、越不容易出错</strong>，这正是好架构的标志。</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">主集群 WAL</div><div class="nd">primary 的变更日志</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">ChannelReplicator</div><div class="nd">读出并转发(CDC)</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">备集群 Proxy</div><div class="nd">经 Replicate 拦截器</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">备集群 WAL</div><div class="nd">重放→重建数据</div></div>
+</div>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/cdc/replication</span><span class="ln">跨集群 WAL 复制（节选示意）</span></div>
+  <pre><span class="cm">// ChannelReplicator: 读主集群 WAL -> 转发到备集群</span>
+<span class="cm">//   primary WAL --(读出变更消息)--&gt; Replicator</span>
+<span class="cm">//     --&gt; secondary Proxy（Replicate 拦截器：保留原 TimeTick）</span>
+<span class="cm">//       --&gt; secondary WAL --&gt; 备集群照常消费/重放</span></pre>
+</div>
+
+<h2>角色与拓扑：星型，一主多备</h2>
+<p>Milvus 的跨集群复制采用<strong>星型拓扑</strong>：一个<strong>主（primary）</strong>集群居中，向若干<strong>备（secondary）</strong>集群单向复制。谁是主、谁是备、哪些 channel 往哪复制，由 <strong>CDC controller</strong>（<span class="mono">internal/cdc/controller</span>）
+统一<strong>协调与管理角色</strong>。星型而非任意网状，是个有意的简化：它让"<strong>变更从唯一的源头流出</strong>"这件事保持清晰，避免多主互相复制带来的环路与冲突——又一次体现了"把复杂收敛到一个权威源头"的设计取向（回忆 TSO 也是这么做的）。
+需要时，主备角色可以<strong>切换</strong>（比如主集群故障，把某个备提升为新主），这正是容灾切换（failover）的基础。</p>
+
+<p>为什么是<strong>单向</strong>、而不是两边互相同步？因为"<strong>谁是唯一真相</strong>"必须明确。如果两个集群都能写、又互相复制，就会遇到经典的<strong>多主冲突</strong>：同一条数据被两边几乎同时改成不同的值，到底听谁的？
+解决多主冲突要引入复杂的合并/仲裁逻辑，既难又容易出错。Milvus 的选择干脆利落：<strong>同一时刻只有一个主在写、变更单向流向备</strong>，备只读不写（对外只承接读）。这样"真相只有一个源头"，根本不给冲突留余地。
+需要"双活"或主备切换时，则通过 controller <strong>显式地变更角色</strong>来完成，而不是放任两边自由互写。这种"<strong>宁可简单也不要含糊</strong>"的取舍，和前面 TSO 用单一来源发号、Broadcaster 用单一源头广播，是<strong>同一种工程审美</strong>：
+把"谁说了算"这件事收敛到一个明确的权威上，复杂度就塌缩了一大半。</p>
+
+<div class="layers">
+  <div class="layer l-core"><div class="lh"><span class="badge">primary</span><span class="name">主集群</span></div><div class="ld">唯一的变更源头；其 WAL 被复制出去</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">controller</span><span class="name">CDC controller</span></div><div class="ld">协调角色与复制关系（谁复制给谁）</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">secondary</span><span class="name">备集群（可多个）</span></div><div class="ld">单向接收并重放主集群的 WAL；可被提升为新主</div></div>
+</div>
+
+<h2>用在哪：容灾、跨地域、迁移</h2>
+<p>把"一份日志复制到异地重放"这件事用起来，能解决几类很实在的需求。<strong>① 异地容灾（DR）</strong>：在另一个地域维持一个热备集群，时刻跟随主集群；一旦主集群所在机房整体故障，把热备<strong>提升为主</strong>即可继续服务，
+数据几乎不丢（取决于复制延迟）。<strong>② 跨地域只读</strong>：让离用户更近的备集群承接本地读请求，降低跨域延迟——写仍走主集群，读就近分担。<strong>③ 平滑迁移</strong>：要把数据搬到新集群/新版本时，先让新集群作为备追平主集群的全部历史与增量，
+追平后一次切换，<strong>几乎无停机</strong>。这三类需求看似不同，底层却是同一件事：<strong>让另一个集群通过重放同一条日志，拥有同一份数据</strong>。这就是"日志即数据"在<strong>跨集群</strong>尺度上的威力。</p>
+
+<p>这里有个绕不开的现实因素：<strong>复制延迟</strong>。主集群盖戳、转发、备集群再重放，整条链路需要时间，所以备集群的数据总是比主集群<strong>稍微滞后一点点</strong>（落后的量取决于网络与负载）。
+这个延迟决定了容灾时的"<strong>能丢多少数据</strong>"：如果主集群在某一刻整体崩溃，那些"已写进主集群、但还没复制到备集群"的最新变更，就有丢失风险——这正是衡量容灾能力的 <strong>RPO（恢复点目标）</strong>。
+好在因为复制的是<strong>有序日志</strong>，备集群很清楚自己"重放到了哪个 TimeTick"，断点续传、追平进度都有据可依，不会出现"复制到一半、状态错乱"的情况。要把 RPO 压到很小，就尽量降低复制延迟；要绝对不丢，则需更强的同步复制语义——
+这又回到了第 30 课那个永恒的主题：<strong>一致性/新鲜度与性能/成本之间，永远是一场取舍</strong>，跨集群复制也不例外。理解了这层取舍，你在为业务设计容灾方案时，就知道每个旋钮拧的是什么。</p>
+
+<h2>为什么这么干净</h2>
+<p>退一步想：跨集群数据同步，在很多系统里是出了名的难——要处理增量捕获、顺序、冲突、断点续传、一致性……为什么 Milvus 这里显得如此"轻"？答案还是那三个字：<strong>WAL</strong>。
+因为 WAL <strong>本就是单一事实来源</strong>，所有变更<strong>本就有全局顺序（TimeTick）</strong>，重放<strong>本就是确定性</strong>的——所以"复制"退化成了"把一条已经记好、排好序、能重放的日志，多送一份给异地"。
+备集群不需要任何特殊的"同步逻辑"，它只是<strong>多接了一条上游日志的普通集群</strong>；那个 Replicate 拦截器要做的，也仅仅是"<strong>别给复制来的消息重新盖戳，保留它原本的 TimeTick</strong>"，好让两边的顺序严格一致。
+<strong>一个好的基础抽象，会让原本最难的问题不药而愈</strong>——这是本课、也是整个第七部分最想留给你的体会。</p>
+
+<p>这件事也反过来印证了一个判断：<strong>"日志即数据"不是一句口号，而是一个能持续生息的设计本金</strong>。回看这一路——崩溃恢复（重放日志）、边写边查（消费日志尾巴）、DDL 原子生效（广播进日志）、跨集群容灾（复制日志）——
+没有哪一个是单独发明的"特性"，它们全都是"<strong>把状态建模成日志的重放结果</strong>"这一个决定，在不同场景下自然结出的果实。一个真正好的核心抽象就是这样：你为它<strong>一次性</strong>付出理解成本，之后它在一个又一个问题上<strong>反复回报</strong>你。
+所以这一部分虽然概念密集，却最值得反复咀嚼——它不只是讲"流式系统怎么实现"，更是在示范"<strong>一个统一抽象如何驯服一个庞杂系统</strong>"。</p>
+
+<p>到此，第七部分（流式系统）就讲完了：第 31 课看 WAL 怎么被管、被写、被恢复，第 32 课看 DDL/DCL 如何靠广播原子地进日志，这一课看日志如何被复制到另一个集群。它们共同回答了一个问题——
+<strong>当你把"写入"彻底建模成"往一条可靠、有序、可重放的日志上追加"，可靠性、一致性、恢复、乃至跨集群复制，会如何统统变成"关于这条日志的操作"</strong>。这正是 Milvus 流式系统的设计哲学，也是它区别于很多向量库的根本之一。</p>
+
+<p>再把整个第七部分放进全书来看：第四部分（写入链路）讲的是"<strong>一次写如何落进日志、变成段</strong>"，是从<strong>用户视角</strong>看写；而第七部分讲的是"<strong>承载这条日志的流式系统本身如何运转</strong>"，是从<strong>系统视角</strong>看写。
+两者一表一里，合起来才是 Milvus"写"的完整图景。而贯穿始终的，是同一句话——<strong>WAL 是单一事实来源</strong>。把它真正理解透，你就握住了 Milvus 最核心的设计直觉：<strong>不要让状态成为真相，让日志成为真相；状态只是日志的一个个投影</strong>。
+带着这把钥匙，接下来的几部分（C++ 内核、API 与运维、实战与贡献）你都能更轻松地看懂——因为无论钻到多深，那条贯穿系统的有序日志，始终是你脚下的地基。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>复制日志而非状态</strong>：跨集群同步 = 复制 WAL + 重放；传"发生了什么"(CDC)而非"现在是什么"，复用已有 WAL，几乎零额外机制。</li>
+    <li><strong>数据流</strong>：主集群 WAL → CDC ChannelReplicator(<span class="mono">internal/cdc/replication</span>) → 备集群 Proxy(Replicate 拦截器，保留原 TimeTick) → 备集群 WAL → 照常重放。</li>
+    <li><strong>星型拓扑 + 角色</strong>：一主多备、单向复制，CDC controller 协调角色；主备可切换，是容灾 failover 的基础。</li>
+    <li><strong>用途</strong>：异地容灾(热备升主)、跨地域只读、平滑迁移——本质都是"让另一个集群重放同一条日志、拥有同一份数据"。</li>
+    <li><strong>复制延迟与 RPO</strong>：备集群总比主集群稍滞后，决定容灾时"能丢多少"；因复制的是有序日志，备方清楚自己重放到哪个 TimeTick，可断点续传、追平进度。</li>
+    <li><strong>为何干净</strong>：WAL 是单一事实来源 + 全局有序 + 确定性重放，故"复制"退化为"多送一份日志"；好的抽象让最难的问题不药而愈，这是本课最核心的体会。</li>
+  </ul>
+</div>
+""",
+    "en": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+By now in this part, "log as data" has recurred again and again. This lesson is its <strong>ultimate payoff</strong>: to sync one cluster's data
+<strong>to another cluster</strong> (cross-region disaster recovery, read replicas, smooth migration…), the simplest and most powerful way is not to copy
+state table by table and segment by segment, but to — <strong>copy that WAL over and let the other side replay it</strong>. Because the WAL is the single
+source of truth and replay is deterministic, "copying data" elegantly reduces to "<strong>copy an ordered log + replay it</strong>". That is Milvus's
+<strong>replication and CDC (Change Data Capture)</strong>.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Like a head office and a remote branch <strong>sharing one ledger</strong>: every entry head office (primary) records, it <strong>copies verbatim</strong> to
+  the remote branch (secondary), which <strong>replays</strong> the copied entries — since both read the same ledger in the same order, the final balances match
+  to the cent. The branch needn't understand any business detail, it just <strong>faithfully replays each copied entry</strong>. Should head office's city lose
+  connectivity, the remote branch holds a complete copy of the ledger and <strong>can take over and keep operating</strong> — that is the basis of disaster recovery.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>Milvus does cross-cluster WAL replication via CDC (star topology). The primary's WAL → CDC ChannelReplicator → the secondary's Proxy →
+  the secondary's WAL (via a Replicate interceptor) → the secondary replays</strong>. Because what's replicated is <strong>the log itself</strong>, each entry
+  carrying a monotonic TimeTick, the secondary just <strong>consumes/replays its own WAL like any normal cluster</strong> and rebuilds data consistent with the
+  primary — replication needs almost no "special logic".
+</div>
+
+<h2>The essence: replicate the "log", not the "state"</h2>
+<p>Syncing two databases has two fundamentally different paths. One is <strong>replicating state</strong>: periodically copy the "final results" — tables, segments,
+indexes — wholesale. Intuitive, but heavy and hard: data keeps changing, so a half-done copy is inconsistent, and you must handle increments, conflicts, versions. The
+other is Milvus's path, <strong>replicating the log</strong>: copy only the ordered stream of "<strong>what changed</strong>", and let the other side <strong>replay in the
+same order</strong>, naturally arriving at the same state. This is the classic database idea of <strong>CDC (Change Data Capture)</strong> — ship not "what it is now" but
+"<strong>what happened</strong>". For Milvus this path is almost <strong>free</strong>: it already has a WAL recording all changes, globally ordered and replayable; replication
+is merely <strong>one more consumer (the remote cluster)</strong> of that existing log. "Turning sync into copying one ordered log" is another big engineering saving from "log
+as data".</p>
+
+<div class="cols">
+  <div class="col"><h4>⚠️ Replicate state (the clumsy way)</h4><p>copy tables/segments/indexes wholesale. With data changing, consistency is hard; you must handle increments, conflicts, versions — heavy and brittle.</p></div>
+  <div class="col"><h4>✅ Replicate the log (Milvus / CDC)</h4><p>copy only the ordered stream of "what changed"; the other side replays in order to the same state. Reuses the existing WAL, with almost no extra mechanism.</p></div>
+</div>
+
+<h2>Data flow: from primary to secondary</h2>
+<p>Unpack the replication chain. In the primary, <strong>CDC's ChannelReplicator</strong> (code in <span class="mono">internal/cdc/replication</span>) watches the
+primary's WAL and <strong>reads out and forwards</strong> each change message to the secondary; the secondary's <strong>Proxy</strong> receives them, but it does NOT
+treat them as "new writes" to re-stamp — instead, via a special <strong>Replicate interceptor</strong>, it <strong>preserves the messages' existing TimeTick and other
+metadata</strong> and writes them into the secondary's own WAL. After that, the secondary consumes that WAL <strong>exactly like a normal cluster</strong>: StreamingNode
+lands segments and flushes binlogs, QueryNode loads segments and builds indexes… business as usual. The whole chain is:</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">Primary WAL</div><div class="nd">primary's change log</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">ChannelReplicator</div><div class="nd">read &amp; forward (CDC)</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">Secondary Proxy</div><div class="nd">via Replicate interceptor</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">Secondary WAL</div><div class="nd">replay → rebuild data</div></div>
+</div>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/cdc/replication</span><span class="ln">cross-cluster WAL replication (illustrative)</span></div>
+  <pre><span class="cm">// ChannelReplicator: read the primary WAL -> forward to the secondary</span>
+<span class="cm">//   primary WAL --(read change messages)--&gt; Replicator</span>
+<span class="cm">//     --&gt; secondary Proxy (Replicate interceptor: keep original TimeTick)</span>
+<span class="cm">//       --&gt; secondary WAL --&gt; secondary consumes/replays as usual</span></pre>
+</div>
+
+<h2>Roles and topology: a star, one primary, many secondaries</h2>
+<p>Milvus's cross-cluster replication uses a <strong>star topology</strong>: one <strong>primary</strong> cluster at the center replicates one-way to several
+<strong>secondary</strong> clusters. Who is primary, who is secondary, and which channels replicate where, is <strong>coordinated and role-managed</strong> by the
+<strong>CDC controller</strong> (<span class="mono">internal/cdc/controller</span>). A star, not an arbitrary mesh, is a deliberate simplification: it keeps "<strong>change
+flows out from a single source</strong>" clear, avoiding the loops and conflicts of multi-primary mutual replication — once more the design bias of "converge complexity to
+one authoritative source" (recall the TSO does the same). When needed, primary/secondary roles can <strong>switch</strong> (e.g. the primary fails, promote a secondary to be
+the new primary), which is the basis of disaster failover.</p>
+
+<div class="layers">
+  <div class="layer l-core"><div class="lh"><span class="badge">primary</span><span class="name">primary cluster</span></div><div class="ld">the single source of change; its WAL is replicated out</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">controller</span><span class="name">CDC controller</span></div><div class="ld">coordinates roles and the replication relationships (who replicates to whom)</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">secondary</span><span class="name">secondary clusters (many)</span></div><div class="ld">one-way receive and replay the primary's WAL; can be promoted to primary</div></div>
+</div>
+
+<h2>Where it's used: DR, cross-region, migration</h2>
+<p>Put "copy one log to a remote site and replay" to work and it solves several very real needs. <strong>(1) Disaster recovery (DR)</strong>: keep a hot-standby cluster in
+another region tracking the primary; if the primary's data center fails entirely, <strong>promote the standby to primary</strong> and keep serving, with almost no data loss
+(depending on replication lag). <strong>(2) Cross-region read replicas</strong>: let a secondary closer to users serve local reads, cutting cross-region latency — writes still
+go to the primary, reads are offloaded nearby. <strong>(3) Smooth migration</strong>: to move data to a new cluster/version, first let the new cluster, as a secondary, catch up
+on the primary's full history and increments; after catching up, switch once, <strong>with almost no downtime</strong>. These three look different but are the same underneath:
+<strong>let another cluster have the same data by replaying the same log</strong>. That is the power of "log as data" at <strong>cross-cluster</strong> scale.</p>
+
+<h2>Why it's so clean</h2>
+<p>Step back: cross-cluster data sync is notoriously hard in many systems — change capture, ordering, conflicts, resumable transfer, consistency… Why does Milvus's look so
+"light"? The answer is again three letters: <strong>WAL</strong>. Because the WAL <strong>is the single source of truth</strong>, all changes <strong>already have a global order
+(TimeTick)</strong>, and replay <strong>is already deterministic</strong> — so "replication" degenerates into "ship one already-recorded, already-ordered, replayable log to a
+remote site too". The secondary needs no special "sync logic"; it is simply <strong>a normal cluster that took on one more upstream log</strong>; and all the Replicate interceptor
+does is "<strong>don't re-stamp replicated messages, keep their original TimeTick</strong>", so both sides' order stays strictly identical. <strong>A good foundational abstraction
+makes the hardest problems heal on their own</strong> — that is what this lesson, and all of Part 7, most wants to leave you with.</p>
+
+<p>With that, Part 7 (the streaming system) is complete: Lesson 31 saw how the WAL is managed, written and recovered, Lesson 32 saw how DDL/DCL enter the log atomically by
+broadcast, and this lesson saw how the log is replicated to another cluster. Together they answer one question — <strong>when you fully model "writing" as "append to one reliable,
+ordered, replayable log", how do reliability, consistency, recovery, and even cross-cluster replication all become "operations on that one log"</strong>. That is the design
+philosophy of Milvus's streaming system, and one of the roots of what sets it apart from many vector stores.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Replicate the log, not state</strong>: cross-cluster sync = replicate the WAL + replay; ship "what happened" (CDC), not "what it is", reusing the existing WAL with almost no extra mechanism.</li>
+    <li><strong>Data flow</strong>: primary WAL → CDC ChannelReplicator (<span class="mono">internal/cdc/replication</span>) → secondary Proxy (Replicate interceptor, keep original TimeTick) → secondary WAL → replay as usual.</li>
+    <li><strong>Star topology + roles</strong>: one primary, many secondaries, one-way; the CDC controller coordinates roles; primary/secondary can switch — the basis of DR failover.</li>
+    <li><strong>Uses</strong>: cross-region DR (promote standby), cross-region read replicas, smooth migration — all "let another cluster have the same data by replaying the same log".</li>
+    <li><strong>Why clean</strong>: the WAL is the single source of truth + globally ordered + deterministic replay, so "replication" degenerates to "ship one more copy of the log"; a good abstraction heals the hardest problems.</li>
+  </ul>
+</div>
+""",
+}

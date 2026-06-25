@@ -111,6 +111,8 @@ PAGES = [
      "第七部分 · 流式系统", "Part 7 · Streaming system"),
     ("32-ddl-dcl-via-log.html", "通过日志的 DDL/DCL", "DDL/DCL through the log",
      "第七部分 · 流式系统", "Part 7 · Streaming system"),
+    ("33-replication-and-cdc.html", "复制与 CDC", "Replication & CDC",
+     "第七部分 · 流式系统", "Part 7 · Streaming system"),
 ]
 
 
@@ -616,6 +618,8 @@ SUBTITLES = {
                                  "StreamingCoord scheduling; StreamingNode interceptor chain; WAL Backend; RecoveryStorage checkpoint-replay"),
     "32-ddl-dcl-via-log.html": ("DML=Append/单日志 · DDL/DCL=Broadcast/多日志 · Broadcaster 锁+ACK · 消息语义",
                                 "DML=Append/one log; DDL/DCL=Broadcast/many logs; Broadcaster lock+ACK; message semantics"),
+    "33-replication-and-cdc.html": ("复制日志而非状态 · 星型拓扑 · Primary→Replicator→Secondary · 容灾/跨域/迁移",
+                                    "replicate the log not state; star topology; Primary→Replicator→Secondary; DR/cross-region/migration"),
 }
 
 

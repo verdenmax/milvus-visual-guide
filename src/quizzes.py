@@ -2180,6 +2180,67 @@ QUIZZES = {
             },
         ],
     },
+    "33-replication-and-cdc.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "Milvus 跨集群同步数据，采用的核心思路是什么？",
+                    "en": "What is the core idea behind Milvus's cross-cluster data sync?",
+                },
+                "opts": [
+                    {"zh": "复制 WAL 并在对方重放(CDC：传“发生了什么”)，因 WAL 是单一事实来源、重放确定性，几乎不需特殊逻辑", "en": "Replicate the WAL and replay it on the other side (CDC: ship 'what happened'); since the WAL is the single source of truth and replay is deterministic, almost no special logic is needed"},
+                    {"zh": "定期把表/段/索引整份拷贝过去(复制最终状态)", "en": "Periodically copy tables/segments/indexes wholesale (replicate final state)"},
+                    {"zh": "让两个集群都能写并互相覆盖", "en": "Let both clusters write and overwrite each other"},
+                    {"zh": "靠各集群本地时钟对齐数据", "en": "Align data by each cluster's local clock"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "复制状态又重又难(数据在变、要处理增量/冲突/版本)；Milvus 复制的是“变更日志”这条有序流，对方按同序重放即得同状态。因为本就有一条记录全部变更、全局有序、可重放的 WAL，复制只是给它多一个异地消费者。",
+                    "en": "Replicating state is heavy and hard (data changes; handle increments/conflicts/versions); Milvus replicates the ordered stream of 'changes' and the other side replays in order to the same state. Because there's already a WAL recording all changes, globally ordered and replayable, replication is just one more remote consumer of it.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "在复制链路里，备集群 Proxy 上那个 Replicate 拦截器的关键职责是什么？",
+                    "en": "In the replication chain, what is the key duty of the Replicate interceptor on the secondary's Proxy?",
+                },
+                "opts": [
+                    {"zh": "识别“这是复制来的消息”，保留其原有 TimeTick、不重新盖戳，以保证主备两边重放顺序严格一致", "en": "Recognize 'this is a replicated message', keep its original TimeTick and not re-stamp it, so the replay order on primary and secondary stays strictly identical"},
+                    {"zh": "把消息压缩后再写入", "en": "Compress the message before writing"},
+                    {"zh": "给复制来的消息盖一个备集群的新时间戳", "en": "Stamp replicated messages with a fresh secondary timestamp"},
+                    {"zh": "丢弃所有重复消息", "en": "Discard all duplicate messages"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "普通写入进 WAL 时 TimeTick 拦截器会盖本地新戳；但复制来的消息已带主集群的 TimeTick，若再盖一个，两边顺序就错位、状态不一致。Replicate 拦截器恰恰反过来：保留原序、不乱盖戳。整套复制里“特殊”的部分，少到只剩这一个拦截器。",
+                    "en": "On a normal write the TimeTick interceptor stamps a fresh local ts; but a replicated message already carries the primary's TimeTick — stamping again would misalign order and break consistency. The Replicate interceptor does the opposite: keep the original order, don't re-stamp. The only 'special' part of replication is this one interceptor.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "为什么 Milvus 的跨集群复制用“星型(一主多备、单向)”而不是多主互相同步？",
+                    "en": "Why does Milvus use a 'star (one primary, many secondaries, one-way)' topology rather than multi-primary mutual sync?",
+                },
+                "opts": [
+                    {"zh": "保证“唯一真相源头”、避免多主冲突(同一数据被两边同时改成不同值)；复杂度收敛，切换由 controller 显式管理", "en": "To keep a single source of truth and avoid multi-primary conflicts (the same row changed to different values on both sides); complexity converges, and role switches are explicitly managed by the controller"},
+                    {"zh": "因为星型比网状传得更快", "en": "Because a star transmits faster than a mesh"},
+                    {"zh": "因为 Milvus 不支持多于两个集群", "en": "Because Milvus supports no more than two clusters"},
+                    {"zh": "因为单向复制不需要网络", "en": "Because one-way replication needs no network"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "多主互写会遇到经典冲突：同一条数据被两边几乎同时改成不同值，难以仲裁。星型让变更从唯一源头单向流出、备只读，根本不给冲突留余地；需要切换时由 CDC controller 显式变更角色。这与 TSO 单源发号、Broadcaster 单源广播是同一种“收敛到权威源头”的审美。",
+                    "en": "Multi-primary writes hit the classic conflict: the same row changed to different values on both sides, hard to arbitrate. A star makes change flow one-way from a single source with read-only secondaries, leaving no room for conflict; switches are made explicitly by the CDC controller. Same 'converge to one authority' aesthetic as the single-source TSO and Broadcaster.",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课说“状态 = 日志的重放结果”，于是崩溃恢复、边写边查、DDL 原子生效、跨集群复制都成了“对同一条日志的操作”。请挑其中两三个，分别说明它们各自是“谁在重放这条日志、为了得到什么状态”。再思考：复制延迟如何影响容灾的 RPO(能丢多少数据)？要把 RPO 压到极小、甚至不丢，需要付出什么代价(回忆第 30 课的一致性/新鲜度 vs 性能取舍)？",
+                "en": "This lesson says 'state = the result of replaying the log', so crash recovery, query-while-write, atomic DDL, and cross-cluster replication all become 'operations on the same log'. Pick two or three and explain, for each, 'who replays the log, to obtain what state'. Then consider: how does replication lag affect DR's RPO (how much data can be lost)? What is the cost of pushing RPO to near-zero or zero (recall Lesson 30's consistency/freshness vs performance trade-off)?",
+            },
+        ],
+    },
 }
 
 

@@ -47,4 +47,5 @@ CONTENT = {
     "30-consistency-and-timestamps.html": part6.LESSON_30,
     "31-wal-architecture.html": part7.LESSON_31,
     "32-ddl-dcl-via-log.html": part7.LESSON_32,
+    "33-replication-and-cdc.html": part7.LESSON_33,
 }

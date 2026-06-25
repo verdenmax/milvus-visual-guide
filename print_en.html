@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 32 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 33 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
@@ -360,6 +360,7 @@ details[open] > summary { list-style: none; }
   <li>Consistency & timestamps</li>
   <li>WAL architecture</li>
   <li>DDL/DCL through the log</li>
+  <li>Replication & CDC</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -7026,6 +7027,167 @@ cross-cluster <strong>replication and CDC</strong>.</p>
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
     <li>This lesson split 'atomicity' into two dimensions: cross-PChannel atomicity (Broadcaster: lock + all-acks) and within-PChannel multi-write atomicity (transactions: the Txn interceptor). Think of a concrete example needing each (e.g. create-collection must be acknowledged by all shards at once; a batch upsert must be all-or-nothing visible). Then consider: if one PChannel never ACKs during a broadcast (its node crashed), how — combined with Lesson 31's 'node lost → PChannel reassigned → replay from checkpoint' — does the system still converge to consistency?</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Replication & CDC</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+By now in this part, "log as data" has recurred again and again. This lesson is its <strong>ultimate payoff</strong>: to sync one cluster's data
+<strong>to another cluster</strong> (cross-region disaster recovery, read replicas, smooth migration…), the simplest and most powerful way is not to copy
+state table by table and segment by segment, but to — <strong>copy that WAL over and let the other side replay it</strong>. Because the WAL is the single
+source of truth and replay is deterministic, "copying data" elegantly reduces to "<strong>copy an ordered log + replay it</strong>". That is Milvus's
+<strong>replication and CDC (Change Data Capture)</strong>.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Like a head office and a remote branch <strong>sharing one ledger</strong>: every entry head office (primary) records, it <strong>copies verbatim</strong> to
+  the remote branch (secondary), which <strong>replays</strong> the copied entries — since both read the same ledger in the same order, the final balances match
+  to the cent. The branch needn't understand any business detail, it just <strong>faithfully replays each copied entry</strong>. Should head office's city lose
+  connectivity, the remote branch holds a complete copy of the ledger and <strong>can take over and keep operating</strong> — that is the basis of disaster recovery.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>Milvus does cross-cluster WAL replication via CDC (star topology). The primary's WAL → CDC ChannelReplicator → the secondary's Proxy →
+  the secondary's WAL (via a Replicate interceptor) → the secondary replays</strong>. Because what's replicated is <strong>the log itself</strong>, each entry
+  carrying a monotonic TimeTick, the secondary just <strong>consumes/replays its own WAL like any normal cluster</strong> and rebuilds data consistent with the
+  primary — replication needs almost no "special logic".
+</div>
+
+<h2>The essence: replicate the "log", not the "state"</h2>
+<p>Syncing two databases has two fundamentally different paths. One is <strong>replicating state</strong>: periodically copy the "final results" — tables, segments,
+indexes — wholesale. Intuitive, but heavy and hard: data keeps changing, so a half-done copy is inconsistent, and you must handle increments, conflicts, versions. The
+other is Milvus's path, <strong>replicating the log</strong>: copy only the ordered stream of "<strong>what changed</strong>", and let the other side <strong>replay in the
+same order</strong>, naturally arriving at the same state. This is the classic database idea of <strong>CDC (Change Data Capture)</strong> — ship not "what it is now" but
+"<strong>what happened</strong>". For Milvus this path is almost <strong>free</strong>: it already has a WAL recording all changes, globally ordered and replayable; replication
+is merely <strong>one more consumer (the remote cluster)</strong> of that existing log. "Turning sync into copying one ordered log" is another big engineering saving from "log
+as data".</p>
+
+<div class="cols">
+  <div class="col"><h4>⚠️ Replicate state (the clumsy way)</h4><p>copy tables/segments/indexes wholesale. With data changing, consistency is hard; you must handle increments, conflicts, versions — heavy and brittle.</p></div>
+  <div class="col"><h4>✅ Replicate the log (Milvus / CDC)</h4><p>copy only the ordered stream of "what changed"; the other side replays in order to the same state. Reuses the existing WAL, with almost no extra mechanism.</p></div>
+</div>
+
+<h2>Data flow: from primary to secondary</h2>
+<p>Unpack the replication chain. In the primary, <strong>CDC's ChannelReplicator</strong> (code in <span class="mono">internal/cdc/replication</span>) watches the
+primary's WAL and <strong>reads out and forwards</strong> each change message to the secondary; the secondary's <strong>Proxy</strong> receives them, but it does NOT
+treat them as "new writes" to re-stamp — instead, via a special <strong>Replicate interceptor</strong>, it <strong>preserves the messages' existing TimeTick and other
+metadata</strong> and writes them into the secondary's own WAL. After that, the secondary consumes that WAL <strong>exactly like a normal cluster</strong>: StreamingNode
+lands segments and flushes binlogs, QueryNode loads segments and builds indexes… business as usual. The whole chain is:</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">Primary WAL</div><div class="nd">primary's change log</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">ChannelReplicator</div><div class="nd">read &amp; forward (CDC)</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">Secondary Proxy</div><div class="nd">via Replicate interceptor</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">Secondary WAL</div><div class="nd">replay → rebuild data</div></div>
+</div>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/cdc/replication</span><span class="ln">cross-cluster WAL replication (illustrative)</span></div>
+  <pre><span class="cm">// ChannelReplicator: read the primary WAL -> forward to the secondary</span>
+<span class="cm">//   primary WAL --(read change messages)--&gt; Replicator</span>
+<span class="cm">//     --&gt; secondary Proxy (Replicate interceptor: keep original TimeTick)</span>
+<span class="cm">//       --&gt; secondary WAL --&gt; secondary consumes/replays as usual</span></pre>
+</div>
+
+<h2>Roles and topology: a star, one primary, many secondaries</h2>
+<p>Milvus's cross-cluster replication uses a <strong>star topology</strong>: one <strong>primary</strong> cluster at the center replicates one-way to several
+<strong>secondary</strong> clusters. Who is primary, who is secondary, and which channels replicate where, is <strong>coordinated and role-managed</strong> by the
+<strong>CDC controller</strong> (<span class="mono">internal/cdc/controller</span>). A star, not an arbitrary mesh, is a deliberate simplification: it keeps "<strong>change
+flows out from a single source</strong>" clear, avoiding the loops and conflicts of multi-primary mutual replication — once more the design bias of "converge complexity to
+one authoritative source" (recall the TSO does the same). When needed, primary/secondary roles can <strong>switch</strong> (e.g. the primary fails, promote a secondary to be
+the new primary), which is the basis of disaster failover.</p>
+
+<div class="layers">
+  <div class="layer l-core"><div class="lh"><span class="badge">primary</span><span class="name">primary cluster</span></div><div class="ld">the single source of change; its WAL is replicated out</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">controller</span><span class="name">CDC controller</span></div><div class="ld">coordinates roles and the replication relationships (who replicates to whom)</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">secondary</span><span class="name">secondary clusters (many)</span></div><div class="ld">one-way receive and replay the primary's WAL; can be promoted to primary</div></div>
+</div>
+
+<h2>Where it's used: DR, cross-region, migration</h2>
+<p>Put "copy one log to a remote site and replay" to work and it solves several very real needs. <strong>(1) Disaster recovery (DR)</strong>: keep a hot-standby cluster in
+another region tracking the primary; if the primary's data center fails entirely, <strong>promote the standby to primary</strong> and keep serving, with almost no data loss
+(depending on replication lag). <strong>(2) Cross-region read replicas</strong>: let a secondary closer to users serve local reads, cutting cross-region latency — writes still
+go to the primary, reads are offloaded nearby. <strong>(3) Smooth migration</strong>: to move data to a new cluster/version, first let the new cluster, as a secondary, catch up
+on the primary's full history and increments; after catching up, switch once, <strong>with almost no downtime</strong>. These three look different but are the same underneath:
+<strong>let another cluster have the same data by replaying the same log</strong>. That is the power of "log as data" at <strong>cross-cluster</strong> scale.</p>
+
+<h2>Why it's so clean</h2>
+<p>Step back: cross-cluster data sync is notoriously hard in many systems — change capture, ordering, conflicts, resumable transfer, consistency… Why does Milvus's look so
+"light"? The answer is again three letters: <strong>WAL</strong>. Because the WAL <strong>is the single source of truth</strong>, all changes <strong>already have a global order
+(TimeTick)</strong>, and replay <strong>is already deterministic</strong> — so "replication" degenerates into "ship one already-recorded, already-ordered, replayable log to a
+remote site too". The secondary needs no special "sync logic"; it is simply <strong>a normal cluster that took on one more upstream log</strong>; and all the Replicate interceptor
+does is "<strong>don't re-stamp replicated messages, keep their original TimeTick</strong>", so both sides' order stays strictly identical. <strong>A good foundational abstraction
+makes the hardest problems heal on their own</strong> — that is what this lesson, and all of Part 7, most wants to leave you with.</p>
+
+<p>With that, Part 7 (the streaming system) is complete: Lesson 31 saw how the WAL is managed, written and recovered, Lesson 32 saw how DDL/DCL enter the log atomically by
+broadcast, and this lesson saw how the log is replicated to another cluster. Together they answer one question — <strong>when you fully model "writing" as "append to one reliable,
+ordered, replayable log", how do reliability, consistency, recovery, and even cross-cluster replication all become "operations on that one log"</strong>. That is the design
+philosophy of Milvus's streaming system, and one of the roots of what sets it apart from many vector stores.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Replicate the log, not state</strong>: cross-cluster sync = replicate the WAL + replay; ship "what happened" (CDC), not "what it is", reusing the existing WAL with almost no extra mechanism.</li>
+    <li><strong>Data flow</strong>: primary WAL → CDC ChannelReplicator (<span class="mono">internal/cdc/replication</span>) → secondary Proxy (Replicate interceptor, keep original TimeTick) → secondary WAL → replay as usual.</li>
+    <li><strong>Star topology + roles</strong>: one primary, many secondaries, one-way; the CDC controller coordinates roles; primary/secondary can switch — the basis of DR failover.</li>
+    <li><strong>Uses</strong>: cross-region DR (promote standby), cross-region read replicas, smooth migration — all "let another cluster have the same data by replaying the same log".</li>
+    <li><strong>Why clean</strong>: the WAL is the single source of truth + globally ordered + deterministic replay, so "replication" degenerates to "ship one more copy of the log"; a good abstraction heals the hardest problems.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. What is the core idea behind Milvus's cross-cluster data sync?</div>
+  <ol class="opts">
+    <li>Let both clusters write and overwrite each other</li>
+    <li>Replicate the WAL and replay it on the other side (CDC: ship 'what happened'); since the WAL is the single source of truth and replay is deterministic, almost no special logic is needed</li>
+    <li>Align data by each cluster's local clock</li>
+    <li>Periodically copy tables/segments/indexes wholesale (replicate final state)</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. Replicating state is heavy and hard (data changes; handle increments/conflicts/versions); Milvus replicates the ordered stream of 'changes' and the other side replays in order to the same state. Because there's already a WAL recording all changes, globally ordered and replayable, replication is just one more remote consumer of it.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. In the replication chain, what is the key duty of the Replicate interceptor on the secondary's Proxy?</div>
+  <ol class="opts">
+    <li>Recognize 'this is a replicated message', keep its original TimeTick and not re-stamp it, so the replay order on primary and secondary stays strictly identical</li>
+    <li>Discard all duplicate messages</li>
+    <li>Stamp replicated messages with a fresh secondary timestamp</li>
+    <li>Compress the message before writing</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. On a normal write the TimeTick interceptor stamps a fresh local ts; but a replicated message already carries the primary's TimeTick — stamping again would misalign order and break consistency. The Replicate interceptor does the opposite: keep the original order, don't re-stamp. The only 'special' part of replication is this one interceptor.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Why does Milvus use a 'star (one primary, many secondaries, one-way)' topology rather than multi-primary mutual sync?</div>
+  <ol class="opts">
+    <li>To keep a single source of truth and avoid multi-primary conflicts (the same row changed to different values on both sides); complexity converges, and role switches are explicitly managed by the controller</li>
+    <li>Because Milvus supports no more than two clusters</li>
+    <li>Because one-way replication needs no network</li>
+    <li>Because a star transmits faster than a mesh</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. Multi-primary writes hit the classic conflict: the same row changed to different values on both sides, hard to arbitrate. A star makes change flow one-way from a single source with read-only secondaries, leaving no room for conflict; switches are made explicitly by the CDC controller. Same 'converge to one authority' aesthetic as the single-source TSO and Broadcaster.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson says 'state = the result of replaying the log', so crash recovery, query-while-write, atomic DDL, and cross-cluster replication all become 'operations on the same log'. Pick two or three and explain, for each, 'who replays the log, to obtain what state'. Then consider: how does replication lag affect DR's RPO (how much data can be lost)? What is the cost of pushing RPO to near-zero or zero (recall Lesson 30's consistency/freshness vs performance trade-off)?</li>
   </ul>
 </div>
 </div>
