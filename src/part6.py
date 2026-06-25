@@ -981,6 +981,11 @@ vectorization + a bitset, that step is very fast.</p>
   <div class="col"><h4>⚠️ Search-then-filter</h4><p>take topK then apply the condition — <strong>may fall short of K</strong>, forcing repeated retries with a larger topK; slow and unstable. Only occasionally worth it when the filter is very weak.</p></div>
 </div>
 
+<h2>Scalar index: making the "filter" step itself faster</h2>
+<p>Everything above describes the path <strong>without a scalar index</strong> — the exec engine <strong>scans the whole column</strong> chunk by chunk to compute the bitset. But remember the <strong>scalar indexes</strong> from Lesson 24? When the filtered field has an inverted / bitmap / sort index built on it, the engine needn't scan column by column at all: it can <strong>query the index directly</strong> to get "the set of row IDs satisfying the condition", then turn that into a bitset. So an equality filter like <span class="inline">category == "shoes"</span>, or a range filter like <span class="inline">price within [a, b]</span>, can be <strong>looked up</strong> rather than <strong>scanned</strong>. <strong>Use the index when there is one, fall back to a full exec scan when there isn't</strong> — this is exactly where expr/exec cooperates with scalar indexes: the expression layer decides "what condition to compute", the execution layer decides "look it up via an index or scan-and-compute", and both converge into the same bitset fed to the vector search.</p>
+
+<p>There is also a subtler regime worth naming. When the filter is <strong>very strong</strong> (few rows qualify) and you're searching a graph index like HNSW, "filter first" can make the graph <strong>too sparse to traverse</strong> — most neighbors are filtered out, so the walk can't hop to the next node. The engine then falls back to strategies (widen the search range, or brute-force a tiny candidate set) to protect recall. Either way the main line — <strong>the filter constrains the search</strong> — never changes: the bitset is always the "who may be returned" pass; only "<strong>how to find all the nearest neighbors under that constraint</strong>" differs. The practical takeaway: the strength of your filter genuinely affects search strategy and recall, so <strong>building the right scalar index and writing good filter conditions</strong> matters just as much as picking the right vector index.</p>
+
 <h2>Division of labor: expr / exec / bitset</h2>
 <table class="t">
   <tr><th>Role</th><th>What</th><th>Responsible for</th><th>Where</th></tr>
@@ -998,6 +1003,7 @@ vectorization + a bitset, that step is very fast.</p>
     <li><strong>Vectorized execution (exec)</strong>: <span class="mono">Task/Driver/QueryContext</span> turn the logical tree into physical operators, evaluated batched + SIMD-friendly over <strong>columnar chunks</strong>, producing a <strong>bitset</strong>.</li>
     <li><strong>Filter-then-search</strong>: the bitset prunes the search; filtering first <strong>guarantees a full topK</strong> and is faster/steadier than "search-then-filter".</li>
     <li><strong>Layering</strong>: expr says "what to compute", exec says "how to compute it fast" — the classic database execution-engine split.</li>
+    <li><strong>Bridging the steps</strong>: filtering (this lesson) shrinks the candidates, search (Lesson 27) finds nearest neighbors, reduce (Lesson 29) merges the result — the three together are one complete query; and with a scalar index, filtering can "<strong>look up</strong>" rather than "<strong>scan</strong>", faster still.</li>
   </ul>
 </div>
 """,
@@ -1253,6 +1259,7 @@ the next lesson (30) supplies the last piece — exactly <strong>which moment's<
     <li><strong>Divide-and-conquer</strong>: each level sends only a local topK; the union of local topKs contains the global topK; only K-scale data crosses the network, so it scales to billions.</li>
     <li><strong>A merge does three things</strong>: <strong>sort</strong> by distance (k-way), <strong>dedup</strong> by PK (an entity may appear across segments), <strong>paginate</strong> by offset/limit (deep paging is pricier).</li>
     <li><strong>Scatter-gather</strong>: fan out to shards/segments, search local topKs, gather and merge upward — the universal skeleton of distributed retrieval/query engines.</li>
+    <li><strong>Approximate in the segment, exact in the merge</strong>: recall is set by the in-segment ANN precision (nprobe/ef); the merge only faithfully combines what it is given. To get more accurate results, tune the in-segment search, not the merge. Deep paging and an oversized K are the real reasons merging gets expensive.</li>
   </ul>
 </div>
 """,
@@ -1494,6 +1501,10 @@ it <strong>suspends and waits</strong> until tsafe catches up to Tg (or times ou
 mechanism is the heart of <span class="mono">docs/developer_guides/how-guarantee-ts-works.md</span> — and the very reason the word "<strong>guarantee</strong>" is in
 "guarantee timestamp".</p>
 
+<p>Waiting can't be infinite, of course. If a node falls too far behind (it lagged badly, or an upstream write surge hit), the read <strong>returns an error or degrades</strong> after a timeout rather than hanging forever — handing the correctness-vs-availability boundary back to the caller. This also explains why <strong>Strong's latency rises under heavy write pressure</strong>: Tg is pinned to the latest tMax, and the node must drain its backlog of WAL before tsafe can catch up. Conversely, <strong>Bounded nudges Tg back a little, so a read very often satisfies tsafe ≥ Tg on arrival and barely waits</strong> — which is why it is the default. Note too that tsafe advances <strong>per vchannel (shard)</strong>: a query waits for <strong>every</strong> shard it touches to reach tsafe ≥ Tg, so one stuck shard's consumption slows the whole strong-consistency read. Internalize this and you can map a production "occasional slow query" directly onto "write backlog / a node lagging in consumption" — they're usually two sides of the same coin.</p>
+
+<p>So how do you pick a level in practice? A simple decision guide: need to <strong>read your own write immediately</strong> (you just uploaded an image and want to search it)? Use <strong>Session</strong> or Strong. <strong>Extremely consistency-sensitive, willing to be slower for the very latest</strong> (some finance/audit cases)? Use <strong>Strong</strong>. <strong>The vast majority of high-concurrency search / recommendation / RAG</strong>, where missing a few latest rows is harmless but low latency and high throughput matter? Use <strong>Bounded</strong> (the default). <strong>Only need "roughly fresh" and chase raw speed</strong> (offline analytics, massive recall)? Use <strong>Eventually</strong>. Doing a <strong>time-travel query against a historical snapshot</strong>? Use <strong>Customized</strong> with an explicit ts. In one line: <strong>first decide how stale this query can tolerate, then work backward to the level</strong> — far wiser than reflexively reaching for Strong "to be safe", because unnecessary strong consistency usually buys you unnecessary latency.</p>
+
 <div class="timeline">
   <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t1</span><span class="tl-c">writes keep entering the WAL, TimeTick advances; the QueryNode consumes and applies, tsafe rises</span></div>
   <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t2</span><span class="tl-c">a read arrives with Tg=100; right now the node's tsafe=98 &lt; 100</span></div>
@@ -1523,6 +1534,8 @@ is <strong>written along the log</strong> via the Proxy into segments and binlog
 finally tsafe + MVCC guarantee you see <strong>a self-consistent snapshot with a freshness you can choose</strong>. With that, the main thread — "how one similarity
 search is completed correctly, efficiently and controllably in a distributed system" — closes the loop. The remaining parts (the C++ core, the streaming system,
 operations and contributing) drill further down and reach further out, but they all hang on this thread.</p>
+
+<p>Looking back, why is this the finale lesson? <strong>The timestamp is the thread that stitches every earlier mechanism together.</strong> Write ordering depends on it (Lesson 16's TimeTick), delete/upsert versioning is told apart by it (Lesson 20's tombstones), segment visibility is judged by it (Lesson 7's growing/sealed), and the merge picks the right version with it (Lesson 29). This lesson unifies them into one sentence: <strong>a read is "take a Tg, wait for the data to catch up, then view the snapshot as of Tg".</strong> Next time you write <span class="inline">consistency_level="Bounded"</span> in the SDK, may you picture this whole chain — TSO stamping, the Proxy fixing Tg, the QueryNode waiting on tsafe, segcore filtering by MVCC — a whole apparatus that makes "distributed, query-while-you-write, and still correct" hold at once. If the previous five lessons were about <strong>how results are searched out and merged</strong>, this one is about <strong>why those results are correct and as of which instant</strong> — the former is performance, the latter correctness; together they truly finish the story of "one query".</p>
 
 <div class="card key">
   <div class="tag">📌 Key points</div>

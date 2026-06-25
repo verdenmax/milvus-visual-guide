@@ -629,6 +629,7 @@ the next lesson (30) supplies the last piece — exactly <strong>which moment's<
     <li><strong>Divide-and-conquer</strong>: each level sends only a local topK; the union of local topKs contains the global topK; only K-scale data crosses the network, so it scales to billions.</li>
     <li><strong>A merge does three things</strong>: <strong>sort</strong> by distance (k-way), <strong>dedup</strong> by PK (an entity may appear across segments), <strong>paginate</strong> by offset/limit (deep paging is pricier).</li>
     <li><strong>Scatter-gather</strong>: fan out to shards/segments, search local topKs, gather and merge upward — the universal skeleton of distributed retrieval/query engines.</li>
+    <li><strong>Approximate in the segment, exact in the merge</strong>: recall is set by the in-segment ANN precision (nprobe/ef); the merge only faithfully combines what it is given. To get more accurate results, tune the in-segment search, not the merge. Deep paging and an oversized K are the real reasons merging gets expensive.</li>
   </ul>
 </div>
 <div class="selftest">

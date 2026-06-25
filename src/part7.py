@@ -228,6 +228,8 @@ underneath" into a pluggable interface (<span class="mono">walimpls</span>), so 
 upper write logic <strong>doesn't change a line</strong>. The contract is simple: <strong>one PChannel maps to one topic in the backend</strong>; the log is
 appended in order within a topic and can be replayed by multiple consumers. The common backends each have trade-offs:</p>
 
+<p>Why insist on <strong>one topic per PChannel</strong>? Because a PChannel is Milvus's smallest unit of <strong>ordering</strong>: within a single PChannel every write carries a strictly increasing TimeTick and is consumed in exactly that order, so "written first, seen first" always holds inside a shard. Across PChannels there is no global-ordering requirement (that would sacrifice parallelism); cross-shard global coordination is handled separately by the <strong>CChannel</strong> (the control channel). Getting both seemingly contradictory properties at once — <strong>strong ordering within a shard, high parallelism across shards</strong> — comes precisely from the clean "one shard, one log, one topic" correspondence. Grasp this and you see why scaling out means "add shards / add PChannels": each extra independent log adds another stream of parallel throughput, while the ordering inside each log is untouched.</p>
+
 <table class="t">
   <tr><th>Backend</th><th>Form</th><th>Good for</th></tr>
   <tr><td><strong>Woodpecker</strong></td><td class="mono">Milvus's built-in WAL</td><td>recommended for new instances: good perf, simple ops, low cost</td></tr>
@@ -249,6 +251,10 @@ I've safely processed the log and the corresponding metadata"; after a restart i
 it</strong>, rebuilding segments, progress and other state <strong>exactly</strong>. Because the WAL is the single source of truth and every entry carries a
 monotonic TimeTick, "replay" is deterministic — replaying the same log necessarily yields the same state. <strong>Checkpoint + replay</strong> is another
 landing of the distributed-systems philosophy "<strong>failure is the default, backed by the log</strong>" (recall Lesson 14's "failure as default").</p>
+
+<p>If you've used a traditional database, "WAL + checkpoint + crash replay" will feel familiar — single-node databases (MySQL's redo log, PostgreSQL's WAL) rely on exactly this to not lose committed transactions after a crash. Milvus borrows the same plain-but-powerful idea, but <strong>scales it out to a distributed system and makes it the trunk rather than a side-record</strong>: in a single-node database the WAL is "a by-product that exists for crash recovery", with tables and indexes as the stars; in Milvus, <strong>the WAL itself is the star and the only source of truth</strong>, while tables (segments) and indexes become derived data — "born from the log, rebuildable from the log at any time". This <strong>inversion of primary and secondary</strong> is the essence of "log as data", and it's why Milvus dares to keep segments in memory and let multiple data forms trail the log asynchronously: as long as the WAL survives, anything lost can be replayed from scratch.</p>
+
+<p>One side we've left unspoken: the <strong>consume side</strong>. A log gets written, but someone has to read it back and use it. A StreamingNode provides a <strong>scanner</strong> so consumers can <strong>read a PChannel's log in order</strong> — recall Lesson 17, where the StreamingNode's flusher follows the WAL to turn messages into growing segments and then flush them into binlogs, and Lesson 26, where the QueryNode's delegator keeps growing data fresh by consuming the tail of the WAL. In other words, <strong>the same WAL is replayed by many consumers, each at its own pace</strong>, each tracking its own "how far I've read" (its checkpoint/seek position). This "<strong>one log, many parties replaying it on demand</strong>" pattern decouples writing, flushing, querying and replication: nobody calls anybody directly — each just watches the same append-only log and advances at its own rhythm. Reducing "collaboration" to "sharing one ever-growing log" is the root reason this architecture can be both complex and orderly.</p>
 
 <div class="flow">
   <div class="node hl"><div class="nt">Checkpoint</div><div class="nd">record processed log position + metadata</div></div>
@@ -276,6 +282,7 @@ into one log like an ordinary write, but needs a mechanism called the <strong>Br
     <li><strong>Pluggable WAL Backend</strong>: Kafka / Pulsar / Woodpecker / RocksMQ, <strong>one topic per PChannel</strong>; the semantics (append/ordered/replayable) are fixed, the implementation swappable.</li>
     <li><strong>RecoveryStorage</strong>: periodic checkpoints + replay the WAL from a checkpoint after a crash, deterministically rebuilding state — "failure is the default, backed by the log".</li>
     <li><strong>The destination</strong>: all the complexity serves "make the WAL the single source of truth"; recovery/sync/consistency all reduce to "replay the log".</li>
+    <li><strong>Primary/secondary inversion</strong>: in a traditional database the WAL is a by-product for crash recovery and the tables are the star; in Milvus the WAL is the star and single source of truth, while segments/indexes are derived data rebuildable from the log.</li>
   </ul>
 </div>
 """,
@@ -445,12 +452,15 @@ reaching only half the PChannels: half the shards think C exists and accept writ
 hard requirements: <strong>(1) atomicity</strong> (all relevant PChannels take effect, or none) and <strong>(2) a clear order relative to DML</strong>
 ("create the collection, then write into it" causality must not scramble). An ordinary Append can't give these two, hence the Broadcaster.</p>
 
+<p>Why is "half applied" so deadly? Because many Milvus components <strong>independently consume their own PChannels</strong> to perceive the world (Lesson 31's "one log, many parties replaying it"). If a create-collection message reaches only half the PChannels, the StreamingNodes, DataNodes and QueryNodes owning the other half land in a split state — <strong>holding different beliefs about whether the same collection even exists</strong>: some start allocating segments, building indexes and accepting queries for it, while others reject incoming writes as an "unknown collection". This <strong>metadata-level inconsistency is far scarier than losing a few rows</strong> — it robs the system of a single answer to "which collections exist right now, with what schema, and who has permission", triggering cascading errors. So DDL/DCL atomicity isn't a nice-to-have, it is the <strong>floor of correctness</strong>: either everyone enters the new belief at once, or everyone stays on the old — never an in-between. Once you see this floor, you understand why the Broadcaster's seemingly fussy "lock + all-acks" is indispensable: it exists to abolish the in-between state entirely.</p>
+
 <div class="cols">
   <div class="col"><h4>DML: single-PChannel Append</h4><p>insert/delete land in one PChannel by primary key, <strong>into one log</strong>. Small scope, high parallelism.</p></div>
   <div class="col"><h4>DDL/DCL: multi-PChannel Broadcast</h4><p>create/drop collection, RBAC, etc. change metadata and must <strong>atomically broadcast to all relevant PChannels</strong> — all or nothing.</p></div>
 </div>
 
 <h2>The Broadcaster: lock, broadcast, collect acks</h2>
+<p>Take the most intuitive causal example: you first <span class="inline">create_collection("docs")</span> and immediately <span class="inline">insert</span> a batch into docs. If "create collection" and "insert data" travel two unrelated paths, the insert message could well <strong>arrive before</strong> the create-collection at some shard — and that shard is baffled: "docs? I don't know it." So the write fails or is undefined. The only reliable way to rule this out is to line "create collection" and "insert" up on <strong>the same ordered timeline</strong>, with "create collection" taking effect <strong>atomically and first</strong> across all relevant shards. The Broadcaster serves the first half (atomic broadcast), while the "same timeline" comes from encoding DDL into the WAL too, sharing the TimeTick. Now let's see how the Broadcaster actually achieves "atomic".</p>
 <p>The <strong>Broadcaster</strong> (code in <span class="mono">internal/streamingcoord/server/broadcaster</span>) is the part of StreamingCoord dedicated to
 "atomic cross-PChannel broadcast". A DDL/DCL's journey: the client's request goes through the Proxy and calls <span class="mono">StreamingClient.Broadcast</span>
 (not the ordinary Append); the message is handed to StreamingCoord's Broadcaster; the Broadcaster first does <strong>resource locking</strong> — locking the
@@ -458,6 +468,8 @@ resource this change touches (say a collection) so two concurrent DDLs can't con
 relevant PChannels</strong> (each writes it as a log entry); finally it <strong>tracks the ACK from each PChannel</strong> — only when all relevant PChannels
 confirm "I've written this DDL into my log" does the broadcast succeed and the lock release. <strong>Lock + all-acks</strong> together guarantee "atomic,
 consistent" effect.</p>
+
+<p>A few details here are worth savoring. First, the <strong>granularity of the resource lock</strong>: the Broadcaster locks "<strong>the resource this change touches</strong>" (say one specific collection), not the whole cluster — so unrelated DDLs (altering collection A vs B) can run in parallel and only truly conflicting ones are mutually exclusive, keeping correctness without sacrificing concurrency. Second, <strong>what if it fails</strong>: if some PChannel is slow to ACK during the broadcast (e.g. its owning node died), the broadcast isn't counted as successful; combined with the last lesson's "node lost → PChannel reassigned → replay from checkpoint", the node that takes over recovers this DDL along with everything else, still converging to consistency. Third, <strong>the meaning of the ACK</strong>: it confirms not "the message reached the network" but "<strong>this DDL has been written into that PChannel's WAL</strong>" — so once the broadcast succeeds, the change is recorded <strong>durably and replayably</strong> in every relevant log and survives any crash. Stringing these together, the Broadcaster essentially <strong>builds an "all-or-nothing" atomic-commit protocol on top of many independent logs</strong> — the classic distributed-systems hard problem, which Milvus solves quite cleanly with "log + lock + ACK".</p>
 
 <div class="flow">
   <div class="node"><div class="nt">DDL request</div><div class="nd">StreamingClient.Broadcast</div></div>
@@ -533,6 +545,7 @@ cross-cluster <strong>replication and CDC</strong>.</p>
     <li><strong>Broadcaster</strong> (<span class="mono">streamingcoord/server/broadcaster</span>): <span class="mono">StreamingClient.Broadcast</span> → <strong>lock resource → broadcast to PChannels → collect ACKs → release lock</strong>, ensuring atomic consistency.</li>
     <li><strong>Message semantics</strong>: every event is a <strong>typed Message</strong> (create-collection/partition/database/alias/RBAC/txn each a type), so consumers know precisely "what to do".</li>
     <li><strong>DDL also in the log</strong>: sharing one WAL and one TimeTick with DML, "changing structure" and "changing data" land on one timeline — naturally ordered, replayable, consistent for all.</li>
+    <li><strong>Two kinds of atomicity</strong>: cross-PChannel atomicity via the Broadcaster (lock + all-acks), within-one-PChannel multi-write atomicity via transactions (the Txn interceptor); an ACK confirms "written into the peer's WAL", so the change is durable and never lost.</li>
   </ul>
 </div>
 """,
@@ -711,6 +724,8 @@ treat them as "new writes" to re-stamp — instead, via a special <strong>Replic
 metadata</strong> and writes them into the secondary's own WAL. After that, the secondary consumes that WAL <strong>exactly like a normal cluster</strong>: StreamingNode
 lands segments and flushes binlogs, QueryNode loads segments and builds indexes… business as usual. The whole chain is:</p>
 
+<p>The cleverest stroke here is the <strong>Replicate interceptor</strong>'s "<strong>don't re-stamp</strong>" design. Recall Lesson 31: when an ordinary write enters the WAL, the TimeTick interceptor stamps it with a fresh local timestamp. But a replicated message <strong>already carries the TimeTick the primary stamped</strong> — if the secondary stamped its own on top, the two sides' ordering would diverge and their data would no longer agree. So the Replicate interceptor's job is exactly the opposite: <strong>recognize "this is a replicated message", keep its TimeTick verbatim, and leave it alone</strong>. That one small step of <strong>preserving the original order</strong> is what keeps the replay order on both sides strictly identical, and hence the state strictly identical. Notice how the only "special" part of the whole replication mechanism shrinks to this single interceptor doing one thing — "don't mis-stamp" — while everything else reuses the existing WAL write/consume/land-segment/build-index flow. <strong>The more you reuse and the fewer special cases you add, the simpler and less error-prone the system</strong> — the mark of good architecture.</p>
+
 <div class="flow">
   <div class="node hl"><div class="nt">Primary WAL</div><div class="nd">primary's change log</div></div>
   <div class="arrow">→</div>
@@ -737,6 +752,8 @@ flows out from a single source</strong>" clear, avoiding the loops and conflicts
 one authoritative source" (recall the TSO does the same). When needed, primary/secondary roles can <strong>switch</strong> (e.g. the primary fails, promote a secondary to be
 the new primary), which is the basis of disaster failover.</p>
 
+<p>Why <strong>one-directional</strong> rather than two sides syncing each other? Because "<strong>who is the single truth</strong>" must be unambiguous. If both clusters could write and replicate to each other, you'd hit the classic <strong>multi-primary conflict</strong>: the same row changed to different values on both sides at nearly the same instant — whose wins? Resolving multi-primary conflicts requires complex merge/arbitration logic, both hard and error-prone. Milvus's choice is clean: <strong>only one primary writes at a time, and changes flow one-way to the secondaries</strong>, which are read-only (serving reads only). With "truth from a single source", there's simply no room for conflict. When you need "active-active" or a switchover, the controller <strong>explicitly changes roles</strong> rather than letting both sides write freely. This "<strong>prefer simple over ambiguous</strong>" trade-off is the <strong>same engineering aesthetic</strong> as the TSO handing out numbers from one source and the Broadcaster broadcasting from one source: converge "who decides" onto one clear authority and most of the complexity collapses.</p>
+
 <div class="layers">
   <div class="layer l-core"><div class="lh"><span class="badge">primary</span><span class="name">primary cluster</span></div><div class="ld">the single source of change; its WAL is replicated out</div></div>
   <div class="layer l-main"><div class="lh"><span class="badge">controller</span><span class="name">CDC controller</span></div><div class="ld">coordinates roles and the replication relationships (who replicates to whom)</div></div>
@@ -750,6 +767,8 @@ another region tracking the primary; if the primary's data center fails entirely
 go to the primary, reads are offloaded nearby. <strong>(3) Smooth migration</strong>: to move data to a new cluster/version, first let the new cluster, as a secondary, catch up
 on the primary's full history and increments; after catching up, switch once, <strong>with almost no downtime</strong>. These three look different but are the same underneath:
 <strong>let another cluster have the same data by replaying the same log</strong>. That is the power of "log as data" at <strong>cross-cluster</strong> scale.</p>
+
+<p>There's an unavoidable real-world factor here: <strong>replication lag</strong>. Stamping on the primary, forwarding, then replaying on the secondary all takes time, so the secondary's data is always <strong>slightly behind</strong> the primary (by an amount that depends on network and load). This lag determines "<strong>how much data you can lose</strong>" on failover: if the primary collapses entirely at some instant, the latest changes "already written on the primary but not yet replicated to the secondary" are at risk of loss — this is exactly <strong>RPO (Recovery Point Objective)</strong>, the measure of DR capability. Happily, because what's replicated is an <strong>ordered log</strong>, the secondary knows exactly "which TimeTick it has replayed to", so it can <strong>resume from where it left off and catch up</strong> with confidence — never a "half-replicated, state scrambled" situation. To push RPO very small, minimize replication lag; to lose absolutely nothing, you need stronger synchronous-replication semantics — which returns to Lesson 30's eternal theme: <strong>consistency/freshness always trades off against performance/cost</strong>, and cross-cluster replication is no exception. Understand this trade-off and you'll know what each knob does when designing a DR plan.</p>
 
 <div class="cols">
   <div class="col"><h4>① Disaster recovery (DR)</h4><p>keep a hot standby in another region tracking the primary; on a full primary-DC failure, <strong>promote the standby</strong> to keep serving, with near-zero data loss.</p></div>
@@ -777,6 +796,7 @@ philosophy of Milvus's streaming system, and one of the roots of what sets it ap
     <li><strong>Data flow</strong>: primary WAL → CDC ChannelReplicator (<span class="mono">internal/cdc/replication</span>) → secondary Proxy (Replicate interceptor, keep original TimeTick) → secondary WAL → replay as usual.</li>
     <li><strong>Star topology + roles</strong>: one primary, many secondaries, one-way; the CDC controller coordinates roles; primary/secondary can switch — the basis of DR failover.</li>
     <li><strong>Uses</strong>: cross-region DR (promote standby), cross-region read replicas, smooth migration — all "let another cluster have the same data by replaying the same log".</li>
+    <li><strong>Replication lag &amp; RPO</strong>: the secondary always trails the primary slightly, which sets "how much can be lost" on failover; because what's replicated is an ordered log, the secondary knows exactly which TimeTick it has replayed to, so it can resume from where it left off and catch up.</li>
     <li><strong>Why clean</strong>: the WAL is the single source of truth + globally ordered + deterministic replay, so "replication" degenerates to "ship one more copy of the log"; a good abstraction heals the hardest problems.</li>
   </ul>
 </div>

@@ -543,12 +543,15 @@ reaching only half the PChannels: half the shards think C exists and accept writ
 hard requirements: <strong>(1) atomicity</strong> (all relevant PChannels take effect, or none) and <strong>(2) a clear order relative to DML</strong>
 ("create the collection, then write into it" causality must not scramble). An ordinary Append can't give these two, hence the Broadcaster.</p>
 
+<p>Why is "half applied" so deadly? Because many Milvus components <strong>independently consume their own PChannels</strong> to perceive the world (Lesson 31's "one log, many parties replaying it"). If a create-collection message reaches only half the PChannels, the StreamingNodes, DataNodes and QueryNodes owning the other half land in a split state — <strong>holding different beliefs about whether the same collection even exists</strong>: some start allocating segments, building indexes and accepting queries for it, while others reject incoming writes as an "unknown collection". This <strong>metadata-level inconsistency is far scarier than losing a few rows</strong> — it robs the system of a single answer to "which collections exist right now, with what schema, and who has permission", triggering cascading errors. So DDL/DCL atomicity isn't a nice-to-have, it is the <strong>floor of correctness</strong>: either everyone enters the new belief at once, or everyone stays on the old — never an in-between. Once you see this floor, you understand why the Broadcaster's seemingly fussy "lock + all-acks" is indispensable: it exists to abolish the in-between state entirely.</p>
+
 <div class="cols">
   <div class="col"><h4>DML: single-PChannel Append</h4><p>insert/delete land in one PChannel by primary key, <strong>into one log</strong>. Small scope, high parallelism.</p></div>
   <div class="col"><h4>DDL/DCL: multi-PChannel Broadcast</h4><p>create/drop collection, RBAC, etc. change metadata and must <strong>atomically broadcast to all relevant PChannels</strong> — all or nothing.</p></div>
 </div>
 
 <h2>The Broadcaster: lock, broadcast, collect acks</h2>
+<p>Take the most intuitive causal example: you first <span class="inline">create_collection("docs")</span> and immediately <span class="inline">insert</span> a batch into docs. If "create collection" and "insert data" travel two unrelated paths, the insert message could well <strong>arrive before</strong> the create-collection at some shard — and that shard is baffled: "docs? I don't know it." So the write fails or is undefined. The only reliable way to rule this out is to line "create collection" and "insert" up on <strong>the same ordered timeline</strong>, with "create collection" taking effect <strong>atomically and first</strong> across all relevant shards. The Broadcaster serves the first half (atomic broadcast), while the "same timeline" comes from encoding DDL into the WAL too, sharing the TimeTick. Now let's see how the Broadcaster actually achieves "atomic".</p>
 <p>The <strong>Broadcaster</strong> (code in <span class="mono">internal/streamingcoord/server/broadcaster</span>) is the part of StreamingCoord dedicated to
 "atomic cross-PChannel broadcast". A DDL/DCL's journey: the client's request goes through the Proxy and calls <span class="mono">StreamingClient.Broadcast</span>
 (not the ordinary Append); the message is handed to StreamingCoord's Broadcaster; the Broadcaster first does <strong>resource locking</strong> — locking the
@@ -556,6 +559,8 @@ resource this change touches (say a collection) so two concurrent DDLs can't con
 relevant PChannels</strong> (each writes it as a log entry); finally it <strong>tracks the ACK from each PChannel</strong> — only when all relevant PChannels
 confirm "I've written this DDL into my log" does the broadcast succeed and the lock release. <strong>Lock + all-acks</strong> together guarantee "atomic,
 consistent" effect.</p>
+
+<p>A few details here are worth savoring. First, the <strong>granularity of the resource lock</strong>: the Broadcaster locks "<strong>the resource this change touches</strong>" (say one specific collection), not the whole cluster — so unrelated DDLs (altering collection A vs B) can run in parallel and only truly conflicting ones are mutually exclusive, keeping correctness without sacrificing concurrency. Second, <strong>what if it fails</strong>: if some PChannel is slow to ACK during the broadcast (e.g. its owning node died), the broadcast isn't counted as successful; combined with the last lesson's "node lost → PChannel reassigned → replay from checkpoint", the node that takes over recovers this DDL along with everything else, still converging to consistency. Third, <strong>the meaning of the ACK</strong>: it confirms not "the message reached the network" but "<strong>this DDL has been written into that PChannel's WAL</strong>" — so once the broadcast succeeds, the change is recorded <strong>durably and replayably</strong> in every relevant log and survives any crash. Stringing these together, the Broadcaster essentially <strong>builds an "all-or-nothing" atomic-commit protocol on top of many independent logs</strong> — the classic distributed-systems hard problem, which Milvus solves quite cleanly with "log + lock + ACK".</p>
 
 <div class="flow">
   <div class="node"><div class="nt">DDL request</div><div class="nd">StreamingClient.Broadcast</div></div>
@@ -631,6 +636,7 @@ cross-cluster <strong>replication and CDC</strong>.</p>
     <li><strong>Broadcaster</strong> (<span class="mono">streamingcoord/server/broadcaster</span>): <span class="mono">StreamingClient.Broadcast</span> → <strong>lock resource → broadcast to PChannels → collect ACKs → release lock</strong>, ensuring atomic consistency.</li>
     <li><strong>Message semantics</strong>: every event is a <strong>typed Message</strong> (create-collection/partition/database/alias/RBAC/txn each a type), so consumers know precisely "what to do".</li>
     <li><strong>DDL also in the log</strong>: sharing one WAL and one TimeTick with DML, "changing structure" and "changing data" land on one timeline — naturally ordered, replayable, consistent for all.</li>
+    <li><strong>Two kinds of atomicity</strong>: cross-PChannel atomicity via the Broadcaster (lock + all-acks), within-one-PChannel multi-write atomicity via transactions (the Txn interceptor); an ACK confirms "written into the peer's WAL", so the change is durable and never lost.</li>
   </ul>
 </div>
 <div class="selftest">
