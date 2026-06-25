@@ -2851,6 +2851,67 @@ QUIZZES = {
             },
         ],
     },
+    "44-code-conventions.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "Milvus 的 merr 把错误分成 Input 与 System 两类，核心判据和后果是什么？",
+                    "en": "Milvus's merr splits errors into Input and System. What's the core criterion and consequence?",
+                },
+                "opts": [
+                    {"zh": "判据是“归因测试”：请求内容本身逼出的=Input(不可重试、如实返回用户)；Milvus 自身/暂时性故障=System(保持可重试、该报警)。归类直接决定系统要不要重试", "en": "The criterion is the 'blame test': forced by the request content itself = Input (not retriable, return to user); Milvus's own/transient failure = System (stays retriable, should alarm). Classification directly decides whether the system retries"},
+                    {"zh": "Input 是小错、System 是大错，按严重程度分", "en": "Input is minor, System is major — split by severity"},
+                    {"zh": "两类完全等价，随便归哪类都行", "en": "The two are equivalent; classify either way"},
+                    {"zh": "Input 用于 C++、System 用于 Go", "en": "Input is for C++, System for Go"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "判据不是“看起来像不像参数校验”，而是归因测试：是请求内容本身逼出这个分支(Input，怪用户、重试也没用)，还是内部/暂时性失败(System，不怪用户、过会儿可能就好)。后果很实际：Milvus 很多地方用 retry.Do 自动重试，把本可重试的 System 误标 Input 会让“等一下就成”的操作枉死；把注定失败的 Input 误标 System 会让系统空转重试。所以归类直接决定重试行为。",
+                    "en": "The criterion isn't 'does it look like validation' but the blame test: did the request content force this branch (Input — user's fault, retry won't help) or an internal/transient failure (System — not the user's fault, may clear up). The consequence is concrete: many places use retry.Do; mislabeling a retriable System as Input kills an op that would've succeeded after a wait; mislabeling a doomed Input as System spins endless retries. So classification directly decides retry behavior.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "关于给错误加上下文与新增错误码，下面哪条做法符合 merr 约定？",
+                    "en": "About adding context to errors and adding new error codes, which follows merr conventions?",
+                },
+                "opts": [
+                    {"zh": "加上下文只用 merr.Wrap/Wrapf(不用 WrapErrXxxErr(err,…) 以免盖掉内层码)；新增错误要从 errors.go 现有家族区间里取码、按 Input/System 设可重试标志", "en": "Add context only via merr.Wrap/Wrapf (not WrapErrXxxErr(err,…) which masks the inner code); new errors pick a code from the existing family range in errors.go and set the retriable flag per Input/System"},
+                    {"zh": "随手用 fmt.Errorf 包一下最省事", "en": "Just wrap with fmt.Errorf, simplest"},
+                    {"zh": "新增错误码随便挑个没用过的数字即可，无所谓区间", "en": "Pick any unused number for a new code, ranges don't matter"},
+                    {"zh": "把错误改成 Input 不用管别处有没有 retry.Do", "en": "Turning an error Input needn't consider any retry.Do elsewhere"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "加上下文用 merr.Wrap/Wrapf——它保留内层错误码；而 WrapErrXxxErr(err,…) 会用新错误盖掉内层码、丢失原始分类。错误码在 errors.go 里是分段的：相近职责的错码在相近区间，新增时必须从对应家族区间挑码、别和 C++ segcore 码撞车，并按 Input/System 设好可重试布尔。此外把某错改成 Input 前要先 grep retry.Do，确认没有重试链依赖它的可重试性——改错归类会悄悄破坏重试。",
+                    "en": "Add context with merr.Wrap/Wrapf — it preserves the inner code; WrapErrXxxErr(err,…) masks it with a new error, losing the original classification. Codes in errors.go are partitioned: similar-duty errors sit in adjacent ranges, so a new error must pick from its family range (not collide with C++ segcore codes) and set the retriable bool per Input/System. Also, before turning an error Input, grep retry.Do to ensure no retry chain depends on its retriability — mislabeling silently breaks retries.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "下面关于 Milvus 其余硬约定(日志/import/生成文件)的说法，哪个正确？",
+                    "en": "Which statement about Milvus's other hard conventions (logging/imports/generated files) is correct?",
+                },
+                "opts": [
+                    {"zh": "日志只用 mlog(带 ctx；log/zap/fmt.Println 被 depguard 禁)；import 按 标准库→第三方→github.com/milvus-io(gci 强制)；mocks/.pb.go 改源头重生成、勿手改——多由 golangci-lint/gci 自动把关", "en": "Log only via mlog (with ctx; log/zap/fmt.Println forbidden by depguard); imports stdlib→third-party→github.com/milvus-io (gci-enforced); mocks/.pb.go regenerate from source, don't hand-edit — mostly auto-enforced by golangci-lint/gci"},
+                    {"zh": "想用哪个日志库都行，linter 不管", "en": "Use any logging library; the linter doesn't care"},
+                    {"zh": "import 顺序随意，gci 只是建议", "en": "Import order is free; gci is only a suggestion"},
+                    {"zh": "生成的 mock 文件应该直接手改来通过测试", "en": "Generated mock files should be hand-edited to pass tests"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": ".golangci.yml 用 depguard 明令禁止 pkg/v3/log、标准 log、裸 zap，强制只用 pkg/v3/mlog 且每条带 ctx(第 39 课)。gci 把 import 强制成 标准库→第三方→github.com/milvus-io 三段、本项目包排最后。mockery 生成的 mock 与 proto 的 .pb.go 是生成物，要改接口/proto 再 make 重生成、别手改(同第 43 课纪律)。这些约定大多由 golangci-lint/gci 与守护测试自动执行——提 PR 前本地先 lint+测试自查最省事。",
+                    "en": ".golangci.yml uses depguard to forbid pkg/v3/log, standard log, raw zap, forcing pkg/v3/mlog with ctx on every call (Lesson 39). gci enforces imports into stdlib→third-party→github.com/milvus-io, this project's packages last. mockery-generated mocks and proto .pb.go are artifacts — change the interface/proto then regenerate via make, don't hand-edit (Lesson 43's discipline). These are mostly auto-enforced by golangci-lint/gci and guard tests — self-check with lint+tests locally before a PR.",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课说“一个错误还携带着该拿它怎么办的信息”，merr 让错误自带身份(码/可重试/Input vs System)。请：(1) 举一个具体例子(如 ErrCollectionNotFound)说明同一个错为何在内部默认 System(可重试)、到 proxy 边界才用 WrapErrAsInputErrorWhen 翻成 Input；(2) 解释为什么用 merr.Wrap 而非 WrapErrXxxErr 加上下文；(3) 这些约定大多由 linter 自动执行，谈谈“把约定固化成工具”对一个数百人协作的开源项目意味着什么——它和第 40 课“配置收口”、第 43 课“生成文件别手改”体现了怎样共同的工程审美？",
+                "en": "This lesson says 'an error also carries information about what to do with it'; merr gives errors an identity (code/retriable/Input vs System). Please: (1) with a concrete example (e.g. ErrCollectionNotFound) explain why the same error defaults to System (retriable) internally but is flipped to Input via WrapErrAsInputErrorWhen only at the proxy boundary; (2) explain why add context with merr.Wrap rather than WrapErrXxxErr; (3) these conventions are mostly linter-enforced — discuss what 'solidifying conventions into tools' means for a hundreds-of-contributors open-source project, and what shared engineering aesthetic it shares with Lesson 40's 'config funneling' and Lesson 43's 'don't hand-edit generated files'.",
+            },
+        ],
+    },
 }
 
 

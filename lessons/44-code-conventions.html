@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>44 · 代码约定 / Code conventions - Milvus 图解教程</title>
+<meta name="description" content="第十部分 · 实践与贡献｜代码约定 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="44 · 代码约定 / Code conventions - Milvus 图解教程">
+<meta property="og:description" content="第十部分 · 实践与贡献｜代码约定 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="44 · 代码约定 / Code conventions - Milvus 图解教程">
+<meta name="twitter:description" content="第十部分 · 实践与贡献｜代码约定 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.timeline .tl-row { display: flex; align-items: flex-start; gap: .6rem; padding: .12rem 0; }
+.timeline .tl-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: .45rem; }
+.timeline .tl-t { font-family: ui-monospace, monospace; font-weight: 700; color: var(--accent-ink); min-width: 2.4rem; font-size: .82rem; flex-shrink: 0; margin-top: .18rem; }
+.timeline .tl-c { font-size: .9rem; color: var(--muted); }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第十部分 · 实践与贡献</span><span class="lang-en">Part 10 · Practice &amp; contributing</span></span>
+    <span class="pill">44 / 44</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:100%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第十部分 · 实践与贡献</span><span class="lang-en">Part 10 · Practice &amp; contributing</span></div>
+    <h1><span class="lang-zh">代码约定</span><span class="lang-en">Code conventions</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+会编、会测了，离"<strong>代码能被合入</strong>"还差一关——<strong>约定</strong>。每个成熟项目都有一套写代码的规矩，Milvus 尤其在意几条：<strong>用 merr 处理错误</strong>（还要分清"谁的错"）、<strong>只用 mlog 打日志</strong>、<strong>import 按固定顺序</strong>、<strong>生成文件别手改</strong>。它们大多由 <strong>linter 自动把关</strong>——违反了，CI 直接拦下你的 PR。这一课带你认全这些"隐形门槛"，其中最有 Milvus 特色的，是 merr 那套<strong>"Input vs System"</strong>的错误哲学。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 类比</div>
+  团队的代码约定，像一间大工坊的<strong>共用规程</strong>。最要紧的一条，是出问题时<strong>分清"谁的错"</strong>：是<strong>顾客拿来的料本身不对</strong>（<strong>Input 错误</strong>——比如要搜一个不存在的集合），还是<strong>我们的机器自己出故障了</strong>（<strong>System 错误</strong>——比如某节点还没就绪）。这俩的处理<strong>南辕北辙</strong>：前者要<strong>如实告诉顾客"你这儿不对"</strong>、别瞎重试；后者该<strong>自动重试、报警</strong>，因为多半是暂时的。
+  除了"分清谁的错"，工坊还有些<strong>整洁规矩</strong>：工具放哪一格（import 顺序）、用哪台官方仪器记录（只用 mlog）、<strong>机器自动盖章的零件别手动重涂</strong>（生成文件别手改）。门口还有位<strong>领班</strong>（linter）逐条查验——不合规，零件根本进不了车间。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观视角</div>
+  一句话：<strong>错误用 <span class="mono">merr</span>（<span class="inline">pkg/util/merr</span>）不用 <span class="mono">fmt.Errorf</span>，且要分 Input(请求内容本身的错、不可重试) vs System(Milvus 自身/暂时性故障、保持可重试)；日志只用 <span class="mono">mlog</span>（<span class="mono">pkg/v3/log</span>、标准 log、裸 zap 都被 linter 禁用）；import 按"标准库 → 第三方 → github.com/milvus-io"由 gci 强制；mocks/proto 等生成文件别手改</strong>。大多数约定由 golangci-lint/gci 机器把关。
+</div>
+
+<h2>签名约定：用 merr 处理错误（Input vs System）</h2>
+<p>Milvus 最有特色、也最该先掌握的约定，是<strong>错误处理</strong>。规矩第一条：<strong>别用 <span class="mono">fmt.Errorf</span> 造错误，用 <span class="mono">merr</span></strong>（<span class="inline">pkg/util/merr</span>）。merr 里每个错误都带一个<strong>错误码</strong>和<strong>是否可重试</strong>的属性，定义在 <span class="inline">errors.go</span>，形如 <span class="mono">newMilvusError("service not ready", 1, true)</span>——注意最后那个 <span class="mono">true</span>，意思是"这个错<strong>可以重试</strong>"。造错误时用工厂函数，如 <span class="mono">WrapErrServiceNotReady(...)</span>、<span class="mono">WrapErrCollectionNotFound(...)</span>，而不是自己拼字符串。</p>
+<p>但 merr 真正的灵魂，是它逼你回答一个问题：<strong>这个错，到底是"谁的错"？</strong>Milvus 把错误分成两大类。<strong>Input 错误</strong>：是<strong>请求内容本身</strong>导致的——用户要搜一个不存在的集合、传了非法参数。这种错<strong>怪用户</strong>，正确做法是<strong>如实返回、别重试</strong>（重试一万次，那个集合还是不存在）。<strong>System 错误</strong>：是 <strong>Milvus 自己</strong>的问题或<strong>暂时性</strong>故障——某个节点还没就绪、一次内部的瞬时竞态。这种错<strong>不怪用户</strong>，而且往往<strong>过一会儿就好了</strong>，所以该<strong>保持可重试</strong>。判断的关键不是"看起来像不像参数校验"，而是那条<strong>归因测试</strong>：<strong>是"请求内容本身"逼出了这个分支，还是一个内部/暂时的失败？</strong>下面把两类摆清。</p>
+
+<p>为什么这条"<strong>谁的错</strong>"的区分，值得被放在所有约定的最前面？因为它触及了一个更深的道理：<strong>一个错误不只是"出了问题"，它还携带着"<strong>该拿它怎么办</strong>"的信息</strong>。在单机小程序里，错误往往就是"打印出来、退出"那么简单；但在 Milvus 这种<strong>分布式</strong>系统里，一个错误会被层层上报、可能触发重试、可能被熔断、最终可能变成给用户的一条提示——它<strong>走过的每一站，都要根据它的"性质"做不同决定</strong>。如果错误本身不带"我是 Input 还是 System"这个标签，那么每一站都得<strong>靠猜</strong>，猜错了就是误重试、误熔断、把内部细节泄露给用户等一连串麻烦。merr 的设计，本质是让错误<strong>自带身份</strong>：错误码标明"是什么错"、可重试标志标明"能不能再试"、Input/System 标明"怪谁"。把这些信息<strong>钉在错误对象上、随它一起传播</strong>，下游各站才能<strong>不靠猜、按标签行事</strong>。理解了这一层，你就明白为什么 Milvus 宁可让你多花心思去给错误"<strong>分类</strong>"，也不允许随手一个 <span class="mono">fmt.Errorf</span> 糊弄过去——<strong>一个没有身份的错误，到了分布式系统里就是一颗定时炸弹</strong>。</p>
+
+<div class="cols">
+  <div class="col"><h4>Input 错误（怪请求）</h4><p>请求内容本身导致：搜不存在的集合、非法参数。<strong>如实返回用户、不可重试</strong>(重试也没用)。在 proxy 边界常用 <span class="mono">WrapErrAsInputError(When)</span> 标记。</p></div>
+  <div class="col"><h4>System 错误（怪系统/暂时）</h4><p>Milvus 自身 bug 或暂时性故障：节点未就绪、内部瞬时竞态。<strong>保持可重试</strong>(过会儿可能就好)、该报警。是 merr 里很多错误的<strong>默认归类</strong>。</p></div>
+</div>
+
+<h2>为什么这条区分如此要紧：它决定了"要不要重试"</h2>
+<p>你可能会问：分这么细，图什么？答案是——<strong>错误的归类，直接决定了系统的重试行为，错一点就出大问题</strong>。Milvus 内部很多地方会对失败的操作做<strong>自动重试</strong>（典型如 <span class="mono">retry.Do</span> 包着的调用）。如果一个<strong>本该重试</strong>的暂时性错误（System，比如"节点还没就绪"）被错标成 Input、变得不可重试，那么一次<strong>本来等一下就能成功</strong>的操作，会被<strong>当场判死</strong>、直接失败——明明是虚惊一场，却被你亲手做实了。</p>
+<p>反过来更糟：如果一个<strong>注定失败</strong>的 Input 错误（比如"集合不存在"）被错标成可重试的 System 错误，那么系统会<strong>傻乎乎地一遍遍重试</strong>一个永远不会成功的操作，白白消耗资源、还可能拖垮调用方。所以 merr 里你能看到很讲究的设计：像 <span class="mono">ErrCollectionNotFound</span> 默认是 <strong>System 错误</strong>（因为 datacoord 等内部路径在恢复/重试时，需要把"暂时找不到"当作可重试），<strong>只在 proxy 那道面向用户的边界上</strong>，才用 <span class="mono">WrapErrAsInputErrorWhen</span> 把它"翻面"成给用户看的 Input 错误。这种"<strong>同一个错，在内部可重试、到边界才定性为用户错</strong>"的精细，正是 merr 的精髓。还有两条配套铁律要记牢：给已有错误加上下文，<strong>只用 <span class="mono">merr.Wrap/Wrapf</span></strong>（别用 <span class="mono">WrapErrXxxErr(err,…)</span>，那会盖掉里层的错误码）；把某个错误改成 Input 之前，先 grep 一下有没有 <span class="mono">retry.Do</span> 在依赖它的可重试性——<strong>改错一个归类，可能悄悄破坏一条重试链</strong>。</p>
+
+<p>这里顺带教你一个读 merr 代码时极有用的<strong>观察习惯</strong>：盯住 <span class="inline">errors.go</span> 里每个错误定义末尾那个<strong>布尔值</strong>（可重试与否）和那个<strong>数字码</strong>。可重试标志告诉你这个错"<strong>天生属于哪一类</strong>"——<span class="mono">true</span> 的多半是 System(暂时性、可再试)、<span class="mono">false</span> 的多半是确定性失败。而数字码是<strong>分段</strong>的：相近职责的错误，码也排在相近的<strong>区间</strong>里(你能在文件里看到一段段注释标明哪段归哪类)。这个分段不是装饰——新增错误时，你<strong>必须从对应区间里挑码</strong>，而不能随手拍一个数字，否则会破坏"<strong>码→类别</strong>"的隐含契约，甚至和别处(比如 C++ segcore 那套码)撞车。所以给 Milvus 加一个新错误，正确流程是：先 grep <span class="inline">errors.go</span> 看清现有的分段、找到你这个错该属于的家族区间、再在区间里取一个没用过的码、按 Input/System 设好可重试标志。这套"<strong>先看地图、再落子</strong>"的严谨，正是 merr 想培养你的工程直觉——<strong>错误码不是随便编的，它是一份需要被尊重的契约</strong>。</p>
+
+<h2>其余硬约定：日志、import 顺序、生成文件</h2>
+<p>除了 merr，还有几条约定虽不起眼，却同样会卡住你的 PR——好在它们大多被 <strong>linter 自动检查</strong>，你不必死记，违反了会被当场指出。<strong>日志只用 mlog</strong>：第 39 课讲过，Milvus 的 <span class="inline">.golangci.yml</span> 里用 depguard <strong>明令禁止</strong> <span class="mono">pkg/v3/log</span>、标准库 <span class="mono">log</span>、裸 <span class="mono">zap</span>——一律改用 <span class="mono">pkg/v3/mlog</span>，且每条日志带 ctx。<strong>import 顺序</strong>：用 <span class="mono">gci</span> 工具强制成三段——<strong>标准库 → 第三方 → <span class="mono">github.com/milvus-io</span></strong>，本项目的包永远排最后一组；<span class="mono">make</span> 里有 gci fix 帮你自动排好。<strong>生成文件别手改</strong>：mockery 生成的 mock（第 43 课）、proto 生成的 <span class="mono">.pb.go</span>，都要改"源头"再重新生成，别动产物。下面把这些约定连同"谁来把关"列成一张速查表。</p>
+
+<p>你可能会觉得这些约定（import 排序、日志库选择）"<strong>太琐碎了，跟代码对不对有什么关系</strong>"？这是个很自然的疑问，值得正面回答。这些约定单看每一条，确实都是小事；但它们合起来，守护的是一个大东西——<strong>一致性</strong>。想象一个有几百位贡献者的代码库，如果每个人 import 各排各的、日志各用各的库、错误各造各的，那么这份代码读起来就像<strong>几百种口音混在一起的方言</strong>，每读一个新文件都要重新适应作者的个人习惯，认知负担极重。统一约定的价值，正在于<strong>抹平这种个体差异</strong>：当所有人的 import 都按同一顺序、日志都用同一个 mlog、错误都走同一套 merr，整个代码库读起来就像<strong>一个人写的</strong>——你在 A 文件学到的模式，到 B 文件原样适用。这种"<strong>可预期性</strong>"是大型协作的命脉。所以别把约定看成束缚个性的繁文缛节，它恰恰是<strong>让几百人能高效协作</strong>的润滑剂。而把这些约定交给 linter 自动执行，更是高明：它<strong>把"保持一致"这件需要持续自律的苦差，变成了零成本的自动检查</strong>，谁都不用记、谁都赖不掉。这正是成熟开源项目能"<strong>众人拾柴而不乱</strong>"的秘密之一。</p>
+
+<table class="t">
+  <tr><th>约定</th><th>规则</th><th>谁把关</th></tr>
+  <tr><td>错误处理</td><td>用 <span class="mono">merr</span> 工厂/<span class="mono">Wrap</span>，分 Input/System，别用 <span class="mono">fmt.Errorf</span></td><td>评审 + merr 守护测试</td></tr>
+  <tr><td>日志</td><td>只用 <span class="mono">mlog</span>(带 ctx)，禁 log/zap/fmt.Println</td><td>golangci-lint(depguard)</td></tr>
+  <tr><td>import 顺序</td><td>标准库 → 第三方 → github.com/milvus-io</td><td>gci</td></tr>
+  <tr><td>生成文件</td><td>mocks/.pb.go 改源头重生成，勿手改</td><td>评审 + 重生成无 diff</td></tr>
+  <tr><td>配置</td><td>用 paramtable，不裸读文件/环境变量(第 40 课)</td><td>评审</td></tr>
+</table>
+
+<h2>大多由机器把关：让 CI 替你查</h2>
+<p>把这些约定连起来，你会发现一个让人安心的事实：<strong>它们绝大多数不靠你死记，而靠工具自动执行</strong>。<span class="mono">gci</span> 帮你排好 import、<span class="mono">golangci-lint</span> 帮你抓住"用了禁用的日志库""明显的坏味道"、merr 的守护测试帮你守住错误码契约、CI 还会跑全套 <span class="mono">make test-*</span>。所以提 PR 前的明智做法是：<strong>本地先把这套自查跑一遍</strong>——格式化 import、过一遍 linter、跑相关模块的测试——把问题消灭在推送之前，而不是等 CI 红一片再来回折腾。</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>排好 import</h4><p>gci fix 自动把 import 整成"标准库→三方→milvus-io"三段。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>过 linter</h4><p><span class="mono">golangci-lint</span>：抓禁用日志库、坏味道；depguard 守住"只用 mlog"。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>跑相关测试</h4><p><span class="mono">make test-proxy</span> 等：含 merr 守护测试、竞态检测，确认没破坏契约。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>再推送提 PR</h4><p>本地全绿再推，CI 大概率一次过——把来回折腾消灭在推送前。</p></div></div>
+</div>
+<p>这种"<strong>把约定固化成工具、让机器替人把关</strong>"的做法，本身就是一种值得学习的工程智慧：人会累、会忘、会有分歧，但 linter 不会——它<strong>铁面无私地、对每个人一视同仁地</strong>执行同一套标准。于是整个代码库才能在成百上千贡献者手里，<strong>长期保持一致的风格与质量底线</strong>。回望这一课，merr 的 Input/System 之分教你<strong>严谨地对待错误</strong>、mlog/gci/生成文件之类的硬约定教你<strong>尊重项目的统一规矩</strong>——两者合起来，就是"<strong>让你的代码看起来像 Milvus 原生的一部分</strong>"。做到这点，你的 PR 才算真正<strong>够格被合入</strong>。下一课，我们就走完最后一步：把你的改动<strong>提成一个合规的 PR</strong>（标题格式、DCO 签名、关联 issue 等）。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>merr 错误处理</strong>：用 <span class="mono">merr</span> 不用 <span class="mono">fmt.Errorf</span>；分 <strong>Input</strong>(请求本身的错、不可重试) vs <strong>System</strong>(自身/暂时故障、保持可重试)；归因测试看"是不是请求内容逼出该分支"。</li>
+    <li><strong>归类决定重试</strong>：错标会让"本可重试"的操作枉死、或让"注定失败"的操作空转；加上下文只用 <span class="mono">merr.Wrap/Wrapf</span>；改 Input 前先 grep <span class="mono">retry.Do</span>。</li>
+    <li><strong>硬约定</strong>：日志只用 <span class="mono">mlog</span>(带 ctx，禁 log/zap)；import 顺序 标准→三方→milvus-io(gci)；生成文件(mock/.pb.go)改源头重生成、勿手改。</li>
+    <li><strong>机器把关</strong>：golangci-lint/gci/守护测试自动执行这些约定；提 PR 前本地先自查(格式化/lint/测试)，让代码"像 Milvus 原生的一部分"。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. Milvus 的 merr 把错误分成 Input 与 System 两类，核心判据和后果是什么？</div>
+  <ol class="opts">
+    <li>两类完全等价，随便归哪类都行</li>
+    <li>Input 是小错、System 是大错，按严重程度分</li>
+    <li>判据是“归因测试”：请求内容本身逼出的=Input(不可重试、如实返回用户)；Milvus 自身/暂时性故障=System(保持可重试、该报警)。归类直接决定系统要不要重试</li>
+    <li>Input 用于 C++、System 用于 Go</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：C</strong>。判据不是“看起来像不像参数校验”，而是归因测试：是请求内容本身逼出这个分支(Input，怪用户、重试也没用)，还是内部/暂时性失败(System，不怪用户、过会儿可能就好)。后果很实际：Milvus 很多地方用 retry.Do 自动重试，把本可重试的 System 误标 Input 会让“等一下就成”的操作枉死；把注定失败的 Input 误标 System 会让系统空转重试。所以归类直接决定重试行为。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. 关于给错误加上下文与新增错误码，下面哪条做法符合 merr 约定？</div>
+  <ol class="opts">
+    <li>把错误改成 Input 不用管别处有没有 retry.Do</li>
+    <li>新增错误码随便挑个没用过的数字即可，无所谓区间</li>
+    <li>加上下文只用 merr.Wrap/Wrapf(不用 WrapErrXxxErr(err,…) 以免盖掉内层码)；新增错误要从 errors.go 现有家族区间里取码、按 Input/System 设可重试标志</li>
+    <li>随手用 fmt.Errorf 包一下最省事</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：C</strong>。加上下文用 merr.Wrap/Wrapf——它保留内层错误码；而 WrapErrXxxErr(err,…) 会用新错误盖掉内层码、丢失原始分类。错误码在 errors.go 里是分段的：相近职责的错码在相近区间，新增时必须从对应家族区间挑码、别和 C++ segcore 码撞车，并按 Input/System 设好可重试布尔。此外把某错改成 Input 前要先 grep retry.Do，确认没有重试链依赖它的可重试性——改错归类会悄悄破坏重试。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 下面关于 Milvus 其余硬约定(日志/import/生成文件)的说法，哪个正确？</div>
+  <ol class="opts">
+    <li>生成的 mock 文件应该直接手改来通过测试</li>
+    <li>想用哪个日志库都行，linter 不管</li>
+    <li>import 顺序随意，gci 只是建议</li>
+    <li>日志只用 mlog(带 ctx；log/zap/fmt.Println 被 depguard 禁)；import 按 标准库→第三方→github.com/milvus-io(gci 强制)；mocks/.pb.go 改源头重生成、勿手改——多由 golangci-lint/gci 自动把关</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。.golangci.yml 用 depguard 明令禁止 pkg/v3/log、标准 log、裸 zap，强制只用 pkg/v3/mlog 且每条带 ctx(第 39 课)。gci 把 import 强制成 标准库→第三方→github.com/milvus-io 三段、本项目包排最后。mockery 生成的 mock 与 proto 的 .pb.go 是生成物，要改接口/proto 再 make 重生成、别手改(同第 43 课纪律)。这些约定大多由 golangci-lint/gci 与守护测试自动执行——提 PR 前本地先 lint+测试自查最省事。</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>本课说“一个错误还携带着该拿它怎么办的信息”，merr 让错误自带身份(码/可重试/Input vs System)。请：(1) 举一个具体例子(如 ErrCollectionNotFound)说明同一个错为何在内部默认 System(可重试)、到 proxy 边界才用 WrapErrAsInputErrorWhen 翻成 Input；(2) 解释为什么用 merr.Wrap 而非 WrapErrXxxErr 加上下文；(3) 这些约定大多由 linter 自动执行，谈谈“把约定固化成工具”对一个数百人协作的开源项目意味着什么——它和第 40 课“配置收口”、第 43 课“生成文件别手改”体现了怎样共同的工程审美？</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+You can build and test; one gate remains before "<strong>your code can be merged</strong>" — <strong>conventions</strong>. Every mature project has coding rules; Milvus especially cares about a few: <strong>handle errors with merr</strong> (and tell "whose fault" it is), <strong>log only via mlog</strong>, <strong>order imports a fixed way</strong>, <strong>don't hand-edit generated files</strong>. Most are <strong>enforced by linters</strong> — violate them and CI rejects your PR. This lesson walks you through these "invisible bars", the most Milvus-flavored being merr's "<strong>Input vs System</strong>" error philosophy.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  A team's code conventions are like a big workshop's <strong>shared protocol</strong>. The most important rule is, when something breaks, <strong>tell "whose fault" it is</strong>: did the <strong>customer bring the wrong materials</strong> (an <strong>Input error</strong> — e.g. searching a nonexistent collection), or did <strong>our own machine malfunction</strong> (a <strong>System error</strong> — e.g. a node not yet ready)? The two are handled <strong>oppositely</strong>: the former you <strong>honestly tell the customer "this is on you"</strong> and don't blindly retry; the latter you <strong>retry automatically and alarm</strong>, since it's usually temporary.
+  Beyond "whose fault", the workshop has <strong>tidiness rules</strong>: which slot tools go in (import order), which official instrument to log with (mlog only), and <strong>don't manually repaint machine-stamped parts</strong> (don't hand-edit generated files). At the door a <strong>foreman</strong> (the linter) checks each item — non-compliant parts never enter the shop.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>errors use <span class="mono">merr</span> (<span class="inline">pkg/util/merr</span>) not <span class="mono">fmt.Errorf</span>, split into Input (the request itself is wrong, not retriable) vs System (Milvus's own/transient failure, stays retriable); logging only via <span class="mono">mlog</span> (<span class="mono">pkg/v3/log</span>, standard log, raw zap are linter-forbidden); imports ordered "stdlib → third-party → github.com/milvus-io" enforced by gci; generated files (mocks/proto) must not be hand-edited</strong>. Most conventions are machine-checked by golangci-lint/gci.
+</div>
+
+<h2>The signature convention: handle errors with merr (Input vs System)</h2>
+<p>Milvus's most distinctive and first-to-master convention is <strong>error handling</strong>. Rule one: <strong>don't build errors with <span class="mono">fmt.Errorf</span>; use <span class="mono">merr</span></strong> (<span class="inline">pkg/util/merr</span>). In merr, every error carries an <strong>error code</strong> and a <strong>retriable</strong> attribute, defined in <span class="inline">errors.go</span> like <span class="mono">newMilvusError("service not ready", 1, true)</span> — note that trailing <span class="mono">true</span>, meaning "this error <strong>may be retried</strong>". Create errors with factory functions like <span class="mono">WrapErrServiceNotReady(...)</span>, <span class="mono">WrapErrCollectionNotFound(...)</span>, not hand-spliced strings.</p>
+<p>But merr's real soul is forcing you to answer: <strong>whose fault is this error?</strong> Milvus splits errors into two classes. <strong>Input errors</strong>: caused by the <strong>request content itself</strong> — searching a nonexistent collection, passing invalid params. These are <strong>the user's fault</strong>, and the right move is to <strong>return faithfully, don't retry</strong> (retry ten thousand times, the collection still doesn't exist). <strong>System errors</strong>: Milvus's <strong>own</strong> problem or a <strong>transient</strong> failure — a node not yet ready, an internal momentary race. These are <strong>not the user's fault</strong> and often <strong>clear up shortly</strong>, so they should <strong>stay retriable</strong>. The key test isn't "does it look like validation" but the <strong>blame test</strong>: <strong>did the request content itself force this branch, or an internal/transient failure?</strong> The two, clarified:</p>
+
+<div class="cols">
+  <div class="col"><h4>Input error (blame the request)</h4><p>caused by the request itself: searching a missing collection, invalid params. <strong>Return to the user, not retriable</strong> (retry won't help). At the proxy boundary, often marked via <span class="mono">WrapErrAsInputError(When)</span>.</p></div>
+  <div class="col"><h4>System error (blame system/transient)</h4><p>a Milvus bug or transient failure: node not ready, internal momentary race. <strong>Stays retriable</strong> (may clear up soon), should alarm. The <strong>default classification</strong> for many merr errors.</p></div>
+</div>
+
+<h2>Why this distinction matters: it decides "to retry or not"</h2>
+<p>You might ask: why split so finely? Because — <strong>an error's classification directly decides the system's retry behavior, and getting it slightly wrong causes big problems</strong>. Many places inside Milvus <strong>auto-retry</strong> failed operations (typically calls wrapped in <span class="mono">retry.Do</span>). If a transient error that <strong>should be retried</strong> (System, e.g. "node not ready") is mislabeled Input and becomes non-retriable, then an operation that <strong>would have succeeded after a brief wait</strong> gets <strong>condemned on the spot</strong> and fails outright — a false alarm you turned real with your own hands.</p>
+<p>The reverse is worse: if a <strong>doomed</strong> Input error (e.g. "collection doesn't exist") is mislabeled a retriable System error, the system will <strong>foolishly retry over and over</strong> an operation that can never succeed, burning resources and possibly dragging down the caller. So merr has careful designs: <span class="mono">ErrCollectionNotFound</span> defaults to a <strong>System error</strong> (because internal paths in datacoord etc. need to treat "temporarily not found" as retriable during recovery/retry), and <strong>only at the user-facing proxy boundary</strong> is it "flipped" via <span class="mono">WrapErrAsInputErrorWhen</span> into an Input error for the user. This subtlety — "<strong>the same error is retriable internally, classified as user error only at the boundary</strong>" — is the essence of merr. Two companion iron rules to remember: to add context to an existing error, <strong>use only <span class="mono">merr.Wrap/Wrapf</span></strong> (not <span class="mono">WrapErrXxxErr(err,…)</span>, which masks the inner code); before turning an error Input, grep whether any <span class="mono">retry.Do</span> depends on its retriability — <strong>mislabeling one classification can quietly break a retry chain</strong>.</p>
+
+<h2>Other hard conventions: logging, import order, generated files</h2>
+<p>Beyond merr, a few unglamorous conventions can also block your PR — luckily most are <strong>linter-checked</strong>, so you needn't memorize them; violations are flagged on the spot. <strong>Log only via mlog</strong>: as Lesson 39 covered, Milvus's <span class="inline">.golangci.yml</span> uses depguard to <strong>explicitly forbid</strong> <span class="mono">pkg/v3/log</span>, the standard <span class="mono">log</span>, raw <span class="mono">zap</span> — all must become <span class="mono">pkg/v3/mlog</span>, every log carrying ctx. <strong>Import order</strong>: <span class="mono">gci</span> enforces three sections — <strong>stdlib → third-party → <span class="mono">github.com/milvus-io</span></strong>, this project's packages always last; <span class="mono">make</span> has a gci fix to sort them automatically. <strong>Don't hand-edit generated files</strong>: mockery-generated mocks (Lesson 43) and proto-generated <span class="mono">.pb.go</span> must be changed at the "source" and regenerated, not at the artifact. The conventions, with "who enforces", as a cheatsheet:</p>
+
+<table class="t">
+  <tr><th>Convention</th><th>Rule</th><th>Enforced by</th></tr>
+  <tr><td>error handling</td><td>use <span class="mono">merr</span> factories/<span class="mono">Wrap</span>, split Input/System, no <span class="mono">fmt.Errorf</span></td><td>review + merr guard tests</td></tr>
+  <tr><td>logging</td><td>only <span class="mono">mlog</span> (with ctx), no log/zap/fmt.Println</td><td>golangci-lint (depguard)</td></tr>
+  <tr><td>import order</td><td>stdlib → third-party → github.com/milvus-io</td><td>gci</td></tr>
+  <tr><td>generated files</td><td>mocks/.pb.go: change source and regenerate, don't hand-edit</td><td>review + no-diff regen</td></tr>
+  <tr><td>config</td><td>use paramtable, no raw file/env reads (Lesson 40)</td><td>review</td></tr>
+</table>
+
+<h2>Mostly machine-enforced: let CI check for you</h2>
+<p>Tie these conventions together and you'll find a reassuring fact: <strong>most don't rely on your memory but on tools to enforce</strong>. <span class="mono">gci</span> sorts your imports, <span class="mono">golangci-lint</span> catches "used a forbidden logging library" and "obvious bad smells", merr's guard tests defend the error-code contract, and CI runs the full <span class="mono">make test-*</span>. So the smart move before opening a PR is to <strong>run this self-check locally first</strong> — format imports, pass the linter, run the relevant module's tests — killing problems before pushing, rather than ping-ponging after CI turns red.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Sort imports</h4><p>gci fix auto-arranges imports into "stdlib→third-party→milvus-io".</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Pass the linter</h4><p><span class="mono">golangci-lint</span>: catch forbidden log libs, bad smells; depguard enforces "mlog only".</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Run relevant tests</h4><p><span class="mono">make test-proxy</span> etc.: incl. merr guard tests, race detection — confirm no contract broken.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Then push the PR</h4><p>push only when locally green; CI likely passes first try — no post-push ping-pong.</p></div></div>
+</div>
+<p>This practice of "<strong>solidifying conventions into tools, letting machines enforce for humans</strong>" is itself worth learning: people tire, forget, and disagree, but a linter doesn't — it enforces one standard <strong>impartially, identically for everyone</strong>. That's how a codebase, in the hands of hundreds of contributors, can <strong>keep a consistent style and quality floor over the long run</strong>. Looking back over this lesson, merr's Input/System split teaches you to <strong>treat errors rigorously</strong>, while hard conventions like mlog/gci/generated-files teach you to <strong>respect the project's shared rules</strong> — together, they make "<strong>your code look like a native part of Milvus</strong>". Achieve that and your PR is truly <strong>fit to be merged</strong>. Next lesson, the final step: <strong>turn your change into a compliant PR</strong> (title format, DCO sign-off, linked issue, etc.).</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>merr error handling</strong>: use <span class="mono">merr</span> not <span class="mono">fmt.Errorf</span>; split <strong>Input</strong> (request's own fault, not retriable) vs <strong>System</strong> (own/transient failure, stays retriable); the blame test asks "did the request content force this branch".</li>
+    <li><strong>Classification decides retry</strong>: mislabeling kills a "retriable" op or spins a "doomed" one; add context only via <span class="mono">merr.Wrap/Wrapf</span>; grep <span class="mono">retry.Do</span> before turning something Input.</li>
+    <li><strong>Hard conventions</strong>: log only via <span class="mono">mlog</span> (with ctx, no log/zap); import order stdlib→third-party→milvus-io (gci); generated files (mock/.pb.go) change source and regenerate, don't hand-edit.</li>
+    <li><strong>Machine-enforced</strong>: golangci-lint/gci/guard tests auto-enforce; self-check locally before a PR (format/lint/test) to make code "look like a native part of Milvus".</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Milvus's merr splits errors into Input and System. What's the core criterion and consequence?</div>
+  <ol class="opts">
+    <li>The two are equivalent; classify either way</li>
+    <li>Input is minor, System is major — split by severity</li>
+    <li>The criterion is the 'blame test': forced by the request content itself = Input (not retriable, return to user); Milvus's own/transient failure = System (stays retriable, should alarm). Classification directly decides whether the system retries</li>
+    <li>Input is for C++, System for Go</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. The criterion isn't 'does it look like validation' but the blame test: did the request content force this branch (Input — user's fault, retry won't help) or an internal/transient failure (System — not the user's fault, may clear up). The consequence is concrete: many places use retry.Do; mislabeling a retriable System as Input kills an op that would've succeeded after a wait; mislabeling a doomed Input as System spins endless retries. So classification directly decides retry behavior.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. About adding context to errors and adding new error codes, which follows merr conventions?</div>
+  <ol class="opts">
+    <li>Turning an error Input needn't consider any retry.Do elsewhere</li>
+    <li>Pick any unused number for a new code, ranges don't matter</li>
+    <li>Add context only via merr.Wrap/Wrapf (not WrapErrXxxErr(err,…) which masks the inner code); new errors pick a code from the existing family range in errors.go and set the retriable flag per Input/System</li>
+    <li>Just wrap with fmt.Errorf, simplest</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. Add context with merr.Wrap/Wrapf — it preserves the inner code; WrapErrXxxErr(err,…) masks it with a new error, losing the original classification. Codes in errors.go are partitioned: similar-duty errors sit in adjacent ranges, so a new error must pick from its family range (not collide with C++ segcore codes) and set the retriable bool per Input/System. Also, before turning an error Input, grep retry.Do to ensure no retry chain depends on its retriability — mislabeling silently breaks retries.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Which statement about Milvus's other hard conventions (logging/imports/generated files) is correct?</div>
+  <ol class="opts">
+    <li>Generated mock files should be hand-edited to pass tests</li>
+    <li>Use any logging library; the linter doesn't care</li>
+    <li>Import order is free; gci is only a suggestion</li>
+    <li>Log only via mlog (with ctx; log/zap/fmt.Println forbidden by depguard); imports stdlib→third-party→github.com/milvus-io (gci-enforced); mocks/.pb.go regenerate from source, don't hand-edit — mostly auto-enforced by golangci-lint/gci</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. .golangci.yml uses depguard to forbid pkg/v3/log, standard log, raw zap, forcing pkg/v3/mlog with ctx on every call (Lesson 39). gci enforces imports into stdlib→third-party→github.com/milvus-io, this project's packages last. mockery-generated mocks and proto .pb.go are artifacts — change the interface/proto then regenerate via make, don't hand-edit (Lesson 43's discipline). These are mostly auto-enforced by golangci-lint/gci and guard tests — self-check with lint+tests locally before a PR.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson says 'an error also carries information about what to do with it'; merr gives errors an identity (code/retriable/Input vs System). Please: (1) with a concrete example (e.g. ErrCollectionNotFound) explain why the same error defaults to System (retriable) internally but is flipped to Input via WrapErrAsInputErrorWhen only at the proxy boundary; (2) explain why add context with merr.Wrap rather than WrapErrXxxErr; (3) these conventions are mostly linter-enforced — discuss what 'solidifying conventions into tools' means for a hundreds-of-contributors open-source project, and what shared engineering aesthetic it shares with Lesson 40's 'config funneling' and Lesson 43's 'don't hand-edit generated files'.</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="43-testing.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">测试</span><span class="lang-en">Testing</span></div></a><a class="next" href="../index.html"><div class="dir"><span class="lang-zh">完成 →</span><span class="lang-en">Done →</span></div><div class="ttl"><span class="lang-zh">返回目录</span><span class="lang-en">Back to index</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>

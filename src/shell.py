@@ -133,6 +133,8 @@ PAGES = [
      "第十部分 · 实践与贡献", "Part 10 · Practice & contributing"),
     ("43-testing.html", "测试", "Testing",
      "第十部分 · 实践与贡献", "Part 10 · Practice & contributing"),
+    ("44-code-conventions.html", "代码约定", "Code conventions",
+     "第十部分 · 实践与贡献", "Part 10 · Practice & contributing"),
 ]
 
 
@@ -660,6 +662,8 @@ SUBTITLES = {
                               "two-stage build: make milvus = build-cpp(cmake/conan)→build-go(CGO link); one binary, many roles (cmd/main.go); install_deps/start_*/stop_graceful scripts"),
     "43-testing.html": ("go 测试必带 -tags dynamic,test 与 -gcflags=all=-N -l(为 mockey 打补丁) · 两种 mock：mockery(生成接口)/mockey(运行时函数) · make test-go/test-proxy",
                         "go tests must carry -tags dynamic,test and -gcflags=all=-N -l (for mockey patching); two mocks: mockery (generated interfaces)/mockey (runtime functions); make test-go/test-proxy"),
+    "44-code-conventions.html": ("merr 错误：Input(不可重试) vs System(可重试)、别用 fmt.Errorf · 日志只用 mlog · import gci 排序(milvus-io 最后) · 生成文件勿手改 · 多由 linter 把关",
+                                 "merr errors: Input (not retriable) vs System (retriable), no fmt.Errorf; log only via mlog; gci import order (milvus-io last); don't hand-edit generated files; mostly linter-enforced"),
 }
 
 

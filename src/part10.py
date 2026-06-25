@@ -290,3 +290,136 @@ You can build Milvus; next is to <strong>write and run its tests</strong>. But y
 </div>
 """,
 }
+
+LESSON_44 = {
+    "zh": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+会编、会测了，离"<strong>代码能被合入</strong>"还差一关——<strong>约定</strong>。每个成熟项目都有一套写代码的规矩，Milvus 尤其在意几条：<strong>用 merr 处理错误</strong>（还要分清"谁的错"）、<strong>只用 mlog 打日志</strong>、<strong>import 按固定顺序</strong>、<strong>生成文件别手改</strong>。它们大多由 <strong>linter 自动把关</strong>——违反了，CI 直接拦下你的 PR。这一课带你认全这些"隐形门槛"，其中最有 Milvus 特色的，是 merr 那套<strong>"Input vs System"</strong>的错误哲学。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 类比</div>
+  团队的代码约定，像一间大工坊的<strong>共用规程</strong>。最要紧的一条，是出问题时<strong>分清"谁的错"</strong>：是<strong>顾客拿来的料本身不对</strong>（<strong>Input 错误</strong>——比如要搜一个不存在的集合），还是<strong>我们的机器自己出故障了</strong>（<strong>System 错误</strong>——比如某节点还没就绪）。这俩的处理<strong>南辕北辙</strong>：前者要<strong>如实告诉顾客"你这儿不对"</strong>、别瞎重试；后者该<strong>自动重试、报警</strong>，因为多半是暂时的。
+  除了"分清谁的错"，工坊还有些<strong>整洁规矩</strong>：工具放哪一格（import 顺序）、用哪台官方仪器记录（只用 mlog）、<strong>机器自动盖章的零件别手动重涂</strong>（生成文件别手改）。门口还有位<strong>领班</strong>（linter）逐条查验——不合规，零件根本进不了车间。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观视角</div>
+  一句话：<strong>错误用 <span class="mono">merr</span>（<span class="inline">pkg/util/merr</span>）不用 <span class="mono">fmt.Errorf</span>，且要分 Input(请求内容本身的错、不可重试) vs System(Milvus 自身/暂时性故障、保持可重试)；日志只用 <span class="mono">mlog</span>（<span class="mono">pkg/v3/log</span>、标准 log、裸 zap 都被 linter 禁用）；import 按"标准库 → 第三方 → github.com/milvus-io"由 gci 强制；mocks/proto 等生成文件别手改</strong>。大多数约定由 golangci-lint/gci 机器把关。
+</div>
+
+<h2>签名约定：用 merr 处理错误（Input vs System）</h2>
+<p>Milvus 最有特色、也最该先掌握的约定，是<strong>错误处理</strong>。规矩第一条：<strong>别用 <span class="mono">fmt.Errorf</span> 造错误，用 <span class="mono">merr</span></strong>（<span class="inline">pkg/util/merr</span>）。merr 里每个错误都带一个<strong>错误码</strong>和<strong>是否可重试</strong>的属性，定义在 <span class="inline">errors.go</span>，形如 <span class="mono">newMilvusError("service not ready", 1, true)</span>——注意最后那个 <span class="mono">true</span>，意思是"这个错<strong>可以重试</strong>"。造错误时用工厂函数，如 <span class="mono">WrapErrServiceNotReady(...)</span>、<span class="mono">WrapErrCollectionNotFound(...)</span>，而不是自己拼字符串。</p>
+<p>但 merr 真正的灵魂，是它逼你回答一个问题：<strong>这个错，到底是"谁的错"？</strong>Milvus 把错误分成两大类。<strong>Input 错误</strong>：是<strong>请求内容本身</strong>导致的——用户要搜一个不存在的集合、传了非法参数。这种错<strong>怪用户</strong>，正确做法是<strong>如实返回、别重试</strong>（重试一万次，那个集合还是不存在）。<strong>System 错误</strong>：是 <strong>Milvus 自己</strong>的问题或<strong>暂时性</strong>故障——某个节点还没就绪、一次内部的瞬时竞态。这种错<strong>不怪用户</strong>，而且往往<strong>过一会儿就好了</strong>，所以该<strong>保持可重试</strong>。判断的关键不是"看起来像不像参数校验"，而是那条<strong>归因测试</strong>：<strong>是"请求内容本身"逼出了这个分支，还是一个内部/暂时的失败？</strong>下面把两类摆清。</p>
+
+<p>为什么这条"<strong>谁的错</strong>"的区分，值得被放在所有约定的最前面？因为它触及了一个更深的道理：<strong>一个错误不只是"出了问题"，它还携带着"<strong>该拿它怎么办</strong>"的信息</strong>。在单机小程序里，错误往往就是"打印出来、退出"那么简单；但在 Milvus 这种<strong>分布式</strong>系统里，一个错误会被层层上报、可能触发重试、可能被熔断、最终可能变成给用户的一条提示——它<strong>走过的每一站，都要根据它的"性质"做不同决定</strong>。如果错误本身不带"我是 Input 还是 System"这个标签，那么每一站都得<strong>靠猜</strong>，猜错了就是误重试、误熔断、把内部细节泄露给用户等一连串麻烦。merr 的设计，本质是让错误<strong>自带身份</strong>：错误码标明"是什么错"、可重试标志标明"能不能再试"、Input/System 标明"怪谁"。把这些信息<strong>钉在错误对象上、随它一起传播</strong>，下游各站才能<strong>不靠猜、按标签行事</strong>。理解了这一层，你就明白为什么 Milvus 宁可让你多花心思去给错误"<strong>分类</strong>"，也不允许随手一个 <span class="mono">fmt.Errorf</span> 糊弄过去——<strong>一个没有身份的错误，到了分布式系统里就是一颗定时炸弹</strong>。</p>
+
+<div class="cols">
+  <div class="col"><h4>Input 错误（怪请求）</h4><p>请求内容本身导致：搜不存在的集合、非法参数。<strong>如实返回用户、不可重试</strong>(重试也没用)。在 proxy 边界常用 <span class="mono">WrapErrAsInputError(When)</span> 标记。</p></div>
+  <div class="col"><h4>System 错误（怪系统/暂时）</h4><p>Milvus 自身 bug 或暂时性故障：节点未就绪、内部瞬时竞态。<strong>保持可重试</strong>(过会儿可能就好)、该报警。是 merr 里很多错误的<strong>默认归类</strong>。</p></div>
+</div>
+
+<h2>为什么这条区分如此要紧：它决定了"要不要重试"</h2>
+<p>你可能会问：分这么细，图什么？答案是——<strong>错误的归类，直接决定了系统的重试行为，错一点就出大问题</strong>。Milvus 内部很多地方会对失败的操作做<strong>自动重试</strong>（典型如 <span class="mono">retry.Do</span> 包着的调用）。如果一个<strong>本该重试</strong>的暂时性错误（System，比如"节点还没就绪"）被错标成 Input、变得不可重试，那么一次<strong>本来等一下就能成功</strong>的操作，会被<strong>当场判死</strong>、直接失败——明明是虚惊一场，却被你亲手做实了。</p>
+<p>反过来更糟：如果一个<strong>注定失败</strong>的 Input 错误（比如"集合不存在"）被错标成可重试的 System 错误，那么系统会<strong>傻乎乎地一遍遍重试</strong>一个永远不会成功的操作，白白消耗资源、还可能拖垮调用方。所以 merr 里你能看到很讲究的设计：像 <span class="mono">ErrCollectionNotFound</span> 默认是 <strong>System 错误</strong>（因为 datacoord 等内部路径在恢复/重试时，需要把"暂时找不到"当作可重试），<strong>只在 proxy 那道面向用户的边界上</strong>，才用 <span class="mono">WrapErrAsInputErrorWhen</span> 把它"翻面"成给用户看的 Input 错误。这种"<strong>同一个错，在内部可重试、到边界才定性为用户错</strong>"的精细，正是 merr 的精髓。还有两条配套铁律要记牢：给已有错误加上下文，<strong>只用 <span class="mono">merr.Wrap/Wrapf</span></strong>（别用 <span class="mono">WrapErrXxxErr(err,…)</span>，那会盖掉里层的错误码）；把某个错误改成 Input 之前，先 grep 一下有没有 <span class="mono">retry.Do</span> 在依赖它的可重试性——<strong>改错一个归类，可能悄悄破坏一条重试链</strong>。</p>
+
+<p>这里顺带教你一个读 merr 代码时极有用的<strong>观察习惯</strong>：盯住 <span class="inline">errors.go</span> 里每个错误定义末尾那个<strong>布尔值</strong>（可重试与否）和那个<strong>数字码</strong>。可重试标志告诉你这个错"<strong>天生属于哪一类</strong>"——<span class="mono">true</span> 的多半是 System(暂时性、可再试)、<span class="mono">false</span> 的多半是确定性失败。而数字码是<strong>分段</strong>的：相近职责的错误，码也排在相近的<strong>区间</strong>里(你能在文件里看到一段段注释标明哪段归哪类)。这个分段不是装饰——新增错误时，你<strong>必须从对应区间里挑码</strong>，而不能随手拍一个数字，否则会破坏"<strong>码→类别</strong>"的隐含契约，甚至和别处(比如 C++ segcore 那套码)撞车。所以给 Milvus 加一个新错误，正确流程是：先 grep <span class="inline">errors.go</span> 看清现有的分段、找到你这个错该属于的家族区间、再在区间里取一个没用过的码、按 Input/System 设好可重试标志。这套"<strong>先看地图、再落子</strong>"的严谨，正是 merr 想培养你的工程直觉——<strong>错误码不是随便编的，它是一份需要被尊重的契约</strong>。</p>
+
+<h2>其余硬约定：日志、import 顺序、生成文件</h2>
+<p>除了 merr，还有几条约定虽不起眼，却同样会卡住你的 PR——好在它们大多被 <strong>linter 自动检查</strong>，你不必死记，违反了会被当场指出。<strong>日志只用 mlog</strong>：第 39 课讲过，Milvus 的 <span class="inline">.golangci.yml</span> 里用 depguard <strong>明令禁止</strong> <span class="mono">pkg/v3/log</span>、标准库 <span class="mono">log</span>、裸 <span class="mono">zap</span>——一律改用 <span class="mono">pkg/v3/mlog</span>，且每条日志带 ctx。<strong>import 顺序</strong>：用 <span class="mono">gci</span> 工具强制成三段——<strong>标准库 → 第三方 → <span class="mono">github.com/milvus-io</span></strong>，本项目的包永远排最后一组；<span class="mono">make</span> 里有 gci fix 帮你自动排好。<strong>生成文件别手改</strong>：mockery 生成的 mock（第 43 课）、proto 生成的 <span class="mono">.pb.go</span>，都要改"源头"再重新生成，别动产物。下面把这些约定连同"谁来把关"列成一张速查表。</p>
+
+<p>你可能会觉得这些约定（import 排序、日志库选择）"<strong>太琐碎了，跟代码对不对有什么关系</strong>"？这是个很自然的疑问，值得正面回答。这些约定单看每一条，确实都是小事；但它们合起来，守护的是一个大东西——<strong>一致性</strong>。想象一个有几百位贡献者的代码库，如果每个人 import 各排各的、日志各用各的库、错误各造各的，那么这份代码读起来就像<strong>几百种口音混在一起的方言</strong>，每读一个新文件都要重新适应作者的个人习惯，认知负担极重。统一约定的价值，正在于<strong>抹平这种个体差异</strong>：当所有人的 import 都按同一顺序、日志都用同一个 mlog、错误都走同一套 merr，整个代码库读起来就像<strong>一个人写的</strong>——你在 A 文件学到的模式，到 B 文件原样适用。这种"<strong>可预期性</strong>"是大型协作的命脉。所以别把约定看成束缚个性的繁文缛节，它恰恰是<strong>让几百人能高效协作</strong>的润滑剂。而把这些约定交给 linter 自动执行，更是高明：它<strong>把"保持一致"这件需要持续自律的苦差，变成了零成本的自动检查</strong>，谁都不用记、谁都赖不掉。这正是成熟开源项目能"<strong>众人拾柴而不乱</strong>"的秘密之一。</p>
+
+<table class="t">
+  <tr><th>约定</th><th>规则</th><th>谁把关</th></tr>
+  <tr><td>错误处理</td><td>用 <span class="mono">merr</span> 工厂/<span class="mono">Wrap</span>，分 Input/System，别用 <span class="mono">fmt.Errorf</span></td><td>评审 + merr 守护测试</td></tr>
+  <tr><td>日志</td><td>只用 <span class="mono">mlog</span>(带 ctx)，禁 log/zap/fmt.Println</td><td>golangci-lint(depguard)</td></tr>
+  <tr><td>import 顺序</td><td>标准库 → 第三方 → github.com/milvus-io</td><td>gci</td></tr>
+  <tr><td>生成文件</td><td>mocks/.pb.go 改源头重生成，勿手改</td><td>评审 + 重生成无 diff</td></tr>
+  <tr><td>配置</td><td>用 paramtable，不裸读文件/环境变量(第 40 课)</td><td>评审</td></tr>
+</table>
+
+<h2>大多由机器把关：让 CI 替你查</h2>
+<p>把这些约定连起来，你会发现一个让人安心的事实：<strong>它们绝大多数不靠你死记，而靠工具自动执行</strong>。<span class="mono">gci</span> 帮你排好 import、<span class="mono">golangci-lint</span> 帮你抓住"用了禁用的日志库""明显的坏味道"、merr 的守护测试帮你守住错误码契约、CI 还会跑全套 <span class="mono">make test-*</span>。所以提 PR 前的明智做法是：<strong>本地先把这套自查跑一遍</strong>——格式化 import、过一遍 linter、跑相关模块的测试——把问题消灭在推送之前，而不是等 CI 红一片再来回折腾。</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>排好 import</h4><p>gci fix 自动把 import 整成"标准库→三方→milvus-io"三段。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>过 linter</h4><p><span class="mono">golangci-lint</span>：抓禁用日志库、坏味道；depguard 守住"只用 mlog"。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>跑相关测试</h4><p><span class="mono">make test-proxy</span> 等：含 merr 守护测试、竞态检测，确认没破坏契约。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>再推送提 PR</h4><p>本地全绿再推，CI 大概率一次过——把来回折腾消灭在推送前。</p></div></div>
+</div>
+<p>这种"<strong>把约定固化成工具、让机器替人把关</strong>"的做法，本身就是一种值得学习的工程智慧：人会累、会忘、会有分歧，但 linter 不会——它<strong>铁面无私地、对每个人一视同仁地</strong>执行同一套标准。于是整个代码库才能在成百上千贡献者手里，<strong>长期保持一致的风格与质量底线</strong>。回望这一课，merr 的 Input/System 之分教你<strong>严谨地对待错误</strong>、mlog/gci/生成文件之类的硬约定教你<strong>尊重项目的统一规矩</strong>——两者合起来，就是"<strong>让你的代码看起来像 Milvus 原生的一部分</strong>"。做到这点，你的 PR 才算真正<strong>够格被合入</strong>。下一课，我们就走完最后一步：把你的改动<strong>提成一个合规的 PR</strong>（标题格式、DCO 签名、关联 issue 等）。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>merr 错误处理</strong>：用 <span class="mono">merr</span> 不用 <span class="mono">fmt.Errorf</span>；分 <strong>Input</strong>(请求本身的错、不可重试) vs <strong>System</strong>(自身/暂时故障、保持可重试)；归因测试看"是不是请求内容逼出该分支"。</li>
+    <li><strong>归类决定重试</strong>：错标会让"本可重试"的操作枉死、或让"注定失败"的操作空转；加上下文只用 <span class="mono">merr.Wrap/Wrapf</span>；改 Input 前先 grep <span class="mono">retry.Do</span>。</li>
+    <li><strong>硬约定</strong>：日志只用 <span class="mono">mlog</span>(带 ctx，禁 log/zap)；import 顺序 标准→三方→milvus-io(gci)；生成文件(mock/.pb.go)改源头重生成、勿手改。</li>
+    <li><strong>机器把关</strong>：golangci-lint/gci/守护测试自动执行这些约定；提 PR 前本地先自查(格式化/lint/测试)，让代码"像 Milvus 原生的一部分"。</li>
+  </ul>
+</div>
+""",
+    "en": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+You can build and test; one gate remains before "<strong>your code can be merged</strong>" — <strong>conventions</strong>. Every mature project has coding rules; Milvus especially cares about a few: <strong>handle errors with merr</strong> (and tell "whose fault" it is), <strong>log only via mlog</strong>, <strong>order imports a fixed way</strong>, <strong>don't hand-edit generated files</strong>. Most are <strong>enforced by linters</strong> — violate them and CI rejects your PR. This lesson walks you through these "invisible bars", the most Milvus-flavored being merr's "<strong>Input vs System</strong>" error philosophy.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  A team's code conventions are like a big workshop's <strong>shared protocol</strong>. The most important rule is, when something breaks, <strong>tell "whose fault" it is</strong>: did the <strong>customer bring the wrong materials</strong> (an <strong>Input error</strong> — e.g. searching a nonexistent collection), or did <strong>our own machine malfunction</strong> (a <strong>System error</strong> — e.g. a node not yet ready)? The two are handled <strong>oppositely</strong>: the former you <strong>honestly tell the customer "this is on you"</strong> and don't blindly retry; the latter you <strong>retry automatically and alarm</strong>, since it's usually temporary.
+  Beyond "whose fault", the workshop has <strong>tidiness rules</strong>: which slot tools go in (import order), which official instrument to log with (mlog only), and <strong>don't manually repaint machine-stamped parts</strong> (don't hand-edit generated files). At the door a <strong>foreman</strong> (the linter) checks each item — non-compliant parts never enter the shop.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>errors use <span class="mono">merr</span> (<span class="inline">pkg/util/merr</span>) not <span class="mono">fmt.Errorf</span>, split into Input (the request itself is wrong, not retriable) vs System (Milvus's own/transient failure, stays retriable); logging only via <span class="mono">mlog</span> (<span class="mono">pkg/v3/log</span>, standard log, raw zap are linter-forbidden); imports ordered "stdlib → third-party → github.com/milvus-io" enforced by gci; generated files (mocks/proto) must not be hand-edited</strong>. Most conventions are machine-checked by golangci-lint/gci.
+</div>
+
+<h2>The signature convention: handle errors with merr (Input vs System)</h2>
+<p>Milvus's most distinctive and first-to-master convention is <strong>error handling</strong>. Rule one: <strong>don't build errors with <span class="mono">fmt.Errorf</span>; use <span class="mono">merr</span></strong> (<span class="inline">pkg/util/merr</span>). In merr, every error carries an <strong>error code</strong> and a <strong>retriable</strong> attribute, defined in <span class="inline">errors.go</span> like <span class="mono">newMilvusError("service not ready", 1, true)</span> — note that trailing <span class="mono">true</span>, meaning "this error <strong>may be retried</strong>". Create errors with factory functions like <span class="mono">WrapErrServiceNotReady(...)</span>, <span class="mono">WrapErrCollectionNotFound(...)</span>, not hand-spliced strings.</p>
+<p>But merr's real soul is forcing you to answer: <strong>whose fault is this error?</strong> Milvus splits errors into two classes. <strong>Input errors</strong>: caused by the <strong>request content itself</strong> — searching a nonexistent collection, passing invalid params. These are <strong>the user's fault</strong>, and the right move is to <strong>return faithfully, don't retry</strong> (retry ten thousand times, the collection still doesn't exist). <strong>System errors</strong>: Milvus's <strong>own</strong> problem or a <strong>transient</strong> failure — a node not yet ready, an internal momentary race. These are <strong>not the user's fault</strong> and often <strong>clear up shortly</strong>, so they should <strong>stay retriable</strong>. The key test isn't "does it look like validation" but the <strong>blame test</strong>: <strong>did the request content itself force this branch, or an internal/transient failure?</strong> The two, clarified:</p>
+
+<div class="cols">
+  <div class="col"><h4>Input error (blame the request)</h4><p>caused by the request itself: searching a missing collection, invalid params. <strong>Return to the user, not retriable</strong> (retry won't help). At the proxy boundary, often marked via <span class="mono">WrapErrAsInputError(When)</span>.</p></div>
+  <div class="col"><h4>System error (blame system/transient)</h4><p>a Milvus bug or transient failure: node not ready, internal momentary race. <strong>Stays retriable</strong> (may clear up soon), should alarm. The <strong>default classification</strong> for many merr errors.</p></div>
+</div>
+
+<h2>Why this distinction matters: it decides "to retry or not"</h2>
+<p>You might ask: why split so finely? Because — <strong>an error's classification directly decides the system's retry behavior, and getting it slightly wrong causes big problems</strong>. Many places inside Milvus <strong>auto-retry</strong> failed operations (typically calls wrapped in <span class="mono">retry.Do</span>). If a transient error that <strong>should be retried</strong> (System, e.g. "node not ready") is mislabeled Input and becomes non-retriable, then an operation that <strong>would have succeeded after a brief wait</strong> gets <strong>condemned on the spot</strong> and fails outright — a false alarm you turned real with your own hands.</p>
+<p>The reverse is worse: if a <strong>doomed</strong> Input error (e.g. "collection doesn't exist") is mislabeled a retriable System error, the system will <strong>foolishly retry over and over</strong> an operation that can never succeed, burning resources and possibly dragging down the caller. So merr has careful designs: <span class="mono">ErrCollectionNotFound</span> defaults to a <strong>System error</strong> (because internal paths in datacoord etc. need to treat "temporarily not found" as retriable during recovery/retry), and <strong>only at the user-facing proxy boundary</strong> is it "flipped" via <span class="mono">WrapErrAsInputErrorWhen</span> into an Input error for the user. This subtlety — "<strong>the same error is retriable internally, classified as user error only at the boundary</strong>" — is the essence of merr. Two companion iron rules to remember: to add context to an existing error, <strong>use only <span class="mono">merr.Wrap/Wrapf</span></strong> (not <span class="mono">WrapErrXxxErr(err,…)</span>, which masks the inner code); before turning an error Input, grep whether any <span class="mono">retry.Do</span> depends on its retriability — <strong>mislabeling one classification can quietly break a retry chain</strong>.</p>
+
+<h2>Other hard conventions: logging, import order, generated files</h2>
+<p>Beyond merr, a few unglamorous conventions can also block your PR — luckily most are <strong>linter-checked</strong>, so you needn't memorize them; violations are flagged on the spot. <strong>Log only via mlog</strong>: as Lesson 39 covered, Milvus's <span class="inline">.golangci.yml</span> uses depguard to <strong>explicitly forbid</strong> <span class="mono">pkg/v3/log</span>, the standard <span class="mono">log</span>, raw <span class="mono">zap</span> — all must become <span class="mono">pkg/v3/mlog</span>, every log carrying ctx. <strong>Import order</strong>: <span class="mono">gci</span> enforces three sections — <strong>stdlib → third-party → <span class="mono">github.com/milvus-io</span></strong>, this project's packages always last; <span class="mono">make</span> has a gci fix to sort them automatically. <strong>Don't hand-edit generated files</strong>: mockery-generated mocks (Lesson 43) and proto-generated <span class="mono">.pb.go</span> must be changed at the "source" and regenerated, not at the artifact. The conventions, with "who enforces", as a cheatsheet:</p>
+
+<table class="t">
+  <tr><th>Convention</th><th>Rule</th><th>Enforced by</th></tr>
+  <tr><td>error handling</td><td>use <span class="mono">merr</span> factories/<span class="mono">Wrap</span>, split Input/System, no <span class="mono">fmt.Errorf</span></td><td>review + merr guard tests</td></tr>
+  <tr><td>logging</td><td>only <span class="mono">mlog</span> (with ctx), no log/zap/fmt.Println</td><td>golangci-lint (depguard)</td></tr>
+  <tr><td>import order</td><td>stdlib → third-party → github.com/milvus-io</td><td>gci</td></tr>
+  <tr><td>generated files</td><td>mocks/.pb.go: change source and regenerate, don't hand-edit</td><td>review + no-diff regen</td></tr>
+  <tr><td>config</td><td>use paramtable, no raw file/env reads (Lesson 40)</td><td>review</td></tr>
+</table>
+
+<h2>Mostly machine-enforced: let CI check for you</h2>
+<p>Tie these conventions together and you'll find a reassuring fact: <strong>most don't rely on your memory but on tools to enforce</strong>. <span class="mono">gci</span> sorts your imports, <span class="mono">golangci-lint</span> catches "used a forbidden logging library" and "obvious bad smells", merr's guard tests defend the error-code contract, and CI runs the full <span class="mono">make test-*</span>. So the smart move before opening a PR is to <strong>run this self-check locally first</strong> — format imports, pass the linter, run the relevant module's tests — killing problems before pushing, rather than ping-ponging after CI turns red.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Sort imports</h4><p>gci fix auto-arranges imports into "stdlib→third-party→milvus-io".</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Pass the linter</h4><p><span class="mono">golangci-lint</span>: catch forbidden log libs, bad smells; depguard enforces "mlog only".</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Run relevant tests</h4><p><span class="mono">make test-proxy</span> etc.: incl. merr guard tests, race detection — confirm no contract broken.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Then push the PR</h4><p>push only when locally green; CI likely passes first try — no post-push ping-pong.</p></div></div>
+</div>
+<p>This practice of "<strong>solidifying conventions into tools, letting machines enforce for humans</strong>" is itself worth learning: people tire, forget, and disagree, but a linter doesn't — it enforces one standard <strong>impartially, identically for everyone</strong>. That's how a codebase, in the hands of hundreds of contributors, can <strong>keep a consistent style and quality floor over the long run</strong>. Looking back over this lesson, merr's Input/System split teaches you to <strong>treat errors rigorously</strong>, while hard conventions like mlog/gci/generated-files teach you to <strong>respect the project's shared rules</strong> — together, they make "<strong>your code look like a native part of Milvus</strong>". Achieve that and your PR is truly <strong>fit to be merged</strong>. Next lesson, the final step: <strong>turn your change into a compliant PR</strong> (title format, DCO sign-off, linked issue, etc.).</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>merr error handling</strong>: use <span class="mono">merr</span> not <span class="mono">fmt.Errorf</span>; split <strong>Input</strong> (request's own fault, not retriable) vs <strong>System</strong> (own/transient failure, stays retriable); the blame test asks "did the request content force this branch".</li>
+    <li><strong>Classification decides retry</strong>: mislabeling kills a "retriable" op or spins a "doomed" one; add context only via <span class="mono">merr.Wrap/Wrapf</span>; grep <span class="mono">retry.Do</span> before turning something Input.</li>
+    <li><strong>Hard conventions</strong>: log only via <span class="mono">mlog</span> (with ctx, no log/zap); import order stdlib→third-party→milvus-io (gci); generated files (mock/.pb.go) change source and regenerate, don't hand-edit.</li>
+    <li><strong>Machine-enforced</strong>: golangci-lint/gci/guard tests auto-enforce; self-check locally before a PR (format/lint/test) to make code "look like a native part of Milvus".</li>
+  </ul>
+</div>
+""",
+}

@@ -61,4 +61,5 @@ CONTENT = {
     "41-deployment.html": part9.LESSON_41,
     "42-build-and-run.html": part10.LESSON_42,
     "43-testing.html": part10.LESSON_43,
+    "44-code-conventions.html": part10.LESSON_44,
 }

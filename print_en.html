@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 43 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 44 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
@@ -371,6 +371,7 @@ details[open] > summary { list-style: none; }
   <li>Deployment & operations</li>
   <li>Build & run</li>
   <li>Testing</li>
+  <li>Code conventions</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -8386,6 +8387,119 @@ You can build Milvus; next is to <strong>write and run its tests</strong>. But y
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
     <li>This lesson likens the test flags to 'lab gear' and says testing's 'specialness' distills Milvus's two genes (bilingual and concurrent). Please: (1) map -tags dynamic,test / -gcflags="all=-N -l" / -race each to 'why it's needed', especially the -N -l ↔ mockey causation; (2) for two scenarios choose mockery or mockey and justify: A) the function under test depends on a Coordinator interface; B) it internally calls a package-level helper that can't be injected; (3) why must mock files (internal/mocks) not be hand-edited? Is this the same discipline as Part 8's generated proto files?</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Code conventions</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+You can build and test; one gate remains before "<strong>your code can be merged</strong>" — <strong>conventions</strong>. Every mature project has coding rules; Milvus especially cares about a few: <strong>handle errors with merr</strong> (and tell "whose fault" it is), <strong>log only via mlog</strong>, <strong>order imports a fixed way</strong>, <strong>don't hand-edit generated files</strong>. Most are <strong>enforced by linters</strong> — violate them and CI rejects your PR. This lesson walks you through these "invisible bars", the most Milvus-flavored being merr's "<strong>Input vs System</strong>" error philosophy.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  A team's code conventions are like a big workshop's <strong>shared protocol</strong>. The most important rule is, when something breaks, <strong>tell "whose fault" it is</strong>: did the <strong>customer bring the wrong materials</strong> (an <strong>Input error</strong> — e.g. searching a nonexistent collection), or did <strong>our own machine malfunction</strong> (a <strong>System error</strong> — e.g. a node not yet ready)? The two are handled <strong>oppositely</strong>: the former you <strong>honestly tell the customer "this is on you"</strong> and don't blindly retry; the latter you <strong>retry automatically and alarm</strong>, since it's usually temporary.
+  Beyond "whose fault", the workshop has <strong>tidiness rules</strong>: which slot tools go in (import order), which official instrument to log with (mlog only), and <strong>don't manually repaint machine-stamped parts</strong> (don't hand-edit generated files). At the door a <strong>foreman</strong> (the linter) checks each item — non-compliant parts never enter the shop.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>errors use <span class="mono">merr</span> (<span class="inline">pkg/util/merr</span>) not <span class="mono">fmt.Errorf</span>, split into Input (the request itself is wrong, not retriable) vs System (Milvus's own/transient failure, stays retriable); logging only via <span class="mono">mlog</span> (<span class="mono">pkg/v3/log</span>, standard log, raw zap are linter-forbidden); imports ordered "stdlib → third-party → github.com/milvus-io" enforced by gci; generated files (mocks/proto) must not be hand-edited</strong>. Most conventions are machine-checked by golangci-lint/gci.
+</div>
+
+<h2>The signature convention: handle errors with merr (Input vs System)</h2>
+<p>Milvus's most distinctive and first-to-master convention is <strong>error handling</strong>. Rule one: <strong>don't build errors with <span class="mono">fmt.Errorf</span>; use <span class="mono">merr</span></strong> (<span class="inline">pkg/util/merr</span>). In merr, every error carries an <strong>error code</strong> and a <strong>retriable</strong> attribute, defined in <span class="inline">errors.go</span> like <span class="mono">newMilvusError("service not ready", 1, true)</span> — note that trailing <span class="mono">true</span>, meaning "this error <strong>may be retried</strong>". Create errors with factory functions like <span class="mono">WrapErrServiceNotReady(...)</span>, <span class="mono">WrapErrCollectionNotFound(...)</span>, not hand-spliced strings.</p>
+<p>But merr's real soul is forcing you to answer: <strong>whose fault is this error?</strong> Milvus splits errors into two classes. <strong>Input errors</strong>: caused by the <strong>request content itself</strong> — searching a nonexistent collection, passing invalid params. These are <strong>the user's fault</strong>, and the right move is to <strong>return faithfully, don't retry</strong> (retry ten thousand times, the collection still doesn't exist). <strong>System errors</strong>: Milvus's <strong>own</strong> problem or a <strong>transient</strong> failure — a node not yet ready, an internal momentary race. These are <strong>not the user's fault</strong> and often <strong>clear up shortly</strong>, so they should <strong>stay retriable</strong>. The key test isn't "does it look like validation" but the <strong>blame test</strong>: <strong>did the request content itself force this branch, or an internal/transient failure?</strong> The two, clarified:</p>
+
+<div class="cols">
+  <div class="col"><h4>Input error (blame the request)</h4><p>caused by the request itself: searching a missing collection, invalid params. <strong>Return to the user, not retriable</strong> (retry won't help). At the proxy boundary, often marked via <span class="mono">WrapErrAsInputError(When)</span>.</p></div>
+  <div class="col"><h4>System error (blame system/transient)</h4><p>a Milvus bug or transient failure: node not ready, internal momentary race. <strong>Stays retriable</strong> (may clear up soon), should alarm. The <strong>default classification</strong> for many merr errors.</p></div>
+</div>
+
+<h2>Why this distinction matters: it decides "to retry or not"</h2>
+<p>You might ask: why split so finely? Because — <strong>an error's classification directly decides the system's retry behavior, and getting it slightly wrong causes big problems</strong>. Many places inside Milvus <strong>auto-retry</strong> failed operations (typically calls wrapped in <span class="mono">retry.Do</span>). If a transient error that <strong>should be retried</strong> (System, e.g. "node not ready") is mislabeled Input and becomes non-retriable, then an operation that <strong>would have succeeded after a brief wait</strong> gets <strong>condemned on the spot</strong> and fails outright — a false alarm you turned real with your own hands.</p>
+<p>The reverse is worse: if a <strong>doomed</strong> Input error (e.g. "collection doesn't exist") is mislabeled a retriable System error, the system will <strong>foolishly retry over and over</strong> an operation that can never succeed, burning resources and possibly dragging down the caller. So merr has careful designs: <span class="mono">ErrCollectionNotFound</span> defaults to a <strong>System error</strong> (because internal paths in datacoord etc. need to treat "temporarily not found" as retriable during recovery/retry), and <strong>only at the user-facing proxy boundary</strong> is it "flipped" via <span class="mono">WrapErrAsInputErrorWhen</span> into an Input error for the user. This subtlety — "<strong>the same error is retriable internally, classified as user error only at the boundary</strong>" — is the essence of merr. Two companion iron rules to remember: to add context to an existing error, <strong>use only <span class="mono">merr.Wrap/Wrapf</span></strong> (not <span class="mono">WrapErrXxxErr(err,…)</span>, which masks the inner code); before turning an error Input, grep whether any <span class="mono">retry.Do</span> depends on its retriability — <strong>mislabeling one classification can quietly break a retry chain</strong>.</p>
+
+<h2>Other hard conventions: logging, import order, generated files</h2>
+<p>Beyond merr, a few unglamorous conventions can also block your PR — luckily most are <strong>linter-checked</strong>, so you needn't memorize them; violations are flagged on the spot. <strong>Log only via mlog</strong>: as Lesson 39 covered, Milvus's <span class="inline">.golangci.yml</span> uses depguard to <strong>explicitly forbid</strong> <span class="mono">pkg/v3/log</span>, the standard <span class="mono">log</span>, raw <span class="mono">zap</span> — all must become <span class="mono">pkg/v3/mlog</span>, every log carrying ctx. <strong>Import order</strong>: <span class="mono">gci</span> enforces three sections — <strong>stdlib → third-party → <span class="mono">github.com/milvus-io</span></strong>, this project's packages always last; <span class="mono">make</span> has a gci fix to sort them automatically. <strong>Don't hand-edit generated files</strong>: mockery-generated mocks (Lesson 43) and proto-generated <span class="mono">.pb.go</span> must be changed at the "source" and regenerated, not at the artifact. The conventions, with "who enforces", as a cheatsheet:</p>
+
+<table class="t">
+  <tr><th>Convention</th><th>Rule</th><th>Enforced by</th></tr>
+  <tr><td>error handling</td><td>use <span class="mono">merr</span> factories/<span class="mono">Wrap</span>, split Input/System, no <span class="mono">fmt.Errorf</span></td><td>review + merr guard tests</td></tr>
+  <tr><td>logging</td><td>only <span class="mono">mlog</span> (with ctx), no log/zap/fmt.Println</td><td>golangci-lint (depguard)</td></tr>
+  <tr><td>import order</td><td>stdlib → third-party → github.com/milvus-io</td><td>gci</td></tr>
+  <tr><td>generated files</td><td>mocks/.pb.go: change source and regenerate, don't hand-edit</td><td>review + no-diff regen</td></tr>
+  <tr><td>config</td><td>use paramtable, no raw file/env reads (Lesson 40)</td><td>review</td></tr>
+</table>
+
+<h2>Mostly machine-enforced: let CI check for you</h2>
+<p>Tie these conventions together and you'll find a reassuring fact: <strong>most don't rely on your memory but on tools to enforce</strong>. <span class="mono">gci</span> sorts your imports, <span class="mono">golangci-lint</span> catches "used a forbidden logging library" and "obvious bad smells", merr's guard tests defend the error-code contract, and CI runs the full <span class="mono">make test-*</span>. So the smart move before opening a PR is to <strong>run this self-check locally first</strong> — format imports, pass the linter, run the relevant module's tests — killing problems before pushing, rather than ping-ponging after CI turns red.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Sort imports</h4><p>gci fix auto-arranges imports into "stdlib→third-party→milvus-io".</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Pass the linter</h4><p><span class="mono">golangci-lint</span>: catch forbidden log libs, bad smells; depguard enforces "mlog only".</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Run relevant tests</h4><p><span class="mono">make test-proxy</span> etc.: incl. merr guard tests, race detection — confirm no contract broken.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Then push the PR</h4><p>push only when locally green; CI likely passes first try — no post-push ping-pong.</p></div></div>
+</div>
+<p>This practice of "<strong>solidifying conventions into tools, letting machines enforce for humans</strong>" is itself worth learning: people tire, forget, and disagree, but a linter doesn't — it enforces one standard <strong>impartially, identically for everyone</strong>. That's how a codebase, in the hands of hundreds of contributors, can <strong>keep a consistent style and quality floor over the long run</strong>. Looking back over this lesson, merr's Input/System split teaches you to <strong>treat errors rigorously</strong>, while hard conventions like mlog/gci/generated-files teach you to <strong>respect the project's shared rules</strong> — together, they make "<strong>your code look like a native part of Milvus</strong>". Achieve that and your PR is truly <strong>fit to be merged</strong>. Next lesson, the final step: <strong>turn your change into a compliant PR</strong> (title format, DCO sign-off, linked issue, etc.).</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>merr error handling</strong>: use <span class="mono">merr</span> not <span class="mono">fmt.Errorf</span>; split <strong>Input</strong> (request's own fault, not retriable) vs <strong>System</strong> (own/transient failure, stays retriable); the blame test asks "did the request content force this branch".</li>
+    <li><strong>Classification decides retry</strong>: mislabeling kills a "retriable" op or spins a "doomed" one; add context only via <span class="mono">merr.Wrap/Wrapf</span>; grep <span class="mono">retry.Do</span> before turning something Input.</li>
+    <li><strong>Hard conventions</strong>: log only via <span class="mono">mlog</span> (with ctx, no log/zap); import order stdlib→third-party→milvus-io (gci); generated files (mock/.pb.go) change source and regenerate, don't hand-edit.</li>
+    <li><strong>Machine-enforced</strong>: golangci-lint/gci/guard tests auto-enforce; self-check locally before a PR (format/lint/test) to make code "look like a native part of Milvus".</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Milvus's merr splits errors into Input and System. What's the core criterion and consequence?</div>
+  <ol class="opts">
+    <li>The two are equivalent; classify either way</li>
+    <li>Input is minor, System is major — split by severity</li>
+    <li>The criterion is the 'blame test': forced by the request content itself = Input (not retriable, return to user); Milvus's own/transient failure = System (stays retriable, should alarm). Classification directly decides whether the system retries</li>
+    <li>Input is for C++, System for Go</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. The criterion isn't 'does it look like validation' but the blame test: did the request content force this branch (Input — user's fault, retry won't help) or an internal/transient failure (System — not the user's fault, may clear up). The consequence is concrete: many places use retry.Do; mislabeling a retriable System as Input kills an op that would've succeeded after a wait; mislabeling a doomed Input as System spins endless retries. So classification directly decides retry behavior.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. About adding context to errors and adding new error codes, which follows merr conventions?</div>
+  <ol class="opts">
+    <li>Turning an error Input needn't consider any retry.Do elsewhere</li>
+    <li>Pick any unused number for a new code, ranges don't matter</li>
+    <li>Add context only via merr.Wrap/Wrapf (not WrapErrXxxErr(err,…) which masks the inner code); new errors pick a code from the existing family range in errors.go and set the retriable flag per Input/System</li>
+    <li>Just wrap with fmt.Errorf, simplest</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. Add context with merr.Wrap/Wrapf — it preserves the inner code; WrapErrXxxErr(err,…) masks it with a new error, losing the original classification. Codes in errors.go are partitioned: similar-duty errors sit in adjacent ranges, so a new error must pick from its family range (not collide with C++ segcore codes) and set the retriable bool per Input/System. Also, before turning an error Input, grep retry.Do to ensure no retry chain depends on its retriability — mislabeling silently breaks retries.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Which statement about Milvus's other hard conventions (logging/imports/generated files) is correct?</div>
+  <ol class="opts">
+    <li>Generated mock files should be hand-edited to pass tests</li>
+    <li>Use any logging library; the linter doesn't care</li>
+    <li>Import order is free; gci is only a suggestion</li>
+    <li>Log only via mlog (with ctx; log/zap/fmt.Println forbidden by depguard); imports stdlib→third-party→github.com/milvus-io (gci-enforced); mocks/.pb.go regenerate from source, don't hand-edit — mostly auto-enforced by golangci-lint/gci</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. .golangci.yml uses depguard to forbid pkg/v3/log, standard log, raw zap, forcing pkg/v3/mlog with ctx on every call (Lesson 39). gci enforces imports into stdlib→third-party→github.com/milvus-io, this project's packages last. mockery-generated mocks and proto .pb.go are artifacts — change the interface/proto then regenerate via make, don't hand-edit (Lesson 43's discipline). These are mostly auto-enforced by golangci-lint/gci and guard tests — self-check with lint+tests locally before a PR.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson says 'an error also carries information about what to do with it'; merr gives errors an identity (code/retriable/Input vs System). Please: (1) with a concrete example (e.g. ErrCollectionNotFound) explain why the same error defaults to System (retriable) internally but is flipped to Input via WrapErrAsInputErrorWhen only at the proxy boundary; (2) explain why add context with merr.Wrap rather than WrapErrXxxErr; (3) these conventions are mostly linter-enforced — discuss what 'solidifying conventions into tools' means for a hundreds-of-contributors open-source project, and what shared engineering aesthetic it shares with Lesson 40's 'config funneling' and Lesson 43's 'don't hand-edit generated files'.</li>
   </ul>
 </div>
 </div>
