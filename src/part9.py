@@ -267,3 +267,140 @@ Last lesson, a request came in through the API. But once it runs through Milvus'
 </div>
 """,
 }
+
+LESSON_40 = {
+    "zh": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+一套像 Milvus 这样的分布式系统，藏着<strong>成百上千个旋钮</strong>：超时多久、连接池多大、配额上限、端口、存储路径、各种阈值……这些旋钮怎么设、怎么按环境覆盖、代码怎么<strong>类型安全</strong>地读、又有哪些能<strong>边跑边拧</strong>（不重启）？这一课看 Milvus 的配置系统：上层是 <span class="mono">paramtable</span>（类型安全的配置注册表），底层是分层的<strong>数据源</strong>（<span class="mono">milvus.yaml</span> 文件 / 环境变量 / etcd），按<strong>优先级</strong>合并，部分还支持<strong>热更新</strong>。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 类比</div>
+  把配置想成一栋大楼的<strong>控制面板</strong>。面板上每个开关都<strong>印着标签、标好类型</strong>（这是温度、范围 16–30 度、默认 22）——你不会把"温度"误设成一句话，这就是 <span class="mono">paramtable</span> 的"<strong>类型安全</strong>"。开关的值有<strong>好几个来源</strong>，还讲<strong>优先级</strong>：墙上印的是<strong>出厂默认</strong>（<span class="mono">milvus.yaml</span>），房间门口的临时贴纸能<strong>覆盖默认</strong>（环境变量），而物业中控室能<strong>远程、实时</strong>地改某些开关（etcd）——级别越高、越"贴身"的来源，<strong>说了算</strong>。
+  更妙的是：<strong>有些开关能在大楼运转时直接拧</strong>（热更新，比如调日志级别、限流阈值），<strong>有些则被锁死、只能停机才改</strong>（比如端口）。一块设计良好的面板，让你既改得方便、又不会误伤。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观视角</div>
+  一句话：<strong>每个配置项是一个 <span class="mono">ParamItem</span>（带 Key、默认值、文档、<span class="mono">GetAsInt/Bool</span> 等类型化读取），按组件归类（grpc/quota/http…）；取值来自分层数据源——<span class="mono">milvus.yaml</span> 文件、环境变量、etcd——由 <span class="mono">config.Manager</span> 按优先级合并（值越小优先级越高），可变项还能经回调<strong>热更新</strong></strong>。代码只读类型化的值，从不自己解析字符串。
+</div>
+
+<h2>一个分布式系统有成百上千个旋钮</h2>
+<p>先体会一下问题的规模。Milvus 有十几种组件、每种都有自己的可调项：Proxy 的限流阈值、各 RPC 的超时与重试、连接池大小、各类队列长度、配额与租户限制、对象存储的地址与桶名、etcd 路径、日志级别、是否对某字段启用 mmap……粗算下来<strong>成百上千</strong>。管理这么多配置，有四个绕不开的难题：一是<strong>怎么设默认值</strong>，让开箱即用；二是<strong>怎么按环境覆盖</strong>，开发/测试/生产各不相同；三是<strong>代码怎么读</strong>，既要类型正确（端口是整数、开关是布尔）又不能到处手写字符串解析；四是<strong>哪些能在运行时改</strong>，不必为调一个阈值就重启整个集群。</p>
+<p>如果没有统一方案，这些难题会演变成灾难：默认值散落各处、改个配置要翻十个文件、各组件对"超时"的理解还不一致、读配置时到处 <span class="mono">strconv.Atoi</span> 还可能 panic……Milvus 的答案是把配置做成<strong>两层</strong>：上层 <span class="mono">paramtable</span> 提供"<strong>类型安全、有文档、可分组</strong>"的<strong>读取面</strong>，下层 <span class="mono">config</span> 提供"<strong>多来源、按优先级合并、可热更新</strong>"的<strong>取值面</strong>。两层一拆，"<strong>怎么用配置</strong>"和"<strong>配置从哪来</strong>"就各自清爽——这又是一次熟悉的"<strong>关注点分离</strong>"。</p>
+
+<p>这种分离带来的好处，在<strong>读源码</strong>和<strong>排查"配置为什么不生效"</strong>时尤其明显。当你想知道"某个超时到底是多少、为什么是这个值"，你的排查路径会非常清晰：先去 <span class="mono">paramtable</span> 找到对应的 <span class="mono">ParamItem</span>，看它的 <span class="mono">Key</span> 和默认值；再去 <span class="mono">config</span> 那一层，看这个 Key 在 <span class="mono">milvus.yaml</span>、环境变量、etcd 里<strong>有没有被覆盖</strong>、谁的优先级更高。"<strong>用</strong>"的问题在上层、"<strong>取</strong>"的问题在下层，泾渭分明，你不会在一团乱麻里打转。反过来想，如果没有这层分离——假设每段业务代码都直接去读文件、读环境变量、还各自决定"谁覆盖谁"——那同一个配置在不同组件里可能被读出不同的值、覆盖规则也各执一词，这种 bug 几乎无法排查。所以"<strong>把取值统一收口到 config、把读取统一收口到 paramtable</strong>"不只是代码整洁，更是<strong>让整个系统的配置行为可预测、可解释</strong>的关键。一个旋钮无论被多少处代码读取，它的<strong>当前值只有一个、来源只有一条最高优先级的链路</strong>，这种确定性，正是大型系统配置管理的根本诉求。</p>
+
+<h2>paramtable：类型安全的配置注册表</h2>
+<p>先看上层。每一个配置项，在代码里都是一个 <span class="mono">ParamItem</span>（定义在 <span class="inline">pkg/util/paramtable/param_item.go</span>）。它远不只是"一个值"，而是把这个旋钮的<strong>全部元信息</strong>都登记在册：<span class="mono">Key</span>（形如 <span class="mono">"A.B.C"</span> 的层级键）、<span class="mono">DefaultValue</span>（默认值）、<span class="mono">Doc</span>（这个旋钮干什么用的文档）、<span class="mono">FallbackKeys</span>（兼容旧键名）、还有 <span class="mono">PanicIfEmpty</span>、<span class="mono">Immutable</span>、<span class="mono">Formatter</span> 等行为标记。</p>
+<p>最关键的是它提供<strong>类型化的读取方法</strong>：<span class="mono">GetValue()</span> 取字符串、<span class="mono">GetAsBool()</span> 取布尔、<span class="mono">GetAsInt()</span> / <span class="mono">GetAsInt64()</span> 取整数……于是消费方的代码长这样：<span class="mono">Params.ProxyCfg.SomeTimeout.GetAsInt()</span>——<strong>直接拿到一个类型正确的值，从不自己解析字符串</strong>。这一点看似小，意义却大：它把"字符串 → 类型"的转换<strong>收口到一处</strong>（ParamItem 内部），既避免了满地的 <span class="mono">strconv</span> 与重复 bug，也让"忘了转换、转错类型"这类错误<strong>无处发生</strong>。这些 <span class="mono">ParamItem</span> 还按<strong>组件/主题</strong>分门别类地组织在不同文件里：<span class="mono">grpc_param.go</span>、<span class="mono">quota_param.go</span>、<span class="mono">http_param.go</span>、<span class="mono">knowhere_param.go</span>……每个文件聚一类旋钮，整整齐齐。下面这张分层图，画出从"取值底座"到"分组旋钮"再到"单个 ParamItem"的结构。</p>
+
+<p>除了类型安全，<span class="mono">ParamItem</span> 登记的那些<strong>元信息</strong>还各有妙用，值得一一点出。<span class="mono">DefaultValue</span> 让系统<strong>开箱即用</strong>——你什么都不配，它也能用一套合理默认跑起来。<span class="mono">Doc</span> 不只是注释：它能被工具<strong>提取出来自动生成配置文档</strong>，于是 <span class="mono">milvus.yaml</span> 里每个旋钮旁边那句解释，和代码里的定义<strong>同一个源头、永不脱节</strong>。<span class="mono">FallbackKeys</span> 解决<strong>历史包袱</strong>：当一个配置项改了名字，老的键名还能作为后备被识别，这样升级 Milvus 时<strong>旧配置文件不会一夜失效</strong>。<span class="mono">PanicIfEmpty</span> 则是一道<strong>启动期护栏</strong>：对那些"没有就根本没法工作"的关键配置，干脆在启动时就因缺失而明确报错，而不是带着一个空值<strong>跑到半路才神秘崩溃</strong>。你看，把一个"配置项"做成一个登记齐全的对象、而非一个裸字符串，背后是一整套<strong>对可维护性、可升级性、可诊断性的周到考量</strong>——这正是成熟工程与玩具项目的分水岭。</p>
+
+<div class="layers">
+  <div class="layer l-main"><div class="lh"><span class="badge">取值底座</span><span class="name">config.Manager（合并多来源、按优先级给出当前值）</span></div><div class="ld">背后是 file/env/etcd 等数据源；支持热更新分发</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">分组</span><span class="name">组件参数（grpc_param / quota_param / http_param …）</span></div><div class="ld">按组件/主题把成百上千个旋钮归类，便于查找与维护</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">单项</span><span class="name">ParamItem（Key/Default/Doc + GetAsInt/Bool…）</span></div><div class="ld">登记元信息、提供类型化读取；代码只读类型值，不解析字符串</div></div>
+</div>
+
+<h2>配置从哪来：分层数据源与优先级</h2>
+<p>再看下层——值到底从哪儿取。<span class="mono">config</span> 包（<span class="inline">pkg/config</span>）定义了多种<strong>数据源（Source）</strong>，每种来源各有<strong>优先级</strong>。最基础的是 <strong>FileSource</strong>：读 <span class="inline">configs/milvus.yaml</span>，这是<strong>人类可读的默认配置文件</strong>，也是所有旋钮"<strong>对外展示的清单</strong>"——你想知道有哪些配置、默认是多少，看它就对了。其上是 <strong>EnvSource</strong>：环境变量，方便在容器/CI 里<strong>临时覆盖</strong>，无需改文件。最高的是 <strong>EtcdSource</strong>：把配置放进 etcd，可<strong>集群级、运行时</strong>统一下发与修改。</p>
+<p>多来源就要定<strong>谁说了算</strong>。<span class="mono">config.Manager</span>（<span class="inline">pkg/config/manager.go</span>）负责把各来源<strong>合并</strong>，规则是按优先级：源码里 <span class="mono">HighPriority=1</span>、<span class="mono">NormalPriority=11</span>、<span class="mono">LowPriority=21</span>，并注明"<strong>值越小、优先级越高</strong>"。直观理解就是"<strong>越贴身、越动态的来源越优先</strong>"：etcd（运行时下发）压过环境变量、环境变量压过文件默认。这套"<strong>分层覆盖</strong>"模式你一定不陌生——它和绝大多数成熟配置系统一个套路：<strong>给一套合理默认，再允许逐层精确覆盖</strong>，既开箱即用，又能在每个环境精准调校。下面把三种来源摆在一起。</p>
+
+<p>为什么"<strong>越贴身、越动态的来源优先级越高</strong>"这条规则是合理的？因为它恰好匹配了人们调整配置的<strong>真实意图</strong>。文件默认是"<strong>大多数情况下的合理选择</strong>"，最普适、也最该被特殊情况覆盖；环境变量是"<strong>这一次部署的特定需要</strong>"，比通用默认更贴合当下；而 etcd 里的运行时配置是"<strong>此刻、由运维明确下发的决定</strong>"，往往是为了应对正在发生的状况（比如临时收紧限流以扛住流量峰值）——它<strong>最贴身、最该说了算</strong>。把优先级设计成"动态压过静态、具体压过通用"，本质是让系统<strong>尊重"更晚、更具体、更有针对性"的那个决定</strong>。这也提醒你一个排查配置问题的要诀：当某个配置"<strong>改了文件却不生效</strong>"，十有八九是被一个<strong>更高优先级的来源</strong>（环境变量或 etcd）悄悄覆盖了——顺着优先级链从高往低查，往往一抓一个准。</p>
+
+<table class="t">
+  <tr><th>数据源</th><th>来自哪里</th><th>典型用途</th><th>优先级</th></tr>
+  <tr><td class="mono">FileSource</td><td>configs/milvus.yaml</td><td>默认值 + 旋钮清单（人类可读）</td><td>低（兜底）</td></tr>
+  <tr><td class="mono">EnvSource</td><td>环境变量</td><td>容器/CI 里临时覆盖，不改文件</td><td>中</td></tr>
+  <tr><td class="mono">EtcdSource</td><td>etcd 中的配置</td><td>集群级、运行时统一下发/修改</td><td>高（最贴身）</td></tr>
+</table>
+
+<h2>热更新：有些旋钮能边跑边拧</h2>
+<p>最后是最体现"分布式运维友好"的一招：<strong>热更新</strong>。很多时候，你只想调一个限流阈值或日志级别，却<strong>不想为此重启整个集群</strong>（重启意味着抖动、甚至短暂不可用）。Milvus 的配置系统支持：把变更写进 <strong>etcd</strong>，<span class="mono">config.Manager</span> 通过它的<strong>分发器（Dispatcher）</strong>感知到变化，回调通知相关的 <span class="mono">ParamItem</span> 刷新自己的 <span class="mono">lastValue</span>——于是代码下次 <span class="mono">GetAsInt()</span> 拿到的就是<strong>新值，立即生效，无需重启</strong>。</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>改 etcd 里的值</h4><p>把某可变配置（如限流阈值、日志级别）的新值写进 etcd。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Manager 感知</h4><p><span class="mono">config.Manager</span> 经 EtcdSource 监听到变更，由 <strong>Dispatcher</strong> 分发事件。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>回调刷新 ParamItem</h4><p>相关 <span class="mono">ParamItem</span> 的回调被触发，更新其 <span class="mono">lastValue</span>。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>代码读到新值</h4><p>下次 <span class="mono">GetAsInt()</span> 即返回新值，立即生效——不可变项(Immutable)则拒绝此流程。</p></div></div>
+</div>
+<p>但并非所有旋钮都能这么改。有些配置<strong>天生不该在运行时变</strong>（比如服务端口、某些一经初始化就定型的结构），于是 <span class="mono">ParamItem</span> 用 <span class="mono">Immutable</span> / <span class="mono">Forbidden</span> 标记把它们<strong>锁住</strong>，拒绝热更新——这是一种<strong>保护</strong>：宁可不让你改，也不让"运行时改了个本不该动的东西"引发诡异故障。把"可变 / 不可变"显式标在每个旋钮上，正是一块好控制面板的素养：<strong>能动的让你方便地动，不能动的干脆锁死</strong>。</p>
+
+<p>这里再借热更新这件事，说一个更深的设计取舍：<strong>"能改"与"安全"之间永远要权衡</strong>。把所有配置都做成可热更新，听起来很灵活，实则危险——有些参数一旦在运行中被改，可能让进行中的请求行为不一致、或让某些已按旧值初始化的内部结构与新值"对不上"，引发难以复现的诡异故障。所以 Milvus 的态度是<strong>保守而克制</strong>：默认把"改了可能出事"的旋钮锁住，只对那些<strong>明确安全、且确实有运行时调整需求</strong>的参数（限流、日志级别、部分配额）开放热更新。这种"<strong>把危险操作默认关掉、只在确知安全处才打开</strong>"的姿态，和第 37 课"GPU 默认 OFF、要的人才编译开启"是同一种工程价值观——<strong>面对一个分布式系统，宁可少给一点便利，也要守住确定性与稳定性这条底线</strong>。理解了这一点，你看 <span class="mono">Immutable</span>/<span class="mono">Forbidden</span> 这些标记就不再觉得是"限制"，而会读出背后那份"<strong>对生产环境的敬畏</strong>"。</p>
+
+<p>串起这一课：<span class="mono">paramtable</span> 给你一个类型安全、有文档、分组清晰的<strong>读取面</strong>，<span class="mono">config</span> 给你一个多来源、按优先级合并、可热更新的<strong>取值面</strong>，两层协作，把"<strong>成百上千个旋钮</strong>"管得井井有条。下一课是第 9 部分的收尾——<strong>部署</strong>：standalone 与 cluster、它依赖的 etcd/对象存储/消息组件，以及怎么把这套系统真正跑起来。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>两层设计</strong>：<span class="mono">paramtable</span>(读取面：类型安全/有文档/分组) + <span class="mono">config</span>(取值面：多来源/优先级/热更新)；"怎么用配置"与"配置从哪来"分离。</li>
+    <li><strong>ParamItem</strong>：每个旋钮一项，登记 Key/DefaultValue/Doc，提供 <span class="mono">GetAsInt/GetAsBool</span> 等类型化读取；代码不自己解析字符串，转换收口一处。</li>
+    <li><strong>分层数据源</strong>：FileSource(milvus.yaml 默认/清单) &lt; EnvSource(环境变量) &lt; EtcdSource(运行时下发)，由 <span class="mono">config.Manager</span> 按优先级合并（值越小越优先）。</li>
+    <li><strong>热更新</strong>：可变项经 etcd + Dispatcher 回调刷新、立即生效不重启；<span class="mono">Immutable/Forbidden</span> 项锁死、拒绝运行时修改以保安全。</li>
+  </ul>
+</div>
+""",
+    "en": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+A distributed system like Milvus hides <strong>hundreds of knobs</strong>: timeouts, pool sizes, quota ceilings, ports, storage paths, thresholds… How are they set, overridden per environment, read <strong>type-safely</strong> by code, and which can be <strong>turned while running</strong> (no restart)? This lesson covers Milvus's config system: on top is <span class="mono">paramtable</span> (a type-safe config registry); underneath are layered <strong>sources</strong> (the <span class="mono">milvus.yaml</span> file / environment variables / etcd), merged by <strong>priority</strong>, with some supporting <strong>hot reload</strong>.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of config as a building's <strong>control panel</strong>. Each switch is <strong>labeled and typed</strong> (this is temperature, range 16–30, default 22) — you can't mis-set "temperature" to a sentence; that's <span class="mono">paramtable</span>'s "<strong>type safety</strong>". A switch's value has <strong>several sources</strong> with a <strong>priority</strong>: printed on the wall is the <strong>factory default</strong> (<span class="mono">milvus.yaml</span>), a sticky note by the door can <strong>override the default</strong> (env vars), and a facilities control room can change some switches <strong>remotely, in real time</strong> (etcd) — the higher, more "personal" source <strong>wins</strong>.
+  Better still: <strong>some switches can be turned while the building runs</strong> (hot reload — log level, rate limits), while <strong>others are locked, changeable only when shut down</strong> (ports). A well-designed panel makes you both able to change easily and unable to break things by accident.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>each config item is a <span class="mono">ParamItem</span> (with Key, default, doc, typed getters like <span class="mono">GetAsInt/Bool</span>), grouped by component (grpc/quota/http…); values come from layered sources — <span class="mono">milvus.yaml</span>, env vars, etcd — merged by <span class="mono">config.Manager</span> by priority (lesser value = higher priority), with mutable items <strong>hot-reloadable</strong> via callbacks</strong>. Code only reads typed values; it never parses strings itself.
+</div>
+
+<h2>A distributed system has hundreds of knobs</h2>
+<p>First, the scale of the problem. Milvus has a dozen kinds of components, each with its own tunables: the Proxy's rate limits, each RPC's timeout and retry, pool sizes, queue lengths, quotas and tenant limits, object-storage address and bucket, etcd paths, log level, whether to mmap a field… <strong>hundreds</strong> in all. Managing this many configs raises four unavoidable problems: how to <strong>set defaults</strong> for out-of-the-box use; how to <strong>override per environment</strong> (dev/test/prod differ); how <strong>code reads them</strong> (type-correctly — ports are ints, switches are bools — without hand-written string parsing everywhere); and which can be <strong>changed at runtime</strong> without restarting the whole cluster to tweak one threshold.</p>
+<p>Without a unified scheme, these become a disaster: defaults scattered everywhere, changing one config means touching ten files, components disagree on what "timeout" means, reading config means <span class="mono">strconv.Atoi</span> all over the place that might panic… Milvus's answer is <strong>two layers</strong>: the upper <span class="mono">paramtable</span> provides a "<strong>type-safe, documented, grouped</strong>" <strong>read surface</strong>; the lower <span class="mono">config</span> provides a "<strong>multi-source, priority-merged, hot-reloadable</strong>" <strong>value surface</strong>. Split the two and "<strong>how to use config</strong>" and "<strong>where config comes from</strong>" each stay clean — a familiar "<strong>separation of concerns</strong>" again.</p>
+
+<h2>paramtable: a type-safe config registry</h2>
+<p>The upper layer first. Each config item, in code, is a <span class="mono">ParamItem</span> (defined in <span class="inline">pkg/util/paramtable/param_item.go</span>). It's far more than "a value" — it registers the knob's <strong>full metadata</strong>: <span class="mono">Key</span> (a hierarchical key like <span class="mono">"A.B.C"</span>), <span class="mono">DefaultValue</span>, <span class="mono">Doc</span> (what the knob is for), <span class="mono">FallbackKeys</span> (compatibility with old key names), plus behavior flags like <span class="mono">PanicIfEmpty</span>, <span class="mono">Immutable</span>, <span class="mono">Formatter</span>.</p>
+<p>The key part is its <strong>typed getters</strong>: <span class="mono">GetValue()</span> for string, <span class="mono">GetAsBool()</span> for bool, <span class="mono">GetAsInt()</span> / <span class="mono">GetAsInt64()</span> for ints… So consumer code looks like <span class="mono">Params.ProxyCfg.SomeTimeout.GetAsInt()</span> — <strong>getting a correctly-typed value directly, never parsing strings itself</strong>. This seems small but matters: it <strong>funnels "string → type" conversion into one place</strong> (inside ParamItem), avoiding scattered <span class="mono">strconv</span> and duplicated bugs, and making "forgot to convert, converted to the wrong type" errors <strong>impossible to occur</strong>. These <span class="mono">ParamItem</span>s are also organized by <strong>component/topic</strong> across files: <span class="mono">grpc_param.go</span>, <span class="mono">quota_param.go</span>, <span class="mono">http_param.go</span>, <span class="mono">knowhere_param.go</span>… each file gathering one class of knobs, neatly. The layered diagram shows the structure from "value base" to "grouped knobs" to "a single ParamItem".</p>
+
+<div class="layers">
+  <div class="layer l-main"><div class="lh"><span class="badge">value base</span><span class="name">config.Manager (merges sources, gives the current value by priority)</span></div><div class="ld">backed by file/env/etcd sources; supports hot-update dispatch</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">groups</span><span class="name">component params (grpc_param / quota_param / http_param …)</span></div><div class="ld">categorize hundreds of knobs by component/topic for findability &amp; upkeep</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">item</span><span class="name">ParamItem (Key/Default/Doc + GetAsInt/Bool…)</span></div><div class="ld">registers metadata, offers typed reads; code reads typed values, no string parsing</div></div>
+</div>
+
+<h2>Where config comes from: layered sources and priority</h2>
+<p>Now the lower layer — where values actually come from. The <span class="mono">config</span> package (<span class="inline">pkg/config</span>) defines several <strong>sources</strong>, each with a <strong>priority</strong>. The most basic is <strong>FileSource</strong>: reading <span class="inline">configs/milvus.yaml</span>, the <strong>human-readable default config file</strong> and the "<strong>catalog of every knob</strong>" — to learn which configs exist and their defaults, look here. Above it is <strong>EnvSource</strong>: environment variables, handy for <strong>temporary overrides</strong> in containers/CI without editing files. Highest is <strong>EtcdSource</strong>: config in etcd, for <strong>cluster-wide, runtime</strong> distribution and modification.</p>
+<p>Multiple sources require deciding <strong>who wins</strong>. <span class="mono">config.Manager</span> (<span class="inline">pkg/config/manager.go</span>) <strong>merges</strong> the sources by priority: the source defines <span class="mono">HighPriority=1</span>, <span class="mono">NormalPriority=11</span>, <span class="mono">LowPriority=21</span>, noting "<strong>lesser value = higher priority</strong>". Intuitively, "<strong>the more personal and dynamic source wins</strong>": etcd (runtime) beats env vars, env vars beat file defaults. This "<strong>layered override</strong>" pattern is surely familiar — the same play as most mature config systems: <strong>give sensible defaults, then allow precise layered overrides</strong>, both out-of-the-box and tunable per environment. The three sources side by side:</p>
+
+<table class="t">
+  <tr><th>Source</th><th>Where from</th><th>Typical use</th><th>Priority</th></tr>
+  <tr><td class="mono">FileSource</td><td>configs/milvus.yaml</td><td>defaults + knob catalog (human-readable)</td><td>low (fallback)</td></tr>
+  <tr><td class="mono">EnvSource</td><td>environment variables</td><td>temporary override in containers/CI, no file edits</td><td>medium</td></tr>
+  <tr><td class="mono">EtcdSource</td><td>config in etcd</td><td>cluster-wide, runtime distribution/changes</td><td>high (most personal)</td></tr>
+</table>
+
+<h2>Hot reload: some knobs turn while running</h2>
+<p>Finally, the move that best embodies "distributed-ops friendliness": <strong>hot reload</strong>. Often you just want to tweak a rate limit or log level, but <strong>not restart the whole cluster for it</strong> (a restart means jitter, even brief unavailability). Milvus's config system supports this: write the change into <strong>etcd</strong>, <span class="mono">config.Manager</span> senses it via its <strong>Dispatcher</strong>, callbacks notify the relevant <span class="mono">ParamItem</span> to refresh its <span class="mono">lastValue</span> — so the code's next <span class="mono">GetAsInt()</span> gets the <strong>new value, effective immediately, no restart</strong>.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Change the value in etcd</h4><p>write a new value for a mutable config (rate limit, log level) into etcd.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Manager senses it</h4><p><span class="mono">config.Manager</span> observes the change via EtcdSource; the <strong>Dispatcher</strong> dispatches the event.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Callback refreshes ParamItem</h4><p>the relevant <span class="mono">ParamItem</span>'s callback fires, updating its <span class="mono">lastValue</span>.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Code reads the new value</h4><p>the next <span class="mono">GetAsInt()</span> returns it, effective at once — Immutable items refuse this flow.</p></div></div>
+</div>
+<p>But not every knob may change this way. Some configs <strong>shouldn't vary at runtime</strong> (service ports, structures fixed once initialized), so <span class="mono">ParamItem</span> uses <span class="mono">Immutable</span> / <span class="mono">Forbidden</span> flags to <strong>lock them</strong>, refusing hot reload — a <strong>protection</strong>: better to forbid the change than let "changing something at runtime that shouldn't move" cause weird failures. Marking "mutable / immutable" explicitly on each knob is the mark of a good control panel: <strong>let you easily move what can move, lock outright what can't</strong>. Tying the lesson together: <span class="mono">paramtable</span> gives you a type-safe, documented, well-grouped <strong>read surface</strong>; <span class="mono">config</span> gives you a multi-source, priority-merged, hot-reloadable <strong>value surface</strong>; the two cooperate to keep "<strong>hundreds of knobs</strong>" in good order. Next lesson closes Part 9 — <strong>deployment</strong>: standalone vs cluster, its etcd/object-storage/messaging dependencies, and how to actually run the whole thing.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Two layers</strong>: <span class="mono">paramtable</span> (read surface: type-safe/documented/grouped) + <span class="mono">config</span> (value surface: multi-source/priority/hot-reload); "how to use config" separated from "where it comes from".</li>
+    <li><strong>ParamItem</strong>: one per knob, registering Key/DefaultValue/Doc and offering typed getters (<span class="mono">GetAsInt/GetAsBool</span>); code never parses strings — conversion funneled to one place.</li>
+    <li><strong>Layered sources</strong>: FileSource (milvus.yaml default/catalog) &lt; EnvSource (env vars) &lt; EtcdSource (runtime distribution), merged by <span class="mono">config.Manager</span> by priority (lesser = higher).</li>
+    <li><strong>Hot reload</strong>: mutable items refresh via etcd + Dispatcher callbacks, effective without restart; <span class="mono">Immutable/Forbidden</span> items are locked, refusing runtime changes for safety.</li>
+  </ul>
+</div>
+""",
+}

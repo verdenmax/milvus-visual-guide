@@ -125,6 +125,8 @@ PAGES = [
      "第九部分 · API、工具与运维", "Part 9 · API, tools & ops"),
     ("39-observability.html", "可观测性：日志/指标/追踪", "Observability: logs/metrics/traces",
      "第九部分 · API、工具与运维", "Part 9 · API, tools & ops"),
+    ("40-configuration.html", "配置：paramtable 与 milvus.yaml", "Configuration: paramtable & milvus.yaml",
+     "第九部分 · API、工具与运维", "Part 9 · API, tools & ops"),
 ]
 
 
@@ -644,6 +646,8 @@ SUBTITLES = {
                              "one contract milvus-proto (MilvusService→milvuspb); transport distributed/proxy vs logic proxy/impl.go; multi-language SDKs; gRPC & REST two doors"),
     "39-observability.html": ("三大支柱：日志 mlog(带 ctx/结构化/跨节点传播) · 指标 Prometheus(pkg/metrics) · 追踪 OpenTelemetry(pkg/tracer+otelgrpc) · 用 ctx 串起一个请求",
                               "three pillars: logs mlog (ctx/structured/cross-node propagation); metrics Prometheus (pkg/metrics); traces OpenTelemetry (pkg/tracer+otelgrpc); stitch one request via ctx"),
+    "40-configuration.html": ("ParamItem(Key/Default/Doc + GetAsInt/Bool 类型安全) · 分层数据源 file&lt;env&lt;etcd 按优先级合并 · config.Manager · 热更新 vs Immutable",
+                              "ParamItem (Key/Default/Doc + GetAsInt/Bool type-safe); layered sources file&lt;env&lt;etcd merged by priority; config.Manager; hot reload vs Immutable"),
 }
 
 

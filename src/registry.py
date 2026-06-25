@@ -56,4 +56,5 @@ CONTENT = {
     "37-gpu-acceleration.html": part8.LESSON_37,
     "38-api-and-sdks.html": part9.LESSON_38,
     "39-observability.html": part9.LESSON_39,
+    "40-configuration.html": part9.LESSON_40,
 }

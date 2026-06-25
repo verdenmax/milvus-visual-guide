@@ -2607,6 +2607,67 @@ QUIZZES = {
             },
         ],
     },
+    "40-configuration.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "Milvus 的配置为什么分成 paramtable 和 config 两层？",
+                    "en": "Why is Milvus's config split into two layers, paramtable and config?",
+                },
+                "opts": [
+                    {"zh": "分离“怎么用配置”(paramtable：类型安全/有文档/分组的读取面)与“配置从哪来”(config：多来源/优先级/热更新的取值面)，使配置行为可预测、可解释", "en": "Separate 'how to use config' (paramtable: a type-safe/documented/grouped read surface) from 'where config comes from' (config: a multi-source/priority/hot-reload value surface), making config behavior predictable and explainable"},
+                    {"zh": "因为 Go 不允许在一个包里读文件", "en": "Because Go forbids reading files in one package"},
+                    {"zh": "纯粹为了多写一层、显得复杂", "en": "Purely to add a layer and look complex"},
+                    {"zh": "paramtable 管 CPU 配置，config 管 GPU 配置", "en": "paramtable handles CPU config, config handles GPU config"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "上层 paramtable 提供类型安全、有文档、可分组的“读取面”；下层 config 提供多来源、按优先级合并、可热更新的“取值面”。分离后，排查“某配置为什么是这个值/为什么改了不生效”时路径清晰：先在 paramtable 找 ParamItem 的 Key 与默认，再去 config 看它在 yaml/env/etcd 是否被更高优先级覆盖。一个旋钮当前值唯一、来源唯一，确定性正是大型系统配置管理的根本诉求。",
+                    "en": "The upper paramtable offers a type-safe, documented, grouped 'read surface'; the lower config offers a multi-source, priority-merged, hot-reloadable 'value surface'. Decoupled, debugging 'why is this value / why didn't my change take effect' is clear: find the ParamItem's Key and default in paramtable, then check config for higher-priority overrides in yaml/env/etcd. A knob has one current value from one source — the determinism large-system config management fundamentally needs.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "代码读配置时写的是 Params.XxxCfg.Yyy.GetAsInt() 而不是自己解析字符串，好处是什么？",
+                    "en": "Code reads config via Params.XxxCfg.Yyy.GetAsInt() instead of parsing strings itself. The benefit?",
+                },
+                "opts": [
+                    {"zh": "把“字符串→类型”的转换收口到 ParamItem 内部，避免满地 strconv 与重复 bug，杜绝“忘转换/转错类型”；ParamItem 还登记 Key/Default/Doc 等元信息", "en": "It funnels 'string→type' conversion inside ParamItem, avoiding scattered strconv and duplicated bugs and eliminating 'forgot/wrong conversion'; ParamItem also registers metadata like Key/Default/Doc"},
+                    {"zh": "GetAsInt 会自动把配置上传到 etcd", "en": "GetAsInt automatically uploads config to etcd"},
+                    {"zh": "这样读出来的值总是 0", "en": "Values read this way are always 0"},
+                    {"zh": "它能绕过优先级、直接读文件", "en": "It bypasses priority and reads the file directly"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "每个配置项是一个 ParamItem(param_item.go)，提供 GetValue/GetAsBool/GetAsInt/GetAsInt64 等类型化读取。消费方直接拿到类型正确的值，转换逻辑只在 ParamItem 内部一处，既无满地 strconv，也让“忘转换、转错类型”无处发生。ParamItem 还登记 Key、DefaultValue、Doc、FallbackKeys、PanicIfEmpty 等：默认值使开箱即用，Doc 可自动生成文档，FallbackKeys 兼容旧键名，PanicIfEmpty 在缺关键配置时启动即明确报错。",
+                    "en": "Each config item is a ParamItem (param_item.go) offering typed reads: GetValue/GetAsBool/GetAsInt/GetAsInt64. Consumers get correctly-typed values; conversion lives in one place inside ParamItem — no scattered strconv, no 'forgot/wrong conversion'. ParamItem also registers Key, DefaultValue, Doc, FallbackKeys, PanicIfEmpty: defaults give out-of-the-box use, Doc auto-generates docs, FallbackKeys keep old key names working, PanicIfEmpty fails fast at startup when a critical config is missing.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "关于配置的多数据源、优先级与热更新，下面哪个说法正确？",
+                    "en": "About config's multiple sources, priority, and hot reload, which is correct?",
+                },
+                "opts": [
+                    {"zh": "来源 file(milvus.yaml) < env < etcd，由 config.Manager 按优先级合并(值越小越优先，越动态越贴身越优先)；可变项经 etcd+Dispatcher 回调热更新，Immutable/Forbidden 项锁死拒改", "en": "Sources file(milvus.yaml) < env < etcd, merged by config.Manager by priority (lesser value wins; more dynamic/personal wins); mutable items hot-reload via etcd+Dispatcher callbacks, Immutable/Forbidden items are locked"},
+                    {"zh": "文件配置永远压过 etcd，因为文件更“正式”", "en": "File config always beats etcd because files are more 'official'"},
+                    {"zh": "所有配置都能在运行时随意热更新，没有例外", "en": "Every config can be hot-reloaded freely at runtime, no exceptions"},
+                    {"zh": "优先级是值越大越优先", "en": "Priority means a larger value wins"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "config 包定义 FileSource(milvus.yaml，默认/清单)、EnvSource(环境变量，临时覆盖)、EtcdSource(运行时下发)。source.go 里 HighPriority=1<NormalPriority=11<LowPriority=21，注明“值越小优先级越高”，即越动态越贴身的来源越优先(etcd>env>file)。config.Manager 合并各源；可变项写入 etcd 后经 Dispatcher 回调刷新 ParamItem 的 lastValue，立即生效不重启。但端口等不该运行时变的项用 Immutable/Forbidden 锁死，拒绝热更新以保安全。",
+                    "en": "The config package defines FileSource (milvus.yaml, defaults/catalog), EnvSource (env vars, temporary override), EtcdSource (runtime distribution). In source.go HighPriority=1<NormalPriority=11<LowPriority=21, noting 'lesser value = higher priority' — the more dynamic/personal source wins (etcd>env>file). config.Manager merges sources; mutable items written to etcd refresh a ParamItem's lastValue via Dispatcher callbacks, effective without restart. But items like ports that shouldn't change at runtime are locked via Immutable/Forbidden, refusing hot reload for safety.",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课把配置面板比作“印好标签、分好优先级、部分可热拧”的控制台。请：(1) 描述一个配置值从 milvus.yaml/环境变量/etcd 到代码 GetAsInt() 的完整旅程，并说明三者冲突时谁生效、为什么这样设计合理；(2) 你在生产改了 milvus.yaml 里的某个限流值却发现“不生效”，结合优先级链你会怎么排查？(3) 为什么 Milvus 不把所有配置都做成可热更新，而要用 Immutable/Forbidden 锁住一部分？这与第 37 课“GPU 默认 OFF”体现了怎样共同的工程价值观？",
+                "en": "This lesson likens config to a control panel that's 'labeled, prioritized, partly hot-turnable'. Please: (1) describe a config value's full journey from milvus.yaml/env/etcd to the code's GetAsInt(), and say who wins on conflict and why that design is reasonable; (2) you changed a rate-limit in milvus.yaml in production but it 'doesn't take effect' — using the priority chain, how would you debug? (3) Why doesn't Milvus make every config hot-reloadable, instead locking some via Immutable/Forbidden? What shared engineering value does this share with Lesson 37's 'GPU off by default'?",
+            },
+        ],
+    },
 }
 
 
