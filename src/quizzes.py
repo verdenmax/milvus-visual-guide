@@ -2790,6 +2790,67 @@ QUIZZES = {
             },
         ],
     },
+    "43-testing.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "Milvus 的 Go 单测为什么必须带 -tags dynamic,test 和 -gcflags=\"all=-N -l\"？",
+                    "en": "Why must Milvus's Go unit tests carry -tags dynamic,test and -gcflags=\"all=-N -l\"?",
+                },
+                "opts": [
+                    {"zh": "dynamic,test 让 Go 动态链接 C++ 内核并启用测试代码(cgo 项目所需)；-N -l 关优化/内联，使函数保留可替换入口，bytedance/mockey 才能在运行时打补丁", "en": "dynamic,test makes Go dynamically link the C++ core and enable test code (needed by this cgo project); -N -l disables optimization/inlining so functions keep a replaceable entry, letting bytedance/mockey patch at runtime"},
+                    {"zh": "纯粹是历史遗留，没实际作用", "en": "Pure legacy with no real effect"},
+                    {"zh": "为了让测试跑得更快", "en": "To make tests run faster"},
+                    {"zh": "因为 Go 在 Linux 上必须加这些参数", "en": "Because Go requires these on Linux"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "Milvus 是 Go+C++：dynamic 让 Go 动态链接 C++ 内核库(cgo)、test 启用测试专用代码，少了就编不过。-gcflags=\"all=-N -l\" 关优化(-N)与内联(-l)：mockey 是在机器码层面把函数跳转到假实现的“猴子补丁”，若函数被内联/优化，入口消失、补丁打不上，测试会编译失败或 panic。所以 -N -l 不是调优而是 mockey 工作的前提——这正是测试约定反复强调它的原因。",
+                    "en": "Milvus is Go+C++: dynamic dynamically links the C++ core (cgo), test enables test-only code — miss them and it won't compile. -gcflags=\"all=-N -l\" disables optimization (-N) and inlining (-l): mockey is a machine-code 'monkey-patch' redirecting a function to a fake; if a function is inlined/optimized its entry vanishes, the patch can't land, and tests fail to compile or panic. So -N -l isn't tuning but a prerequisite for mockey — exactly why conventions keep stressing it.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "Milvus 测试里 mockery 与 mockey 的区别是什么？",
+                    "en": "What's the difference between mockery and mockey in Milvus tests?",
+                },
+                "opts": [
+                    {"zh": "mockery(vektra)编译期为接口生成假实现(internal/mocks，勿手改、make generate-mockery-* 重生成)；mockey(bytedance)运行时给具体函数打补丁——接口用前者、函数用后者", "en": "mockery (vektra) compile-time generates interface fakes (internal/mocks; don't hand-edit, regenerate via make generate-mockery-*); mockey (bytedance) patches concrete functions at runtime — interfaces use the former, functions the latter"},
+                    {"zh": "两者是同一个工具的不同拼写", "en": "They're the same tool spelled differently"},
+                    {"zh": "mockery 管运行时、mockey 管编译期", "en": "mockery is runtime, mockey is compile-time"},
+                    {"zh": "都需要手动编辑生成的 mock 文件", "en": "Both require hand-editing the generated mock files"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "名字像但完全不同。mockery(vektra/mockery)是编译期：读接口、生成实现该接口的假对象(文件在 internal/mocks、mock_*.go)，是生成物——勿手改，改接口后用 make generate-mockery-{模块} 重生成(同 proto 的 .pb.go“别手编”)。mockey(bytedance/mockey)是运行时：不靠接口，直接替换具体函数实现(需 -N -l)。判断法则：面向接口的依赖用 mockery 注入；要换具体/包级函数用 mockey。",
+                    "en": "Alike in name, opposite in nature. mockery (vektra/mockery) is compile-time: reads an interface and generates a fake implementing it (files in internal/mocks, mock_*.go) — a generated artifact; don't hand-edit, change the interface then regenerate via make generate-mockery-{module} (like proto .pb.go 'don't hand-edit'). mockey (bytedance/mockey) is runtime: not interface-based, it replaces a concrete function's implementation (needs -N -l). Rule: inject interface deps with mockery; replace concrete/package-level functions with mockey.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "下面关于跑 Milvus 测试的说法，哪个正确？",
+                    "en": "Which statement about running Milvus tests is correct?",
+                },
+                "opts": [
+                    {"zh": "用 make test-go(先 build-cpp-with-unittest 再带正确标志跑)或 make test-proxy/test-querycoord 等模块快捷方式；C++ 用 make test-cpp；单测某函数也要带全那串标志", "en": "Use make test-go (first build-cpp-with-unittest then run with the right flags) or module shortcuts like make test-proxy/test-querycoord; C++ via make test-cpp; even a single test function needs the full flag string"},
+                    {"zh": "直接 go test ./... 即可，无需任何特殊参数", "en": "A plain go test ./... suffices, no special flags"},
+                    {"zh": "Go 测试不需要先编 C++", "en": "Go tests don't need to build C++ first"},
+                    {"zh": "make test-go 会跳过竞态检测", "en": "make test-go skips the race detector"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "make test-go 先 build-cpp-with-unittest(Go 测试要 cgo 链接 C++)，再调 run_go_unittest.sh 用 -tags dynamic,test -gcflags=\"all=-N -l\" -race -cover -failfast -count=1 -ldflags=\"-r RPATH\" 逐包跑。只想跑某模块有 make test-proxy/test-querycoord/test-datacoord/test-rootcoord/test-querynode/test-datanode；C++ 用 make test-cpp。直接 go test 因缺标志(找不到 C++ 库、mockey 失灵)会失败；开发跑单个函数也得带全标志加 -run TestXxx。",
+                    "en": "make test-go first runs build-cpp-with-unittest (Go tests cgo-link C++), then run_go_unittest.sh runs per package with -tags dynamic,test -gcflags=\"all=-N -l\" -race -cover -failfast -count=1 -ldflags=\"-r RPATH\". Module shortcuts: make test-proxy/test-querycoord/test-datacoord/test-rootcoord/test-querynode/test-datanode; C++ via make test-cpp. A plain go test fails for missing flags (can't find C++ libs, mockey breaks); running one function still needs the full flags plus -run TestXxx.",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课把那串测试标志比作“进实验室的装备”，并说测试的“特殊”浓缩了 Milvus 的两大基因(双语与并发)。请：(1) 把 -tags dynamic,test / -gcflags=\"all=-N -l\" / -race 三者分别对应到“为何需要”，尤其说清 -N -l 与 mockey 的因果；(2) 给两个测试场景各选 mockery 还是 mockey 并说明：A) 被测函数依赖一个 Coordinator 接口；B) 被测函数内部调用了一个包级工具函数且无法注入；(3) 为什么 mock 文件(internal/mocks)“勿手改”？这和第 8 部分 proto 生成文件的纪律是同一条吗？",
+                "en": "This lesson likens the test flags to 'lab gear' and says testing's 'specialness' distills Milvus's two genes (bilingual and concurrent). Please: (1) map -tags dynamic,test / -gcflags=\"all=-N -l\" / -race each to 'why it's needed', especially the -N -l ↔ mockey causation; (2) for two scenarios choose mockery or mockey and justify: A) the function under test depends on a Coordinator interface; B) it internally calls a package-level helper that can't be injected; (3) why must mock files (internal/mocks) not be hand-edited? Is this the same discipline as Part 8's generated proto files?",
+            },
+        ],
+    },
 }
 
 

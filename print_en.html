@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 42 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 43 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
@@ -370,6 +370,7 @@ details[open] > summary { list-style: none; }
   <li>Configuration: paramtable & milvus.yaml</li>
   <li>Deployment & operations</li>
   <li>Build & run</li>
+  <li>Testing</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -8270,6 +8271,121 @@ Across the first nine parts you've seen Milvus inside out. The final part (Part 
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
     <li>This lesson says Milvus's build is 'not just go build', rooted in its Go+C++ bilingual nature. Please: (1) in your own words explain what make milvus's two stages (build-cpp / build-go) each do, where cgo meshes, and why the order can't reverse; (2) why does building Milvus need the cmake/conan C++ toolchain while a pure-Go project doesn't? (3) what does 'one binary, many roles (cmd/main.go)' buy for builds, version management, and standalone/cluster deployment? Tying to Lessons 2 and 34, discuss how the 'Go+C++ bilingual architecture' trades off performance against build complexity.</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Testing</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+You can build Milvus; next is to <strong>write and run its tests</strong>. But you'll soon hit something odd: a plain <span class="mono">go test ./...</span> <strong>won't run</strong>. The reason is that same thread — Milvus is <strong>Go + C++</strong>, and it uses a "<strong>patch a function at runtime</strong>" mock tool, so its test command must carry a string of seemingly cryptic flags: <span class="mono">-tags dynamic,test</span> and <span class="mono">-gcflags="all=-N -l"</span>. This lesson unpacks that "incantation" word by word, so you see which pitfall each flag guards against.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Running tests in Milvus is like entering a <strong>lab with special protocols</strong>. You can't just stroll in like a park (<span class="mono">go test</span> won't run); you must don <strong>specific gear</strong> (those flags): a "<strong>dynamic,test pass</strong>" (telling the compiler: link C++ dynamically, include test-only code), plus an iron rule — <strong>"turn off auto-optimization"</strong> (<span class="mono">-N -l</span>) so the "inspectors" (the mockey tool) can <strong>swap a part for a fake mid-experiment</strong>.
+  Miss one piece of gear and the experiment <strong>won't even start</strong>, throwing baffling errors. Many new contributors stall on their first test run precisely because they <strong>forgot this gear</strong>. Remember it and you've cleared the first hurdle of Milvus testing.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>Milvus's Go tests must carry <span class="mono">-tags dynamic,test</span> (dynamic-link C++ + test code) and <span class="mono">-gcflags="all=-N -l"</span> (disable optimization/inlining so bytedance/mockey can patch at runtime); two kinds of mocks — mockery (generated interface fakes; don't hand-edit, regenerate via <span class="mono">make generate-mockery-*</span>) and mockey (runtime function patching); run tests via <span class="mono">make test-go</span> or module shortcuts like <span class="mono">make test-proxy</span></strong>, which first build the C++ with unit tests.
+</div>
+
+<h2>Why you can't just go test: that string of cryptic flags</h2>
+<p>First, the "incantation". To test one package, Milvus's real command looks like this (from <span class="inline">scripts/run_go_unittest.sh</span>): <span class="mono">go test -gcflags="all=-N -l" -race -cover -tags dynamic,test ".../proxy/..." -failfast -count=1 -ldflags="-r ${RPATH}"</span>. A mouthful, but every piece is <strong>purposeful</strong>, not piled on at random. Let's unpack each.</p>
+<p><span class="mono">-tags dynamic,test</span> is two <strong>build tags</strong>: <strong>dynamic</strong> makes Go <strong>dynamically link</strong> the C++ core libs (cgo's need, continuous with Lesson 42's build); <strong>test</strong> enables code paths compiled in only for tests (helpers, stubs). <span class="mono">-race</span> turns on the <strong>race detector</strong> — Milvus is full of concurrency, and this catches data races during tests. <span class="mono">-cover</span> collects <strong>coverage</strong>. <span class="mono">-failfast</span> <strong>stops at once</strong> on the first failing case; <span class="mono">-count=1</span> forces <strong>no test caching</strong>, really running each time (Go caches passing results by default). <span class="mono">-ldflags="-r ${RPATH}"</span> bakes in the <strong>runtime library search path</strong> so the test program can <strong>find</strong> those C++ dynamic libs at runtime. The most crucial and most overlooked is <span class="mono">-gcflags="all=-N -l"</span> — it deserves its own section. The table shows the whole string at once.</p>
+
+<table class="t">
+  <tr><th>Flag</th><th>What it does</th></tr>
+  <tr><td class="mono">-tags dynamic,test</td><td>dynamic=dynamically link the C++ core (cgo); test=enable test-only code</td></tr>
+  <tr><td class="mono">-gcflags="all=-N -l"</td><td>disable optimization (-N) and inlining (-l) so mockey can patch functions at runtime</td></tr>
+  <tr><td class="mono">-race</td><td>race detector: catch concurrent data races</td></tr>
+  <tr><td class="mono">-cover</td><td>collect test coverage</td></tr>
+  <tr><td class="mono">-failfast -count=1</td><td>stop at first failure; no test caching, run for real each time</td></tr>
+  <tr><td class="mono">-ldflags="-r ${RPATH}"</td><td>runtime library search path so tests find the C++ dynamic libs</td></tr>
+</table>
+
+<h2>The -gcflags trick: so mockey can patch</h2>
+<p>In this string, <span class="mono">-gcflags="all=-N -l"</span> most puzzles newcomers: <strong>disable the compiler's optimization and inlining</strong> — what for? The answer lies in a special tool Milvus tests use — <strong>mockey</strong> (ByteDance's open-source <span class="mono">bytedance/mockey</span>). It does a "black magic": at <strong>runtime, swap a function's implementation</strong> for a fake you specify (the industry calls it monkey-patching). This is hugely useful in tests — to test "how this function handles a downstream RPC failing", you needn't actually set up a failing downstream; just use mockey to <strong>temporarily replace</strong> that RPC function with "return an error".</p>
+<p>But this "swap implementation" is <strong>surgery at the machine-code level</strong>: mockey must find the function's entry and redirect it to the fake. The catch — if the compiler <strong>inlined</strong> it (splicing a small function's code into the call site so its entry "vanishes") or aggressively <strong>optimized</strong>, mockey <strong>can't find the entry and the patch won't land</strong>, so tests either fail to compile or panic at runtime. <span class="mono">-N</span> (no optimization) and <span class="mono">-l</span> (no inlining) exist exactly for this: they keep every function <strong>honestly holding a replaceable entry</strong> for mockey to grab. So this flag isn't optional tuning but a <strong>prerequisite for mockey to work</strong> — the root reason Milvus's testing conventions <strong>keep stressing "must carry <span class="mono">-gcflags="all=-N -l"</span>"</strong>. Forget it and your mockey tests fail in baffling ways, often with errors that <strong>don't point at the real cause</strong>.</p>
+
+<h2>Two kinds of mocks: mockery vs mockey</h2>
+<p>The mockey above is just <strong>one of two mocking approaches</strong> in Milvus tests. Their names look alike but they're <strong>completely different things</strong>, easily confused early on, so let's settle it. <strong>mockery</strong> (<span class="mono">vektra/mockery</span>) is <strong>compile-time</strong>: it reads a Go <strong>interface</strong> and auto-<strong>generates</strong> a "<strong>fake object</strong>" implementing it (you set "return this when this method is called"). These generated files live in <span class="inline">internal/mocks</span> or various <span class="mono">mock_*.go</span>. <strong>Key discipline: these are generated — don't hand-edit</strong> — change the interface and regenerate via <span class="mono">make generate-mockery-{module}</span> (Part 8's "don't hand-edit generated files").</p>
+<p><strong>mockey</strong> (<span class="mono">bytedance/mockey</span>) is <strong>runtime</strong>: not interface-based, it directly <strong>replaces a concrete function's implementation</strong> at runtime (the monkey-patch needing <span class="mono">-N -l</span> from the last section). Each shines in its place: when the code under test is <strong>interface-oriented</strong> (depends on, say, a <span class="mono">Coordinator</span> interface), injecting a mockery fake is most natural; when you must replace a <strong>concrete function/method</strong> (especially package-level functions or hard-to-inject deps), mockey's runtime patch is more flexible. Grasp "<strong>interfaces use mockery, functions use mockey</strong>" and these two names won't tangle you in Milvus tests. Side by side:</p>
+
+<div class="cols">
+  <div class="col"><h4>mockery (compile-time / interface)</h4><p><span class="mono">vektra/mockery</span> reads interfaces and <strong>generates</strong> fakes (<span class="inline">internal/mocks</span>, <span class="mono">mock_*.go</span>). <strong>Don't hand-edit</strong>; after changing the interface, regenerate via <span class="mono">make generate-mockery-*</span>. For interface-oriented dependency injection.</p></div>
+  <div class="col"><h4>mockey (runtime / function)</h4><p><span class="mono">bytedance/mockey</span> <strong>patches concrete functions</strong> at runtime (monkey-patch), swapping implementations. Needs <span class="mono">-gcflags="all=-N -l"</span>. For replacing package-level functions and hard-to-inject deps.</p></div>
+</div>
+
+<h2>How to run: test-go and module shortcuts</h2>
+<p>Knowing the flags and mocks, actually running tests is simple — <strong>don't type that long string</strong>; use the Makefile-wrapped targets. Run all Go unit tests: <span class="mono">make test-go</span> (it first runs <span class="mono">build-cpp-with-unittest</span> to build the C++ with unit tests, then calls <span class="inline">scripts/run_go_unittest.sh</span> with the right flags). Just one module? There's a pile of shortcuts: <span class="mono">make test-proxy</span>, <span class="mono">make test-querycoord</span>, <span class="mono">make test-datacoord</span>, <span class="mono">make test-rootcoord</span>, <span class="mono">make test-querynode</span>, <span class="mono">make test-datanode</span>… The C++ unit tests run via <span class="mono">make test-cpp</span>.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Build C++ with unit tests first</h4><p><span class="mono">make test-go</span> first runs <span class="mono">build-cpp-with-unittest</span> — Go tests must cgo-link C++.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Run go test with the full flags</h4><p><span class="inline">run_go_unittest.sh</span> runs per package with <span class="mono">-tags dynamic,test -gcflags="all=-N -l" -race ...</span>.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Mocks in place</h4><p>interfaces injected via mockery-generated fakes; concrete functions patched at runtime by mockey (hence -N -l).</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Collect results</h4><p>-race reports races, -cover gives coverage, -failfast stops at first error; CI uses this to gate the PR.</p></div></div>
+</div>
+<p>During development, to run just <strong>one test function</strong>, you can use go test directly, but <strong>not one of those flags may be missing</strong>: <span class="mono">go test -tags dynamic,test -gcflags="all=-N -l" ./internal/proxy/... -run TestXxx</span>. Committing this to muscle memory is daily life writing Milvus code. To wrap up: the "specialness" of testing Milvus all stems from its <strong>Go+C++ + runtime-mock</strong> nature — <span class="mono">dynamic,test</span> for cgo and test code, <span class="mono">-N -l</span> for mockey's patching; two mock kinds cover interfaces and functions; the Makefile wraps this complexity into one-command <span class="mono">make test-*</span>. Next lesson: the <strong>conventions</strong> to follow when writing code — error handling (merr), generated files, import order — the invisible bar your code must clear to be merged.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Test incantation</strong>: Go tests must carry <span class="mono">-tags dynamic,test</span> (dynamic-link C++ + test code) and <span class="mono">-gcflags="all=-N -l"</span> (disable optimization/inlining); a plain <span class="mono">go test</span> won't run.</li>
+    <li><strong>Why -gcflags is required</strong>: <span class="mono">-N -l</span> keep functions with a replaceable entry so <strong>mockey's runtime patching</strong> works; forget it and mockey tests fail bafflingly.</li>
+    <li><strong>Two mocks</strong>: <span class="mono">mockery</span> (compile-time generated interface fakes, <strong>don't hand-edit</strong>, regenerate via <span class="mono">make generate-mockery-*</span>) vs <span class="mono">mockey</span> (runtime patching of concrete functions).</li>
+    <li><strong>How to run</strong>: <span class="mono">make test-go</span> (all, first builds C++ with unit tests) or <span class="mono">make test-proxy/test-querycoord/…</span> module shortcuts; C++ via <span class="mono">make test-cpp</span>.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Why must Milvus's Go unit tests carry -tags dynamic,test and -gcflags="all=-N -l"?</div>
+  <ol class="opts">
+    <li>Because Go requires these on Linux</li>
+    <li>To make tests run faster</li>
+    <li>dynamic,test makes Go dynamically link the C++ core and enable test code (needed by this cgo project); -N -l disables optimization/inlining so functions keep a replaceable entry, letting bytedance/mockey patch at runtime</li>
+    <li>Pure legacy with no real effect</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. Milvus is Go+C++: dynamic dynamically links the C++ core (cgo), test enables test-only code — miss them and it won't compile. -gcflags="all=-N -l" disables optimization (-N) and inlining (-l): mockey is a machine-code 'monkey-patch' redirecting a function to a fake; if a function is inlined/optimized its entry vanishes, the patch can't land, and tests fail to compile or panic. So -N -l isn't tuning but a prerequisite for mockey — exactly why conventions keep stressing it.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. What's the difference between mockery and mockey in Milvus tests?</div>
+  <ol class="opts">
+    <li>Both require hand-editing the generated mock files</li>
+    <li>mockery (vektra) compile-time generates interface fakes (internal/mocks; don't hand-edit, regenerate via make generate-mockery-*); mockey (bytedance) patches concrete functions at runtime — interfaces use the former, functions the latter</li>
+    <li>They're the same tool spelled differently</li>
+    <li>mockery is runtime, mockey is compile-time</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. Alike in name, opposite in nature. mockery (vektra/mockery) is compile-time: reads an interface and generates a fake implementing it (files in internal/mocks, mock_*.go) — a generated artifact; don't hand-edit, change the interface then regenerate via make generate-mockery-{module} (like proto .pb.go 'don't hand-edit'). mockey (bytedance/mockey) is runtime: not interface-based, it replaces a concrete function's implementation (needs -N -l). Rule: inject interface deps with mockery; replace concrete/package-level functions with mockey.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Which statement about running Milvus tests is correct?</div>
+  <ol class="opts">
+    <li>Go tests don't need to build C++ first</li>
+    <li>Use make test-go (first build-cpp-with-unittest then run with the right flags) or module shortcuts like make test-proxy/test-querycoord; C++ via make test-cpp; even a single test function needs the full flag string</li>
+    <li>make test-go skips the race detector</li>
+    <li>A plain go test ./... suffices, no special flags</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. make test-go first runs build-cpp-with-unittest (Go tests cgo-link C++), then run_go_unittest.sh runs per package with -tags dynamic,test -gcflags="all=-N -l" -race -cover -failfast -count=1 -ldflags="-r RPATH". Module shortcuts: make test-proxy/test-querycoord/test-datacoord/test-rootcoord/test-querynode/test-datanode; C++ via make test-cpp. A plain go test fails for missing flags (can't find C++ libs, mockey breaks); running one function still needs the full flags plus -run TestXxx.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson likens the test flags to 'lab gear' and says testing's 'specialness' distills Milvus's two genes (bilingual and concurrent). Please: (1) map -tags dynamic,test / -gcflags="all=-N -l" / -race each to 'why it's needed', especially the -N -l ↔ mockey causation; (2) for two scenarios choose mockery or mockey and justify: A) the function under test depends on a Coordinator interface; B) it internally calls a package-level helper that can't be injected; (3) why must mock files (internal/mocks) not be hand-edited? Is this the same discipline as Part 8's generated proto files?</li>
   </ul>
 </div>
 </div>

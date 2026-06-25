@@ -131,6 +131,8 @@ PAGES = [
      "第九部分 · API、工具与运维", "Part 9 · API, tools & ops"),
     ("42-build-and-run.html", "构建与运行", "Build & run",
      "第十部分 · 实践与贡献", "Part 10 · Practice & contributing"),
+    ("43-testing.html", "测试", "Testing",
+     "第十部分 · 实践与贡献", "Part 10 · Practice & contributing"),
 ]
 
 
@@ -656,6 +658,8 @@ SUBTITLES = {
                            "deployment ladder: embedded→compose→Helm/Operator; cluster scales independently; MQ is the WAL backend (rocksmq/Pulsar/Kafka/Woodpecker); config/observability/rolling-upgrade converge"),
     "42-build-and-run.html": ("两段式构建 make milvus = build-cpp(cmake/conan)→build-go(CGO 链接) · 一个二进制多角色(cmd/main.go) · install_deps/start_*/stop_graceful 脚本",
                               "two-stage build: make milvus = build-cpp(cmake/conan)→build-go(CGO link); one binary, many roles (cmd/main.go); install_deps/start_*/stop_graceful scripts"),
+    "43-testing.html": ("go 测试必带 -tags dynamic,test 与 -gcflags=all=-N -l(为 mockey 打补丁) · 两种 mock：mockery(生成接口)/mockey(运行时函数) · make test-go/test-proxy",
+                        "go tests must carry -tags dynamic,test and -gcflags=all=-N -l (for mockey patching); two mocks: mockery (generated interfaces)/mockey (runtime functions); make test-go/test-proxy"),
 }
 
 
