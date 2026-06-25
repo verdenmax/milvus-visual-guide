@@ -1997,6 +1997,67 @@ QUIZZES = {
             },
         ],
     },
+    "30-consistency-and-timestamps.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "一次读请求带的“保证时间戳 Tg”，含义是什么？它由什么决定？",
+                    "en": "What does the 'guarantee timestamp Tg' on a read mean, and what determines it?",
+                },
+                "opts": [
+                    {"zh": "“至少让我看到截至 Tg 的所有写入”；由这次读选的一致性级别决定（parseGuaranteeTsFromConsistency）", "en": "'Let me see at least all writes up to Tg'; set by the read's consistency level (parseGuaranteeTsFromConsistency)"},
+                    {"zh": "数据在磁盘上的物理地址", "en": "The data's physical address on disk"},
+                    {"zh": "查询要返回多少条结果(topK)", "en": "How many results the query returns (topK)"},
+                    {"zh": "向量的维度", "en": "The vector dimension"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "Tg 表达“这次读要求看到截至哪一刻的写入”。一致性级别把它映射成具体值：Strong=最新 tMax、Bounded=tMax−gracefulTime、Eventually=1、Session=本会话上次写、Customized=用户指定。",
+                    "en": "Tg expresses 'up to which moment this read must see writes'. The consistency level maps it: Strong=latest tMax, Bounded=tMax−gracefulTime, Eventually=1, Session=this session's last write, Customized=user-given.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "QueryNode 靠什么机制“保证”读到截至 Tg 的全部写入？",
+                    "en": "By what mechanism does a QueryNode 'guarantee' it sees all writes up to Tg?",
+                },
+                "opts": [
+                    {"zh": "维护 tsafe(已消费的 WAL TimeTick)；当 tsafe ≥ Tg 才回答，否则挂起等待(或超时)", "en": "It tracks tsafe (the consumed WAL TimeTick); it answers only when tsafe ≥ Tg, otherwise it waits (or times out)"},
+                    {"zh": "锁住整个集合，禁止写入", "en": "It locks the whole collection, blocking writes"},
+                    {"zh": "重启自己以加载最新数据", "en": "It restarts itself to load the latest data"},
+                    {"zh": "直接相信本地时钟", "en": "It simply trusts its local clock"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "节点的 tsafe 表示它已把 WAL 消费/应用到哪个 TimeTick。读到来时若 tsafe ≥ Tg，说明截至 Tg 的写入都在，立即搜；否则挂起等待 tsafe 追上 Tg。这就是“保证”二字的来源(how-guarantee-ts-works)。",
+                    "en": "A node's tsafe is how far it has consumed/applied the WAL (a TimeTick). On a read, if tsafe ≥ Tg all writes up to Tg are present, so search now; otherwise it waits until tsafe catches up. That is the source of the word 'guarantee'.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "关于 Milvus 的一致性级别，下面哪种说法正确？",
+                    "en": "Which statement about Milvus consistency levels is correct?",
+                },
+                "opts": [
+                    {"zh": "它只决定“这次读能看到多新的写”，不影响写入是否持久化；同一集合不同查询可用不同级别", "en": "It only decides 'how fresh a read sees writes', not whether writes persist; different queries on one collection can use different levels"},
+                    {"zh": "它是整个库的全局开关，改一次影响所有读写", "en": "It is a global switch for the whole DB, changing it affects all reads and writes"},
+                    {"zh": "选 Eventually 会导致数据丢失", "en": "Choosing Eventually causes data loss"},
+                    {"zh": "Strong 一定比 Bounded 快", "en": "Strong is always faster than Bounded"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "一致性级别是“每次读自带的新鲜度要求”，不改变写入的持久化与最终可见性。所以后台对账可用 Strong、用户搜索用 Bounded、离线刷库用 Eventually，互不影响。Strong 最新但可能要等，未必更快。",
+                    "en": "A level is a 'per-read freshness requirement'; it doesn't change write persistence or eventual visibility. So a reconciliation job can use Strong, user search Bounded, offline backfill Eventually — independently. Strong is freshest but may wait, not necessarily faster.",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "为你自己的一个场景选一个一致性级别并说明理由：比如“用户上传一张图后立刻以图搜图”“电商首页的相似商品推荐(高并发)”“离线批量去重”“审计回放某历史时刻的数据”。分别该选 Strong / Bounded / Session / Eventually / Customized 中的哪个？把“能容忍多旧”与“延迟要求”这两条线索用上。",
+                "en": "Pick a consistency level for one of your own scenarios and justify it: e.g. 'a user uploads an image then immediately does image-to-image search', 'similar-product recommendation on a busy storefront (high concurrency)', 'offline batch dedup', 'audit replay of data as of a historical moment'. Which of Strong / Bounded / Session / Eventually / Customized fits each? Use the two clues: 'how stale can it tolerate' and 'latency requirement'.",
+            },
+        ],
+    },
 }
 
 

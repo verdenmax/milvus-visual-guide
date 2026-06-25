@@ -105,6 +105,8 @@ PAGES = [
      "第六部分 · 查询链路", "Part 6 · The query path"),
     ("29-reduce.html", "Reduce 与结果归并", "Reduce & result assembly",
      "第六部分 · 查询链路", "Part 6 · The query path"),
+    ("30-consistency-and-timestamps.html", "一致性与时间戳", "Consistency & timestamps",
+     "第六部分 · 查询链路", "Part 6 · The query path"),
 ]
 
 
@@ -604,6 +606,8 @@ SUBTITLES = {
                                  "expression tree (expr); vectorized exec; per-chunk bitset; filter-then-search"),
     "29-reduce.html": ("三层归并：段内/节点/Proxy · 按主键去重 · 排序 · offset/limit · scatter-gather",
                        "three-level merge: segment/node/Proxy; dedup by PK; sort; offset/limit; scatter-gather"),
+    "30-consistency-and-timestamps.html": ("TSO 全局时钟 · 保证时间戳 · 五种一致性级别 · MVCC · tsafe 等待",
+                                           "TSO global clock; guarantee ts; five consistency levels; MVCC; tsafe wait"),
 }
 
 

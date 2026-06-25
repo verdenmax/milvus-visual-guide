@@ -1215,3 +1215,282 @@ the next lesson (30) supplies the last piece — exactly <strong>which moment's<
 </div>
 """,
 }
+
+
+LESSON_30 = {
+    "zh": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+从第 25 课到第 29 课，我们把一次搜索完整走通了：Proxy 分发、delegator 扇出、segcore 段内搜、exec 过滤、reduce 归并。但有一个问题一直被我们<strong>悄悄推迟</strong>到现在——
+这些段、这些节点搜到的，到底是<strong>哪一个时刻</strong>的数据？刚 insert 进去的新数据，这次搜索看不看得到？这就是<strong>一致性与时间戳</strong>要回答的。
+答案的核心只有三个词：<strong>TSO（全局时钟）、保证时间戳（guarantee ts）、MVCC（按时间戳决定可见性）</strong>。它们一起，让 Milvus 既能"边写边查"，又能让你<strong>按需选择</strong>"要多新鲜"。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 生活类比</div>
+  像看一份<strong>带版本时间的在线文档</strong>。每次编辑都盖一个<strong>时间戳</strong>；你打开文档时，其实是说"<strong>给我看截至某时刻 T 的版本</strong>"。
+  要"绝对最新"，系统就得<strong>等所有在途编辑都落定</strong>再给你看（稍慢但最全）；要"快点出来"，就给你<strong>稍早一点的快照</strong>（可能差几条最新编辑，但秒开）。
+  Milvus 的一致性级别，就是让你<strong>挑这条"要多新"的标尺</strong>——而时间戳，是让这一切可计算的统一刻度。说到底，"看哪一刻的版本"在分布式系统里不是个哲学问题，而是个<strong>能用一个整数（时间戳）精确表达和比较</strong>的工程问题。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  一句话：<strong>RootCoord 的 TSO 发全局单调时间戳，每次写和读都盖戳；读带一个"保证时间戳 Tg"（由一致性级别决定）；QueryNode 等到自己消费的数据(tsafe)追上 Tg，再按 MVCC 只返回"ts ≤ Tg 且未被删除"的那一版</strong>。
+  新鲜度与延迟之间的取舍，就压缩在"<strong>Tg 取多新、要不要等</strong>"这一个旋钮上。可以说，<strong>时间戳是 Milvus 把"分布式"和"正确"同时握住的那只手</strong>。
+</div>
+
+<h2>TSO：一把全局唯一、只增不减的时钟</h2>
+<p>分布式系统最头疼的事之一，是"<strong>谁先谁后</strong>"。多个 Proxy 同时收到写、多个节点各有各的本地时钟，怎么判断两条操作的先后？Milvus 的答案是<strong>TSO（Timestamp Oracle，时间戳预言机）</strong>：
+由 <strong>RootCoord</strong>（即今天的 MixCoord 里那部分）维护<strong>一个</strong>全局的、<strong>单调递增</strong>的时间戳源。无论哪个 Proxy 来要，拿到的 ts 都<strong>绝不重复、绝不回退</strong>，且严格反映"谁先要、谁的 ts 小"。
+于是整个集群有了<strong>统一的时间刻度</strong>：每条写入消息进 WAL 时盖一个 ts、每次读请求也领一个 ts。有了这把"全局钟"，"先后"就从模糊的物理时间，变成了可比较的整数。后面的一致性、MVCC，全都建立在它之上。</p>
+
+<p>为什么不能各节点用各自的本地时钟？因为分布式系统里<strong>没有"绝对同步"的物理时钟</strong>——每台机器的时钟都会有毫秒级甚至更大的偏差（时钟漂移），
+靠它们排先后，必然出现"A 机器以为自己晚、B 机器以为自己早"的矛盾，进而导致数据可见性错乱。TSO 用"<strong>单一来源发号</strong>"的办法绕开了这个难题：
+既然只有一个 RootCoord 在发 ts，那么"谁的 ts 小谁就在前"就是<strong>全局一致、无可争议</strong>的。这其实是分布式系统里很经典的一招——<strong>把"排序"这件难事，收敛到一个权威节点上集中决定</strong>。
+为避免这个节点成为瓶颈，TSO 还做了批量预分配等优化（一次取一段 ts 缓存着发），所以它既权威又不慢。记住这把全局钟的两个性质：<strong>单调（只增不减）</strong>与<strong>唯一（不重复）</strong>，
+后面所有"先后""可见性"的讨论，都只是在这两个性质上推演。</p>
+
+<div class="layers">
+  <div class="layer l-core"><div class="lh"><span class="badge">TSO</span><span class="name">RootCoord</span></div><div class="ld">全局唯一、单调递增的时间戳源——集群的统一时钟</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">写</span><span class="name">insert/delete ts</span></div><div class="ld">每条写入进 WAL 时盖一个 ts（顺序即先后）</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">读</span><span class="name">guarantee ts (Tg)</span></div><div class="ld">每次读领一个 Tg：要看到"截至 Tg 的所有写入"</div></div>
+  <div class="layer l-app"><div class="lh"><span class="badge">可见性</span><span class="name">MVCC</span></div><div class="ld">一行可见 ⇔ 它的 ts ≤ Tg 且未被 ts ≤ Tg 的墓碑删除</div></div>
+</div>
+
+<h2>保证时间戳与五种一致性级别</h2>
+<p>读请求带的那个 <strong>Tg（guarantee timestamp，保证时间戳）</strong>，含义是"<strong>请让我至少看到截至 Tg 的所有写入</strong>"。Tg 取多大，由你选的<strong>一致性级别</strong>决定——这正是
+<span class="mono">internal/proxy/util.go</span> 里 <span class="mono">parseGuaranteeTsFromConsistency</span> 做的事。Milvus 提供<strong>五种</strong>一致性级别（<span class="mono">commonpb.ConsistencyLevel_*</span>），
+本质是"Tg 取多新"的不同档位：</p>
+
+<p>这里要厘清一个常见误解：<strong>一致性级别管的是"读能看到多新的写"，不是"写得多快"或"数据存得对不对"</strong>。无论你选哪一档，写入都照样进 WAL、照样持久化、照样最终对所有人可见——级别只决定<strong>这一次读愿不愿意等、要看到截至哪一刻</strong>。
+也正因如此，<strong>同一个集合，不同查询可以用不同级别</strong>：后台对账用 Strong、面向用户的搜索用 Bounded、离线刷库用 Eventually，互不影响。把"一致性"理解成"<strong>每次读自带的一个新鲜度要求</strong>"，
+而不是"整个库的某种全局开关"，你就抓住了它的精髓。这也呼应了向量数据库的定位：它不像传统事务数据库那样追求"任何时刻全局强一致"，而是把"<strong>新鲜度</strong>"做成一个<strong>可按查询调节的旋钮</strong>，
+在海量、高并发的相似检索场景里，换取吞吐与延迟的巨大收益。</p>
+
+<table class="t">
+  <tr><th>一致性级别</th><th>Tg 取值</th><th>含义 / 取舍</th></tr>
+  <tr><td><strong>Strong</strong></td><td class="mono">最新的 tMax</td><td>看到此刻已提交的全部写入；最新鲜，可能要等</td></tr>
+  <tr><td><strong>Bounded</strong></td><td class="mono">tMax − gracefulTime</td><td>容忍一小段陈旧（如几秒），换更低延迟；默认常用</td></tr>
+  <tr><td><strong>Session</strong></td><td class="mono">本客户端上次写入的 ts</td><td>读到"自己刚写的"（read-your-writes）</td></tr>
+  <tr><td><strong>Eventually</strong></td><td class="mono">1（极小）</td><td>不等待、立刻返回，可能较陈旧；最快</td></tr>
+  <tr><td><strong>Customized</strong></td><td class="mono">用户指定的 ts</td><td>精确控制"读到哪一刻"，做时间旅行式查询</td></tr>
+</table>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/proxy/util.go</span><span class="ln">由一致性级别推导保证时间戳 Tg（示意，已简化）</span></div>
+  <pre><span class="cm">// parseGuaranteeTsFromConsistency: 一致性级别 → Tg</span>
+<span class="kw">switch</span> level {
+<span class="kw">case</span> Strong:      Tg = tMax                 <span class="cm">// 最新</span>
+<span class="kw">case</span> Bounded:     Tg = tMax - gracefulTime  <span class="cm">// 容忍一点陈旧</span>
+<span class="kw">case</span> Eventually:  Tg = 1                    <span class="cm">// 不等待</span>
+<span class="cm">// Session: 取本会话上次写入 ts；Customized: 用户给定 ts</span>
+}</pre>
+</div>
+
+<h2>MVCC：用时间戳决定"谁该被看到"</h2>
+<p>有了 Tg，"可见性"就有了精确定义。Milvus 用 <strong>MVCC（多版本并发控制）</strong>：每条数据都带着它的写入 ts，<strong>一行对本次读可见，当且仅当：它的插入 ts ≤ Tg，并且没有一个 ts ≤ Tg 的删除墓碑作废它</strong>（回忆第 20 课——删除是盖墓碑、upsert 是删+插）。
+换句话说，读不是"看当前最终状态"，而是"<strong>看截至 Tg 那一刻的快照</strong>"。这带来两个好处：其一，<strong>读写互不阻塞</strong>——写一直在更高的 ts 上追加，读只认自己 Tg 那一刻，谁也不挡谁；
+其二，<strong>结果天然自洽</strong>——同一次查询里，所有段、所有节点都用同一个 Tg 过滤，看到的是同一个时间切片，绝不会"东边看到新的、西边看到旧的"。MVCC 把"并发"这件难事，化解成了"<strong>各看各的时间快照</strong>"。</p>
+
+<p>把这套规则套在一个具体场景里：你先 <span class="inline">insert</span> 了商品 A（ts=95），紧接着把它 <span class="inline">delete</span> 了（墓碑 ts=98），又重新 <span class="inline">insert</span> 了改价后的 A（ts=110）。
+现在三个读同时来：Tg=96 的读，只看得到第一版 A（95≤96，且 98 的墓碑还"不在它的时间里"）；Tg=100 的读，看到的是"A 已被删除"（墓碑 98≤100，而新版 110 还看不到）；Tg=120 的读，看到的是改价后的新 A（110≤120）。
+<strong>同一份底层数据，三个不同 Tg 的读看到三种不同却各自正确的状态</strong>——这正是 MVCC 的威力：它不强行规定"现在到底是什么"，而是让每个读各自拿到"<strong>它那一刻该看到的真相</strong>"。
+也正因为读永远只认自己的 Tg、写永远在更高的 ts 上追加，<strong>读和写就彻底解耦了</strong>：高并发写入的同时，查询照样跑，互不加锁、互不等待，这是 Milvus 能"边写边查"且吞吐很高的根本机制之一。</p>
+
+<div class="cellgroup">
+  <div class="cg-cap"><b>同一主键 k 的多个版本</b>：以 Tg=100 读，应看到哪一版？（绿✓=可见）</div>
+  <div class="cells"><span class="lab">v1</span><span class="cell">insert k @ts=80</span><span class="sep">→</span><span class="cell dim">被后续覆盖</span></div>
+  <div class="cells"><span class="lab">v2</span><span class="cell">delete k @ts=90</span><span class="sep">→</span><span class="cell dim">墓碑 ts=90 ≤ 100</span></div>
+  <div class="cells"><span class="lab">v3</span><span class="cell hl">insert k @ts=95</span><span class="sep">→</span><span class="cell q">ts=95 ≤ 100 且其后无墓碑 ✓</span></div>
+  <div class="cells"><span class="lab">v4</span><span class="cell">insert k @ts=120</span><span class="sep">→</span><span class="cell dim">ts=120 &gt; 100，不可见</span></div>
+</div>
+
+<h2>等待机制：tsafe 追上 Tg，才敢回答</h2>
+<p>最关键的一环来了：<strong>怎么保证"截至 Tg 的写入，真的都到了 QueryNode 手里"？</strong>毕竟写是异步流过 WAL 的，节点可能还没消费到最新。Milvus 的办法是给每个 QueryNode 维护一个<strong>tsafe（服务时间水位）</strong>——
+它表示"我已经把 WAL 消费并应用到了哪个 TimeTick"。TimeTick 是 WAL 里单调推进的时钟（第 16 课），节点每消费一段日志，tsafe 就往前推一点。<strong>当一个读请求带着 Tg 进来，节点先比较：如果 tsafe ≥ Tg，说明截至 Tg 的写入我都有了，立刻搜；
+如果 tsafe &lt; Tg，就<strong>挂起等待</strong>，直到 tsafe 追上 Tg（或超时）</strong>。这套"<strong>等到数据足够新再回答</strong>"的机制，正是 <span class="mono">docs/developer_guides/how-guarantee-ts-works.md</span> 的核心，也是"保证时间戳"四个字里"<strong>保证</strong>"二字的由来。</p>
+
+<p>等待当然不能无限。如果某个节点迟迟追不上（比如它落后太多、或上游写入洪峰），读会在超时后<strong>返回错误或退化</strong>，而不是永远挂着——这把"正确性"和"可用性"的边界交还给调用方掌控。
+这也解释了为什么<strong>Strong 在写入压力很大时延迟会上升</strong>：Tg 被设成最新 tMax，而节点要消费完积压的 WAL 才能让 tsafe 追上去。反过来，<strong>Bounded 把 Tg 往回挪一点，就极大概率"一来就满足 tsafe ≥ Tg"，几乎不用等</strong>——
+这就是它成为默认级别的原因。还要注意：tsafe 是<strong>按 vchannel（分片）维度</strong>推进的，一次查询要等的是它涉及的所有分片都各自 tsafe ≥ Tg；任何一个分片的消费卡住，都会拖慢这次强一致读。理解了这套等待，
+你就能把线上"偶发的查询变慢"和"写入积压 / 某节点消费滞后"对应起来——它们往往是同一件事的两面。</p>
+
+<p>那么实践中怎么选级别？给一个朴素的决策指南：<strong>要"写完立刻能查到自己写的"</strong>（比如刚上传一张图就想搜它），用 <strong>Session</strong> 或 Strong；<strong>对一致性极敏感、宁可慢一点也要最新</strong>（如某些金融、审计场景），用 <strong>Strong</strong>；
+<strong>绝大多数高并发检索/推荐/RAG</strong>，差几条最新数据无伤大雅、但要低延迟高吞吐，用 <strong>Bounded</strong>（默认）；<strong>只要"大概新"、极致追求快</strong>（如离线分析、海量召回），用 <strong>Eventually</strong>；
+<strong>要做"看某历史时刻快照"的时间旅行查询</strong>，用 <strong>Customized</strong> 指定 ts。一句话：<strong>先想清楚"这次查询能容忍多旧"，再倒推该选哪一档</strong>——这比无脑用 Strong"求稳"要明智得多，
+因为不必要的强一致，换来的往往是不必要的延迟。</p>
+
+<div class="timeline">
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t1</span><span class="tl-c">写入不断进 WAL，TimeTick 一路推进；QueryNode 消费并应用，tsafe 随之上涨</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t2</span><span class="tl-c">读请求到达，带 Tg=100；此刻节点 tsafe=98 &lt; 100</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t3</span><span class="tl-c">节点<strong>挂起等待</strong>：继续消费 WAL，直到 tsafe ≥ 100</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t4</span><span class="tl-c">tsafe=100，<strong>截至 Tg 的写入已齐</strong>，按 MVCC 过滤并返回结果</span></div>
+</div>
+
+<h2>取舍：要多新鲜，就要等多久</h2>
+<p>把上面这套"等到 tsafe ≥ Tg 再答"放在心里，就能理解：<strong>"新鲜"从来不是免费的</strong>——要看到更新的数据，要么数据本就到了（运气好），要么就得等它到。Milvus 没有替你做这个取舍，而是把旋钮交到你手里。</p>
+<p>现在五种一致性级别的设计意图就一目了然了：<strong>它们本质是在"新鲜度"和"延迟"之间给你一个旋钮</strong>。Strong 把 Tg 设成最新的 tMax，看得最全，但若节点还没追上，就得<strong>等</strong>——延迟可能略高。
+Bounded 把 Tg 往回挪一点点（<span class="mono">tMax − gracefulTime</span>），用"容忍几秒陈旧"换"几乎不用等"，所以它是很多场景的<strong>默认之选</strong>。Eventually 干脆把 Tg 设到极小，<strong>从不等待、秒回</strong>，代价是可能看不到最新几条。
+Session 保证你<strong>至少能读到自己刚写的</strong>，对"写完马上查"的交互很友好。Customized 则把"读哪一刻"完全交给你。回忆第 1 课说的"<strong>边写边查</strong>"：能做到这一点，正是因为 growing 段 + tsafe 机制让"新写的数据立刻可被某个 Tg 看见"——
+而看不看得见、要不要等，由你选的级别决定。<strong>没有放之四海皆准的答案，只有适配场景的取舍</strong>：要强一致就接受可能的等待，要低延迟就接受可能的陈旧。</p>
+
+<div class="cols">
+  <div class="col"><h4>偏新鲜（Strong）</h4><p>看到此刻全部已提交写入；适合对正确性极敏感的场景。代价：节点未追上时要等，延迟可能更高。</p></div>
+  <div class="col"><h4>偏低延迟（Bounded / Eventually）</h4><p>容忍一点点陈旧，几乎不等待、响应快；适合推荐、检索增强等"差几条无伤大雅"的高并发场景。</p></div>
+</div>
+
+<h2>全书的一次收束</h2>
+<p>这一课也是<strong>查询链路（第六部分）的收尾</strong>。把六部分串起来看：你写下的数据先变成<strong>向量</strong>（第二部分），经 Proxy <strong>沿日志写入</strong>、落成段与 binlog（第四部分），被<strong>建成索引</strong>（第五部分）；
+查询时，Proxy <strong>定好 Tg、分发</strong>，delegator <strong>扇出</strong>到段，segcore <strong>过滤 + 检索</strong>，reduce <strong>归并</strong>，最后由 tsafe + MVCC 保证你看到的是<strong>一个自洽、且新鲜度可选的时间快照</strong>。
+至此，"一次相似检索如何在分布式系统里被正确、高效、可控地完成"这条主线，就完整闭环了。后面的部分（C++ 内核、流式系统、运维与贡献）会再向下钻、向外扩，但它们都挂在这条主线上。</p>
+
+<p>回头看这一课为什么压轴：<strong>时间戳，是把前面所有零散机制缝在一起的那根线</strong>。写入的顺序靠它定（第 16 课 TimeTick），删除与 upsert 的版本靠它分（第 20 课墓碑），
+段的可见性靠它判（第 7 课 growing/sealed），归并的去重靠它选对版本（第 29 课），而这一课把它们统一成一句话：<strong>一次读，就是"取一个 Tg、等数据追上、按 Tg 看快照"</strong>。
+当你下次在 SDK 里写下 <span class="inline">consistency_level="Bounded"</span> 时，希望你眼前能浮现出这一整条链路：TSO 发戳、Proxy 定 Tg、QueryNode 等 tsafe、segcore 按 MVCC 过滤——
+一个看似简单的参数背后，是一整套让"分布式、边写边查、还要正确"同时成立的精巧设计。<strong>读懂了时间戳，你就读懂了 Milvus 查询正确性的根</strong>。如果说前五课讲的是"<strong>怎么把结果搜出来、合出来</strong>"，这一课讲的就是"<strong>这些结果凭什么是对的、是哪一刻的</strong>"——前者关乎性能，后者关乎正确，二者合起来，才算真正讲完了"一次查询"。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>TSO</strong>：RootCoord 维护的全局、单调递增时间戳源；写与读都盖戳，给集群一把统一的钟。</li>
+    <li><strong>保证时间戳 Tg + 五种一致性级别</strong>：Strong=最新 tMax、Bounded=tMax−gracefulTime、Session=本会话上次写、Eventually=1、Customized=用户指定（<span class="mono">parseGuaranteeTsFromConsistency</span>）。</li>
+    <li><strong>MVCC</strong>：一行可见 ⇔ 插入 ts ≤ Tg 且无 ts ≤ Tg 的墓碑；读看的是"截至 Tg 的快照"，读写互不阻塞、结果自洽。</li>
+    <li><strong>等待机制</strong>：QueryNode 的 <span class="mono">tsafe</span>（已消费的 WAL TimeTick）≥ Tg 才回答；这是"保证"二字的由来。</li>
+    <li><strong>取舍</strong>：新鲜度 ↔ 延迟一个旋钮；强一致可能要等，低延迟可能略陈旧——按场景选级别，不必无脑求强一致。</li>
+  </ul>
+</div>
+""",
+    "en": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+From Lesson 25 to 29 we walked a search end to end: the Proxy dispatches, the delegator fans out, segcore searches a segment, exec
+filters, reduce merges. But one question we kept <strong>quietly deferring</strong> until now: which <strong>moment's</strong> data did
+those segments and nodes actually search? Can a search see data you just inserted? That is what <strong>consistency and timestamps</strong>
+answer. The core is just three words: <strong>TSO (a global clock), the guarantee timestamp, and MVCC (visibility by timestamp)</strong>.
+Together they let Milvus both "query while you write" and <strong>let you choose</strong> "how fresh" you need.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Like reading a <strong>versioned online document</strong>. Every edit is stamped with a <strong>timestamp</strong>; opening the doc really
+  means "<strong>show me the version as of moment T</strong>". For "absolutely latest", the system must <strong>wait for all in-flight edits
+  to land</strong> (a bit slower but complete); for "just give it to me fast", it hands you a <strong>slightly earlier snapshot</strong>
+  (maybe missing the last few edits, but instant). Milvus's consistency levels let you <strong>pick that "how fresh" dial</strong> — and the
+  timestamp is the unified ruler that makes it all computable.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>RootCoord's TSO issues a global monotonic timestamp; every write and read is stamped; a read carries a "guarantee
+  timestamp Tg" (set by its consistency level); a QueryNode waits until the data it has consumed (tsafe) catches up to Tg, then by MVCC
+  returns only the version with "ts ≤ Tg and not deleted"</strong>. The freshness-vs-latency trade-off compresses into one knob: "how new is
+  Tg, and do we wait."
+</div>
+
+<h2>TSO: one global, ever-increasing clock</h2>
+<p>One of the hardest things in a distributed system is "<strong>who came first</strong>". Multiple Proxies take writes at once, each node has
+its own local clock — how do you order two operations? Milvus's answer is the <strong>TSO (Timestamp Oracle)</strong>: <strong>RootCoord</strong>
+(today, that part inside MixCoord) maintains <strong>one</strong> global, <strong>monotonically increasing</strong> timestamp source. Whichever
+Proxy asks, the ts it gets <strong>never repeats and never goes backward</strong>, and strictly reflects "who asked first gets the smaller ts".
+So the whole cluster shares a <strong>single time ruler</strong>: every write message is stamped as it enters the WAL, and every read gets a ts
+too. With this global clock, "ordering" turns from fuzzy physical time into comparable integers. Consistency and MVCC are all built on it.</p>
+
+<div class="layers">
+  <div class="layer l-core"><div class="lh"><span class="badge">TSO</span><span class="name">RootCoord</span></div><div class="ld">a global, monotonic timestamp source — the cluster's single clock</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">write</span><span class="name">insert/delete ts</span></div><div class="ld">each write is stamped as it enters the WAL (order = precedence)</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">read</span><span class="name">guarantee ts (Tg)</span></div><div class="ld">each read gets a Tg: see all writes up to Tg</div></div>
+  <div class="layer l-app"><div class="lh"><span class="badge">visibility</span><span class="name">MVCC</span></div><div class="ld">a row is visible iff its ts ≤ Tg and no tombstone with ts ≤ Tg deletes it</div></div>
+</div>
+
+<h2>The guarantee timestamp and five consistency levels</h2>
+<p>The <strong>Tg (guarantee timestamp)</strong> a read carries means "<strong>please let me see at least all writes up to Tg</strong>". How large
+Tg is depends on the <strong>consistency level</strong> you pick — exactly what <span class="mono">parseGuaranteeTsFromConsistency</span> in
+<span class="mono">internal/proxy/util.go</span> does. Milvus offers <strong>five</strong> levels (<span class="mono">commonpb.ConsistencyLevel_*</span>),
+essentially different settings of "how new is Tg":</p>
+
+<table class="t">
+  <tr><th>Level</th><th>Tg value</th><th>Meaning / trade-off</th></tr>
+  <tr><td><strong>Strong</strong></td><td class="mono">latest tMax</td><td>see all committed writes so far; freshest, may wait</td></tr>
+  <tr><td><strong>Bounded</strong></td><td class="mono">tMax − gracefulTime</td><td>tolerate a little staleness (e.g. seconds) for lower latency; a common default</td></tr>
+  <tr><td><strong>Session</strong></td><td class="mono">this client's last-write ts</td><td>read-your-own-writes</td></tr>
+  <tr><td><strong>Eventually</strong></td><td class="mono">1 (tiny)</td><td>no waiting, returns immediately, may be stale; fastest</td></tr>
+  <tr><td><strong>Customized</strong></td><td class="mono">a user-supplied ts</td><td>precisely control "as of which moment" — time-travel queries</td></tr>
+</table>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/proxy/util.go</span><span class="ln">derive guarantee ts Tg from the consistency level (illustrative, simplified)</span></div>
+  <pre><span class="cm">// parseGuaranteeTsFromConsistency: consistency level → Tg</span>
+<span class="kw">switch</span> level {
+<span class="kw">case</span> Strong:      Tg = tMax                 <span class="cm">// latest</span>
+<span class="kw">case</span> Bounded:     Tg = tMax - gracefulTime  <span class="cm">// tolerate some staleness</span>
+<span class="kw">case</span> Eventually:  Tg = 1                    <span class="cm">// no waiting</span>
+<span class="cm">// Session: this session's last-write ts; Customized: user-given ts</span>
+}</pre>
+</div>
+
+<h2>MVCC: deciding "who should be seen" by timestamp</h2>
+<p>With Tg, "visibility" has a precise definition. Milvus uses <strong>MVCC (multi-version concurrency control)</strong>: every row carries its
+write ts, and <strong>a row is visible to this read iff its insert ts ≤ Tg AND no delete tombstone with ts ≤ Tg voids it</strong> (recall Lesson 20 —
+a delete stamps a tombstone, an upsert is delete+insert). In other words, a read is not "the current final state" but "<strong>the snapshot as of
+Tg</strong>". Two benefits: first, <strong>reads and writes don't block each other</strong> — writes keep appending at higher ts, reads only care about
+their own Tg; second, <strong>results are inherently self-consistent</strong> — within one query, every segment and node filters by the same Tg, seeing
+the same time-slice, never "new on one side, old on the other". MVCC turns the hard problem of concurrency into "<strong>everyone reads their own time
+snapshot</strong>".</p>
+
+<div class="cellgroup">
+  <div class="cg-cap"><b>Multiple versions of one PK k</b>: reading at Tg=100, which version should be seen? (green ✓ = visible)</div>
+  <div class="cells"><span class="lab">v1</span><span class="cell">insert k @ts=80</span><span class="sep">→</span><span class="cell dim">overwritten later</span></div>
+  <div class="cells"><span class="lab">v2</span><span class="cell">delete k @ts=90</span><span class="sep">→</span><span class="cell dim">tombstone ts=90 ≤ 100</span></div>
+  <div class="cells"><span class="lab">v3</span><span class="cell hl">insert k @ts=95</span><span class="sep">→</span><span class="cell q">ts=95 ≤ 100, no later tombstone ✓</span></div>
+  <div class="cells"><span class="lab">v4</span><span class="cell">insert k @ts=120</span><span class="sep">→</span><span class="cell dim">ts=120 &gt; 100, invisible</span></div>
+</div>
+
+<h2>The wait mechanism: answer only once tsafe ≥ Tg</h2>
+<p>Here is the crucial piece: <strong>how do we guarantee that the writes up to Tg have actually reached the QueryNode?</strong> After all, writes flow
+asynchronously through the WAL; a node may not have consumed the latest yet. Milvus's trick is to give each QueryNode a <strong>tsafe (served watermark)</strong> —
+how far it has consumed and applied the WAL, expressed as a TimeTick. TimeTick is the WAL's monotonically advancing clock (Lesson 16); each chunk of log a node
+consumes pushes tsafe forward. <strong>When a read arrives with Tg, the node compares: if tsafe ≥ Tg, it has everything up to Tg, so search now; if tsafe &lt; Tg,
+it <strong>suspends and waits</strong> until tsafe catches up to Tg (or times out)</strong>. This "<strong>wait until the data is fresh enough, then answer</strong>"
+mechanism is the heart of <span class="mono">docs/developer_guides/how-guarantee-ts-works.md</span> — and the very reason the word "<strong>guarantee</strong>" is in
+"guarantee timestamp".</p>
+
+<div class="timeline">
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t1</span><span class="tl-c">writes keep entering the WAL, TimeTick advances; the QueryNode consumes and applies, tsafe rises</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t2</span><span class="tl-c">a read arrives with Tg=100; right now the node's tsafe=98 &lt; 100</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t3</span><span class="tl-c">the node <strong>suspends</strong>: keep consuming the WAL until tsafe ≥ 100</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t4</span><span class="tl-c">tsafe=100, <strong>all writes up to Tg are present</strong>; filter by MVCC and return</span></div>
+</div>
+
+<h2>The trade-off: the fresher you want it, the longer you may wait</h2>
+<p>Now the design intent of the five levels is clear: <strong>they are a knob between "freshness" and "latency"</strong>. Strong sets Tg to the latest tMax —
+sees the most, but if the node hasn't caught up it must <strong>wait</strong>, so latency may be higher. Bounded nudges Tg back a touch
+(<span class="mono">tMax − gracefulTime</span>), trading "tolerate a few seconds of staleness" for "almost never wait", which is why it is a common
+<strong>default</strong>. Eventually sets Tg tiny, <strong>never waits, returns instantly</strong>, at the cost of maybe missing the last few writes. Session
+guarantees you <strong>at least read your own writes</strong>, friendly to "write then immediately query" interactions. Customized hands "as of when" entirely to
+you. Recall Lesson 1's "<strong>query while you write</strong>": that works precisely because growing segments + the tsafe mechanism make "freshly written data
+immediately visible to some Tg" — whether you see it, and whether you wait, is set by the level you choose. <strong>There is no one-size-fits-all answer, only a
+trade-off matched to the scenario</strong>: want strong consistency, accept a possible wait; want low latency, accept possible staleness.</p>
+
+<div class="cols">
+  <div class="col"><h4>Toward freshness (Strong)</h4><p>see all committed writes so far; for correctness-critical scenarios. Cost: must wait when the node hasn't caught up; latency may rise.</p></div>
+  <div class="col"><h4>Toward low latency (Bounded / Eventually)</h4><p>tolerate a little staleness, barely wait, respond fast; for high-concurrency cases (recommendation, RAG) where a few missing rows are harmless.</p></div>
+</div>
+
+<h2>A closing of the whole guide so far</h2>
+<p>This lesson also <strong>closes the query path (Part 6)</strong>. Stringing the six parts together: data you write first becomes <strong>vectors</strong> (Part 2),
+is <strong>written along the log</strong> via the Proxy into segments and binlogs (Part 4), and is <strong>built into indexes</strong> (Part 5); at query time the Proxy
+<strong>sets Tg and dispatches</strong>, the delegator <strong>fans out</strong> to segments, segcore <strong>filters + searches</strong>, reduce <strong>merges</strong>, and
+finally tsafe + MVCC guarantee you see <strong>a self-consistent snapshot with a freshness you can choose</strong>. With that, the main thread — "how one similarity
+search is completed correctly, efficiently and controllably in a distributed system" — closes the loop. The remaining parts (the C++ core, the streaming system,
+operations and contributing) drill further down and reach further out, but they all hang on this thread.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>TSO</strong>: a global, monotonic timestamp source in RootCoord; both writes and reads are stamped, giving the cluster one clock.</li>
+    <li><strong>Guarantee ts Tg + five levels</strong>: Strong=latest tMax, Bounded=tMax−gracefulTime, Session=this session's last write, Eventually=1, Customized=user-given (<span class="mono">parseGuaranteeTsFromConsistency</span>).</li>
+    <li><strong>MVCC</strong>: a row is visible iff insert ts ≤ Tg and no tombstone with ts ≤ Tg; a read sees "the snapshot as of Tg" — reads/writes don't block, results are self-consistent.</li>
+    <li><strong>Wait mechanism</strong>: a QueryNode answers only once its <span class="mono">tsafe</span> (consumed WAL TimeTick) ≥ Tg — the source of the word "guarantee".</li>
+    <li><strong>Trade-off</strong>: freshness ↔ latency on one knob; strong consistency may wait, low latency may be slightly stale — pick a level by scenario.</li>
+  </ul>
+</div>
+""",
+}

@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>30 · 一致性与时间戳 / Consistency &amp; timestamps - Milvus 图解教程</title>
+<meta name="description" content="第六部分 · 查询链路｜一致性与时间戳 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="30 · 一致性与时间戳 / Consistency &amp; timestamps - Milvus 图解教程">
+<meta property="og:description" content="第六部分 · 查询链路｜一致性与时间戳 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="30 · 一致性与时间戳 / Consistency &amp; timestamps - Milvus 图解教程">
+<meta name="twitter:description" content="第六部分 · 查询链路｜一致性与时间戳 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.timeline .tl-row { display: flex; align-items: flex-start; gap: .6rem; padding: .12rem 0; }
+.timeline .tl-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: .45rem; }
+.timeline .tl-t { font-family: ui-monospace, monospace; font-weight: 700; color: var(--accent-ink); min-width: 2.4rem; font-size: .82rem; flex-shrink: 0; margin-top: .18rem; }
+.timeline .tl-c { font-size: .9rem; color: var(--muted); }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第六部分 · 查询链路</span><span class="lang-en">Part 6 · The query path</span></span>
+    <span class="pill">30 / 30</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:100%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第六部分 · 查询链路</span><span class="lang-en">Part 6 · The query path</span></div>
+    <h1><span class="lang-zh">一致性与时间戳</span><span class="lang-en">Consistency &amp; timestamps</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+从第 25 课到第 29 课，我们把一次搜索完整走通了：Proxy 分发、delegator 扇出、segcore 段内搜、exec 过滤、reduce 归并。但有一个问题一直被我们<strong>悄悄推迟</strong>到现在——
+这些段、这些节点搜到的，到底是<strong>哪一个时刻</strong>的数据？刚 insert 进去的新数据，这次搜索看不看得到？这就是<strong>一致性与时间戳</strong>要回答的。
+答案的核心只有三个词：<strong>TSO（全局时钟）、保证时间戳（guarantee ts）、MVCC（按时间戳决定可见性）</strong>。它们一起，让 Milvus 既能"边写边查"，又能让你<strong>按需选择</strong>"要多新鲜"。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 生活类比</div>
+  像看一份<strong>带版本时间的在线文档</strong>。每次编辑都盖一个<strong>时间戳</strong>；你打开文档时，其实是说"<strong>给我看截至某时刻 T 的版本</strong>"。
+  要"绝对最新"，系统就得<strong>等所有在途编辑都落定</strong>再给你看（稍慢但最全）；要"快点出来"，就给你<strong>稍早一点的快照</strong>（可能差几条最新编辑，但秒开）。
+  Milvus 的一致性级别，就是让你<strong>挑这条"要多新"的标尺</strong>——而时间戳，是让这一切可计算的统一刻度。说到底，"看哪一刻的版本"在分布式系统里不是个哲学问题，而是个<strong>能用一个整数（时间戳）精确表达和比较</strong>的工程问题。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  一句话：<strong>RootCoord 的 TSO 发全局单调时间戳，每次写和读都盖戳；读带一个"保证时间戳 Tg"（由一致性级别决定）；QueryNode 等到自己消费的数据(tsafe)追上 Tg，再按 MVCC 只返回"ts ≤ Tg 且未被删除"的那一版</strong>。
+  新鲜度与延迟之间的取舍，就压缩在"<strong>Tg 取多新、要不要等</strong>"这一个旋钮上。可以说，<strong>时间戳是 Milvus 把"分布式"和"正确"同时握住的那只手</strong>。
+</div>
+
+<h2>TSO：一把全局唯一、只增不减的时钟</h2>
+<p>分布式系统最头疼的事之一，是"<strong>谁先谁后</strong>"。多个 Proxy 同时收到写、多个节点各有各的本地时钟，怎么判断两条操作的先后？Milvus 的答案是<strong>TSO（Timestamp Oracle，时间戳预言机）</strong>：
+由 <strong>RootCoord</strong>（即今天的 MixCoord 里那部分）维护<strong>一个</strong>全局的、<strong>单调递增</strong>的时间戳源。无论哪个 Proxy 来要，拿到的 ts 都<strong>绝不重复、绝不回退</strong>，且严格反映"谁先要、谁的 ts 小"。
+于是整个集群有了<strong>统一的时间刻度</strong>：每条写入消息进 WAL 时盖一个 ts、每次读请求也领一个 ts。有了这把"全局钟"，"先后"就从模糊的物理时间，变成了可比较的整数。后面的一致性、MVCC，全都建立在它之上。</p>
+
+<p>为什么不能各节点用各自的本地时钟？因为分布式系统里<strong>没有"绝对同步"的物理时钟</strong>——每台机器的时钟都会有毫秒级甚至更大的偏差（时钟漂移），
+靠它们排先后，必然出现"A 机器以为自己晚、B 机器以为自己早"的矛盾，进而导致数据可见性错乱。TSO 用"<strong>单一来源发号</strong>"的办法绕开了这个难题：
+既然只有一个 RootCoord 在发 ts，那么"谁的 ts 小谁就在前"就是<strong>全局一致、无可争议</strong>的。这其实是分布式系统里很经典的一招——<strong>把"排序"这件难事，收敛到一个权威节点上集中决定</strong>。
+为避免这个节点成为瓶颈，TSO 还做了批量预分配等优化（一次取一段 ts 缓存着发），所以它既权威又不慢。记住这把全局钟的两个性质：<strong>单调（只增不减）</strong>与<strong>唯一（不重复）</strong>，
+后面所有"先后""可见性"的讨论，都只是在这两个性质上推演。</p>
+
+<div class="layers">
+  <div class="layer l-core"><div class="lh"><span class="badge">TSO</span><span class="name">RootCoord</span></div><div class="ld">全局唯一、单调递增的时间戳源——集群的统一时钟</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">写</span><span class="name">insert/delete ts</span></div><div class="ld">每条写入进 WAL 时盖一个 ts（顺序即先后）</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">读</span><span class="name">guarantee ts (Tg)</span></div><div class="ld">每次读领一个 Tg：要看到"截至 Tg 的所有写入"</div></div>
+  <div class="layer l-app"><div class="lh"><span class="badge">可见性</span><span class="name">MVCC</span></div><div class="ld">一行可见 ⇔ 它的 ts ≤ Tg 且未被 ts ≤ Tg 的墓碑删除</div></div>
+</div>
+
+<h2>保证时间戳与五种一致性级别</h2>
+<p>读请求带的那个 <strong>Tg（guarantee timestamp，保证时间戳）</strong>，含义是"<strong>请让我至少看到截至 Tg 的所有写入</strong>"。Tg 取多大，由你选的<strong>一致性级别</strong>决定——这正是
+<span class="mono">internal/proxy/util.go</span> 里 <span class="mono">parseGuaranteeTsFromConsistency</span> 做的事。Milvus 提供<strong>五种</strong>一致性级别（<span class="mono">commonpb.ConsistencyLevel_*</span>），
+本质是"Tg 取多新"的不同档位：</p>
+
+<p>这里要厘清一个常见误解：<strong>一致性级别管的是"读能看到多新的写"，不是"写得多快"或"数据存得对不对"</strong>。无论你选哪一档，写入都照样进 WAL、照样持久化、照样最终对所有人可见——级别只决定<strong>这一次读愿不愿意等、要看到截至哪一刻</strong>。
+也正因如此，<strong>同一个集合，不同查询可以用不同级别</strong>：后台对账用 Strong、面向用户的搜索用 Bounded、离线刷库用 Eventually，互不影响。把"一致性"理解成"<strong>每次读自带的一个新鲜度要求</strong>"，
+而不是"整个库的某种全局开关"，你就抓住了它的精髓。这也呼应了向量数据库的定位：它不像传统事务数据库那样追求"任何时刻全局强一致"，而是把"<strong>新鲜度</strong>"做成一个<strong>可按查询调节的旋钮</strong>，
+在海量、高并发的相似检索场景里，换取吞吐与延迟的巨大收益。</p>
+
+<table class="t">
+  <tr><th>一致性级别</th><th>Tg 取值</th><th>含义 / 取舍</th></tr>
+  <tr><td><strong>Strong</strong></td><td class="mono">最新的 tMax</td><td>看到此刻已提交的全部写入；最新鲜，可能要等</td></tr>
+  <tr><td><strong>Bounded</strong></td><td class="mono">tMax − gracefulTime</td><td>容忍一小段陈旧（如几秒），换更低延迟；默认常用</td></tr>
+  <tr><td><strong>Session</strong></td><td class="mono">本客户端上次写入的 ts</td><td>读到"自己刚写的"（read-your-writes）</td></tr>
+  <tr><td><strong>Eventually</strong></td><td class="mono">1（极小）</td><td>不等待、立刻返回，可能较陈旧；最快</td></tr>
+  <tr><td><strong>Customized</strong></td><td class="mono">用户指定的 ts</td><td>精确控制"读到哪一刻"，做时间旅行式查询</td></tr>
+</table>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/proxy/util.go</span><span class="ln">由一致性级别推导保证时间戳 Tg（示意，已简化）</span></div>
+  <pre><span class="cm">// parseGuaranteeTsFromConsistency: 一致性级别 → Tg</span>
+<span class="kw">switch</span> level {
+<span class="kw">case</span> Strong:      Tg = tMax                 <span class="cm">// 最新</span>
+<span class="kw">case</span> Bounded:     Tg = tMax - gracefulTime  <span class="cm">// 容忍一点陈旧</span>
+<span class="kw">case</span> Eventually:  Tg = 1                    <span class="cm">// 不等待</span>
+<span class="cm">// Session: 取本会话上次写入 ts；Customized: 用户给定 ts</span>
+}</pre>
+</div>
+
+<h2>MVCC：用时间戳决定"谁该被看到"</h2>
+<p>有了 Tg，"可见性"就有了精确定义。Milvus 用 <strong>MVCC（多版本并发控制）</strong>：每条数据都带着它的写入 ts，<strong>一行对本次读可见，当且仅当：它的插入 ts ≤ Tg，并且没有一个 ts ≤ Tg 的删除墓碑作废它</strong>（回忆第 20 课——删除是盖墓碑、upsert 是删+插）。
+换句话说，读不是"看当前最终状态"，而是"<strong>看截至 Tg 那一刻的快照</strong>"。这带来两个好处：其一，<strong>读写互不阻塞</strong>——写一直在更高的 ts 上追加，读只认自己 Tg 那一刻，谁也不挡谁；
+其二，<strong>结果天然自洽</strong>——同一次查询里，所有段、所有节点都用同一个 Tg 过滤，看到的是同一个时间切片，绝不会"东边看到新的、西边看到旧的"。MVCC 把"并发"这件难事，化解成了"<strong>各看各的时间快照</strong>"。</p>
+
+<p>把这套规则套在一个具体场景里：你先 <span class="inline">insert</span> 了商品 A（ts=95），紧接着把它 <span class="inline">delete</span> 了（墓碑 ts=98），又重新 <span class="inline">insert</span> 了改价后的 A（ts=110）。
+现在三个读同时来：Tg=96 的读，只看得到第一版 A（95≤96，且 98 的墓碑还"不在它的时间里"）；Tg=100 的读，看到的是"A 已被删除"（墓碑 98≤100，而新版 110 还看不到）；Tg=120 的读，看到的是改价后的新 A（110≤120）。
+<strong>同一份底层数据，三个不同 Tg 的读看到三种不同却各自正确的状态</strong>——这正是 MVCC 的威力：它不强行规定"现在到底是什么"，而是让每个读各自拿到"<strong>它那一刻该看到的真相</strong>"。
+也正因为读永远只认自己的 Tg、写永远在更高的 ts 上追加，<strong>读和写就彻底解耦了</strong>：高并发写入的同时，查询照样跑，互不加锁、互不等待，这是 Milvus 能"边写边查"且吞吐很高的根本机制之一。</p>
+
+<div class="cellgroup">
+  <div class="cg-cap"><b>同一主键 k 的多个版本</b>：以 Tg=100 读，应看到哪一版？（绿✓=可见）</div>
+  <div class="cells"><span class="lab">v1</span><span class="cell">insert k @ts=80</span><span class="sep">→</span><span class="cell dim">被后续覆盖</span></div>
+  <div class="cells"><span class="lab">v2</span><span class="cell">delete k @ts=90</span><span class="sep">→</span><span class="cell dim">墓碑 ts=90 ≤ 100</span></div>
+  <div class="cells"><span class="lab">v3</span><span class="cell hl">insert k @ts=95</span><span class="sep">→</span><span class="cell q">ts=95 ≤ 100 且其后无墓碑 ✓</span></div>
+  <div class="cells"><span class="lab">v4</span><span class="cell">insert k @ts=120</span><span class="sep">→</span><span class="cell dim">ts=120 &gt; 100，不可见</span></div>
+</div>
+
+<h2>等待机制：tsafe 追上 Tg，才敢回答</h2>
+<p>最关键的一环来了：<strong>怎么保证"截至 Tg 的写入，真的都到了 QueryNode 手里"？</strong>毕竟写是异步流过 WAL 的，节点可能还没消费到最新。Milvus 的办法是给每个 QueryNode 维护一个<strong>tsafe（服务时间水位）</strong>——
+它表示"我已经把 WAL 消费并应用到了哪个 TimeTick"。TimeTick 是 WAL 里单调推进的时钟（第 16 课），节点每消费一段日志，tsafe 就往前推一点。<strong>当一个读请求带着 Tg 进来，节点先比较：如果 tsafe ≥ Tg，说明截至 Tg 的写入我都有了，立刻搜；
+如果 tsafe &lt; Tg，就<strong>挂起等待</strong>，直到 tsafe 追上 Tg（或超时）</strong>。这套"<strong>等到数据足够新再回答</strong>"的机制，正是 <span class="mono">docs/developer_guides/how-guarantee-ts-works.md</span> 的核心，也是"保证时间戳"四个字里"<strong>保证</strong>"二字的由来。</p>
+
+<p>等待当然不能无限。如果某个节点迟迟追不上（比如它落后太多、或上游写入洪峰），读会在超时后<strong>返回错误或退化</strong>，而不是永远挂着——这把"正确性"和"可用性"的边界交还给调用方掌控。
+这也解释了为什么<strong>Strong 在写入压力很大时延迟会上升</strong>：Tg 被设成最新 tMax，而节点要消费完积压的 WAL 才能让 tsafe 追上去。反过来，<strong>Bounded 把 Tg 往回挪一点，就极大概率"一来就满足 tsafe ≥ Tg"，几乎不用等</strong>——
+这就是它成为默认级别的原因。还要注意：tsafe 是<strong>按 vchannel（分片）维度</strong>推进的，一次查询要等的是它涉及的所有分片都各自 tsafe ≥ Tg；任何一个分片的消费卡住，都会拖慢这次强一致读。理解了这套等待，
+你就能把线上"偶发的查询变慢"和"写入积压 / 某节点消费滞后"对应起来——它们往往是同一件事的两面。</p>
+
+<p>那么实践中怎么选级别？给一个朴素的决策指南：<strong>要"写完立刻能查到自己写的"</strong>（比如刚上传一张图就想搜它），用 <strong>Session</strong> 或 Strong；<strong>对一致性极敏感、宁可慢一点也要最新</strong>（如某些金融、审计场景），用 <strong>Strong</strong>；
+<strong>绝大多数高并发检索/推荐/RAG</strong>，差几条最新数据无伤大雅、但要低延迟高吞吐，用 <strong>Bounded</strong>（默认）；<strong>只要"大概新"、极致追求快</strong>（如离线分析、海量召回），用 <strong>Eventually</strong>；
+<strong>要做"看某历史时刻快照"的时间旅行查询</strong>，用 <strong>Customized</strong> 指定 ts。一句话：<strong>先想清楚"这次查询能容忍多旧"，再倒推该选哪一档</strong>——这比无脑用 Strong"求稳"要明智得多，
+因为不必要的强一致，换来的往往是不必要的延迟。</p>
+
+<div class="timeline">
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t1</span><span class="tl-c">写入不断进 WAL，TimeTick 一路推进；QueryNode 消费并应用，tsafe 随之上涨</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t2</span><span class="tl-c">读请求到达，带 Tg=100；此刻节点 tsafe=98 &lt; 100</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t3</span><span class="tl-c">节点<strong>挂起等待</strong>：继续消费 WAL，直到 tsafe ≥ 100</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t4</span><span class="tl-c">tsafe=100，<strong>截至 Tg 的写入已齐</strong>，按 MVCC 过滤并返回结果</span></div>
+</div>
+
+<h2>取舍：要多新鲜，就要等多久</h2>
+<p>把上面这套"等到 tsafe ≥ Tg 再答"放在心里，就能理解：<strong>"新鲜"从来不是免费的</strong>——要看到更新的数据，要么数据本就到了（运气好），要么就得等它到。Milvus 没有替你做这个取舍，而是把旋钮交到你手里。</p>
+<p>现在五种一致性级别的设计意图就一目了然了：<strong>它们本质是在"新鲜度"和"延迟"之间给你一个旋钮</strong>。Strong 把 Tg 设成最新的 tMax，看得最全，但若节点还没追上，就得<strong>等</strong>——延迟可能略高。
+Bounded 把 Tg 往回挪一点点（<span class="mono">tMax − gracefulTime</span>），用"容忍几秒陈旧"换"几乎不用等"，所以它是很多场景的<strong>默认之选</strong>。Eventually 干脆把 Tg 设到极小，<strong>从不等待、秒回</strong>，代价是可能看不到最新几条。
+Session 保证你<strong>至少能读到自己刚写的</strong>，对"写完马上查"的交互很友好。Customized 则把"读哪一刻"完全交给你。回忆第 1 课说的"<strong>边写边查</strong>"：能做到这一点，正是因为 growing 段 + tsafe 机制让"新写的数据立刻可被某个 Tg 看见"——
+而看不看得见、要不要等，由你选的级别决定。<strong>没有放之四海皆准的答案，只有适配场景的取舍</strong>：要强一致就接受可能的等待，要低延迟就接受可能的陈旧。</p>
+
+<div class="cols">
+  <div class="col"><h4>偏新鲜（Strong）</h4><p>看到此刻全部已提交写入；适合对正确性极敏感的场景。代价：节点未追上时要等，延迟可能更高。</p></div>
+  <div class="col"><h4>偏低延迟（Bounded / Eventually）</h4><p>容忍一点点陈旧，几乎不等待、响应快；适合推荐、检索增强等"差几条无伤大雅"的高并发场景。</p></div>
+</div>
+
+<h2>全书的一次收束</h2>
+<p>这一课也是<strong>查询链路（第六部分）的收尾</strong>。把六部分串起来看：你写下的数据先变成<strong>向量</strong>（第二部分），经 Proxy <strong>沿日志写入</strong>、落成段与 binlog（第四部分），被<strong>建成索引</strong>（第五部分）；
+查询时，Proxy <strong>定好 Tg、分发</strong>，delegator <strong>扇出</strong>到段，segcore <strong>过滤 + 检索</strong>，reduce <strong>归并</strong>，最后由 tsafe + MVCC 保证你看到的是<strong>一个自洽、且新鲜度可选的时间快照</strong>。
+至此，"一次相似检索如何在分布式系统里被正确、高效、可控地完成"这条主线，就完整闭环了。后面的部分（C++ 内核、流式系统、运维与贡献）会再向下钻、向外扩，但它们都挂在这条主线上。</p>
+
+<p>回头看这一课为什么压轴：<strong>时间戳，是把前面所有零散机制缝在一起的那根线</strong>。写入的顺序靠它定（第 16 课 TimeTick），删除与 upsert 的版本靠它分（第 20 课墓碑），
+段的可见性靠它判（第 7 课 growing/sealed），归并的去重靠它选对版本（第 29 课），而这一课把它们统一成一句话：<strong>一次读，就是"取一个 Tg、等数据追上、按 Tg 看快照"</strong>。
+当你下次在 SDK 里写下 <span class="inline">consistency_level="Bounded"</span> 时，希望你眼前能浮现出这一整条链路：TSO 发戳、Proxy 定 Tg、QueryNode 等 tsafe、segcore 按 MVCC 过滤——
+一个看似简单的参数背后，是一整套让"分布式、边写边查、还要正确"同时成立的精巧设计。<strong>读懂了时间戳，你就读懂了 Milvus 查询正确性的根</strong>。如果说前五课讲的是"<strong>怎么把结果搜出来、合出来</strong>"，这一课讲的就是"<strong>这些结果凭什么是对的、是哪一刻的</strong>"——前者关乎性能，后者关乎正确，二者合起来，才算真正讲完了"一次查询"。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>TSO</strong>：RootCoord 维护的全局、单调递增时间戳源；写与读都盖戳，给集群一把统一的钟。</li>
+    <li><strong>保证时间戳 Tg + 五种一致性级别</strong>：Strong=最新 tMax、Bounded=tMax−gracefulTime、Session=本会话上次写、Eventually=1、Customized=用户指定（<span class="mono">parseGuaranteeTsFromConsistency</span>）。</li>
+    <li><strong>MVCC</strong>：一行可见 ⇔ 插入 ts ≤ Tg 且无 ts ≤ Tg 的墓碑；读看的是"截至 Tg 的快照"，读写互不阻塞、结果自洽。</li>
+    <li><strong>等待机制</strong>：QueryNode 的 <span class="mono">tsafe</span>（已消费的 WAL TimeTick）≥ Tg 才回答；这是"保证"二字的由来。</li>
+    <li><strong>取舍</strong>：新鲜度 ↔ 延迟一个旋钮；强一致可能要等，低延迟可能略陈旧——按场景选级别，不必无脑求强一致。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. 一次读请求带的“保证时间戳 Tg”，含义是什么？它由什么决定？</div>
+  <ol class="opts">
+    <li>数据在磁盘上的物理地址</li>
+    <li>“至少让我看到截至 Tg 的所有写入”；由这次读选的一致性级别决定（parseGuaranteeTsFromConsistency）</li>
+    <li>查询要返回多少条结果(topK)</li>
+    <li>向量的维度</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。Tg 表达“这次读要求看到截至哪一刻的写入”。一致性级别把它映射成具体值：Strong=最新 tMax、Bounded=tMax−gracefulTime、Eventually=1、Session=本会话上次写、Customized=用户指定。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. QueryNode 靠什么机制“保证”读到截至 Tg 的全部写入？</div>
+  <ol class="opts">
+    <li>重启自己以加载最新数据</li>
+    <li>直接相信本地时钟</li>
+    <li>锁住整个集合，禁止写入</li>
+    <li>维护 tsafe(已消费的 WAL TimeTick)；当 tsafe ≥ Tg 才回答，否则挂起等待(或超时)</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。节点的 tsafe 表示它已把 WAL 消费/应用到哪个 TimeTick。读到来时若 tsafe ≥ Tg，说明截至 Tg 的写入都在，立即搜；否则挂起等待 tsafe 追上 Tg。这就是“保证”二字的来源(how-guarantee-ts-works)。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 关于 Milvus 的一致性级别，下面哪种说法正确？</div>
+  <ol class="opts">
+    <li>Strong 一定比 Bounded 快</li>
+    <li>它只决定“这次读能看到多新的写”，不影响写入是否持久化；同一集合不同查询可用不同级别</li>
+    <li>选 Eventually 会导致数据丢失</li>
+    <li>它是整个库的全局开关，改一次影响所有读写</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。一致性级别是“每次读自带的新鲜度要求”，不改变写入的持久化与最终可见性。所以后台对账可用 Strong、用户搜索用 Bounded、离线刷库用 Eventually，互不影响。Strong 最新但可能要等，未必更快。</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>为你自己的一个场景选一个一致性级别并说明理由：比如“用户上传一张图后立刻以图搜图”“电商首页的相似商品推荐(高并发)”“离线批量去重”“审计回放某历史时刻的数据”。分别该选 Strong / Bounded / Session / Eventually / Customized 中的哪个？把“能容忍多旧”与“延迟要求”这两条线索用上。</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+From Lesson 25 to 29 we walked a search end to end: the Proxy dispatches, the delegator fans out, segcore searches a segment, exec
+filters, reduce merges. But one question we kept <strong>quietly deferring</strong> until now: which <strong>moment's</strong> data did
+those segments and nodes actually search? Can a search see data you just inserted? That is what <strong>consistency and timestamps</strong>
+answer. The core is just three words: <strong>TSO (a global clock), the guarantee timestamp, and MVCC (visibility by timestamp)</strong>.
+Together they let Milvus both "query while you write" and <strong>let you choose</strong> "how fresh" you need.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Like reading a <strong>versioned online document</strong>. Every edit is stamped with a <strong>timestamp</strong>; opening the doc really
+  means "<strong>show me the version as of moment T</strong>". For "absolutely latest", the system must <strong>wait for all in-flight edits
+  to land</strong> (a bit slower but complete); for "just give it to me fast", it hands you a <strong>slightly earlier snapshot</strong>
+  (maybe missing the last few edits, but instant). Milvus's consistency levels let you <strong>pick that "how fresh" dial</strong> — and the
+  timestamp is the unified ruler that makes it all computable.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>RootCoord's TSO issues a global monotonic timestamp; every write and read is stamped; a read carries a "guarantee
+  timestamp Tg" (set by its consistency level); a QueryNode waits until the data it has consumed (tsafe) catches up to Tg, then by MVCC
+  returns only the version with "ts ≤ Tg and not deleted"</strong>. The freshness-vs-latency trade-off compresses into one knob: "how new is
+  Tg, and do we wait."
+</div>
+
+<h2>TSO: one global, ever-increasing clock</h2>
+<p>One of the hardest things in a distributed system is "<strong>who came first</strong>". Multiple Proxies take writes at once, each node has
+its own local clock — how do you order two operations? Milvus's answer is the <strong>TSO (Timestamp Oracle)</strong>: <strong>RootCoord</strong>
+(today, that part inside MixCoord) maintains <strong>one</strong> global, <strong>monotonically increasing</strong> timestamp source. Whichever
+Proxy asks, the ts it gets <strong>never repeats and never goes backward</strong>, and strictly reflects "who asked first gets the smaller ts".
+So the whole cluster shares a <strong>single time ruler</strong>: every write message is stamped as it enters the WAL, and every read gets a ts
+too. With this global clock, "ordering" turns from fuzzy physical time into comparable integers. Consistency and MVCC are all built on it.</p>
+
+<div class="layers">
+  <div class="layer l-core"><div class="lh"><span class="badge">TSO</span><span class="name">RootCoord</span></div><div class="ld">a global, monotonic timestamp source — the cluster's single clock</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">write</span><span class="name">insert/delete ts</span></div><div class="ld">each write is stamped as it enters the WAL (order = precedence)</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">read</span><span class="name">guarantee ts (Tg)</span></div><div class="ld">each read gets a Tg: see all writes up to Tg</div></div>
+  <div class="layer l-app"><div class="lh"><span class="badge">visibility</span><span class="name">MVCC</span></div><div class="ld">a row is visible iff its ts ≤ Tg and no tombstone with ts ≤ Tg deletes it</div></div>
+</div>
+
+<h2>The guarantee timestamp and five consistency levels</h2>
+<p>The <strong>Tg (guarantee timestamp)</strong> a read carries means "<strong>please let me see at least all writes up to Tg</strong>". How large
+Tg is depends on the <strong>consistency level</strong> you pick — exactly what <span class="mono">parseGuaranteeTsFromConsistency</span> in
+<span class="mono">internal/proxy/util.go</span> does. Milvus offers <strong>five</strong> levels (<span class="mono">commonpb.ConsistencyLevel_*</span>),
+essentially different settings of "how new is Tg":</p>
+
+<table class="t">
+  <tr><th>Level</th><th>Tg value</th><th>Meaning / trade-off</th></tr>
+  <tr><td><strong>Strong</strong></td><td class="mono">latest tMax</td><td>see all committed writes so far; freshest, may wait</td></tr>
+  <tr><td><strong>Bounded</strong></td><td class="mono">tMax − gracefulTime</td><td>tolerate a little staleness (e.g. seconds) for lower latency; a common default</td></tr>
+  <tr><td><strong>Session</strong></td><td class="mono">this client's last-write ts</td><td>read-your-own-writes</td></tr>
+  <tr><td><strong>Eventually</strong></td><td class="mono">1 (tiny)</td><td>no waiting, returns immediately, may be stale; fastest</td></tr>
+  <tr><td><strong>Customized</strong></td><td class="mono">a user-supplied ts</td><td>precisely control "as of which moment" — time-travel queries</td></tr>
+</table>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/proxy/util.go</span><span class="ln">derive guarantee ts Tg from the consistency level (illustrative, simplified)</span></div>
+  <pre><span class="cm">// parseGuaranteeTsFromConsistency: consistency level → Tg</span>
+<span class="kw">switch</span> level {
+<span class="kw">case</span> Strong:      Tg = tMax                 <span class="cm">// latest</span>
+<span class="kw">case</span> Bounded:     Tg = tMax - gracefulTime  <span class="cm">// tolerate some staleness</span>
+<span class="kw">case</span> Eventually:  Tg = 1                    <span class="cm">// no waiting</span>
+<span class="cm">// Session: this session's last-write ts; Customized: user-given ts</span>
+}</pre>
+</div>
+
+<h2>MVCC: deciding "who should be seen" by timestamp</h2>
+<p>With Tg, "visibility" has a precise definition. Milvus uses <strong>MVCC (multi-version concurrency control)</strong>: every row carries its
+write ts, and <strong>a row is visible to this read iff its insert ts ≤ Tg AND no delete tombstone with ts ≤ Tg voids it</strong> (recall Lesson 20 —
+a delete stamps a tombstone, an upsert is delete+insert). In other words, a read is not "the current final state" but "<strong>the snapshot as of
+Tg</strong>". Two benefits: first, <strong>reads and writes don't block each other</strong> — writes keep appending at higher ts, reads only care about
+their own Tg; second, <strong>results are inherently self-consistent</strong> — within one query, every segment and node filters by the same Tg, seeing
+the same time-slice, never "new on one side, old on the other". MVCC turns the hard problem of concurrency into "<strong>everyone reads their own time
+snapshot</strong>".</p>
+
+<div class="cellgroup">
+  <div class="cg-cap"><b>Multiple versions of one PK k</b>: reading at Tg=100, which version should be seen? (green ✓ = visible)</div>
+  <div class="cells"><span class="lab">v1</span><span class="cell">insert k @ts=80</span><span class="sep">→</span><span class="cell dim">overwritten later</span></div>
+  <div class="cells"><span class="lab">v2</span><span class="cell">delete k @ts=90</span><span class="sep">→</span><span class="cell dim">tombstone ts=90 ≤ 100</span></div>
+  <div class="cells"><span class="lab">v3</span><span class="cell hl">insert k @ts=95</span><span class="sep">→</span><span class="cell q">ts=95 ≤ 100, no later tombstone ✓</span></div>
+  <div class="cells"><span class="lab">v4</span><span class="cell">insert k @ts=120</span><span class="sep">→</span><span class="cell dim">ts=120 &gt; 100, invisible</span></div>
+</div>
+
+<h2>The wait mechanism: answer only once tsafe ≥ Tg</h2>
+<p>Here is the crucial piece: <strong>how do we guarantee that the writes up to Tg have actually reached the QueryNode?</strong> After all, writes flow
+asynchronously through the WAL; a node may not have consumed the latest yet. Milvus's trick is to give each QueryNode a <strong>tsafe (served watermark)</strong> —
+how far it has consumed and applied the WAL, expressed as a TimeTick. TimeTick is the WAL's monotonically advancing clock (Lesson 16); each chunk of log a node
+consumes pushes tsafe forward. <strong>When a read arrives with Tg, the node compares: if tsafe ≥ Tg, it has everything up to Tg, so search now; if tsafe &lt; Tg,
+it <strong>suspends and waits</strong> until tsafe catches up to Tg (or times out)</strong>. This "<strong>wait until the data is fresh enough, then answer</strong>"
+mechanism is the heart of <span class="mono">docs/developer_guides/how-guarantee-ts-works.md</span> — and the very reason the word "<strong>guarantee</strong>" is in
+"guarantee timestamp".</p>
+
+<div class="timeline">
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t1</span><span class="tl-c">writes keep entering the WAL, TimeTick advances; the QueryNode consumes and applies, tsafe rises</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t2</span><span class="tl-c">a read arrives with Tg=100; right now the node's tsafe=98 &lt; 100</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t3</span><span class="tl-c">the node <strong>suspends</strong>: keep consuming the WAL until tsafe ≥ 100</span></div>
+  <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t4</span><span class="tl-c">tsafe=100, <strong>all writes up to Tg are present</strong>; filter by MVCC and return</span></div>
+</div>
+
+<h2>The trade-off: the fresher you want it, the longer you may wait</h2>
+<p>Now the design intent of the five levels is clear: <strong>they are a knob between "freshness" and "latency"</strong>. Strong sets Tg to the latest tMax —
+sees the most, but if the node hasn't caught up it must <strong>wait</strong>, so latency may be higher. Bounded nudges Tg back a touch
+(<span class="mono">tMax − gracefulTime</span>), trading "tolerate a few seconds of staleness" for "almost never wait", which is why it is a common
+<strong>default</strong>. Eventually sets Tg tiny, <strong>never waits, returns instantly</strong>, at the cost of maybe missing the last few writes. Session
+guarantees you <strong>at least read your own writes</strong>, friendly to "write then immediately query" interactions. Customized hands "as of when" entirely to
+you. Recall Lesson 1's "<strong>query while you write</strong>": that works precisely because growing segments + the tsafe mechanism make "freshly written data
+immediately visible to some Tg" — whether you see it, and whether you wait, is set by the level you choose. <strong>There is no one-size-fits-all answer, only a
+trade-off matched to the scenario</strong>: want strong consistency, accept a possible wait; want low latency, accept possible staleness.</p>
+
+<div class="cols">
+  <div class="col"><h4>Toward freshness (Strong)</h4><p>see all committed writes so far; for correctness-critical scenarios. Cost: must wait when the node hasn't caught up; latency may rise.</p></div>
+  <div class="col"><h4>Toward low latency (Bounded / Eventually)</h4><p>tolerate a little staleness, barely wait, respond fast; for high-concurrency cases (recommendation, RAG) where a few missing rows are harmless.</p></div>
+</div>
+
+<h2>A closing of the whole guide so far</h2>
+<p>This lesson also <strong>closes the query path (Part 6)</strong>. Stringing the six parts together: data you write first becomes <strong>vectors</strong> (Part 2),
+is <strong>written along the log</strong> via the Proxy into segments and binlogs (Part 4), and is <strong>built into indexes</strong> (Part 5); at query time the Proxy
+<strong>sets Tg and dispatches</strong>, the delegator <strong>fans out</strong> to segments, segcore <strong>filters + searches</strong>, reduce <strong>merges</strong>, and
+finally tsafe + MVCC guarantee you see <strong>a self-consistent snapshot with a freshness you can choose</strong>. With that, the main thread — "how one similarity
+search is completed correctly, efficiently and controllably in a distributed system" — closes the loop. The remaining parts (the C++ core, the streaming system,
+operations and contributing) drill further down and reach further out, but they all hang on this thread.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>TSO</strong>: a global, monotonic timestamp source in RootCoord; both writes and reads are stamped, giving the cluster one clock.</li>
+    <li><strong>Guarantee ts Tg + five levels</strong>: Strong=latest tMax, Bounded=tMax−gracefulTime, Session=this session's last write, Eventually=1, Customized=user-given (<span class="mono">parseGuaranteeTsFromConsistency</span>).</li>
+    <li><strong>MVCC</strong>: a row is visible iff insert ts ≤ Tg and no tombstone with ts ≤ Tg; a read sees "the snapshot as of Tg" — reads/writes don't block, results are self-consistent.</li>
+    <li><strong>Wait mechanism</strong>: a QueryNode answers only once its <span class="mono">tsafe</span> (consumed WAL TimeTick) ≥ Tg — the source of the word "guarantee".</li>
+    <li><strong>Trade-off</strong>: freshness ↔ latency on one knob; strong consistency may wait, low latency may be slightly stale — pick a level by scenario.</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. What does the 'guarantee timestamp Tg' on a read mean, and what determines it?</div>
+  <ol class="opts">
+    <li>The data's physical address on disk</li>
+    <li>'Let me see at least all writes up to Tg'; set by the read's consistency level (parseGuaranteeTsFromConsistency)</li>
+    <li>How many results the query returns (topK)</li>
+    <li>The vector dimension</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. Tg expresses 'up to which moment this read must see writes'. The consistency level maps it: Strong=latest tMax, Bounded=tMax−gracefulTime, Eventually=1, Session=this session's last write, Customized=user-given.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. By what mechanism does a QueryNode 'guarantee' it sees all writes up to Tg?</div>
+  <ol class="opts">
+    <li>It restarts itself to load the latest data</li>
+    <li>It simply trusts its local clock</li>
+    <li>It locks the whole collection, blocking writes</li>
+    <li>It tracks tsafe (the consumed WAL TimeTick); it answers only when tsafe ≥ Tg, otherwise it waits (or times out)</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. A node's tsafe is how far it has consumed/applied the WAL (a TimeTick). On a read, if tsafe ≥ Tg all writes up to Tg are present, so search now; otherwise it waits until tsafe catches up. That is the source of the word 'guarantee'.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Which statement about Milvus consistency levels is correct?</div>
+  <ol class="opts">
+    <li>Strong is always faster than Bounded</li>
+    <li>It only decides 'how fresh a read sees writes', not whether writes persist; different queries on one collection can use different levels</li>
+    <li>Choosing Eventually causes data loss</li>
+    <li>It is a global switch for the whole DB, changing it affects all reads and writes</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. A level is a 'per-read freshness requirement'; it doesn't change write persistence or eventual visibility. So a reconciliation job can use Strong, user search Bounded, offline backfill Eventually — independently. Strong is freshest but may wait, not necessarily faster.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>Pick a consistency level for one of your own scenarios and justify it: e.g. 'a user uploads an image then immediately does image-to-image search', 'similar-product recommendation on a busy storefront (high concurrency)', 'offline batch dedup', 'audit replay of data as of a historical moment'. Which of Strong / Bounded / Session / Eventually / Customized fits each? Use the two clues: 'how stale can it tolerate' and 'latency requirement'.</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="29-reduce.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">Reduce 与结果归并</span><span class="lang-en">Reduce &amp; result assembly</span></div></a><a class="next" href="../index.html"><div class="dir"><span class="lang-zh">完成 →</span><span class="lang-en">Done →</span></div><div class="ttl"><span class="lang-zh">返回目录</span><span class="lang-en">Back to index</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>

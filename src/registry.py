@@ -43,4 +43,5 @@ CONTENT = {
     "27-segcore.html": part6.LESSON_27,
     "28-execution-engine.html": part6.LESSON_28,
     "29-reduce.html": part6.LESSON_29,
+    "30-consistency-and-timestamps.html": part6.LESSON_30,
 }
