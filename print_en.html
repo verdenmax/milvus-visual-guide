@@ -10384,6 +10384,11 @@ thread pools, locks, and callbacks, with bugs hard to ward off. Garbage collecti
 free this memory", the most error-prone problem in a distributed system. Add one-command compilation into a single static binary — deploy,
 canary, and rollback all simple. <strong>These "unglamorous bits of dev velocity", added up, are a system that can keep evolving fast.</strong></p>
 
+<div class="cols">
+  <div class="col"><h4>🔧 Go's forte</h4><p>high concurrency (goroutines), a mature networking ecosystem (gRPC), carefree GC, fast compiles, a single binary — suited to <strong>distributed orchestration, scheduling, fault tolerance, fast iteration</strong>.</p></div>
+  <div class="col"><h4>⚡ C++'s forte</h4><p>hardware-hugging memory layout, SIMD / GPU, zero-overhead abstraction — suited to <strong>extreme numeric computation: distances, index walks, merging</strong>.</p></div>
+</div>
+
 <div class="flow">
   <div class="node"><div class="nt">QueryNode (Go)</div><div class="nd">receives the search, a whole batch of params</div></div>
   <div class="arrow">→</div>

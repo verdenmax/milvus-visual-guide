@@ -10161,6 +10161,11 @@ Go 在这里如鱼得水——goroutine 让高并发代码写起来简单，gRPC
 而在 C++ 里实现等价的并发，往往要小心翼翼地玩线程池、锁和回调，bug 还防不胜防。垃圾回收虽然带来一点停顿，但它把"谁该释放这块内存"这个分布式系统里最容易出错的问题直接消解掉了。
 再加上一条命令编译、产物是单个静态二进制——部署、灰度、回滚都简单。<strong>这些"不起眼的开发效率"，累加起来就是一个能持续快速演进的系统。</strong></p>
 
+<div class="cols">
+  <div class="col"><h4>🔧 Go 最擅长</h4><p>高并发（goroutine）、成熟网络生态（gRPC）、垃圾回收省心、编译快、单二进制——适合<strong>分布式编排、调度、容错、快速迭代</strong>。</p></div>
+  <div class="col"><h4>⚡ C++ 最擅长</h4><p>贴硬件的内存布局、SIMD / GPU、零开销抽象——适合<strong>极致数值计算：算距离、走索引、做归并</strong>。</p></div>
+</div>
+
 <div class="flow">
   <div class="node"><div class="nt">QueryNode（Go）</div><div class="nd">收到检索、整批参数</div></div>
   <div class="arrow">→</div>

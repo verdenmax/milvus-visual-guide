@@ -393,6 +393,11 @@ Go 在这里如鱼得水——goroutine 让高并发代码写起来简单，gRPC
 而在 C++ 里实现等价的并发，往往要小心翼翼地玩线程池、锁和回调，bug 还防不胜防。垃圾回收虽然带来一点停顿，但它把"谁该释放这块内存"这个分布式系统里最容易出错的问题直接消解掉了。
 再加上一条命令编译、产物是单个静态二进制——部署、灰度、回滚都简单。<strong>这些"不起眼的开发效率"，累加起来就是一个能持续快速演进的系统。</strong></p>
 
+<div class="cols">
+  <div class="col"><h4>🔧 Go 最擅长</h4><p>高并发（goroutine）、成熟网络生态（gRPC）、垃圾回收省心、编译快、单二进制——适合<strong>分布式编排、调度、容错、快速迭代</strong>。</p></div>
+  <div class="col"><h4>⚡ C++ 最擅长</h4><p>贴硬件的内存布局、SIMD / GPU、零开销抽象——适合<strong>极致数值计算：算距离、走索引、做归并</strong>。</p></div>
+</div>
+
 <div class="flow">
   <div class="node"><div class="nt">QueryNode（Go）</div><div class="nd">收到检索、整批参数</div></div>
   <div class="arrow">→</div>
@@ -568,6 +573,11 @@ concurrently consume several log shards" almost effortless, whereas implementing
 thread pools, locks, and callbacks, with bugs hard to ward off. Garbage collection brings a little pause, but it dissolves outright "who should
 free this memory", the most error-prone problem in a distributed system. Add one-command compilation into a single static binary — deploy,
 canary, and rollback all simple. <strong>These "unglamorous bits of dev velocity", added up, are a system that can keep evolving fast.</strong></p>
+
+<div class="cols">
+  <div class="col"><h4>🔧 Go's forte</h4><p>high concurrency (goroutines), a mature networking ecosystem (gRPC), carefree GC, fast compiles, a single binary — suited to <strong>distributed orchestration, scheduling, fault tolerance, fast iteration</strong>.</p></div>
+  <div class="col"><h4>⚡ C++'s forte</h4><p>hardware-hugging memory layout, SIMD / GPU, zero-overhead abstraction — suited to <strong>extreme numeric computation: distances, index walks, merging</strong>.</p></div>
+</div>
 
 <div class="flow">
   <div class="node"><div class="nt">QueryNode (Go)</div><div class="nd">receives the search, a whole batch of params</div></div>
