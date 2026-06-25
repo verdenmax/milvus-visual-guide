@@ -153,6 +153,8 @@ PAGES = [
      "第十二部分 · 设计专题（综合）", "Part 12 · Design themes (synthesis)"),
     ("53-design-storage-compute-separation.html", "存算分离：为什么节点可以是“无状态”的", "Storage–compute separation: why nodes can be stateless",
      "第十二部分 · 设计专题（综合）", "Part 12 · Design themes (synthesis)"),
+    ("54-design-scale-to-billions.html", "扩展到十亿级：分而治之的艺术", "Scaling to billions: the art of divide-and-conquer",
+     "第十二部分 · 设计专题（综合）", "Part 12 · Design themes (synthesis)"),
 ]
 
 
@@ -700,6 +702,8 @@ SUBTITLES = {
                                          "consistency in three steps · TSO issues a global monotonic stamp → Proxy derives guarantee ts Tg by level → QueryNode waits tsafe≥Tg, segcore filters by MVCC (tombstones) · the level is a freshness↔latency dial"),
     "53-design-storage-compute-separation.html": ("三层解耦：控制面(etcd 存状态)/计算层(无状态节点)/存储层(对象存储装字节) · 对象存储=建/载之间的中转仓库 · mmap 让大于内存也能加载 · 节点挂了重分配+从存储重载，秒级恢复",
                                                   "three-tier decoupling: control plane (etcd holds state) / compute (stateless nodes) / storage (object storage holds bytes) · object storage = transfer warehouse between build & load · mmap serves data larger than RAM · a dead node is reassigned + reloaded from storage, recovering in seconds"),
+    "54-design-scale-to-billions.html": ("分而治之：分(切段摊到分片)→搜(各段并行算局部 topK)→并(三层归并出全局 topK) · 各局部 topK 的并集必含全局 topK，每层只搬 K 个 · 每段建索引+过滤下推让小块也快 · 召回由段内精度决定",
+                                         "divide and conquer: split (segments over shards) → search (segments compute local topK in parallel) → combine (three-level merge into a global topK) · the union of local topKs contains the global topK, each layer moves only K · per-segment index + filter pushdown make small blocks fast · recall is set by in-segment precision"),
 }
 
 

@@ -73,4 +73,5 @@ CONTENT = {
     "51-design-log-as-data.html": part12.LESSON_51,
     "52-design-query-while-write.html": part12.LESSON_52,
     "53-design-storage-compute-separation.html": part12.LESSON_53,
+    "54-design-scale-to-billions.html": part12.LESSON_54,
 }

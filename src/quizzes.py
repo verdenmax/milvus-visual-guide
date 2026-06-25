@@ -3487,6 +3487,76 @@ QUIZZES = {
             },
         ],
     },
+    "54-design-scale-to-billions.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "Milvus 靠什么在“十亿级向量”里做到毫秒检索？",
+                    "en": "How does Milvus achieve millisecond search over 'billions of vectors'?",
+                },
+                "opts": [
+                    {
+                        "zh": "把数据切成段摊到多分片，查询扇出让各段并行算局部 topK，再三层归并(段→节点→Proxy)；每层只上交 K 个候选，于是网络只流动 K 量级、计算并行铺开",
+                        "en": "Split data into segments over shards, fan the query out so segments compute local topKs in parallel, then merge in three levels (segment→node→Proxy); each layer passes up only K candidates, so only K-scale crosses the network while compute spreads in parallel",
+                    },
+                    {"zh": "把全部向量放在一台超大机器上快速暴力扫", "en": "Keep all vectors on one giant machine and brute-force-scan fast"},
+                    {"zh": "Proxy 把所有向量拉回来自己算 topK", "en": "The Proxy pulls all vectors back and computes topK itself"},
+                    {"zh": "预先算好每种可能查询的答案", "en": "Precompute the answer to every possible query"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "分而治之 = 分(切段并行)+搜(局部 topK)+并(逐层归并)。单机暴力、拉回全部、预算所有查询都无法随规模扩展——这正是它要避开的反面",
+                    "en": "Divide and conquer = split (segments in parallel) + search (local topK) + combine (layered merge). Single-box brute force, pulling everything back, or precomputing all queries can't scale — exactly the anti-patterns it avoids",
+                },
+            },
+            {
+                "q": {
+                    "zh": "“每层只上交前 K 个”为什么不丢正确性，又换来了什么？",
+                    "en": "Why does 'each layer passes up only the top K' preserve correctness, and what does it buy?",
+                },
+                "opts": [
+                    {
+                        "zh": "因为各局部 topK 的并集必定包含全局 topK，只上报精华不丢正确答案；它让网络流量恒为 K 量级、与总量无关，于是延迟取决于段内算得多快、而非数据总量",
+                        "en": "Because the union of local topKs necessarily contains the global topK, reporting only the cream loses nothing; it keeps network traffic at K-scale regardless of total data, so latency depends on per-segment speed, not total size",
+                    },
+                    {"zh": "这是一种近似，可能漏掉真正最近的", "en": "It's an approximation that may drop the true nearest"},
+                    {"zh": "只有在单个段时才成立", "en": "It only holds when there is a single segment"},
+                    {"zh": "要保证正确必须把所有候选都往上传", "en": "Correctness requires sending all candidates up"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "全局最近的 K 个一定也是某个局部的 topK 成员——这个数学性质保证“只搬精华”无损。于是十亿向量在底下并行算，网络上却只流动 K×层数那么点数据",
+                    "en": "Each of the global nearest K must also be a member of some local topK — this property guarantees 'move only the cream' is lossless. So a billion vectors compute in parallel below while only K×layers of data crosses the network",
+                },
+            },
+            {
+                "q": {
+                    "zh": "召回率由哪里决定？结果不够准时该拧哪个旋钮？",
+                    "en": "Where is recall determined, and which knob do you turn if results aren't accurate enough?",
+                },
+                "opts": [
+                    {
+                        "zh": "召回由<strong>段内 ANN 的精度</strong>(nprobe/ef)决定，<strong>不</strong>由归并决定(归并只忠实合并)；不够准就调高段内搜索强度，而不是加大 topK 或改归并；每段建索引+过滤下推则让每个小块也快",
+                        "en": "Recall is set by <strong>in-segment ANN precision</strong> (nprobe/ef), <strong>not</strong> by the merge (which only faithfully combines); if inaccurate, raise the in-segment search effort, not topK or the merge logic; per-segment index + filter pushdown keep each block fast",
+                    },
+                    {"zh": "召回由归并那一步决定，所以要改归并逻辑", "en": "Recall is set by the merge step, so change the merge logic"},
+                    {"zh": "加大 topK 就能提升召回", "en": "Raising topK improves recall"},
+                    {"zh": "召回是固定的，无法调", "en": "Recall is fixed and can't be tuned"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "真正的检索发生在段内，归并只拼装——所以“准不准”的旋钮在段内(nprobe/ef)，是召回↔延迟↔内存三角的取舍。深翻页/过大 K 才是少数规模敏感操作",
+                    "en": "The real search happens in the segment, the merge only assembles — so the 'accuracy' knob is in-segment (nprobe/ef), a recall↔latency↔memory tradeoff. Deep paging / oversized K are the few scale-sensitive operations",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课说“分而治之”一套设计同时解决了容量和延迟。请思考：(1) 这套设计依赖一个隐含前提——“找最近邻”这个问题本身可被分解(全局 topK 必是某局部 topK 成员)。如果换一个不可分解的问题，这套扇出—归并还成立吗？(2) 为什么说“真正的工作发生在段内、归并只负责诚实拼装”？把它和“召回由段内精度决定”联系起来。(3) 深翻页(offset 很大)和过大的 K 为什么是少数“规模敏感”的操作？面对“要取很大结果集”的需求，你会怎么设计以避开这个坑？",
+                "en": "This lesson says 'divide and conquer' is one design solving both capacity and latency. Consider: (1) it rests on an implicit premise — that 'find nearest neighbors' is decomposable (the global topK must be members of some local topK). Would scatter-gather still hold for a non-decomposable problem? (2) Why is it said 'the real work happens in the segment, the merge only honestly assembles'? Tie it to 'recall is set by in-segment precision'. (3) Why are deep paging (large offset) and an oversized K among the few 'scale-sensitive' operations? Facing a 'fetch a very large result set' need, how would you design to dodge that trap?",
+            },
+        ],
+    },
 }
 
 

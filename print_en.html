@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 53 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 54 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
@@ -381,6 +381,7 @@ details[open] > summary { list-style: none; }
   <li>Log as data: why the whole system orbits the WAL</li>
   <li>Query-while-you-write, correctly: how consistency is forged</li>
   <li>Storage–compute separation: why nodes can be stateless</li>
+  <li>Scaling to billions: the art of divide-and-conquer</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -10104,6 +10105,199 @@ nearly all modern cloud databases (not just Milvus) have converged on storage-co
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
     <li>This lesson splits the system into three tiers: control plane (etcd) / compute (stateless nodes) / storage (object storage). Consider: (1) why does 'small critical state' go to etcd and 'big heavy bytes' to object storage? What goes wrong if you mix the two? (2) This lesson is called the physical extension of last lesson's 'log as data' — since segments/indexes are rebuildable derivatives, putting them in shared storage follows naturally. Can you complete that logical chain? (3) How does this 'state-compute separation' lay the physical basis for the next lesson's 'failure as default / self-healing'? Sketch one complete flow of 'how a dead node recovers losslessly'.</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Scaling to billions: the art of divide-and-conquer</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+"Billions of vectors, millisecond search" — behind that tagline hides a seemingly impossible task: one machine can neither hold a billion
+vectors nor compare them one by one within milliseconds. How does Milvus do it? Not with some magic algorithm, but with an engineering art
+of <strong>splitting a big problem into small ones, then stitching the small answers back into a big one</strong> — this lesson is about it.</p>
+
+<div class="card analogy"><div class="tag">🚓 An analogy</div>
+<p>Picture a nationwide manhunt: headquarters can't check 1.4 billion people one by one. The real method is <strong>divide and
+conquer</strong> — push the task down to provinces, cities, precincts, where <strong>each precinct searches only its own district</strong>, then
+<strong>reports up only its few best suspects</strong>. The province aggregates the cities', HQ aggregates the provinces', each layer handling
+only "the few candidates the layer below reported". Pinning a target among 1.4 billion never relies on anyone actually viewing 1.4 billion
+faces, but on <strong>narrowing layer by layer, reporting up only the cream</strong>. One Milvus search is exactly such a manhunt.</p></div>
+
+<h2>The goal: why "billions" must divide and conquer</h2>
+<p>First see the difficulty clearly. A billion 768-dim float vectors are about 3 TB of raw data alone — no single machine's memory holds it;
+and even if it did, a search that computes a distance against every vector (<strong>brute force</strong>) is a billion floating-point ops at
+minimum, with millisecond response out of the question. So "scale" inherently demands two things at once: <strong>data must spread across many
+machines</strong> (if one box can't hold it, lay it out horizontally), and <strong>the search on each machine must still be fast</strong> (no
+brute force even on its own slice). These two map precisely onto Milvus's two big weapons — <strong>segmentation + scatter-gather</strong>, and
+<strong>a per-segment index + filter pushdown</strong>.</p>
+
+<p>Feel the magnitude from another angle: brute force's time is proportional to data size — a million vectors might just scan within
+milliseconds, but a hundred million is 100×, a billion 1000×, growing linearly until it degrades to seconds, tens of seconds, utterly unusable.
+Divide-and-conquer's time, ideally, barely grows with the <strong>total</strong>, only with <strong>the slice each node gets</strong> — add
+machines, thin each slice, and wall-clock time comes back down. That's the essential difference between the "linear scan" and "distributed
+divide" curves: one explodes with scale, the other is flattened by machine count.</p>
+
+<p>Better still, divide-and-conquer isn't only a "so it fits" concession; it also yields <strong>parallelism</strong>: since the data already
+spreads over many nodes, one search lets those nodes search <strong>simultaneously</strong>, and wall-clock time barely grows linearly with
+data size. In other words, <strong>one design solves both "capacity" and "latency"</strong> — that is its elegance.</p>
+
+<p>This elegance of "one design solving both capacity and latency" isn't free; it rests on a premise: <strong>the problem itself must be
+decomposable</strong>. Happily, "find nearest neighbors" is highly decomposable — the global nearest K must each also be "some locally nearest
+K". It's this mathematical property that lets you cut the data, search each piece, and merge without losing the right answer. Many seemingly
+powerful systems are hard to scale precisely because their core problem is <strong>not decomposable</strong>; vector search's decomposability is
+the lucky starting point of Milvus's easy horizontal scaling.</p>
+
+<div class="card macro"><div class="tag">🗺️ The big picture</div>
+<p>See a search as three acts: <strong>split</strong> (data is cut into segments, spread over shards/nodes), <strong>search</strong> (the query
+fans out to all relevant segments, each computing a local topK), <strong>combine</strong> (local results merge layer by layer into a global
+topK). The key mathematical guarantee: <strong>the union of the local topKs necessarily contains the true global topK</strong> — so each layer
+needs to pass up only K candidates, and only K-scale data ever crosses the network. A billion vectors compute in parallel below, yet the
+network stays feather-light.</p></div>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">split</div><div class="nd">cut into segments · spread over shards/nodes</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">search</div><div class="nd">segments compute local topK in parallel</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">combine</div><div class="nd">merge layer by layer into a global topK</div></div>
+</div>
+
+<h2>Split: cut data into parallelizable small blocks</h2>
+<p>The premise of everything is <strong>splitting</strong>. A collection's data isn't one heap but is cut into many <strong>immutable
+segments</strong>, then spread over several <strong>shards (vchannels)</strong> (Lessons 7, 12). A segment is the <strong>smallest unit of
+parallel search</strong>: each can be searched, indexed, and loaded independently, with no dependency on the others. A shard is the <strong>unit
+of routing and parallelism</strong>: writes hash by primary key into different shards, queries fan out to all shards. Because data is cut and
+spread from the start, "letting many nodes work at once" has a physical basis — you can't parallelize an indivisible whole, but you can easily
+parallelize a pile of independent segments.</p>
+
+<p>So how many shards should a collection be cut into, and how many rows per segment? That's itself an engineering tradeoff: too few shards and
+parallelism is insufficient, unable to bear high-concurrency writes; too many and each query fans out to more targets, raising merge overhead.
+Segment size likewise — too small and the segment count explodes, making management and merging heavier; too large and single-segment search
+slows and loading gets inflexible. Milvus leaves these to DataCoord to decide automatically by config and load (Lesson 12), but grasping the
+tradeoff tells you which way to turn the dial when tuning.</p>
+
+<h2>Search & combine: fan out, then gather back layer by layer</h2>
+<p>A query takes the classic <strong>scatter-gather</strong> shape (Lessons 3, 25). The Proxy <strong>scatters</strong> the request to all
+relevant shards; each shard's delegator hands it to the QueryNodes holding different segments; each segment computes <strong>its own topK</strong>
+in C++ segcore. Results then <strong>gather back</strong> — in <strong>three merge levels</strong> (Lesson 29): segment topK → the QueryNode
+merges its segments' results into a <strong>node topK</strong> → the Proxy merges the shards' results into a <strong>global topK</strong>. Each
+layer passes up only "the top K candidates", so even with hundreds of millions of vectors below, <strong>only K-scale data flows on the
+network</strong> — the very crux of fast, cheap distributed search.</p>
+
+<p>Why is "each layer passes up only K" so crucial? Do the arithmetic: say 1000 segments each compute top-10; hauling all candidates up is ten
+thousand; but if each node first merges its segments into a top-10 then passes that up, the Proxy finally picks the global top-10 from only
+<strong>shard-count × 10</strong> candidates. Whether a hundred million or a billion vectors lie below, <strong>only K-times-layers worth of data
+ever crosses the network</strong>. That is why Milvus's search latency depends mainly on "how fast a segment computes", not "how big the total
+is" — the total's pressure was long since absorbed by divide-and-conquer and parallelism.</p>
+
+<div class="trace">
+  <div class="tcap"><b>scatter-gather of one topK search</b>: each layer passes up a local topK, converging upward</div>
+  <div class="stations">
+    <div class="stn"><h5>segment</h5><div class="cellrow"><span class="vc">segment topK</span></div><div class="cellrow"><span class="vc">segment topK</span></div><div class="tlab">segcore each on its own</div></div>
+    <div class="stn"><h5>node</h5><div class="cellrow"><span class="vc hot">node topK</span></div><div class="tlab">delegator merges this node</div></div>
+    <div class="stn"><h5>Proxy</h5><div class="cellrow"><span class="vc hot">global topK</span></div><div class="tlab">cross-shard merge</div></div>
+  </div>
+</div>
+
+<h2>Make each small block fast too: index & filter pushdown</h2>
+<p>Cutting the data isn't enough — if each segment still brute-forces internally, you've merely spread the "slow" across many machines, the
+total unchanged. So each segment must be <strong>fast on its own</strong>, two ways. One: <strong>build an ANN index on each sealed
+segment</strong> (HNSW/IVF, etc., Lessons 21, 23), turning "find nearest neighbors in a segment" from brute force into an approximate graph/cluster
+lookup. Two: <strong>scalar filter pushdown</strong> — for a conditional query, first compute a bitset mask with a scalar index and push "which
+rows qualify" down into the vector search, so ANN searches only the qualifying subset (Lesson 28). Together they prune as early and as small as
+possible at every layer: <strong>filtering shrinks candidates, the index speeds the segment, the merge moves only the cream</strong> — interlocking
+to hold up "billions in milliseconds".</p>
+
+<p>An easily-missed detail: the index is built <strong>per segment</strong>, not one big index for the whole table. Why? Because segments are
+immutable and the unit of parallelism, so a per-segment index can be <strong>built, loaded, and searched independently</strong> — a new segment
+is usable as soon as it's built, a broken one needs only that one segment repaired, naturally fitting "divide and conquer". And the freshest
+growing segment, not yet indexed, is covered by brute force first — once it seals and its index is built, QueryCoord coordinates the "switch"
+to indexed search (Lessons 7, 23). So "query-while-write" and "billion-scale fast search" are elegantly unified within one segment
+lifecycle.</p>
+
+<div class="cols">
+  <div class="col"><h4>✅ Divide and conquer (Milvus)</h4><p>Data cut into segments searched in parallel, each layer passing up only K candidates. <strong>Only K-scale crosses the network</strong>, compute spreads in parallel, so it scales horizontally to billions.</p></div>
+  <div class="col"><h4>❌ Pull all vectors back and brute-force</h4><p>The Proxy pulls hundreds of millions of vectors back to compute topK itself — the network melts, a single point can't crunch it. It collapses utterly at scale, exactly the anti-pattern distributed search avoids.</p></div>
+</div>
+
+<h2>The payoff and the tradeoff</h2>
+<p>Divide-and-conquer costs you mainly two things. First, <strong>recall is approximate</strong>: because segments use ANN, not brute force, the
+final recall is set by the <strong>in-segment search precision</strong> (params like nprobe/ef), <strong>not</strong> by the merge — the merge only
+faithfully combines what the segments hand up. So to get more accurate results, tune the in-segment search params, not elsewhere; an old friend
+again: the recall ↔ latency ↔ memory triangle (Lessons 5, 22). Second, <strong>some operations are inherently pricier</strong>: deep paging (a large
+offset) and an oversized K make every layer move more candidates and merge harder — among the few "scale-sensitive" operations in distributed
+search, best avoided at the business level. But setting those aside, the "split–search–combine" throughline upholds Milvus's most core promise:
+<strong>however much data there is, let only a little cross the network while compute spreads in parallel</strong> — that is what lets it dare to
+say "billions".</p>
+
+<p>A concrete example to feel "recall is set in-segment": suppose your results aren't accurate enough, missing some neighbors that should have
+been recalled — what do you do? Many reach first for "raise topK" or "change the merge logic" — but neither helps, because the merge only
+faithfully combines; it can't conjure neighbors the segments never found. The right dial is to <strong>raise the in-segment ANN's search
+effort</strong> (e.g. IVF's nprobe, HNSW's ef), so each segment searches its own slice more thoroughly and hands up better candidates. Locating
+"accuracy" at "in-segment search" is a key insight for using Milvus well, and reaffirms the throughline: <strong>the real work happens in the
+segment; the merge only honestly assembles</strong>.</p>
+
+<p>To spell out "why deep paging is so pricey": to return ranks 10000–10010, the system can't directly "jump" to rank 10000 — it must have every
+layer first compute the <strong>top 10010</strong>, then discard the front, to take the slice you want. So the larger the offset, the more
+candidates each layer moves and merges, and the cost balloons. This is why "turning many pages" is an anti-pattern in vector search; in practice
+prefer an <strong>iterator</strong> taking a large result set by cursor order (Lesson 50) over forcing a huge offset. Grasp this and you'll
+instinctively dodge the deep-paging trap when designing "fetch many results" features.</p>
+
+<div class="card key"><div class="tag">📌 Key points</div>
+<ul>
+  <li><strong>Split</strong>: data cut into immutable segments spread over shards; a segment is the smallest unit of parallel search — the physical premise of horizontal scale and parallelism.</li>
+  <li><strong>Search + combine</strong>: fan out to segments for local topKs, then merge in three levels (segment → node → Proxy); each passes up only K, so <strong>only K-scale crosses the network</strong>.</li>
+  <li><strong>Mathematical guarantee</strong>: the union of local topKs necessarily contains the global topK, so "report only the cream" loses no correctness.</li>
+  <li><strong>Make small blocks fast</strong>: per-segment ANN index + scalar filter pushdown, pruning as early and small as possible, avoiding "spread the slow across machines".</li>
+  <li><strong>Tradeoff</strong>: recall is approximate (set by in-segment precision, not the merge); deep paging / oversized K are the few scale-sensitive operations to avoid.</li>
+</ul></div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. How does Milvus achieve millisecond search over 'billions of vectors'?</div>
+  <ol class="opts">
+    <li>The Proxy pulls all vectors back and computes topK itself</li>
+    <li>Split data into segments over shards, fan the query out so segments compute local topKs in parallel, then merge in three levels (segment→node→Proxy); each layer passes up only K candidates, so only K-scale crosses the network while compute spreads in parallel</li>
+    <li>Precompute the answer to every possible query</li>
+    <li>Keep all vectors on one giant machine and brute-force-scan fast</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. Divide and conquer = split (segments in parallel) + search (local topK) + combine (layered merge). Single-box brute force, pulling everything back, or precomputing all queries can't scale — exactly the anti-patterns it avoids</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Why does 'each layer passes up only the top K' preserve correctness, and what does it buy?</div>
+  <ol class="opts">
+    <li>It's an approximation that may drop the true nearest</li>
+    <li>Correctness requires sending all candidates up</li>
+    <li>Because the union of local topKs necessarily contains the global topK, reporting only the cream loses nothing; it keeps network traffic at K-scale regardless of total data, so latency depends on per-segment speed, not total size</li>
+    <li>It only holds when there is a single segment</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. Each of the global nearest K must also be a member of some local topK — this property guarantees 'move only the cream' is lossless. So a billion vectors compute in parallel below while only K×layers of data crosses the network</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Where is recall determined, and which knob do you turn if results aren't accurate enough?</div>
+  <ol class="opts">
+    <li>Recall is fixed and can't be tuned</li>
+    <li>Raising topK improves recall</li>
+    <li>Recall is set by <strong>in-segment ANN precision</strong> (nprobe/ef), <strong>not</strong> by the merge (which only faithfully combines); if inaccurate, raise the in-segment search effort, not topK or the merge logic; per-segment index + filter pushdown keep each block fast</li>
+    <li>Recall is set by the merge step, so change the merge logic</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. The real search happens in the segment, the merge only assembles — so the 'accuracy' knob is in-segment (nprobe/ef), a recall↔latency↔memory tradeoff. Deep paging / oversized K are the few scale-sensitive operations</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson says 'divide and conquer' is one design solving both capacity and latency. Consider: (1) it rests on an implicit premise — that 'find nearest neighbors' is decomposable (the global topK must be members of some local topK). Would scatter-gather still hold for a non-decomposable problem? (2) Why is it said 'the real work happens in the segment, the merge only honestly assembles'? Tie it to 'recall is set by in-segment precision'. (3) Why are deep paging (large offset) and an oversized K among the few 'scale-sensitive' operations? Facing a 'fetch a very large result set' need, how would you design to dodge that trap?</li>
   </ul>
 </div>
 </div>
