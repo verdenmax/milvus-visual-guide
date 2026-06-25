@@ -2241,6 +2241,67 @@ QUIZZES = {
             },
         ],
     },
+    "34-core-layout.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "Milvus 把“控制面用 Go、计算内核用 C++”这样切分，主要的理由是什么？",
+                    "en": "Why does Milvus split it as 'control plane in Go, compute core in C++'?",
+                },
+                "opts": [
+                    {"zh": "两类活性质不同：控制面（调度/RPC/并发）要开发效率与并发力(Go 之长)，计算面(海量向量距离/过滤)要极致性能与贴硬件(C++ 之长)，各扬其长", "en": "The two kinds of work differ: the control plane (scheduling/RPC/concurrency) wants velocity and concurrency (Go's strength); the compute plane (massive vector distance/filtering) wants peak performance close to hardware (C++'s strength) — each to its strength"},
+                    {"zh": "因为 Go 不能编译成机器码", "en": "Because Go cannot compile to machine code"},
+                    {"zh": "因为 C++ 比 Go 更容易写并发与 RPC", "en": "Because C++ is easier than Go for concurrency and RPC"},
+                    {"zh": "纯粹是历史包袱，没有设计理由", "en": "Purely legacy baggage, with no design reason"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "控制面要的是开发效率、并发表达力、丰富生态——Go 的 goroutine/GC 正合适；计算面是每秒上亿次浮点的热路径，要 SIMD、精细内存布局、可调 GPU——C++ 的主场，而 GC 在此会成负担。于是清晰切分、cgo 衔接，换来“既好开发、又跑得飞快”。",
+                    "en": "The control plane wants developer velocity, concurrency expressiveness and a rich ecosystem — Go's goroutines/GC fit. The compute plane is a hundreds-of-millions-of-FLOPs hot path wanting SIMD, fine memory layout and GPU — C++'s turf, where GC is a burden. Hence the clean split bridged by cgo: 'easy to develop, and blazingly fast'.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "为什么 Go 调 C++ 内核要经过一层 C 风格接口(如 segment_c.h)，而不是直接调 C++ 类？",
+                    "en": "Why does Go call the C++ core through a C-style interface (e.g. segment_c.h) instead of C++ classes directly?",
+                },
+                "opts": [
+                    {"zh": "cgo 只能跨越 C ABI，C++ 的类/模板/异常无法直接跨语言，于是 C++ 内部照常用类/模板，对外只露一层扁平的 C 函数", "en": "cgo can only cross the C ABI; C++ classes/templates/exceptions can't cross languages directly, so C++ uses classes/templates internally but exposes only a flat layer of C functions"},
+                    {"zh": "因为 C 函数比 C++ 方法跑得快", "en": "Because C functions run faster than C++ methods"},
+                    {"zh": "因为 Milvus 内核其实是用 C 而非 C++ 写的", "en": "Because the core is actually written in C, not C++"},
+                    {"zh": "为了让 Go 能继承 C++ 的类", "en": "So that Go can inherit from C++ classes"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "cgo 的桥只认 C ABI——C++ 的类、模板、异常这些高级特性没法直接跨语言传递。于是内核对外包一层以 _c.h/_c.cpp 结尾的扁平 C 函数(创建段/灌数据/搜索/释放)，Go 侧再用 LocalSegment 这类封装把脏活包好。这让两种语言各自保持地道，只在边界用最朴素的 C 函数对接。",
+                    "en": "cgo's bridge only speaks the C ABI — C++ classes, templates and exceptions can't pass across languages directly. So the core wraps a flat layer of C functions (ending in _c.h/_c.cpp: create segment/load/search/release), and the Go side hides the dirty work behind wrappers like LocalSegment. Both languages stay idiomatic, meeting only at the boundary with plain C functions.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "关于 C++ 内核服务的“两条路径”，下面哪个说法正确？",
+                    "en": "About the 'two paths' the C++ core serves, which statement is correct?",
+                },
+                "opts": [
+                    {"zh": "查询路径(QueryNode 搜段)与索引构建路径(worker 把 sealed 段交给 Knowhere 建索引)共用同一套内核，关键数据结构/算法只实现一次", "en": "The query path (QueryNode searching a segment) and the index-build path (a worker handing a sealed segment to Knowhere) share the same core, so key data structures/algorithms are implemented once"},
+                    {"zh": "查询和建索引各有一套完全独立、互不相干的 C++ 内核", "en": "Query and index build each have a fully independent, unrelated C++ core"},
+                    {"zh": "内核只服务查询，建索引完全在 Go 里完成", "en": "The core only serves queries; index building is done entirely in Go"},
+                    {"zh": "内核只服务建索引，查询完全在 Go 里完成", "en": "The core only serves index building; queries are done entirely in Go"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "无论“读”还是“建索引”，最重的计算都落在同一套 C++ 内核里：段的列式布局、距离计算、Knowhere 索引类型只实现一次，查询时用、建索引时也用，不必维护两套可能算得不一致的代码。可把内核想成一座“中央厨房”，前台点“搜索”、后厨下“建索引”单，同一套灶具按订单类型出餐。",
+                    "en": "Whether 'reading' or 'index building', the heaviest computation lands in the same C++ core: the columnar layout, distance math and Knowhere index types are implemented once, used at both query and build time, with no second divergent copy. Think of the core as a 'central kitchen' — the front desk orders 'search', the back-of-house drops an 'index build' ticket, same stoves plating by order type.",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课把 Milvus 看成“Go 控制面 + cgo 桥 + C++ 计算面”。请用自己的话说清：(1) 一次段内搜索是怎样从 Go 经 cgo 进入 segcore、再返回的(回忆那条 Go 封装→过 cgo→C++ 计算→结果回传的链)；(2) 为什么 cgo 调用要“粗粒度、零拷贝”——把一整次搜索打包成一次调用、数据尽量传指针，对性能意味着什么？再结合第 29 课，说说“批量搜(大 nq)”为何能摊薄过桥的固定开销。",
+                "en": "This lesson frames Milvus as 'Go control plane + cgo bridge + C++ compute plane'. In your own words: (1) how does one in-segment search go from Go through cgo into segcore and back (recall the chain Go wrapper → cross cgo → C++ compute → result returned)? (2) Why must cgo calls be 'coarse-grained, zero-copy' — packing a whole search into one call and passing pointers — and what does that mean for performance? Tie it to Lesson 29: why does batching (large nq) amortize the fixed cost of crossing the bridge?",
+            },
+        ],
+    },
 }
 
 

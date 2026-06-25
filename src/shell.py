@@ -113,6 +113,8 @@ PAGES = [
      "第七部分 · 流式系统", "Part 7 · Streaming system"),
     ("33-replication-and-cdc.html", "复制与 CDC", "Replication & CDC",
      "第七部分 · 流式系统", "Part 7 · Streaming system"),
+    ("34-core-layout.html", "core 布局", "The C++ core layout",
+     "第八部分 · C++ 内核", "Part 8 · C++ core internals"),
 ]
 
 
@@ -620,6 +622,8 @@ SUBTITLES = {
                                 "DML=Append/one log; DDL/DCL=Broadcast/many logs; Broadcaster lock+ACK; message semantics"),
     "33-replication-and-cdc.html": ("复制日志而非状态 · 星型拓扑 · Primary→Replicator→Secondary · 容灾/跨域/迁移",
                                     "replicate the log not state; star topology; Primary→Replicator→Secondary; DR/cross-region/migration"),
+    "34-core-layout.html": ("internal/core/src 子模块地图 · 控制面 Go / 计算面 C++ · cgo(*_c.h) 桥 · 查询与建索引两条路径",
+                            "internal/core/src submodule map; Go control plane / C++ compute core; cgo(*_c.h) bridge; query & index-build paths"),
 }
 
 

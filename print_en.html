@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 33 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 34 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
@@ -361,6 +361,7 @@ details[open] > summary { list-style: none; }
   <li>WAL architecture</li>
   <li>DDL/DCL through the log</li>
   <li>Replication & CDC</li>
+  <li>The C++ core layout</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -7188,6 +7189,162 @@ philosophy of Milvus's streaming system, and one of the roots of what sets it ap
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
     <li>This lesson says 'state = the result of replaying the log', so crash recovery, query-while-write, atomic DDL, and cross-cluster replication all become 'operations on the same log'. Pick two or three and explain, for each, 'who replays the log, to obtain what state'. Then consider: how does replication lag affect DR's RPO (how much data can be lost)? What is the cost of pushing RPO to near-zero or zero (recall Lesson 30's consistency/freshness vs performance trade-off)?</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>The C++ core layout</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+We've bumped into the names <strong>segcore (C++)</strong>, the <strong>exec engine</strong>, <strong>mmap chunked columns</strong> several times — they all live in
+one place: Milvus's <strong>C++ core</strong>, with source under <span class="inline">internal/core/src</span>. This part (Part 8) formally opens that door, starting with a
+<strong>layout map</strong>: which submodules the core has, what each owns, how they cooperate, and how it connects to the upper Go via <strong>cgo</strong>. Read this map and the
+next three lessons (mmap, expr/exec, GPU) will each have a clear place to slot into.
+</p>
+
+<p>A reassuring word up front: many readers tense up at the words "C++ core", expecting something forbiddingly advanced. The opposite is true — <strong>you don't need to write a
+single line of C++ to follow this part</strong>. Our goal isn't to teach C++ syntax; it's to make clear <strong>what role this code plays inside Milvus and why it's designed this
+way</strong>. Just as you needn't be an automotive engineer to grasp "the engine makes power, the transmission delivers it", this lesson won't dump dense C++ source on you. Instead it
+draws the core's <strong>skeleton</strong> with maps, layer diagrams and flows; the occasional filename (like <span class="mono">segment_c.h</span>) is only a <strong>signpost</strong> for
+"where to dig if you want more". Read with that "see the role and the design, skip the syntax" mindset and the C++ core stops being mysterious — it's just the job of "computing fast",
+carefully split into a few pieces that each do one thing well.</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Picture Milvus as a precision instrument: <strong>Go</strong> is the shell and control panel — buttons, network ports, scheduling logic, doing the "<strong>directing</strong>"; the
+  <strong>C++ core</strong> is the <strong>precision movement</strong> beneath that does the heavy lifting — in-segment search, index building, distance math, doing the "<strong>frantic
+  computing</strong>". Between them, <strong>cgo</strong> is the <strong>drive shaft</strong> connecting panel and movement: you press "search" on the panel, the shaft carries the command
+  into the movement, and the movement returns the result. Each plays to its strength: the panel must be flexible, the movement blazingly fast.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>internal/core/src is cut by responsibility into submodules — segcore (in-segment engine), index, query (query plan), exec (vectorized execution), expr (expression
+  tree), mmap (chunked columns), storage (binlog I/O), common (shared types), etc.; Go calls in via cgo (*_c.h)</strong>. The core serves two paths: <strong>query</strong> (QueryNode
+  searching in a segment) and <strong>index build</strong> (a worker turning a segment into an index). The compute-heavy work all lives here, and so does the performance.
+</div>
+
+<h2>Why Milvus needs a C++ core</h2>
+<p>Lesson 2 said Milvus is "Go + C++ (+ a little Rust)". Why not all Go? Because the two kinds of work are fundamentally different. The <strong>control plane</strong> — coordination,
+scheduling, RPC, concurrency, state machines — wants <strong>developer velocity and concurrency expressiveness</strong>, where Go's goroutines, GC and rich ecosystem fit. The
+<strong>compute plane</strong> — computing distances over hundreds of thousands of vectors in a segment, running filters, (de)compressing — wants <strong>peak performance and precise
+control of the hardware</strong>: hand-written SIMD, fine-grained memory layout and cache management, GPU scheduling when needed. These are C++'s home turf, while Go's GC and runtime become
+a burden on such <strong>hundreds-of-millions-of-FLOPs-per-second</strong> hot paths. So Milvus made a clean split: <strong>Go writes the control plane, C++ writes the compute core</strong>,
+each to its strength. The cost is crossing the Go↔C++ language boundary (that's cgo's job), but the payoff is "<strong>easy to develop, and blazingly fast</strong>".</p>
+
+<div class="layers">
+  <div class="layer l-main"><div class="lh"><span class="badge">control plane</span><span class="name">Go (internal/*)</span></div><div class="ld">Proxy/coordinators/nodes: scheduling, RPC, concurrency, state — wants velocity and concurrency</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">bridge</span><span class="name">cgo (*_c.h / *_c.cpp)</span></div><div class="ld">the C-ABI drive shaft between Go and C++: commands in, results out</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">compute plane</span><span class="name">C++ core (internal/core/src)</span></div><div class="ld">in-segment search, indexing, distance math: wants peak perf, close to hardware, GPU-capable</div></div>
+</div>
+
+<h2>The core's submodule map</h2>
+<p><span class="inline">internal/core/src</span> isn't a blob but several directories cut clearly by <strong>responsibility</strong>. Laying them out as a table gives you a "<strong>navigation
+map</strong>" — wherever you drill in later, you can locate it here:</p>
+
+<table class="t">
+  <tr><th>Submodule</th><th>What it owns</th><th>Related lesson</th></tr>
+  <tr><td class="mono"><strong>segcore</strong></td><td>in-segment search engine, the cgo entry (how a segment is searched)</td><td>Lesson 27</td></tr>
+  <tr><td class="mono"><strong>index</strong></td><td>Knowhere vector-index wrappers + scalar/full-text indexes</td><td>Lessons 22, 24</td></tr>
+  <tr><td class="mono"><strong>query</strong></td><td>search/retrieve query-plan structures</td><td>Lesson 28</td></tr>
+  <tr><td class="mono"><strong>exec</strong></td><td>vectorized execution engine (physical operators over chunks)</td><td>Lesson 28</td></tr>
+  <tr><td class="mono"><strong>expr</strong></td><td>the logical expression tree (filters)</td><td>Lesson 28</td></tr>
+  <tr><td class="mono"><strong>mmap</strong></td><td>chunked columnar storage, memory mapping</td><td>Lesson 35</td></tr>
+  <tr><td class="mono"><strong>storage</strong></td><td>binlog/payload read-write serialization</td><td>Lesson 18</td></tr>
+  <tr><td class="mono"><strong>common</strong></td><td>shared types and utilities (schema, type defs, etc.)</td><td>throughout</td></tr>
+</table>
+
+<p>Besides these main ones, there are finer modules like <span class="mono">plan</span> (plan parsing), <span class="mono">bitset</span> (bit ops on filter masks), <span class="mono">clustering</span>
+(clustering-compaction related). Don't memorize them; one <strong>layering intuition</strong> is enough: <strong>common is the foundation</strong> (types everyone depends on),
+<strong>storage/mmap own "how data is laid out"</strong>, <strong>index owns "how to build retrieval structures"</strong>, <strong>expr/exec/query own "how one query computes"</strong>, and
+<strong>segcore stitches them together and exposes (to Go) the single entry for "search/query within a segment"</strong>. Map in hand, the many directories gain a backbone.</p>
+
+<h2>The cgo bridge: how Go and C++ shake hands</h2>
+<p>Go can't call C++ directly; it goes through the <strong>cgo</strong> bridge. The way: the C++ core wraps the capabilities it exposes to Go into a set of <strong>C-style interfaces</strong> —
+files often ending in <span class="mono">_c.h</span> / <span class="mono">_c.cpp</span> (like the <span class="mono">segment_c.h</span> from Lesson 27). Why C, not C++? Because cgo can only cross the
+<strong>C ABI</strong> (C++ classes, templates, exceptions can't cross languages directly). So C++ internally uses classes and templates as it likes, but <strong>exposes only a thin, flat layer of C
+functions</strong>: create a segment, load data, search, release… On the Go side there are matching wrappers (like <span class="mono">LocalSegment</span> from Lessons 2, 27) that hide the dirty work of
+"call the C function + pass pointers + collect results", so upper Go code uses it like an ordinary Go object. This "<strong>C interface + Go wrapper</strong>" design keeps both languages
+<strong>idiomatic</strong>, meeting only at the boundary with plain C functions.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Go-side wrapper</h4><p>e.g. <span class="mono">LocalSegment.Search</span>: prepare the query, buffers, trace.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Call the C function via cgo</h4><p>call the C interface exposed by <span class="mono">segment_c.h</span>, passing pointers/args into C++.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>C++ core computes</h4><p>segcore does the in-segment search (sealed=index / growing=brute force).</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Result back to Go</h4><p>write results into the buffer; the Go side parses them into the segment's topK.</p></div></div>
+</div>
+
+<h2>Two paths: the core serves both "query" and "index build"</h2>
+<p>Finally, who uses this core. It mainly serves <strong>two paths</strong>. The <strong>query path</strong>: after QueryNode (Go) loads a segment, each search crosses cgo into segcore, where
+expr/exec filter, index searches, and reduce converges the segment's topK (Lessons 27, 28, 29 all happen at this layer). The <strong>index-build path</strong>: the index-building worker (Lessons
+21, 23) also calls the core's index module to hand a sealed segment's raw vectors to Knowhere to build index files. In other words, <strong>whether "reading" or "index building", the heaviest
+computation lands in this same C++ core</strong>. That's why building it solidly matters so much: it is Milvus's "<strong>engine bay</strong>" — the upper Go schedules requests in, but what really
+decides speed is the work in this bay. Next lesson, we drill into one block — <strong>mmap and chunked columns</strong> — to see what a segment's data actually looks like in memory.</p>
+
+<p>That the two paths "share one core" is a design worth savoring. It means the <strong>key data structures and algorithms are implemented once</strong>: the segment's columnar layout,
+distance math, Knowhere's index types… used at query time and at build time alike, with no second, divergent copy that might compute things inconsistently. Think of the C++ core as a
+<strong>central kitchen</strong>: the front desk (QueryNode) orders the "search" dish and it plates via the "query path"; the back-of-house scheduler (an index task from DataCoord) drops a
+"turn these vectors into an index" ticket and it plates via the "index path" — <strong>same stoves, same cooks, only the order type differs</strong>. That's why every following lesson in
+Part 8 really introduces one "appliance" in this kitchen: Lesson 35's mmap is <strong>how the ingredients are arranged</strong> (data layout), Lesson 36's expr/exec is <strong>how to cook
+fast by the recipe</strong> (vectorized execution), and Lesson 37's GPU is <strong>adding a roaring extra burner</strong> (hardware acceleration). Connect them and you see where Milvus's
+"fast" really comes from — not one magic switch, but <strong>data layout, execution engine and hardware acceleration working in concert</strong>.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Go + C++ split</strong>: Go writes the control plane (scheduling/RPC/concurrency, wants velocity), C++ writes the compute core (search/index/distance, wants peak perf close to hardware); cgo is the bridge.</li>
+    <li><strong>Submodule map</strong>: <span class="mono">internal/core/src</span> = segcore (in-segment engine / cgo entry) + index + query + exec + expr + mmap + storage + common (+plan/bitset/clustering).</li>
+    <li><strong>cgo bridge</strong>: C++ exposes only a thin C interface (<span class="mono">*_c.h</span>, e.g. segment_c.h, limited by the C ABI), wrapped on the Go side by <span class="mono">LocalSegment</span> and the like.</li>
+    <li><strong>Two paths</strong>: the core serves both "query" (QueryNode in-segment search) and "index build" (worker building indexes) — the heaviest computation is here.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Why does Milvus split it as 'control plane in Go, compute core in C++'?</div>
+  <ol class="opts">
+    <li>Because C++ is easier than Go for concurrency and RPC</li>
+    <li>Purely legacy baggage, with no design reason</li>
+    <li>The two kinds of work differ: the control plane (scheduling/RPC/concurrency) wants velocity and concurrency (Go's strength); the compute plane (massive vector distance/filtering) wants peak performance close to hardware (C++'s strength) — each to its strength</li>
+    <li>Because Go cannot compile to machine code</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. The control plane wants developer velocity, concurrency expressiveness and a rich ecosystem — Go's goroutines/GC fit. The compute plane is a hundreds-of-millions-of-FLOPs hot path wanting SIMD, fine memory layout and GPU — C++'s turf, where GC is a burden. Hence the clean split bridged by cgo: 'easy to develop, and blazingly fast'.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Why does Go call the C++ core through a C-style interface (e.g. segment_c.h) instead of C++ classes directly?</div>
+  <ol class="opts">
+    <li>So that Go can inherit from C++ classes</li>
+    <li>cgo can only cross the C ABI; C++ classes/templates/exceptions can't cross languages directly, so C++ uses classes/templates internally but exposes only a flat layer of C functions</li>
+    <li>Because C functions run faster than C++ methods</li>
+    <li>Because the core is actually written in C, not C++</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. cgo's bridge only speaks the C ABI — C++ classes, templates and exceptions can't pass across languages directly. So the core wraps a flat layer of C functions (ending in _c.h/_c.cpp: create segment/load/search/release), and the Go side hides the dirty work behind wrappers like LocalSegment. Both languages stay idiomatic, meeting only at the boundary with plain C functions.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. About the 'two paths' the C++ core serves, which statement is correct?</div>
+  <ol class="opts">
+    <li>Query and index build each have a fully independent, unrelated C++ core</li>
+    <li>The core only serves queries; index building is done entirely in Go</li>
+    <li>The query path (QueryNode searching a segment) and the index-build path (a worker handing a sealed segment to Knowhere) share the same core, so key data structures/algorithms are implemented once</li>
+    <li>The core only serves index building; queries are done entirely in Go</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. Whether 'reading' or 'index building', the heaviest computation lands in the same C++ core: the columnar layout, distance math and Knowhere index types are implemented once, used at both query and build time, with no second divergent copy. Think of the core as a 'central kitchen' — the front desk orders 'search', the back-of-house drops an 'index build' ticket, same stoves plating by order type.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson frames Milvus as 'Go control plane + cgo bridge + C++ compute plane'. In your own words: (1) how does one in-segment search go from Go through cgo into segcore and back (recall the chain Go wrapper → cross cgo → C++ compute → result returned)? (2) Why must cgo calls be 'coarse-grained, zero-copy' — packing a whole search into one call and passing pointers — and what does that mean for performance? Tie it to Lesson 29: why does batching (large nq) amortize the fixed cost of crossing the bridge?</li>
   </ul>
 </div>
 </div>

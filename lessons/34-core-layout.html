@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>34 · core 布局 / The C++ core layout - Milvus 图解教程</title>
+<meta name="description" content="第八部分 · C++ 内核｜core 布局 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="34 · core 布局 / The C++ core layout - Milvus 图解教程">
+<meta property="og:description" content="第八部分 · C++ 内核｜core 布局 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="34 · core 布局 / The C++ core layout - Milvus 图解教程">
+<meta name="twitter:description" content="第八部分 · C++ 内核｜core 布局 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.timeline .tl-row { display: flex; align-items: flex-start; gap: .6rem; padding: .12rem 0; }
+.timeline .tl-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: .45rem; }
+.timeline .tl-t { font-family: ui-monospace, monospace; font-weight: 700; color: var(--accent-ink); min-width: 2.4rem; font-size: .82rem; flex-shrink: 0; margin-top: .18rem; }
+.timeline .tl-c { font-size: .9rem; color: var(--muted); }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第八部分 · C++ 内核</span><span class="lang-en">Part 8 · C++ core internals</span></span>
+    <span class="pill">34 / 34</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:100%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第八部分 · C++ 内核</span><span class="lang-en">Part 8 · C++ core internals</span></div>
+    <h1><span class="lang-zh">core 布局</span><span class="lang-en">The C++ core layout</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+前面我们已经多次撞见"<strong>segcore（C++）</strong>""<strong>exec 引擎</strong>""<strong>mmap 列式分块</strong>"这些名字——它们都住在同一个地方：Milvus 的 <strong>C++ 内核</strong>，源码在 <span class="inline">internal/core/src</span>。
+这一部分（第八部分）我们正式推开这扇门，先看一张<strong>布局地图</strong>：内核由哪些子模块组成、各管什么、彼此怎么协作，又是怎么通过 <strong>cgo</strong> 和上层的 Go 衔接起来的。
+读懂这张地图，后面三课（mmap、表达式与执行、GPU）你就知道每块拼图嵌在哪儿。
+</p>
+
+<p>说句心里话：很多人读到“C++ 内核”就发怵，觉得这一定是“高深劝退”的部分。其实恰恰相反——<strong>你不需要会写一行 C++，也能读懂这一部分</strong>。我们的目标不是教你 C++ 语法，而是带你看清<strong>“这块代码在整个 Milvus 里扮演什么角色、为什么这样设计”</strong>。
+就像你不必是汽车工程师，也能理解“发动机负责出力、变速箱负责传动”一样。所以这一课不会贴一大段晦涩的 C++ 源码，而是用<strong>地图、分层图、流程图</strong>把内核的“骨架”画给你看；偶尔提到的文件名（如 <span class="mono">segment_c.h</span>），也只是帮你<strong>按图索骥</strong>，知道“想深究的话该去哪儿翻”。
+带着这种“看角色、看设计、不抠语法”的心态往下读，你会发现 Milvus 的 C++ 内核并不神秘，它只是把“算得快”这件事，认认真真地拆成了几块、各司其职。</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 生活类比</div>
+  把 Milvus 想成一台精密仪器：<strong>Go</strong> 是外壳与操作面板——按钮、网络接口、调度逻辑，负责"<strong>指挥</strong>"；<strong>C++ 内核</strong>是面板下真正干重活的<strong>精密机芯</strong>——
+  段内检索、索引构建、距离计算，负责"<strong>玩命算</strong>"。两者之间，<strong>cgo</strong> 就是连接面板与机芯的那组<strong>传动轴</strong>：你在面板上按一下"搜索"，传动轴把指令传进机芯，机芯算完再把结果送回面板。
+  各司其职：面板要灵活好用，机芯要快到极致。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  一句话：<strong>internal/core/src 按职责切成若干子模块——segcore(段内引擎)、index(索引)、query(查询计划)、exec(向量化执行)、expr(表达式)、mmap(列式分块)、storage(binlog I/O)、common(公共类型)等；Go 通过 cgo(*_c.h)调进来</strong>。
+  这套内核服务于两条路径：<strong>查询</strong>（QueryNode 在段内检索）与<strong>索引构建</strong>（worker 把段建成索引）。计算密集的活都在这里，性能也在这里见真章。
+</div>
+
+<h2>为什么 Milvus 要有一个 C++ 内核</h2>
+<p>第 2 课说过 Milvus 是"Go + C++（+少量 Rust）"。为什么不全用 Go？因为<strong>这两类活的性质截然不同</strong>。<strong>控制面</strong>——协调、调度、RPC、并发管理、状态机——要的是<strong>开发效率与并发表达力</strong>，Go 的 goroutine、垃圾回收、丰富生态正合适。
+而<strong>计算面</strong>——在一个段里对几十万条向量算距离、跑过滤、压缩解压——要的是<strong>极致性能与对硬件的精确掌控</strong>：手写 SIMD、精细管理内存布局与缓存、必要时调度 GPU。这些恰是 C++ 的主场，而 Go 的 GC 和运行时在这种<strong>每秒上亿次浮点运算</strong>的热路径上会成为负担。
+所以 Milvus 做了一个清晰的切分：<strong>Go 写控制面、C++ 写计算内核</strong>，各扬其长。代价是要跨越 Go↔C++ 的语言边界（这就是 cgo 的活），但换来的是"<strong>既好开发、又跑得飞快</strong>"。</p>
+
+<p>你可能会问：要极致性能，为什么不用 Rust？这其实是个很合理的问题，答案是<strong>历史与生态</strong>。Milvus 起步时，向量检索这个领域的成熟内核库（尤其是 <strong>Knowhere/FAISS</strong> 这一脉）、以及各家 GPU 计算工具链，几乎都是 <strong>C++</strong> 生态——
+用 C++ 写内核，能<strong>直接复用</strong>这些现成的高性能积木，而不必从头造轮子。后来 Milvus 也确实引入了<strong>少量 Rust</strong>（第 24 课的 tantivy 全文索引就是 Rust 写的、再用 C++ 封装调用），说明它并不排斥更现代的语言，只是<strong>在哪块用什么，取决于哪块的生态最成熟、迁移成本最低</strong>。
+这是一种很务实的工程态度：<strong>语言是工具，不是信仰</strong>。理解了这一点，你就不会纠结"为什么是 C++"，而会去欣赏 Milvus"在每一层用最合适的工具"的选择。</p>
+
+<div class="layers">
+  <div class="layer l-main"><div class="lh"><span class="badge">控制面</span><span class="name">Go（internal/*）</span></div><div class="ld">Proxy/协调器/节点：调度、RPC、并发、状态——要开发效率与并发力</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">桥</span><span class="name">cgo（*_c.h / *_c.cpp）</span></div><div class="ld">Go 与 C++ 之间的 C-ABI 传动轴：指令传进去、结果送回来</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">计算面</span><span class="name">C++ 内核（internal/core/src）</span></div><div class="ld">段内检索、索引、距离计算：要极致性能、贴硬件、可调 GPU</div></div>
+</div>
+
+<h2>内核的子模块地图</h2>
+<p><span class="inline">internal/core/src</span> 不是一团乱码，而是按<strong>职责</strong>切得很清楚的若干目录。把它们摆成一张表，你就有了通览全局的"<strong>导航图</strong>"——后面无论钻到哪一课，都能在这张图上找到位置：</p>
+
+<p>看这张表时有个小窍门：把子模块按“<strong>从下往上</strong>”的顺序读，理解会更顺。最底层是 <strong>common</strong>（大家都要用的公共类型，像是“通用零件库”）和 <strong>storage</strong>（负责把数据在磁盘 binlog 与内存之间搬进搬出，是“仓库管理员”）；
+往上一层是 <strong>mmap</strong>，它把 storage 取来的列数据组织成<strong>可被高效计算的内存布局</strong>（列式分块）；再往上，<strong>expr/exec</strong> 在这些分块上跑过滤与算子、<strong>index</strong> 在候选集上做向量检索；最顶上的 <strong>segcore</strong> 则像“<strong>车间主任</strong>”，把上述这些能力<strong>编排</strong>成一次完整的“段内搜索”，并通过 cgo 对 Go 暴露入口。
+也就是说，这张表不只是“有哪些模块”的清单，它还隐含了一条<strong>自底向上的协作链</strong>：公共类型 → 存储搬运 → 内存布局 → 过滤/检索 → 编排出餐。心里装着这条链，你再看后面任何一课，都能立刻定位“它在链条的哪一环、上游给它喂什么、它又把结果交给谁”。</p>
+
+<table class="t">
+  <tr><th>子模块</th><th>管什么</th><th>关联课</th></tr>
+  <tr><td class="mono"><strong>segcore</strong></td><td>段内搜索引擎、cgo 入口（一个段怎么被搜）</td><td>第 27 课</td></tr>
+  <tr><td class="mono"><strong>index</strong></td><td>Knowhere 向量索引的封装 + 标量/全文索引</td><td>第 22、24 课</td></tr>
+  <tr><td class="mono"><strong>query</strong></td><td>搜索/检索的查询计划结构</td><td>第 28 课</td></tr>
+  <tr><td class="mono"><strong>exec</strong></td><td>向量化执行引擎（物理算子在分块上跑）</td><td>第 28 课</td></tr>
+  <tr><td class="mono"><strong>expr</strong></td><td>逻辑表达式树（过滤条件）</td><td>第 28 课</td></tr>
+  <tr><td class="mono"><strong>mmap</strong></td><td>列式分块存储、内存映射</td><td>第 35 课</td></tr>
+  <tr><td class="mono"><strong>storage</strong></td><td>binlog/payload 的读写序列化</td><td>第 18 课</td></tr>
+  <tr><td class="mono"><strong>common</strong></td><td>公共类型与工具（schema、类型定义等）</td><td>贯穿</td></tr>
+</table>
+
+<p>除了上面这几个主力，还有 <span class="mono">plan</span>（计划解析）、<span class="mono">bitset</span>（过滤掩码的位运算）、<span class="mono">clustering</span>（聚类压缩相关）等更细的模块。
+不必死记，记住一个<strong>分层直觉</strong>就够：<strong>common 是地基</strong>（大家都依赖的类型），<strong>storage/mmap 管"数据怎么放"</strong>，<strong>index 管"怎么建检索结构"</strong>，<strong>expr/exec/query 管"一次查询怎么算"</strong>，
+而 <strong>segcore 是把它们缝在一起、对外（对 Go）提供"在一个段里搜/查"的总入口</strong>。一张图在手，纷繁的目录就有了主心骨。</p>
+
+<p>这张地图还藏着一条<strong>依赖的方向</strong>：越往"地基"走的模块（common、storage、mmap）越<strong>不依赖别人、被别人依赖</strong>；越往"上层"走（segcore、query/exec）越<strong>组合调用下层</strong>。
+比如一次段内搜索：segcore 拿到请求，先让 expr/exec 在 mmap 提供的列式分块上算出过滤 bitset，再让 index 在候选上做向量检索，期间用到的类型来自 common、原始数据来自 storage 落盘的 binlog——
+<strong>一层调一层，方向清晰，几乎不回头</strong>。这种"<strong>单向依赖、分层清楚</strong>"的结构，不是为了好看，而是为了<strong>可维护</strong>：你改 mmap 的内部实现，只要接口不变，上面的 segcore/exec 就不用动；你想给 exec 加一个新算子，也不必担心惊动底层存储。
+读一个大型 C++ 工程，<strong>先摸清它的分层与依赖方向</strong>，往往比一头扎进某个文件更高效——这张地图，正是给你这把"先看骨架、再看血肉"的钥匙。</p>
+
+<h2>cgo 桥：Go 与 C++ 怎么握手</h2>
+<p>Go 调 C++ 不能直接调，得经过 <strong>cgo</strong> 这道桥。具体做法是：C++ 内核把要暴露给 Go 的能力，包装成一组 <strong>C 风格的接口</strong>——文件名常以 <span class="mono">_c.h</span> / <span class="mono">_c.cpp</span> 结尾（比如第 27 课见过的 <span class="mono">segment_c.h</span>）。
+为什么是 C 接口而不是 C++？因为 cgo 只能跨越 <strong>C ABI</strong>（C++ 的类、模板、异常这些没法直接跨语言）。于是 C++ 内部该用类用类、该用模板用模板，但<strong>对外只露出一层薄薄的、扁平的 C 函数</strong>：创建段、灌数据、搜索、释放……
+Go 这边则有对应的封装（如第 2、27 课的 <span class="mono">LocalSegment</span>），把"调用 C 函数 + 传指针 + 收结果"这些脏活包好，让上层 Go 代码用起来像调一个普通 Go 对象。这层"<strong>C 接口 + Go 封装</strong>"的设计，让两种语言<strong>各自保持地道</strong>，只在边界处用最朴素的 C 函数对接。</p>
+
+<p>跨语言这道桥<strong>不是免费的</strong>，理解它的代价能帮你看懂很多性能设计。每次 cgo 调用都有<strong>固定开销</strong>（切换栈、参数封送等），而且 Go 的内存和 C++ 的内存<strong>互不认识</strong>——不能让 C++ 长期持有一个 Go 指针，反之亦然。
+所以 Milvus 的做法是<strong>"粗粒度调用、数据零拷贝"</strong>：不要一行一个 cgo 调用，而是<strong>把一整次"段内搜索"打包成一次调用</strong>，让 C++ 在里面把成千上万条向量算完再一次性返回；数据则尽量用<strong>共享内存/直接传指针</strong>的方式避免来回拷贝（比如 mmap 的数据，C++ 直接读那块映射内存）。
+把"过桥"的次数压到最少、每次过桥搬运的"货"尽量大，是用好 cgo 的关键。这也解释了第 29 课为什么强调"批量搜（大 nq）"更划算——批量越大，单次过桥的固定开销就被摊得越薄。<strong>边界处的设计，往往是性能的隐形战场。</strong></p>
+
+<p>还有一点容易被忽略：cgo 这道桥不仅传<strong>数据</strong>，也传<strong>上下文</strong>。比如一次搜索的 trace 信息（第 27 课提过的链路追踪）、超时控制、以及出错时的错误码，都要顺着这道桥来回带——Go 侧发起调用时把 trace 上下文塞进去，C++ 算完把耗时、命中数等指标带回来，这样一次跨语言的搜索在<strong>可观测性</strong>上才不会“断片”。理解了这点，你就明白为什么内核的 C 接口里，除了“查询”“结果”这些主角，往往还夹着一堆看似不起眼的句柄、缓冲区、状态码——它们正是让两套运行时<strong>协同得既快又可控</strong>的黏合剂。</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Go 侧封装</h4><p>如 <span class="mono">LocalSegment.Search</span>：准备好查询、缓冲区、trace。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>过 cgo 调 C 函数</h4><p>调 <span class="mono">segment_c.h</span> 暴露的 C 接口，把指针/参数传进 C++。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>C++ 内核计算</h4><p>segcore 里真正做段内检索（sealed=索引/growing=暴力）。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>结果回传 Go</h4><p>把结果写回缓冲区，Go 侧解析成段的 topK。</p></div></div>
+</div>
+
+<h2>两条路径：内核同时服务"查询"和"建索引"</h2>
+<p>最后看这套内核被谁用。它主要服务<strong>两条路径</strong>。<strong>查询路径</strong>：QueryNode（Go）加载段后，每次搜索都经 cgo 调进 segcore，由 expr/exec 过滤、index 检索、reduce 收敛出段内 topK（第 27、28、29 课全在这一层发生）。
+<strong>索引构建路径</strong>：建索引的 worker（第 21、23 课）也调用 core 里 index 模块的能力，把一个 sealed 段的原始向量交给 Knowhere 建成索引文件。换句话说，<strong>无论"读"还是"建索引"，最重的那部分计算，都落在这同一套 C++ 内核里</strong>。
+
+<p>这两条路径“共用一套内核”，是个很值得玩味的设计。它意味着<strong>关键的数据结构与算法只实现一次</strong>：段的列式布局、距离计算、Knowhere 的索引类型……查询时用它、建索引时也用它，不必维护两套各自为政、还可能算得不一致的代码。
+你可以把 C++ 内核想成一座<strong>“中央厨房”</strong>：前台（QueryNode）来点“搜索”这道菜，它按“查询路径”出餐；后厨排程（DataCoord 安排的建索引任务）来下“把这批向量做成索引”的单，它按“索引路径”出餐——<strong>同一套灶具、同一批厨师，只是订单类型不同</strong>。
+正因如此，第 8 部分接下来的每一课，其实都在介绍这座厨房里的某件“灶具”：第 35 课的 mmap 是<strong>食材怎么摆放</strong>（数据布局），第 36 课的 expr/exec 是<strong>怎么按菜谱快速烹饪</strong>（向量化执行），第 37 课的 GPU 则是<strong>再加一口猛火灶</strong>（硬件加速）。把它们连起来，你就看懂了 Milvus“快”的底层来源——不是某一个魔法开关，而是<strong>数据布局、执行引擎、硬件加速三者协同</strong>的结果。</p>
+这也解释了为什么把它做扎实如此重要：它是 Milvus 性能的"<strong>发动机舱</strong>"——上层 Go 把请求调度过来，真正决定快不快的，是这舱里的活儿。下一课，我们就钻进其中一块——<strong>mmap 与列式分块</strong>，看段的数据在内存里到底长什么样。</p>
+
+<p>把这一课放进全书的脉络：前面七部分，我们大多站在 <strong>Go 控制面</strong>的视角看 Milvus——谁调度谁、数据怎么流、日志怎么写。从这一部分起，我们<strong>换一副眼镜</strong>，钻到 <strong>C++ 计算面</strong>里，看那些"被调度"的重活到底是怎么被高效完成的。
+两副眼镜缺一不可：只懂控制面，你会觉得"检索"是个黑盒；只懂计算面，你又不知道这些计算是被谁、在何时、为何触发的。把两者接起来——<strong>Go 决定"做什么、何时做"，C++ 决定"怎么做得最快"，cgo 在中间传话</strong>——你对 Milvus 的理解才真正立体。
+所以这一部分虽然偏底层、偏硬核，却是把"宏观架构"和"微观性能"缝合起来的关键一针。带着第 34 课这张地图，接下来我们逐块深入：先看数据怎么放（mmap），再看一次查询怎么算（expr/exec），最后看 GPU 如何再加一档速度。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>Go + C++ 分工</strong>：Go 写控制面(调度/RPC/并发，要开发效率)，C++ 写计算内核(检索/索引/距离，要极致性能贴硬件)；cgo 是两者的桥。</li>
+    <li><strong>子模块地图</strong>：<span class="mono">internal/core/src</span> = segcore(段内引擎/cgo 入口) + index + query + exec + expr + mmap + storage + common(+plan/bitset/clustering)。</li>
+    <li><strong>cgo 桥</strong>：C++ 对外只露一层 C 接口(<span class="mono">*_c.h</span>，如 segment_c.h，受限于 C ABI)，Go 侧用 <span class="mono">LocalSegment</span> 等封装它。</li>
+    <li><strong>两条路径</strong>：内核同时服务"查询"(QueryNode 段内检索)与"索引构建"(worker 建索引)——最重的计算都在这里。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. Milvus 把“控制面用 Go、计算内核用 C++”这样切分，主要的理由是什么？</div>
+  <ol class="opts">
+    <li>因为 C++ 比 Go 更容易写并发与 RPC</li>
+    <li>纯粹是历史包袱，没有设计理由</li>
+    <li>两类活性质不同：控制面（调度/RPC/并发）要开发效率与并发力(Go 之长)，计算面(海量向量距离/过滤)要极致性能与贴硬件(C++ 之长)，各扬其长</li>
+    <li>因为 Go 不能编译成机器码</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：C</strong>。控制面要的是开发效率、并发表达力、丰富生态——Go 的 goroutine/GC 正合适；计算面是每秒上亿次浮点的热路径，要 SIMD、精细内存布局、可调 GPU——C++ 的主场，而 GC 在此会成负担。于是清晰切分、cgo 衔接，换来“既好开发、又跑得飞快”。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. 为什么 Go 调 C++ 内核要经过一层 C 风格接口(如 segment_c.h)，而不是直接调 C++ 类？</div>
+  <ol class="opts">
+    <li>为了让 Go 能继承 C++ 的类</li>
+    <li>cgo 只能跨越 C ABI，C++ 的类/模板/异常无法直接跨语言，于是 C++ 内部照常用类/模板，对外只露一层扁平的 C 函数</li>
+    <li>因为 C 函数比 C++ 方法跑得快</li>
+    <li>因为 Milvus 内核其实是用 C 而非 C++ 写的</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。cgo 的桥只认 C ABI——C++ 的类、模板、异常这些高级特性没法直接跨语言传递。于是内核对外包一层以 _c.h/_c.cpp 结尾的扁平 C 函数(创建段/灌数据/搜索/释放)，Go 侧再用 LocalSegment 这类封装把脏活包好。这让两种语言各自保持地道，只在边界用最朴素的 C 函数对接。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 关于 C++ 内核服务的“两条路径”，下面哪个说法正确？</div>
+  <ol class="opts">
+    <li>查询和建索引各有一套完全独立、互不相干的 C++ 内核</li>
+    <li>内核只服务查询，建索引完全在 Go 里完成</li>
+    <li>查询路径(QueryNode 搜段)与索引构建路径(worker 把 sealed 段交给 Knowhere 建索引)共用同一套内核，关键数据结构/算法只实现一次</li>
+    <li>内核只服务建索引，查询完全在 Go 里完成</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：C</strong>。无论“读”还是“建索引”，最重的计算都落在同一套 C++ 内核里：段的列式布局、距离计算、Knowhere 索引类型只实现一次，查询时用、建索引时也用，不必维护两套可能算得不一致的代码。可把内核想成一座“中央厨房”，前台点“搜索”、后厨下“建索引”单，同一套灶具按订单类型出餐。</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>本课把 Milvus 看成“Go 控制面 + cgo 桥 + C++ 计算面”。请用自己的话说清：(1) 一次段内搜索是怎样从 Go 经 cgo 进入 segcore、再返回的(回忆那条 Go 封装→过 cgo→C++ 计算→结果回传的链)；(2) 为什么 cgo 调用要“粗粒度、零拷贝”——把一整次搜索打包成一次调用、数据尽量传指针，对性能意味着什么？再结合第 29 课，说说“批量搜(大 nq)”为何能摊薄过桥的固定开销。</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+We've bumped into the names <strong>segcore (C++)</strong>, the <strong>exec engine</strong>, <strong>mmap chunked columns</strong> several times — they all live in
+one place: Milvus's <strong>C++ core</strong>, with source under <span class="inline">internal/core/src</span>. This part (Part 8) formally opens that door, starting with a
+<strong>layout map</strong>: which submodules the core has, what each owns, how they cooperate, and how it connects to the upper Go via <strong>cgo</strong>. Read this map and the
+next three lessons (mmap, expr/exec, GPU) will each have a clear place to slot into.
+</p>
+
+<p>A reassuring word up front: many readers tense up at the words "C++ core", expecting something forbiddingly advanced. The opposite is true — <strong>you don't need to write a
+single line of C++ to follow this part</strong>. Our goal isn't to teach C++ syntax; it's to make clear <strong>what role this code plays inside Milvus and why it's designed this
+way</strong>. Just as you needn't be an automotive engineer to grasp "the engine makes power, the transmission delivers it", this lesson won't dump dense C++ source on you. Instead it
+draws the core's <strong>skeleton</strong> with maps, layer diagrams and flows; the occasional filename (like <span class="mono">segment_c.h</span>) is only a <strong>signpost</strong> for
+"where to dig if you want more". Read with that "see the role and the design, skip the syntax" mindset and the C++ core stops being mysterious — it's just the job of "computing fast",
+carefully split into a few pieces that each do one thing well.</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Picture Milvus as a precision instrument: <strong>Go</strong> is the shell and control panel — buttons, network ports, scheduling logic, doing the "<strong>directing</strong>"; the
+  <strong>C++ core</strong> is the <strong>precision movement</strong> beneath that does the heavy lifting — in-segment search, index building, distance math, doing the "<strong>frantic
+  computing</strong>". Between them, <strong>cgo</strong> is the <strong>drive shaft</strong> connecting panel and movement: you press "search" on the panel, the shaft carries the command
+  into the movement, and the movement returns the result. Each plays to its strength: the panel must be flexible, the movement blazingly fast.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>internal/core/src is cut by responsibility into submodules — segcore (in-segment engine), index, query (query plan), exec (vectorized execution), expr (expression
+  tree), mmap (chunked columns), storage (binlog I/O), common (shared types), etc.; Go calls in via cgo (*_c.h)</strong>. The core serves two paths: <strong>query</strong> (QueryNode
+  searching in a segment) and <strong>index build</strong> (a worker turning a segment into an index). The compute-heavy work all lives here, and so does the performance.
+</div>
+
+<h2>Why Milvus needs a C++ core</h2>
+<p>Lesson 2 said Milvus is "Go + C++ (+ a little Rust)". Why not all Go? Because the two kinds of work are fundamentally different. The <strong>control plane</strong> — coordination,
+scheduling, RPC, concurrency, state machines — wants <strong>developer velocity and concurrency expressiveness</strong>, where Go's goroutines, GC and rich ecosystem fit. The
+<strong>compute plane</strong> — computing distances over hundreds of thousands of vectors in a segment, running filters, (de)compressing — wants <strong>peak performance and precise
+control of the hardware</strong>: hand-written SIMD, fine-grained memory layout and cache management, GPU scheduling when needed. These are C++'s home turf, while Go's GC and runtime become
+a burden on such <strong>hundreds-of-millions-of-FLOPs-per-second</strong> hot paths. So Milvus made a clean split: <strong>Go writes the control plane, C++ writes the compute core</strong>,
+each to its strength. The cost is crossing the Go↔C++ language boundary (that's cgo's job), but the payoff is "<strong>easy to develop, and blazingly fast</strong>".</p>
+
+<div class="layers">
+  <div class="layer l-main"><div class="lh"><span class="badge">control plane</span><span class="name">Go (internal/*)</span></div><div class="ld">Proxy/coordinators/nodes: scheduling, RPC, concurrency, state — wants velocity and concurrency</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">bridge</span><span class="name">cgo (*_c.h / *_c.cpp)</span></div><div class="ld">the C-ABI drive shaft between Go and C++: commands in, results out</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">compute plane</span><span class="name">C++ core (internal/core/src)</span></div><div class="ld">in-segment search, indexing, distance math: wants peak perf, close to hardware, GPU-capable</div></div>
+</div>
+
+<h2>The core's submodule map</h2>
+<p><span class="inline">internal/core/src</span> isn't a blob but several directories cut clearly by <strong>responsibility</strong>. Laying them out as a table gives you a "<strong>navigation
+map</strong>" — wherever you drill in later, you can locate it here:</p>
+
+<table class="t">
+  <tr><th>Submodule</th><th>What it owns</th><th>Related lesson</th></tr>
+  <tr><td class="mono"><strong>segcore</strong></td><td>in-segment search engine, the cgo entry (how a segment is searched)</td><td>Lesson 27</td></tr>
+  <tr><td class="mono"><strong>index</strong></td><td>Knowhere vector-index wrappers + scalar/full-text indexes</td><td>Lessons 22, 24</td></tr>
+  <tr><td class="mono"><strong>query</strong></td><td>search/retrieve query-plan structures</td><td>Lesson 28</td></tr>
+  <tr><td class="mono"><strong>exec</strong></td><td>vectorized execution engine (physical operators over chunks)</td><td>Lesson 28</td></tr>
+  <tr><td class="mono"><strong>expr</strong></td><td>the logical expression tree (filters)</td><td>Lesson 28</td></tr>
+  <tr><td class="mono"><strong>mmap</strong></td><td>chunked columnar storage, memory mapping</td><td>Lesson 35</td></tr>
+  <tr><td class="mono"><strong>storage</strong></td><td>binlog/payload read-write serialization</td><td>Lesson 18</td></tr>
+  <tr><td class="mono"><strong>common</strong></td><td>shared types and utilities (schema, type defs, etc.)</td><td>throughout</td></tr>
+</table>
+
+<p>Besides these main ones, there are finer modules like <span class="mono">plan</span> (plan parsing), <span class="mono">bitset</span> (bit ops on filter masks), <span class="mono">clustering</span>
+(clustering-compaction related). Don't memorize them; one <strong>layering intuition</strong> is enough: <strong>common is the foundation</strong> (types everyone depends on),
+<strong>storage/mmap own "how data is laid out"</strong>, <strong>index owns "how to build retrieval structures"</strong>, <strong>expr/exec/query own "how one query computes"</strong>, and
+<strong>segcore stitches them together and exposes (to Go) the single entry for "search/query within a segment"</strong>. Map in hand, the many directories gain a backbone.</p>
+
+<h2>The cgo bridge: how Go and C++ shake hands</h2>
+<p>Go can't call C++ directly; it goes through the <strong>cgo</strong> bridge. The way: the C++ core wraps the capabilities it exposes to Go into a set of <strong>C-style interfaces</strong> —
+files often ending in <span class="mono">_c.h</span> / <span class="mono">_c.cpp</span> (like the <span class="mono">segment_c.h</span> from Lesson 27). Why C, not C++? Because cgo can only cross the
+<strong>C ABI</strong> (C++ classes, templates, exceptions can't cross languages directly). So C++ internally uses classes and templates as it likes, but <strong>exposes only a thin, flat layer of C
+functions</strong>: create a segment, load data, search, release… On the Go side there are matching wrappers (like <span class="mono">LocalSegment</span> from Lessons 2, 27) that hide the dirty work of
+"call the C function + pass pointers + collect results", so upper Go code uses it like an ordinary Go object. This "<strong>C interface + Go wrapper</strong>" design keeps both languages
+<strong>idiomatic</strong>, meeting only at the boundary with plain C functions.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Go-side wrapper</h4><p>e.g. <span class="mono">LocalSegment.Search</span>: prepare the query, buffers, trace.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Call the C function via cgo</h4><p>call the C interface exposed by <span class="mono">segment_c.h</span>, passing pointers/args into C++.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>C++ core computes</h4><p>segcore does the in-segment search (sealed=index / growing=brute force).</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Result back to Go</h4><p>write results into the buffer; the Go side parses them into the segment's topK.</p></div></div>
+</div>
+
+<h2>Two paths: the core serves both "query" and "index build"</h2>
+<p>Finally, who uses this core. It mainly serves <strong>two paths</strong>. The <strong>query path</strong>: after QueryNode (Go) loads a segment, each search crosses cgo into segcore, where
+expr/exec filter, index searches, and reduce converges the segment's topK (Lessons 27, 28, 29 all happen at this layer). The <strong>index-build path</strong>: the index-building worker (Lessons
+21, 23) also calls the core's index module to hand a sealed segment's raw vectors to Knowhere to build index files. In other words, <strong>whether "reading" or "index building", the heaviest
+computation lands in this same C++ core</strong>. That's why building it solidly matters so much: it is Milvus's "<strong>engine bay</strong>" — the upper Go schedules requests in, but what really
+decides speed is the work in this bay. Next lesson, we drill into one block — <strong>mmap and chunked columns</strong> — to see what a segment's data actually looks like in memory.</p>
+
+<p>That the two paths "share one core" is a design worth savoring. It means the <strong>key data structures and algorithms are implemented once</strong>: the segment's columnar layout,
+distance math, Knowhere's index types… used at query time and at build time alike, with no second, divergent copy that might compute things inconsistently. Think of the C++ core as a
+<strong>central kitchen</strong>: the front desk (QueryNode) orders the "search" dish and it plates via the "query path"; the back-of-house scheduler (an index task from DataCoord) drops a
+"turn these vectors into an index" ticket and it plates via the "index path" — <strong>same stoves, same cooks, only the order type differs</strong>. That's why every following lesson in
+Part 8 really introduces one "appliance" in this kitchen: Lesson 35's mmap is <strong>how the ingredients are arranged</strong> (data layout), Lesson 36's expr/exec is <strong>how to cook
+fast by the recipe</strong> (vectorized execution), and Lesson 37's GPU is <strong>adding a roaring extra burner</strong> (hardware acceleration). Connect them and you see where Milvus's
+"fast" really comes from — not one magic switch, but <strong>data layout, execution engine and hardware acceleration working in concert</strong>.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Go + C++ split</strong>: Go writes the control plane (scheduling/RPC/concurrency, wants velocity), C++ writes the compute core (search/index/distance, wants peak perf close to hardware); cgo is the bridge.</li>
+    <li><strong>Submodule map</strong>: <span class="mono">internal/core/src</span> = segcore (in-segment engine / cgo entry) + index + query + exec + expr + mmap + storage + common (+plan/bitset/clustering).</li>
+    <li><strong>cgo bridge</strong>: C++ exposes only a thin C interface (<span class="mono">*_c.h</span>, e.g. segment_c.h, limited by the C ABI), wrapped on the Go side by <span class="mono">LocalSegment</span> and the like.</li>
+    <li><strong>Two paths</strong>: the core serves both "query" (QueryNode in-segment search) and "index build" (worker building indexes) — the heaviest computation is here.</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Why does Milvus split it as 'control plane in Go, compute core in C++'?</div>
+  <ol class="opts">
+    <li>Because C++ is easier than Go for concurrency and RPC</li>
+    <li>Purely legacy baggage, with no design reason</li>
+    <li>The two kinds of work differ: the control plane (scheduling/RPC/concurrency) wants velocity and concurrency (Go's strength); the compute plane (massive vector distance/filtering) wants peak performance close to hardware (C++'s strength) — each to its strength</li>
+    <li>Because Go cannot compile to machine code</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. The control plane wants developer velocity, concurrency expressiveness and a rich ecosystem — Go's goroutines/GC fit. The compute plane is a hundreds-of-millions-of-FLOPs hot path wanting SIMD, fine memory layout and GPU — C++'s turf, where GC is a burden. Hence the clean split bridged by cgo: 'easy to develop, and blazingly fast'.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Why does Go call the C++ core through a C-style interface (e.g. segment_c.h) instead of C++ classes directly?</div>
+  <ol class="opts">
+    <li>So that Go can inherit from C++ classes</li>
+    <li>cgo can only cross the C ABI; C++ classes/templates/exceptions can't cross languages directly, so C++ uses classes/templates internally but exposes only a flat layer of C functions</li>
+    <li>Because C functions run faster than C++ methods</li>
+    <li>Because the core is actually written in C, not C++</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. cgo's bridge only speaks the C ABI — C++ classes, templates and exceptions can't pass across languages directly. So the core wraps a flat layer of C functions (ending in _c.h/_c.cpp: create segment/load/search/release), and the Go side hides the dirty work behind wrappers like LocalSegment. Both languages stay idiomatic, meeting only at the boundary with plain C functions.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. About the 'two paths' the C++ core serves, which statement is correct?</div>
+  <ol class="opts">
+    <li>Query and index build each have a fully independent, unrelated C++ core</li>
+    <li>The core only serves queries; index building is done entirely in Go</li>
+    <li>The query path (QueryNode searching a segment) and the index-build path (a worker handing a sealed segment to Knowhere) share the same core, so key data structures/algorithms are implemented once</li>
+    <li>The core only serves index building; queries are done entirely in Go</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. Whether 'reading' or 'index building', the heaviest computation lands in the same C++ core: the columnar layout, distance math and Knowhere index types are implemented once, used at both query and build time, with no second divergent copy. Think of the core as a 'central kitchen' — the front desk orders 'search', the back-of-house drops an 'index build' ticket, same stoves plating by order type.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson frames Milvus as 'Go control plane + cgo bridge + C++ compute plane'. In your own words: (1) how does one in-segment search go from Go through cgo into segcore and back (recall the chain Go wrapper → cross cgo → C++ compute → result returned)? (2) Why must cgo calls be 'coarse-grained, zero-copy' — packing a whole search into one call and passing pointers — and what does that mean for performance? Tie it to Lesson 29: why does batching (large nq) amortize the fixed cost of crossing the bridge?</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="33-replication-and-cdc.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">复制与 CDC</span><span class="lang-en">Replication &amp; CDC</span></div></a><a class="next" href="../index.html"><div class="dir"><span class="lang-zh">完成 →</span><span class="lang-en">Done →</span></div><div class="ttl"><span class="lang-zh">返回目录</span><span class="lang-en">Back to index</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>
