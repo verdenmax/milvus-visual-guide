@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 51 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 52 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
@@ -379,6 +379,7 @@ details[open] > summary { list-style: none; }
   <li>Quota, rate-limiting & backpressure</li>
   <li>Advanced features tour</li>
   <li>Log as data: why the whole system orbits the WAL</li>
+  <li>Query-while-you-write, correctly: how consistency is forged</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -9713,6 +9714,206 @@ self-consistency of the entire distributed system</strong>. This is the shared b
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
     <li>This lesson's core is the 'inversion of primary and secondary': the WAL goes from a single-node DB's 'crash-recovery by-product' to Milvus's 'one source of truth', while segments and indexes are demoted to derived data. Consider: (1) what does this inversion make 'the thing the whole system must most protect'? Which capabilities (reliable storage / long retention / strict ordering) must the WAL backend therefore perfect? (2) How does the 'truth stays put, views swap freely' latitude show up in 'changing index type' and 'rolling-upgrading the index format'? (3) In one sentence to a colleague: why does understanding 'log as data' mean understanding why Milvus's write path, streaming system, and replication all look the way they do?</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Query-while-you-write, correctly: how consistency is forged</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Last lesson we saw a write just append to the log and return instantly. But that raises a sharp question at once: I just wrote a row, then
+turn around to search for it — will I find it? In a distributed system where writes flow asynchronously through a log and queries are spread
+across many nodes, "<strong>query-while-you-write, and still be correct</strong>" is anything but automatic. This lesson is how Milvus pulls it off.</p>
+
+<div class="card analogy"><div class="tag">📚 An analogy</div>
+<p>Picture a library where every book gets a <strong>timestamped check-in slip</strong> on arrival. When you query, you don't ask "what's on the
+shelves now" but "<strong>show me the shelves as of 3:00pm</strong>". The desk waits until <strong>every aisle has filed all its pre-3:00
+slips</strong>, then hands you the result — so you see a clean, self-consistent snapshot belonging to "the 3:00 instant": it misses no book
+checked in before 3:00 and isn't muddled by one that arrived at 3:01. Milvus's consistency is exactly this "<strong>view a snapshot by
+timestamp</strong>" mechanism.</p></div>
+
+<h2>The goal: query-while-write, and still correct</h2>
+<p>Users' expectation is plain: upload an image and immediately search it (read-your-writes); or conversely, for large offline analytics,
+missing a few latest rows is fine but it must be fast. The difficulty is that Milvus's writes flow <strong>asynchronously through the
+WAL</strong> — at the instant your write succeeds, the data may not yet be consumed by some QueryNode. Naïvely "search whatever's there" yields
+two kinds of error: either <strong>what you read isn't a consistent snapshot of one instant</strong> (you see a row's insert but not the
+same batch's delete, so the result self-contradicts), or you <strong>can't read your own write</strong> (it succeeded yet isn't searchable —
+the experience collapses). Avoiding both, while not letting queries blindly hang forever, needs a delicate timestamp machinery. In short,
+this lesson answers: under "log as data, writes materialized asynchronously", <strong>how does one read see a world that is both fresh and
+self-consistent</strong>.</p>
+
+<p>Take the commonest collapse: a user uploads a product photo, and the front end immediately searches "similar products" with that photo's
+vector, expecting to at least see the one just uploaded. If that search happens to land on a QueryNode that <strong>hasn't yet consumed this
+write</strong> and uses a "search whatever's there" policy, the result simply won't include it — and the user is baffled: "but I just uploaded
+it successfully?". The same logic bites the other way: a row is inserted then deleted by the same batch; if you read the insert but not the
+delete, you see a "should-be-gone" dirty row. Both errors share one root cause — <strong>there is no single agreed "now"</strong> — and the
+timestamp is precisely what defines that "now".</p>
+
+<div class="card macro"><div class="tag">🗺️ The big picture</div>
+<p>See consistency as three steps: ① <strong>stamp</strong> — RootCoord's TSO hands every write and every read a global monotonic timestamp;
+② <strong>set the level</strong> — the Proxy, from the consistency level you chose, derives a guarantee timestamp Tg, "as of which instant this
+query should see"; ③ <strong>wait then filter</strong> — the QueryNode waits until its own consumption progress tsafe catches up to Tg, then
+uses MVCC to filter visible rows by Tg. The three together produce that "<strong>self-consistent, freshness-of-your-choice</strong>"
+snapshot.</p></div>
+
+<div class="timeline">
+  <div class="lane"><div class="lane-label">write stream</div><div class="tslot">w@98</div><div class="tslot">w@100</div><div class="tslot now">w@103</div></div>
+  <div class="lane"><div class="lane-label">read Tg=100</div><div class="tslot span">tsafe=98 &lt; 100: suspend &amp; wait</div><div class="tslot now">tsafe≥100: answer by MVCC</div></div>
+</div>
+
+<h2>Step 1: stamp everything with one shared timestamp</h2>
+<p>It all starts with <strong>time</strong>. RootCoord maintains a global, <strong>monotonically increasing, never-rewinding</strong> timestamp
+source called the <strong>TSO</strong> (Timestamp Oracle, Lessons 11, 30). Whether a write needs ordering or a read needs to fix "which instant",
+both ask it for a stamp. Why not let each node use its own local clock? Because machine clocks drift and desync; ordering by them scrambles
+sooner or later. The TSO issuing from a <strong>single source</strong> guarantees the whole cluster a <strong>single, consistent</strong>
+understanding of "before and after". A write's stamp is driven into the WAL (becoming TimeTick, Lesson 16); a read's stamp delimits its visible
+range — <strong>one clock governing both write order and read horizon</strong>. This is also the hidden premise that made last lesson's "log as
+data" hold: without a shared clock, many replayers can't line up.</p>
+
+<p>This global clock is implemented as a <strong>hybrid logical clock</strong>: a 64-bit integer whose high bits are physical time
+(milliseconds) and low bits a logical counter. The physical bits make the timestamp roughly correspond to real time — handy for humans and
+for judgments like TTL — while the logical bits ensure that <strong>even a flood of requests arriving within the same millisecond are
+strictly ordered</strong>, never colliding. RootCoord also <strong>pre-reserves and persists</strong> allocated timestamps in batches, so
+even after a restart the stamps it issues are guaranteed larger than before — <strong>monotonicity survives failure</strong>. It is this
+"close to real time yet absolutely monotonic" clock that gives ordering, visibility, and waiting a shared ruler.</p>
+
+<h2>Step 2: make "how fresh" a dial you can turn</h2>
+<p>Holding this ruler of time, the Proxy in a query's PreExecute derives a <strong>guarantee timestamp Tg</strong> from the
+<strong>consistency level</strong> you specify (<span class="inline">parseGuaranteeTsFromConsistency</span>, Lessons 25, 30). It is essentially a
+dial: <strong>Strong</strong> sets Tg to the latest tMax — sees the most, but may wait; <strong>Bounded</strong> nudges Tg back a little (tMax
+minus a gracefulTime), trading "tolerate a few seconds of staleness" for "almost never wait", which is why it's a common default;
+<strong>Session</strong> guarantees you at least read this session's own writes; <strong>Eventually</strong> sets Tg tiny, never waits, returns
+instantly, at the cost of maybe missing the last few; <strong>Customized</strong> lets you name any instant for a "time-travel" query. The crux:
+<strong>this choice is in your hands</strong> — Milvus won't decide "fresh vs fast" for you.</p>
+
+<p>Map the tiers onto real scenarios and it's clear: need to read your own write immediately (search right after upload) — Session or
+Strong; extremely consistency-sensitive, slower-but-latest (finance, audit) — Strong; the vast majority of high-concurrency search,
+recommendation, RAG, where missing a few rows is harmless but low latency and high throughput matter — Bounded (the default); only "roughly
+fresh", chasing raw speed (offline analytics, massive recall) — Eventually; viewing a snapshot at some historical instant (time travel,
+retrospective debugging) — Customized with an explicit ts. And remember: <strong>the same collection can use different levels for different
+queries</strong> — the level is a per-query choice, not a global property of the collection, giving you room to tune query by query.</p>
+
+<div class="cellgroup">
+  <div class="cg-cap"><b>MVCC: Tg=100 decides who is visible</b> (visible &hArr; insert ts ≤ 100 and no tombstone ≤ 100 after it)</div>
+  <div class="cells"><span class="lab">row A</span><span class="cell q">insert@80</span><span class="sep">→</span><span class="cell q">visible ✓</span></div>
+  <div class="cells"><span class="lab">row B</span><span class="cell">insert@80</span><span class="cell dim">delete@95</span><span class="sep">→</span><span class="cell dim">invisible (tombstone ≤ 100)</span></div>
+  <div class="cells"><span class="lab">row C</span><span class="cell">insert@120</span><span class="sep">→</span><span class="cell dim">invisible (120 &gt; 100)</span></div>
+</div>
+
+<h2>Step 3: wait for the data, then filter by timestamp</h2>
+<p>Tg is set — how do we guarantee "the writes up to Tg have actually reached the QueryNode"? Via <strong>tsafe</strong> (the served watermark):
+each QueryNode tracks "to which TimeTick I have consumed and applied the WAL", and each chunk of log it consumes pushes tsafe forward (Lessons 26,
+30). A read arrives with Tg, and the node compares: <strong>if tsafe ≥ Tg, search now; if tsafe &lt; Tg, suspend and wait</strong> until it catches
+up (or times out) — that is the source of the word "guarantee". Once the data is present, the last step is segcore filtering by
+<strong>MVCC</strong>: a row is visible iff its <strong>insert ts ≤ Tg and no delete tombstone with ts ≤ Tg comes after</strong> (Lessons 20, 30).
+A delete here isn't a real removal but a timestamped tombstone; this way reads at different Tg each see the version belonging to their instant,
+reads/writes and reads/reads don't block each other, and results stay self-consistent. A fresh write is "query-while-write"-able because it first
+enters a growing segment and is then folded into visibility by tsafe — whether you see it, and whether you wait, is set by the level you choose
+(Lesson 7).</p>
+
+<p>A very elegant design hides here: because visibility is decided entirely by "comparing timestamps against Tg", a read <strong>needs no
+lock on the data at all</strong>. In traditional databases "should reads block writes, should writes block reads" is a perennial headache
+balanced via locks and isolation levels; Milvus reduces it to an arithmetic check — each row carries its own insert/delete timestamps, each
+read carries its own Tg, and who is visible is settled by comparison. Fresh writes keep flowing in while old versions stay visible at their
+own Tg, so <strong>reads and writes never disturb each other and concurrency is safe by construction</strong>. This is the essence of
+"snapshot isolation", and the reason Milvus can be both fast and correct under heavy concurrency.</p>
+
+<p>One often-misunderstood point, for clarity: in this mechanism a <strong>"delete" never gouges data out of a segment</strong> but appends a
+timestamped tombstone (Lesson 20); an "upsert" is "delete-old + insert-new", each with its own timestamp. Why so roundabout? Because segments
+are immutable and must support "view a historical snapshot at any Tg", so the only clean approach is to <strong>append only and version by
+timestamp</strong>, leaving "which version this read should see" entirely to MVCC. This also explains why heavy deletes/updates need compaction
+(Lesson 19) to truly purge tombstones and overwritten old versions — ordinarily they're merely "logically invisible" while still physically
+sitting in the segment.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">TSO @ RootCoord</div><div class="nd">issue global monotonic stamps</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">Proxy</div><div class="nd">derive Tg by level</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">QueryNode</div><div class="nd">wait tsafe ≥ Tg</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">segcore</div><div class="nd">filter by MVCC(Tg)</div></div>
+</div>
+
+<h2>The payoff and the tradeoff: freshness vs latency</h2>
+<p>The cost of all this rests on one dial: <strong>the fresher you want it, the more you may wait</strong>. Strong pins Tg to the latest, so under
+a write surge or a node lagging in consumption, a read is forced to wait for tsafe to catch up — latency can spike; and tsafe advances <strong>per
+vchannel (shard)</strong>, so one strong-consistency read waits for <strong>every</strong> shard it touches to catch up, and any stuck shard
+slows the whole query. Conversely, Bounded nudges Tg back a little and very often "satisfies on arrival", barely waiting. So the practical wisdom
+is: <strong>first decide "how stale this query can tolerate", then work backward to the level</strong> — the vast majority of search /
+recommendation / RAG do fine on Bounded; reach for Session or Strong only when you truly need "write then immediately read". Read the consistency
+level as a "<strong>how much latency you spend to buy how much freshness</strong>" dial and you hold the steering wheel for trading correctness
+against performance. This echoes Lesson 1's "query while you write": it works because the timestamp stitches "write blazingly fast" and "read
+correctly" onto the same timeline.</p>
+
+<p>This tradeoff also hands you a handle for diagnosing production: when you see "some strong-consistency queries occasionally slow down",
+nine times out of ten it maps to a <strong>write backlog</strong> or <strong>a node holding some shard lagging in consumption</strong> —
+because a Strong read must wait for every involved shard's tsafe to reach Tg, and any stuck shard surfaces as query latency. Mapping "slow
+query" onto "lagging consumption" is usually two sides of one thing. Grasp this layer and choosing levels, setting SLAs, and chasing jitter
+stop being gut feel and become a clear accounting of what "latency" each step pays for "freshness". It's the key step that turns consistency
+from "dark art" into "measurable and tunable".</p>
+
+<p>Ultimately, this lesson and the last are two faces of one coin: last lesson used the log to make "writes" blazingly fast, this one used
+timestamps to make "reads" both fresh and correct, and they share one truth — <strong>that monotonic timestamp issued by the TSO, running
+through both write and read</strong>. Next time you write the consistency_level parameter in the SDK, may you picture this whole chain: TSO
+stamping, Proxy fixing Tg, QueryNode waiting on tsafe, segcore filtering by MVCC — behind a seemingly simple parameter is a whole apparatus
+that makes "distributed, query-while-write, and still correct" hold at once.</p>
+
+<div class="card key"><div class="tag">📌 Key points</div>
+<ul>
+  <li><strong>Three steps</strong>: TSO stamps → Proxy derives Tg by level → QueryNode waits tsafe ≥ Tg, segcore filters by MVCC.</li>
+  <li><strong>TSO</strong>: RootCoord's global monotonic clock governs <strong>both</strong> write order and read horizon, avoiding scrambled ordering from local-clock drift.</li>
+  <li><strong>Tg is a dial</strong>: Strong / Bounded / Session / Eventually / Customized = freshness ↔ latency, the choice in your hands.</li>
+  <li><strong>MVCC + tombstones</strong>: visible iff insert ts ≤ Tg and no tombstone ≤ Tg; reads/writes and reads/reads don't block, results stay self-consistent.</li>
+  <li><strong>Tradeoff</strong>: fresher may mean waiting (and waiting per shard); work backward from "how stale you tolerate" to the level — don't reflexively reach for Strong.</li>
+</ul></div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Which 'three steps' let Milvus do 'query-while-write and stay self-consistent'?</div>
+  <ol class="opts">
+    <li>Each node orders data by its own local clock</li>
+    <li>The client polls repeatedly until it sees its own write</li>
+    <li>① TSO stamps every write/read with a global monotonic timestamp; ② the Proxy derives a guarantee ts Tg from the consistency level; ③ the QueryNode waits tsafe≥Tg, then segcore filters by MVCC — producing a self-consistent snapshot of the freshness you chose</li>
+    <li>Lock the whole collection on each read, releasing it when done</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. stamp (TSO) → set level (Tg) → wait-then-filter (tsafe+MVCC); all three are needed. Local clocks drift, locking sacrifices concurrency, polling pushes the system's job onto the client — none is right</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. How does the guarantee timestamp Tg relate to the consistency level?</div>
+  <ol class="opts">
+    <li>Tg is a fixed constant, unrelated to the level</li>
+    <li>Tg affects only writes, not reads</li>
+    <li>Tg is derived <strong>per query</strong> from the level: Strong=tMax, Bounded=tMax−gracefulTime, Session=this session's last write, Eventually=1, Customized=given; a fresher Tg sees more but may wait, a smaller Tg is faster but staler — the choice is the caller's</li>
+    <li>Tg decides the topK size of this query</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. Tg is the 'as of which instant' dial, computed per query from the level and sent with the request; it is the freshness↔latency tradeoff and a per-query choice — the same collection can use different levels for different queries</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Why can Milvus's reads be 'lock-free', and what actually happens on a delete?</div>
+  <ol class="opts">
+    <li>Reads take a write lock, so concurrent writes must queue</li>
+    <li>A delete physically removes the row from the segment at once</li>
+    <li>Whether a row is visible is decided ad hoc by the Proxy before returning</li>
+    <li>Visibility is just 'comparing timestamps against Tg' (insert ts≤Tg and no tombstone≤Tg), so reads need no locks (snapshot isolation); a delete isn't an in-place removal but an appended timestamped tombstone, truly purged later by compaction</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. Reducing visibility to an arithmetic comparison makes reads/writes and reads/reads non-conflicting (snapshot isolation). Immutable segments + append-only + timestamp versioning is the only clean way to support 'view history at any Tg'; tombstones are merely logically invisible until compaction purges them</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson turns consistency into a 'how much latency you spend to buy how much freshness' dial. Consider: (1) why does Strong's latency rise under a write surge or a lagging node? How does that relate to 'tsafe advancing per vchannel, waiting for every involved shard to catch up'? (2) If production monitoring shows 'some strong-consistency queries occasionally slow down', which thread would you pull to diagnose it? (3) This lesson and the last (log as data) share one 'truth' — the monotonic timestamp. In a paragraph, explain: the log makes 'writes' fast and the timestamp makes 'reads' fresh-and-correct — how are the two stitched together by the very same timestamp?</li>
   </ul>
 </div>
 </div>

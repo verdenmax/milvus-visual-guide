@@ -149,6 +149,8 @@ PAGES = [
      "第十一部分 · 进阶专题（选读）", "Part 11 · Advanced topics (optional)"),
     ("51-design-log-as-data.html", "日志即数据：为什么整个系统都围着 WAL 转", "Log as data: why the whole system orbits the WAL",
      "第十二部分 · 设计专题（综合）", "Part 12 · Design themes (synthesis)"),
+    ("52-design-query-while-write.html", "边写边查还保证正确：一致性是怎么炼成的", "Query-while-you-write, correctly: how consistency is forged",
+     "第十二部分 · 设计专题（综合）", "Part 12 · Design themes (synthesis)"),
 ]
 
 
@@ -692,6 +694,8 @@ SUBTITLES = {
                                        "a tour of six production features: RBAC (permissions) · resource groups (compute isolation) · databases (multi-tenancy) · iterators (paging) · TTL (auto-expiry) · Function (server-side vectorization)"),
     "51-design-log-as-data.html": ("贯穿全书的第一条设计主线 · WAL 是唯一事实来源、段/索引/副本都是派生 · 写=追加(盖 TimeTick)、记上即成功 · 一份日志多方按需重放(落段/边写边查/复制/恢复)",
                                    "the first design throughline · the WAL is the one source of truth, segments/indexes/replicas are derived · write=append (stamp TimeTick), logged=success · one log replayed on demand by many (flush/query-while-write/replicate/recover)"),
+    "52-design-query-while-write.html": ("一致性三步走 · TSO 发全局单调戳 → Proxy 按级别算保证时间戳 Tg → QueryNode 等 tsafe≥Tg、segcore 按 MVCC(墓碑)过滤 · 级别=新鲜度↔延迟的旋钮",
+                                         "consistency in three steps · TSO issues a global monotonic stamp → Proxy derives guarantee ts Tg by level → QueryNode waits tsafe≥Tg, segcore filters by MVCC (tombstones) · the level is a freshness↔latency dial"),
 }
 
 

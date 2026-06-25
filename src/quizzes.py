@@ -3347,6 +3347,76 @@ QUIZZES = {
             },
         ],
     },
+    "52-design-query-while-write.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "Milvus 用哪“三步走”做到“边写边查还自洽”？",
+                    "en": "Which 'three steps' let Milvus do 'query-while-write and stay self-consistent'?",
+                },
+                "opts": [
+                    {
+                        "zh": "① TSO 给每次写/读发全局单调时间戳；② Proxy 按一致性级别算出保证时间戳 Tg；③ QueryNode 等 tsafe≥Tg 再由 segcore 按 MVCC 过滤——合成一个新鲜度可选、自洽的快照",
+                        "en": "① TSO stamps every write/read with a global monotonic timestamp; ② the Proxy derives a guarantee ts Tg from the consistency level; ③ the QueryNode waits tsafe≥Tg, then segcore filters by MVCC — producing a self-consistent snapshot of the freshness you chose",
+                    },
+                    {"zh": "每次读都把整个集合加锁，读完再放开", "en": "Lock the whole collection on each read, releasing it when done"},
+                    {"zh": "客户端反复轮询，直到看见自己刚写的", "en": "The client polls repeatedly until it sees its own write"},
+                    {"zh": "每个节点用本地时钟各自给数据定序", "en": "Each node orders data by its own local clock"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "盖戳(TSO)→定级(Tg)→等齐再过滤(tsafe+MVCC)，三步缺一不可。本地时钟会漂移、加锁会牺牲并发、轮询是把系统的活推给客户端——都不对",
+                    "en": "stamp (TSO) → set level (Tg) → wait-then-filter (tsafe+MVCC); all three are needed. Local clocks drift, locking sacrifices concurrency, polling pushes the system's job onto the client — none is right",
+                },
+            },
+            {
+                "q": {
+                    "zh": "保证时间戳 Tg 与一致性级别是什么关系？",
+                    "en": "How does the guarantee timestamp Tg relate to the consistency level?",
+                },
+                "opts": [
+                    {
+                        "zh": "Tg 由级别<strong>逐查推导</strong>：Strong=tMax、Bounded=tMax−gracefulTime、Session=本会话上次写、Eventually=1、Customized=指定值；Tg 越新看得越全但可能多等，越小越快但可能越旧——选择权在调用方",
+                        "en": "Tg is derived <strong>per query</strong> from the level: Strong=tMax, Bounded=tMax−gracefulTime, Session=this session's last write, Eventually=1, Customized=given; a fresher Tg sees more but may wait, a smaller Tg is faster but staler — the choice is the caller's",
+                    },
+                    {"zh": "Tg 是个固定常量，和级别无关", "en": "Tg is a fixed constant, unrelated to the level"},
+                    {"zh": "Tg 只影响写入，不影响读取", "en": "Tg affects only writes, not reads"},
+                    {"zh": "Tg 决定这次查询返回的 topK 大小", "en": "Tg decides the topK size of this query"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "Tg 是“看截至哪一刻”的旋钮，按级别逐查算出、随请求下发；它是新鲜度↔延迟的权衡，且是查询粒度的选择——同一集合不同查询可用不同级别",
+                    "en": "Tg is the 'as of which instant' dial, computed per query from the level and sent with the request; it is the freshness↔latency tradeoff and a per-query choice — the same collection can use different levels for different queries",
+                },
+            },
+            {
+                "q": {
+                    "zh": "为什么 Milvus 的读可以“无锁”，以及一次删除到底发生了什么？",
+                    "en": "Why can Milvus's reads be 'lock-free', and what actually happens on a delete?",
+                },
+                "opts": [
+                    {
+                        "zh": "可见性只是“时间戳与 Tg 的比较”（插入 ts≤Tg 且无墓碑≤Tg），所以读无需加锁（快照隔离）；删除不是就地抠数据，而是追加一条带时间戳的墓碑，日后由 compaction 真正清理",
+                        "en": "Visibility is just 'comparing timestamps against Tg' (insert ts≤Tg and no tombstone≤Tg), so reads need no locks (snapshot isolation); a delete isn't an in-place removal but an appended timestamped tombstone, truly purged later by compaction",
+                    },
+                    {"zh": "读会加写锁，所以并发写必须排队等待", "en": "Reads take a write lock, so concurrent writes must queue"},
+                    {"zh": "删除会立刻把该行从段里物理删除", "en": "A delete physically removes the row from the segment at once"},
+                    {"zh": "某行是否可见由 Proxy 在返回前临时决定", "en": "Whether a row is visible is decided ad hoc by the Proxy before returning"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "把可见性化简成算术比较，读写、读读就天然不打架（快照隔离）。段不可变 + 只追加 + 时间戳分版本，是支持“按任意 Tg 看历史”的唯一干净做法；墓碑平时只是逻辑不可见，物理上要等 compaction 清",
+                    "en": "Reducing visibility to an arithmetic comparison makes reads/writes and reads/reads non-conflicting (snapshot isolation). Immutable segments + append-only + timestamp versioning is the only clean way to support 'view history at any Tg'; tombstones are merely logically invisible until compaction purges them",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课把一致性做成了一个“花多少延迟买多少新鲜”的旋钮。请思考：(1) 为什么 Strong 在写入洪峰或某节点消费滞后时延迟会上升？这和“tsafe 按 vchannel 维度推进、要等所有相关分片都追上”有什么关系？(2) 假如线上监控显示“部分强一致查询偶发变慢”，你会顺着哪条线索去排查？(3) 这一课和上一课（日志即数据）共享同一个“真相”——那个单调时间戳。试用一段话说清：日志让“写”飞快、时间戳让“读”既新鲜又对，二者是怎么靠同一枚时间戳缝在一起的？",
+                "en": "This lesson turns consistency into a 'how much latency you spend to buy how much freshness' dial. Consider: (1) why does Strong's latency rise under a write surge or a lagging node? How does that relate to 'tsafe advancing per vchannel, waiting for every involved shard to catch up'? (2) If production monitoring shows 'some strong-consistency queries occasionally slow down', which thread would you pull to diagnose it? (3) This lesson and the last (log as data) share one 'truth' — the monotonic timestamp. In a paragraph, explain: the log makes 'writes' fast and the timestamp makes 'reads' fresh-and-correct — how are the two stitched together by the very same timestamp?",
+            },
+        ],
+    },
 }
 
 
