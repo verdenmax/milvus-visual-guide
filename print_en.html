@@ -3689,6 +3689,14 @@ At Catalog the object is <strong>decomposed</strong>: one key for the collection
 <p>Metadata must "persist," but components must also "find" each other. Lesson 9 mentioned: at startup each component calls <span class="mono">Register()</span>, writing a <strong>leased</strong> session into etcd — "I am querynode-3, my gRPC address is here, I'm alive."
 This lives in <span class="inline">internal/util/sessionutil/session_util.go</span>: a <span class="mono">Session</span> struct holds a <span class="mono">LeaseID</span>, and a background goroutine keeps <strong>renewing the lease (keepalive)</strong>; once the process crashes and the heartbeat stops, the lease expires and etcd auto-deletes the session record.</p>
 
+<div class="flow">
+<div class="node"><div class="nt">node Register()</div><div class="nd">write a leased session: who/address/alive</div></div>
+<div class="arrow">keepalive</div>
+<div class="node hl"><div class="nt">etcd session dir</div><div class="nd">alive→renew; crashed→lease expires, auto-deleted</div></div>
+<div class="arrow">WatchServices</div>
+<div class="node"><div class="nt">coordinator</div><div class="nd">gets up/down events → holds the live-node list</div></div>
+</div>
+
 <p>On the other end, coordinators call <span class="mono">WatchServices</span> to <strong>watch</strong> the prefix directory of these sessions: a node comes up and an "added" event fires instantly; a node drops (lease expires) and a "deleted" event fires.
 So the control plane always holds a <strong>live roster of nodes</strong>, using it to assign segments, balance load, and reassign work on failure. This "<strong>register → renew → watch</strong>" is Milvus's service discovery — it shares the same etcd as metadata, but carries the <strong>transient state</strong> of "who's here, where," not the <strong>persistent metadata</strong> of "what a collection looks like."</p>
 
