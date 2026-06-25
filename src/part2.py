@@ -70,9 +70,9 @@ LESSON_04 = {
     <path d="M162,213 A60,60 0 0 1 169,232" style="fill:none;stroke:var(--purple);stroke-width:2.5"/>
     <text x="146" y="206" style="fill:var(--purple);font-weight:700">θ</text>
     <text x="78" y="260" style="fill:var(--faint)">O</text>
-    <rect x="470" y="80" width="16" height="16" rx="3" style="fill:var(--amber)"/><text x="496" y="93" style="fill:var(--ink)">L2（欧氏）= 两点直线距离 · 越小越像</text>
-    <rect x="470" y="120" width="16" height="16" rx="3" style="fill:var(--purple)"/><text x="496" y="133" style="fill:var(--ink)">COSINE = 夹角 θ · 只看方向、忽略模长</text>
-    <rect x="470" y="160" width="16" height="16" rx="3" style="fill:var(--teal)"/><text x="496" y="173" style="fill:var(--ink)">IP = |u|·|v|·cos θ · 方向 + 模长都算</text>
+    <rect x="452" y="80" width="15" height="15" rx="3" style="fill:var(--amber)"/><text x="476" y="92" style="fill:var(--ink);font-size:12px">L2 = 两点直线距离 · 越小越像</text>
+    <rect x="452" y="120" width="15" height="15" rx="3" style="fill:var(--purple)"/><text x="476" y="132" style="fill:var(--ink);font-size:12px">COSINE = 夹角 θ · 只看方向、忽略模长</text>
+    <rect x="452" y="160" width="15" height="15" rx="3" style="fill:var(--teal)"/><text x="476" y="172" style="fill:var(--ink);font-size:12px">IP = |u|·|v|·cos θ · 方向 + 模长都算</text>
   </svg>
   <div class="figcap"><b>一张图看懂三把尺子</b>：把向量看作从原点出发的箭头——<b>L2</b> 量两个<b>箭头尖端</b>的直线距离，<b>COSINE</b> 只量<b>夹角 θ</b>，<b>IP</b> 把<b>方向与模长</b>一起算进去。</div>
 </div>
@@ -357,9 +357,9 @@ constants; the three everyday rulers are <span class="inline">L2</span>, <span c
     <path d="M162,213 A60,60 0 0 1 169,232" style="fill:none;stroke:var(--purple);stroke-width:2.5"/>
     <text x="146" y="206" style="fill:var(--purple);font-weight:700">θ</text>
     <text x="78" y="260" style="fill:var(--faint)">O</text>
-    <rect x="470" y="80" width="16" height="16" rx="3" style="fill:var(--amber)"/><text x="496" y="93" style="fill:var(--ink)">L2 (Euclidean) = straight-line gap · smaller = closer</text>
-    <rect x="470" y="120" width="16" height="16" rx="3" style="fill:var(--purple)"/><text x="496" y="133" style="fill:var(--ink)">COSINE = angle θ · direction only, ignores length</text>
-    <rect x="470" y="160" width="16" height="16" rx="3" style="fill:var(--teal)"/><text x="496" y="173" style="fill:var(--ink)">IP = |u|·|v|·cos θ · direction + magnitude both count</text>
+    <rect x="452" y="80" width="15" height="15" rx="3" style="fill:var(--amber)"/><text x="476" y="92" style="fill:var(--ink);font-size:12px">L2 = straight-line gap · smaller = closer</text>
+    <rect x="452" y="120" width="15" height="15" rx="3" style="fill:var(--purple)"/><text x="476" y="132" style="fill:var(--ink);font-size:12px">COSINE = angle θ · direction only</text>
+    <rect x="452" y="160" width="15" height="15" rx="3" style="fill:var(--teal)"/><text x="476" y="172" style="fill:var(--ink);font-size:12px">IP = |u|·|v|·cos θ · direction + magnitude</text>
   </svg>
   <div class="figcap"><b>Three rulers in one picture</b>: treat vectors as arrows from the origin — <b>L2</b> measures the straight-line gap between the two <b>arrow tips</b>, <b>COSINE</b> measures only the <b>angle θ</b>, and <b>IP</b> folds <b>direction and magnitude</b> together.</div>
 </div>
@@ -1871,24 +1871,24 @@ vchannel 的名字其实就是在 pchannel 名字后面拼上 collection ID 和�
   <svg viewBox="0 0 760 300" role="img" aria-label="列式布局：把按行的实体重组成按字段连续存储，每个字段一份 binlog">
     <text x="40" y="52" style="fill:var(--muted)">逻辑：3 行实体</text>
     <rect x="40" y="64" width="252" height="36" rx="7" style="fill:var(--panel-2);stroke:var(--line)"/>
-    <rect x="48" y="70" width="40" height="24" rx="5" style="fill:var(--blue-soft,var(--accent-soft));stroke:var(--blue)"/><text x="68" y="87" text-anchor="middle" class="mono" style="fill:var(--blue)">1</text>
+    <rect x="48" y="70" width="40" height="24" rx="5" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="68" y="87" text-anchor="middle" class="mono" style="fill:var(--blue)">1</text>
     <rect x="94" y="70" width="112" height="24" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="150" y="87" text-anchor="middle" style="fill:var(--accent-ink)">vec</text>
-    <rect x="212" y="70" width="72" height="24" rx="5" style="fill:var(--amber-soft,var(--accent-soft));stroke:var(--amber)"/><text x="248" y="87" text-anchor="middle" class="mono" style="fill:var(--amber)">9.9</text>
+    <rect x="212" y="70" width="72" height="24" rx="5" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="248" y="87" text-anchor="middle" class="mono" style="fill:var(--amber)">9.9</text>
     <rect x="40" y="106" width="252" height="36" rx="7" style="fill:var(--panel-2);stroke:var(--line)"/>
-    <rect x="48" y="112" width="40" height="24" rx="5" style="fill:var(--blue-soft,var(--accent-soft));stroke:var(--blue)"/><text x="68" y="129" text-anchor="middle" class="mono" style="fill:var(--blue)">2</text>
+    <rect x="48" y="112" width="40" height="24" rx="5" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="68" y="129" text-anchor="middle" class="mono" style="fill:var(--blue)">2</text>
     <rect x="94" y="112" width="112" height="24" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="150" y="129" text-anchor="middle" style="fill:var(--accent-ink)">vec</text>
-    <rect x="212" y="112" width="72" height="24" rx="5" style="fill:var(--amber-soft,var(--accent-soft));stroke:var(--amber)"/><text x="248" y="129" text-anchor="middle" class="mono" style="fill:var(--amber)">3.5</text>
+    <rect x="212" y="112" width="72" height="24" rx="5" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="248" y="129" text-anchor="middle" class="mono" style="fill:var(--amber)">3.5</text>
     <rect x="40" y="148" width="252" height="36" rx="7" style="fill:var(--panel-2);stroke:var(--line)"/>
-    <rect x="48" y="154" width="40" height="24" rx="5" style="fill:var(--blue-soft,var(--accent-soft));stroke:var(--blue)"/><text x="68" y="171" text-anchor="middle" class="mono" style="fill:var(--blue)">3</text>
+    <rect x="48" y="154" width="40" height="24" rx="5" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="68" y="171" text-anchor="middle" class="mono" style="fill:var(--blue)">3</text>
     <rect x="94" y="154" width="112" height="24" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="150" y="171" text-anchor="middle" style="fill:var(--accent-ink)">vec</text>
-    <rect x="212" y="154" width="72" height="24" rx="5" style="fill:var(--amber-soft,var(--accent-soft));stroke:var(--amber)"/><text x="248" y="171" text-anchor="middle" class="mono" style="fill:var(--amber)">7.0</text>
+    <rect x="212" y="154" width="72" height="24" rx="5" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="248" y="171" text-anchor="middle" class="mono" style="fill:var(--amber)">7.0</text>
     <line x1="300" y1="124" x2="340" y2="124" style="stroke:var(--line);stroke-width:2"/><path d="M340,124 l-11,-5 l0,10 z" style="fill:var(--line)"/>
     <text x="320" y="114" text-anchor="middle" style="fill:var(--muted)">按列</text>
     <text x="352" y="52" style="fill:var(--muted)">物理：同字段连续存 · 各一份 binlog</text>
     <text x="354" y="86" style="fill:var(--blue);font-weight:700">id</text>
-    <rect x="404" y="68" width="34" height="28" rx="5" style="fill:var(--blue-soft,var(--accent-soft));stroke:var(--blue)"/><text x="421" y="87" text-anchor="middle" class="mono" style="fill:var(--blue)">1</text>
-    <rect x="440" y="68" width="34" height="28" rx="5" style="fill:var(--blue-soft,var(--accent-soft));stroke:var(--blue)"/><text x="457" y="87" text-anchor="middle" class="mono" style="fill:var(--blue)">2</text>
-    <rect x="476" y="68" width="34" height="28" rx="5" style="fill:var(--blue-soft,var(--accent-soft));stroke:var(--blue)"/><text x="493" y="87" text-anchor="middle" class="mono" style="fill:var(--blue)">3</text>
+    <rect x="404" y="68" width="34" height="28" rx="5" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="421" y="87" text-anchor="middle" class="mono" style="fill:var(--blue)">1</text>
+    <rect x="440" y="68" width="34" height="28" rx="5" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="457" y="87" text-anchor="middle" class="mono" style="fill:var(--blue)">2</text>
+    <rect x="476" y="68" width="34" height="28" rx="5" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="493" y="87" text-anchor="middle" class="mono" style="fill:var(--blue)">3</text>
     <text x="528" y="86" style="fill:var(--muted)">→ 1 份 binlog</text>
     <text x="354" y="142" style="fill:var(--accent-ink);font-weight:700">vector</text>
     <rect x="404" y="124" width="34" height="28" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="421" y="143" text-anchor="middle" style="fill:var(--accent-ink)">v</text>
@@ -1896,9 +1896,9 @@ vchannel 的名字其实就是在 pchannel 名字后面拼上 collection ID 和�
     <rect x="476" y="124" width="34" height="28" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="493" y="143" text-anchor="middle" style="fill:var(--accent-ink)">v</text>
     <text x="528" y="142" style="fill:var(--muted)">→ 1 份 binlog</text>
     <text x="354" y="198" style="fill:var(--amber);font-weight:700">price</text>
-    <rect x="404" y="180" width="44" height="28" rx="5" style="fill:var(--amber-soft,var(--accent-soft));stroke:var(--amber)"/><text x="426" y="199" text-anchor="middle" class="mono" style="fill:var(--amber)">9.9</text>
-    <rect x="450" y="180" width="44" height="28" rx="5" style="fill:var(--amber-soft,var(--accent-soft));stroke:var(--amber)"/><text x="472" y="199" text-anchor="middle" class="mono" style="fill:var(--amber)">3.5</text>
-    <rect x="496" y="180" width="44" height="28" rx="5" style="fill:var(--amber-soft,var(--accent-soft));stroke:var(--amber)"/><text x="518" y="199" text-anchor="middle" class="mono" style="fill:var(--amber)">7.0</text>
+    <rect x="404" y="180" width="44" height="28" rx="5" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="426" y="199" text-anchor="middle" class="mono" style="fill:var(--amber)">9.9</text>
+    <rect x="450" y="180" width="44" height="28" rx="5" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="472" y="199" text-anchor="middle" class="mono" style="fill:var(--amber)">3.5</text>
+    <rect x="496" y="180" width="44" height="28" rx="5" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="518" y="199" text-anchor="middle" class="mono" style="fill:var(--amber)">7.0</text>
     <text x="556" y="198" style="fill:var(--muted)">→ 1 份 binlog</text>
   </svg>
   <div class="figcap"><b>按列存，不按行存</b>：同一字段的所有值<b>连续放在一起</b>，每个字段落成<b>一份 binlog</b>。向量检索"整列拿出来批量算距离"因此极快（缓存友好、可向量化）；标量过滤也只需扫相关列。</div>
@@ -1944,7 +1944,7 @@ vchannel 的名字其实就是在 pchannel 名字后面拼上 collection ID 和�
     <path d="M576,126 l12,0 M586,126 l-9,-4 l0,8 z" style="stroke:var(--line);fill:var(--line);stroke-width:2"/>
     <path d="M160,196 L718,196" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:5 4"/>
     <path d="M160,196 l0,-8 M718,196 l0,-8" style="stroke:var(--teal);stroke-width:1.5"/>
-    <text x="439" y="220" text-anchor="middle" style="fill:var(--teal);font-weight:700">进了日志即已落地 · 查询同时扫 Growing + Sealed 再归并</text>
+    <text x="439" y="220" text-anchor="middle" style="fill:var(--teal);font-weight:700">进了日志即已落地 · 查询同时扫 Growing + 历史段 再归并</text>
     <text x="439" y="250" text-anchor="middle" style="fill:var(--muted)">压缩/删除替代后 → Dropped（✗，等待 GC 回收）</text>
   </svg>
   <div class="figcap"><b>一条数据的一生</b>：写进 <b>WAL</b> 那一刻就"已落地"。它先在<b>内存 Growing 段</b>立即可查，写满转 <b>Sealed</b>、刷成<b>对象存储里的 binlog</b>、再建<b>索引</b>高效检索——<b>查询永远同时看 Growing(最新) 与 Sealed(历史)</b>，所以"刚写就能搜到"。</div>
@@ -2221,7 +2221,7 @@ Segment, column, log, and index now close the loop.</p>
     <path d="M576,126 l12,0 M586,126 l-9,-4 l0,8 z" style="stroke:var(--line);fill:var(--line);stroke-width:2"/>
     <path d="M160,196 L718,196" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:5 4"/>
     <path d="M160,196 l0,-8 M718,196 l0,-8" style="stroke:var(--teal);stroke-width:1.5"/>
-    <text x="439" y="220" text-anchor="middle" style="fill:var(--teal);font-weight:700">in the log = landed · a query scans Growing + Sealed together, then merges</text>
+    <text x="439" y="220" text-anchor="middle" style="fill:var(--teal);font-weight:700">in the log = landed · a query scans Growing + all historical, then merges</text>
     <text x="439" y="250" text-anchor="middle" style="fill:var(--muted)">after compaction/delete → Dropped (✗, awaiting GC)</text>
   </svg>
   <div class="figcap"><b>The life of one row</b>: the moment it's in the <b>WAL</b> it has "landed". It is searchable instantly in the in-memory <b>Growing</b> segment, then sealed, flushed to a <b>binlog in object storage</b>, and <b>indexed</b> for efficient search — a query <b>always scans both Growing (newest) and Sealed (historical)</b>, which is why "just written" is immediately searchable.</div>

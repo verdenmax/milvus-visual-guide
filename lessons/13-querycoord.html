@@ -454,6 +454,29 @@ DataCoord 管"数据怎么写进去、怎么存好"，这一课的 <strong>Query
 这种"<strong>声明目标 → 持续校正现状向目标收敛</strong>"的设计，正是现代分布式系统（如 Kubernetes 的 reconcile）公认的健壮范式：你不去写一长串"先做这步再做那步"的脆弱流程，而是只声明"我想要的终态"，让系统自己一轮一轮地逼近。
 目标本身还分<strong>当前目标（current target）</strong>与<strong>下一目标（next target）</strong>，用来平滑地从旧布局过渡到新布局而不打断正在进行的查询。理解了这套"分布逼近目标"的循环，你就抓住了 QueryCoordV2 区别于老架构的灵魂。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="QueryCoordV2 的核心循环：观测者不断比对实际分布与期望目标，发现差距就生成加载或释放动作，让分布向目标收敛，永不停歇">
+    <rect x="36" y="50" width="300" height="150" rx="11" style="fill:var(--panel-2);stroke:var(--line);stroke-width:1.5"/>
+    <text x="52" y="74" style="fill:var(--ink);font-weight:700">① 分布 distribution（实际）</text>
+    <rect x="52" y="86" width="268" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="64" y="106" class="mono" style="fill:var(--ink)">Node1 ▸ segA · segB</text>
+    <rect x="52" y="122" width="268" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="64" y="142" class="mono" style="fill:var(--ink)">Node2 ▸ segD</text>
+    <rect x="52" y="158" width="268" height="30" rx="6" style="fill:var(--panel);stroke:var(--red)"/><text x="64" y="178" class="mono" style="fill:var(--red)">✗ segC 未加载</text>
+    <rect x="424" y="50" width="300" height="150" rx="11" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="440" y="74" style="fill:var(--accent-ink);font-weight:700">② 目标 target（期望）</text>
+    <rect x="440" y="86" width="268" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="452" y="106" class="mono" style="fill:var(--ink)">Node1 ▸ segA · segB</text>
+    <rect x="440" y="122" width="268" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="452" y="142" class="mono" style="fill:var(--ink)">Node2 ▸ segD</text>
+    <rect x="440" y="158" width="268" height="30" rx="6" style="fill:var(--panel);stroke:var(--teal)"/><text x="452" y="178" class="mono" style="fill:var(--teal)">✓ Node3 ▸ segC</text>
+    <text x="380" y="130" text-anchor="middle" style="fill:var(--amber);font-weight:700;font-size:26px">≠</text>
+    <rect x="150" y="236" width="460" height="44" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="380" y="263" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">③ observer 比对差距 → 生成动作：加载 segC 到 Node3</text>
+    <line x1="186" y1="200" x2="224" y2="234" style="stroke:var(--line);stroke-width:1.5"/><path d="M224,234 l-11,-3 l2,-9 z" style="fill:var(--line)"/>
+    <line x1="560" y1="200" x2="536" y2="234" style="stroke:var(--line);stroke-width:1.5"/><path d="M536,234 l-2,-11 l9,3 z" style="fill:var(--line)"/>
+    <path d="M150,258 C72,258 36,232 36,202" style="fill:none;stroke:var(--teal);stroke-width:2;stroke-dasharray:5 4"/><path d="M36,202 l-5,11 l10,0 z" style="fill:var(--teal)"/>
+    <text x="40" y="224" style="fill:var(--teal);font-weight:700">分布向目标收敛 ↻</text>
+  </svg>
+  <div class="figcap"><b>声明终态，持续校正</b>：QueryCoordV2 把状态拆成<b>分布（实际）</b>与<b>目标（期望）</b>两张视图；observer 不断比对，发现差距（segC 缺失）就生成<b>加载 / 释放</b>动作，让分布<b>向目标收敛</b>——和 Kubernetes 的 reconcile 同理：只声明想要的终态，系统一轮轮自己逼近，永不停歇。</div>
+</div>
+
 <p>为什么要分"当前"与"下一"两个目标？想象一次大规模的重新加载或均衡：如果直接把目标一步换成全新布局，正在用旧布局执行的查询就可能突然找不到段。两段式目标让系统能<strong>先准备好下一目标、待新布局就绪后再平滑切换</strong>，
 让旧查询走完、新查询走新布局，整个过程对用户无感。这种"<strong>双缓冲式</strong>"的切换，把"既要变、又不能停"这对矛盾化解得干净利落。至此，从 load 到分配、到均衡、到副本、再到这套分布逼近目标的循环，QueryCoordV2 作为读取侧大脑的全貌就清晰了——
 它和上一课的 DataCoord 一写一读，共同撑起了 Milvus 在分布式层面"既能稳稳存好、又能快快搜出"的两端。</p>
@@ -643,6 +666,29 @@ The other is the <strong>target</strong>: what it <strong>ought</strong> to look
 <p>QueryCoord's core loop is a swarm of <strong>observers</strong> constantly comparing these two and, on finding a gap, generating actions to close it: a segment the target wants but the distribution lacks gets scheduled to load; one the distribution has but the target no longer needs gets released; move what should move, fill what should fill.
 This "<strong>declare the target → continually correct the actual toward it</strong>" design is exactly the robust paradigm modern distributed systems (like Kubernetes' reconcile) acknowledge: instead of writing a long, brittle "do this step then that step" procedure, you only declare "the end state I want" and let the system converge round by round.
 The target itself further splits into <strong>current target</strong> and <strong>next target</strong>, to transition smoothly from old layout to new without interrupting in-flight queries. Grasp this "distribution approaching target" loop and you hold the soul that distinguishes QueryCoordV2 from the old architecture.</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="QueryCoordV2's core loop: observers continuously compare the actual distribution against the desired target and emit load or release actions so the distribution converges to the target, never stopping">
+    <rect x="36" y="50" width="300" height="150" rx="11" style="fill:var(--panel-2);stroke:var(--line);stroke-width:1.5"/>
+    <text x="52" y="74" style="fill:var(--ink);font-weight:700">① distribution (actual)</text>
+    <rect x="52" y="86" width="268" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="64" y="106" class="mono" style="fill:var(--ink)">Node1 ▸ segA · segB</text>
+    <rect x="52" y="122" width="268" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="64" y="142" class="mono" style="fill:var(--ink)">Node2 ▸ segD</text>
+    <rect x="52" y="158" width="268" height="30" rx="6" style="fill:var(--panel);stroke:var(--red)"/><text x="64" y="178" class="mono" style="fill:var(--red)">✗ segC not loaded</text>
+    <rect x="424" y="50" width="300" height="150" rx="11" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="440" y="74" style="fill:var(--accent-ink);font-weight:700">② target (desired)</text>
+    <rect x="440" y="86" width="268" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="452" y="106" class="mono" style="fill:var(--ink)">Node1 ▸ segA · segB</text>
+    <rect x="440" y="122" width="268" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="452" y="142" class="mono" style="fill:var(--ink)">Node2 ▸ segD</text>
+    <rect x="440" y="158" width="268" height="30" rx="6" style="fill:var(--panel);stroke:var(--teal)"/><text x="452" y="178" class="mono" style="fill:var(--teal)">✓ Node3 ▸ segC</text>
+    <text x="380" y="130" text-anchor="middle" style="fill:var(--amber);font-weight:700;font-size:26px">≠</text>
+    <rect x="150" y="236" width="460" height="44" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="380" y="263" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">③ observer diffs the gap → action: load segC onto Node3</text>
+    <line x1="186" y1="200" x2="224" y2="234" style="stroke:var(--line);stroke-width:1.5"/><path d="M224,234 l-11,-3 l2,-9 z" style="fill:var(--line)"/>
+    <line x1="560" y1="200" x2="536" y2="234" style="stroke:var(--line);stroke-width:1.5"/><path d="M536,234 l-2,-11 l9,3 z" style="fill:var(--line)"/>
+    <path d="M150,258 C72,258 36,232 36,202" style="fill:none;stroke:var(--teal);stroke-width:2;stroke-dasharray:5 4"/><path d="M36,202 l-5,11 l10,0 z" style="fill:var(--teal)"/>
+    <text x="40" y="224" style="fill:var(--teal);font-weight:700">distribution converges to target ↻</text>
+  </svg>
+  <div class="figcap"><b>Declare the end state, keep correcting</b>: QueryCoordV2 splits state into <b>distribution (actual)</b> and <b>target (desired)</b>; an observer keeps comparing them, and on a gap (segC missing) emits <b>load / release</b> actions so the distribution <b>converges to the target</b> — exactly like Kubernetes reconcile: you declare the end state, the system iterates toward it, never stopping.</div>
+</div>
 
 <p>Why split "current" and "next" targets? Imagine a large-scale reload or rebalance: swapping the target to a brand-new layout in one step could leave queries running on the old layout suddenly unable to find segments. The two-stage target lets the system <strong>prepare the next target first, then switch smoothly once the new layout is ready</strong>,
 letting old queries finish and new queries use the new layout, the whole process invisible to users. This "<strong>double-buffered</strong>" switch resolves the tension of "must change, yet must not stop" cleanly. With that, from load to assignment, to balancing, to replicas, and on to this distribution-approaching-target loop, QueryCoordV2's whole picture as the read side's brain is clear —

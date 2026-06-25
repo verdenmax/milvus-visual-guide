@@ -392,6 +392,41 @@ Proxy 把这些复杂度<strong>全部封装</strong>在身后。于是后端怎
   <li><strong>限流（rate limit）</strong>：你今天是不是太猛了？<span class="inline">rate_limit_interceptor.go</span> 按配额给写入/查询降速甚至挡回，保护后端不被打垮。</li>
 </ul>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="一次请求依次经过鉴权、权限、数据库路由、限流四道拦截器，任一不过即被拦下；通过后才进入排队执行">
+    <rect x="22" y="120" width="104" height="52" rx="9" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <text x="74" y="143" text-anchor="middle" style="fill:var(--ink)">客户端</text>
+    <text x="74" y="161" text-anchor="middle" style="fill:var(--muted)">请求</text>
+    <rect x="146" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/>
+    <text x="192" y="118" text-anchor="middle" style="fill:var(--blue);font-weight:700">①鉴权</text>
+    <text x="192" y="146" text-anchor="middle" style="fill:var(--muted)">你是谁</text>
+    <text x="192" y="172" text-anchor="middle" style="fill:var(--faint)">token</text>
+    <rect x="278" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--purple);stroke-width:1.5"/>
+    <text x="324" y="118" text-anchor="middle" style="fill:var(--purple);font-weight:700">②权限</text>
+    <text x="324" y="146" text-anchor="middle" style="fill:var(--muted)">能不能做</text>
+    <text x="324" y="172" text-anchor="middle" style="fill:var(--faint)">RBAC</text>
+    <rect x="410" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="456" y="118" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">③数据库</text>
+    <text x="456" y="146" text-anchor="middle" style="fill:var(--muted)">哪个 db</text>
+    <text x="456" y="172" text-anchor="middle" style="fill:var(--faint)">路由</text>
+    <rect x="542" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/>
+    <text x="588" y="118" text-anchor="middle" style="fill:var(--amber);font-weight:700">④限流</text>
+    <text x="588" y="146" text-anchor="middle" style="fill:var(--muted)">太猛了？</text>
+    <text x="588" y="172" text-anchor="middle" style="fill:var(--faint)">配额</text>
+    <line x1="126" y1="146" x2="144" y2="146" style="stroke:var(--line);stroke-width:2"/><path d="M144,146 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+    <line x1="238" y1="146" x2="276" y2="146" style="stroke:var(--line);stroke-width:2"/><path d="M276,146 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+    <line x1="370" y1="146" x2="408" y2="146" style="stroke:var(--line);stroke-width:2"/><path d="M408,146 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+    <line x1="502" y1="146" x2="540" y2="146" style="stroke:var(--line);stroke-width:2"/><path d="M540,146 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+    <line x1="634" y1="146" x2="668" y2="146" style="stroke:var(--teal);stroke-width:2.5"/><path d="M668,146 l-11,-5 l0,10 z" style="fill:var(--teal)"/>
+    <text x="700" y="138" text-anchor="middle" style="fill:var(--teal);font-weight:700">✓ 通过</text>
+    <text x="700" y="158" text-anchor="middle" style="fill:var(--muted)">排队执行</text>
+    <path d="M588,202 l0,28" style="stroke:var(--red);stroke-width:2.5"/><path d="M588,230 l-5,-11 l10,0 z" style="fill:var(--red)"/>
+    <text x="588" y="250" text-anchor="middle" style="fill:var(--red);font-weight:700">超额 → 背压 / 挡回</text>
+    <text x="300" y="250" text-anchor="middle" style="fill:var(--muted)">任一关不过 → 直接拒绝（无状态，可多开）</text>
+  </svg>
+  <div class="figcap"><b>四道关卡，层层把门</b>：请求先过<b>鉴权 → 权限 → 数据库路由 → 限流</b>四道拦截器，<b>挡在业务逻辑之前</b>。非法、越权、超额的请求根本到不了执行；这些判断都<b>无状态</b>，所以 Proxy 可随意多开、各自把关。</div>
+</div>
+
 <p>这四关合起来，就是 Proxy 作为"门卫"的全部职责。它们<strong>挡在业务逻辑之前</strong>，意味着一个非法、越权或超额的请求，
 根本到不了排队和执行阶段就被拦下——既省后端算力，也守住了安全与稳定的底线。注意这些都是<strong>无状态的判断</strong>（查的是元数据与配额），
 所以多开几个 Proxy 实例，每个都能独立完成把关，不需要彼此同步。</p>
@@ -486,6 +521,33 @@ Proxy 把这些复杂度<strong>全部封装</strong>在身后。于是后端怎
   Proxy 关心的是<strong>顺序与持久化</strong>——写成功即返回，真正落盘在后台进行。这正是第 7 课"日志即数据"的写侧入口。</p></div>
   <div class="col"><h4>DQL 查询路径</h4><p>search/query 被<strong>扇出（fan-out）</strong>到负责各个分片的 QueryNode，每个节点在自己内存里的索引上算出局部 topK，
   再把结果<strong>汇总回 Proxy 归并（reduce）</strong>成全局 topK。Proxy 关心的是<strong>并发与延迟</strong>——慢的那个分片决定整体快慢。</p></div>
+</div>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Proxy 把写和读分成两条路：写沿 WAL 顺序持久化，读扇出到各分片再归并成全局 topK">
+    <rect x="24" y="116" width="116" height="64" rx="11" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="82" y="144" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">Proxy</text>
+    <text x="82" y="164" text-anchor="middle" style="fill:var(--muted)">分派</text>
+    <path d="M140,130 C170,130 172,80 200,80" style="fill:none;stroke:var(--amber);stroke-width:2.5"/><path d="M200,80 l-12,-5 l2,11 z" style="fill:var(--amber)"/>
+    <rect x="202" y="58" width="160" height="44" rx="9" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="282" y="85" text-anchor="middle" style="fill:var(--amber);font-weight:700">WAL / MQ · 按 vchannel</text>
+    <line x1="362" y1="80" x2="398" y2="80" style="stroke:var(--line);stroke-width:2"/><path d="M398,80 l-11,-5 l0,10 z" style="fill:var(--line)"/>
+    <rect x="400" y="58" width="180" height="44" rx="9" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="490" y="85" text-anchor="middle" style="fill:var(--ink)">StreamingNode/DataNode 落盘</text>
+    <text x="600" y="76" style="fill:var(--amber);font-weight:700">写</text><text x="600" y="94" style="fill:var(--muted)">顺序+持久</text>
+    <path d="M140,166 C170,166 173,216 196,216" style="fill:none;stroke:var(--blue);stroke-width:2.5"/>
+    <path d="M196,196 l-2,0 M196,234 l-2,0" style="stroke:none"/>
+    <line x1="178" y1="216" x2="200" y2="196" style="stroke:var(--blue);stroke-width:1.5"/><path d="M200,196 l-11,2 l5,7 z" style="fill:var(--blue)"/>
+    <line x1="178" y1="216" x2="200" y2="252" style="stroke:var(--blue);stroke-width:1.5"/><path d="M200,252 l-6,-9 l-3,10 z" style="fill:var(--blue)"/>
+    <rect x="200" y="182" width="150" height="28" rx="7" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="275" y="201" text-anchor="middle" style="fill:var(--ink)">QueryNode 分片①</text>
+    <rect x="200" y="216" width="150" height="28" rx="7" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="275" y="235" text-anchor="middle" style="fill:var(--ink)">QueryNode 分片②</text>
+    <rect x="200" y="250" width="150" height="28" rx="7" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="275" y="269" text-anchor="middle" style="fill:var(--ink)">QueryNode 分片③</text>
+    <line x1="350" y1="196" x2="430" y2="222" style="stroke:var(--blue);stroke-width:1.5"/>
+    <line x1="350" y1="230" x2="430" y2="228" style="stroke:var(--blue);stroke-width:1.5"/>
+    <line x1="350" y1="264" x2="430" y2="234" style="stroke:var(--blue);stroke-width:1.5"/>
+    <rect x="432" y="200" width="150" height="56" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="507" y="224" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">归并 reduce</text><text x="507" y="244" text-anchor="middle" style="fill:var(--muted)">局部 topK → 全局</text>
+    <line x1="582" y1="228" x2="616" y2="228" style="stroke:var(--accent);stroke-width:2"/><path d="M616,228 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <text x="650" y="222" style="fill:var(--blue);font-weight:700">读</text><text x="650" y="240" style="fill:var(--muted)">并发+延迟</text>
+  </svg>
+  <div class="figcap"><b>一个 Proxy，两条路</b>：<b>写</b>沿 <span class="mono">WAL</span> <b>顺序、持久</b>地落下（写成功即返回，后台落盘）；<b>读</b>则<b>扇出</b>到各分片 QueryNode 各算局部 topK，再<b>归并</b>成全局 topK——<b>最慢的分片决定整体延迟</b>。</div>
 </div>
 
 <p>这条"扇出—归并"是分布式检索的核心难点：单个分片只看见局部数据，必须把它们的局部最优<strong>正确地合并</strong>成全局最优，
@@ -632,6 +694,41 @@ a set of middlewares vet the request one by one. Milvus splits them into clear, 
   <li><strong>Rate limit</strong>: are you hammering us today? <span class="inline">rate_limit_interceptor.go</span> throttles or blocks writes/queries by quota to protect the backend.</li>
 </ul>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="A request passes four interceptors in order — auth, privilege, db routing, rate-limit; failing any one stops it; only after passing does it reach queue and execution">
+    <rect x="22" y="120" width="104" height="52" rx="9" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <text x="74" y="143" text-anchor="middle" style="fill:var(--ink)">client</text>
+    <text x="74" y="161" text-anchor="middle" style="fill:var(--muted)">request</text>
+    <rect x="146" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/>
+    <text x="192" y="118" text-anchor="middle" style="fill:var(--blue);font-weight:700">① auth</text>
+    <text x="192" y="146" text-anchor="middle" style="fill:var(--muted)">who are you</text>
+    <text x="192" y="172" text-anchor="middle" style="fill:var(--faint)">token</text>
+    <rect x="278" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--purple);stroke-width:1.5"/>
+    <text x="324" y="118" text-anchor="middle" style="fill:var(--purple);font-weight:700">② privilege</text>
+    <text x="324" y="146" text-anchor="middle" style="fill:var(--muted)">allowed?</text>
+    <text x="324" y="172" text-anchor="middle" style="fill:var(--faint)">RBAC</text>
+    <rect x="410" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="456" y="118" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">③ database</text>
+    <text x="456" y="146" text-anchor="middle" style="fill:var(--muted)">which db</text>
+    <text x="456" y="172" text-anchor="middle" style="fill:var(--faint)">route</text>
+    <rect x="542" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/>
+    <text x="588" y="118" text-anchor="middle" style="fill:var(--amber);font-weight:700">④ rate-limit</text>
+    <text x="588" y="146" text-anchor="middle" style="fill:var(--muted)">too much?</text>
+    <text x="588" y="172" text-anchor="middle" style="fill:var(--faint)">quota</text>
+    <line x1="126" y1="146" x2="144" y2="146" style="stroke:var(--line);stroke-width:2"/><path d="M144,146 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+    <line x1="238" y1="146" x2="276" y2="146" style="stroke:var(--line);stroke-width:2"/><path d="M276,146 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+    <line x1="370" y1="146" x2="408" y2="146" style="stroke:var(--line);stroke-width:2"/><path d="M408,146 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+    <line x1="502" y1="146" x2="540" y2="146" style="stroke:var(--line);stroke-width:2"/><path d="M540,146 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+    <line x1="634" y1="146" x2="668" y2="146" style="stroke:var(--teal);stroke-width:2.5"/><path d="M668,146 l-11,-5 l0,10 z" style="fill:var(--teal)"/>
+    <text x="700" y="138" text-anchor="middle" style="fill:var(--teal);font-weight:700">✓ pass</text>
+    <text x="700" y="158" text-anchor="middle" style="fill:var(--muted)">queue &amp; run</text>
+    <path d="M588,202 l0,28" style="stroke:var(--red);stroke-width:2.5"/><path d="M588,230 l-5,-11 l10,0 z" style="fill:var(--red)"/>
+    <text x="588" y="250" text-anchor="middle" style="fill:var(--red);font-weight:700">over quota → backpressure</text>
+    <text x="300" y="250" text-anchor="middle" style="fill:var(--muted)">fail any gate → rejected (stateless, scale out)</text>
+  </svg>
+  <div class="figcap"><b>Four gates, layered doorkeeping</b>: a request passes <b>auth → privilege → db routing → rate-limit</b> — all <b>before business logic</b>. Illegal, unauthorized, or over-quota requests never reach execution; the checks are <b>stateless</b>, so Proxy can scale out and each instance vets independently.</div>
+</div>
+
 <p>Together these four gates are the Proxy's full "doorkeeper" duty. Because they sit <strong>before business logic</strong>, an illegal, unauthorized, or over-quota request is stopped
 before it ever reaches queueing and execution — saving backend compute and holding the line on security and stability. Note these are all <strong>stateless judgments</strong> (querying metadata and quotas),
 so spinning up more Proxy instances lets each one vet independently, with no need to sync with the others.</p>
@@ -726,6 +823,32 @@ ordering on RootCoord's TSO, fan-out and reduce on the shard distribution QueryC
   The Proxy cares about <strong>order and durability</strong> — once the write succeeds it returns; actual persistence happens in the background. This is the write-side entrance to Lesson 7's "log-as-data."</p></div>
   <div class="col"><h4>DQL query path</h4><p>search/query is <strong>fanned out</strong> to the QueryNodes serving each shard; each node computes a local topK on its in-memory index,
   then results are <strong>gathered back to the Proxy and reduced</strong> into a global topK. The Proxy cares about <strong>concurrency and latency</strong> — the slowest shard sets the overall speed.</p></div>
+</div>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Proxy splits writes and reads into two paths: writes go to the WAL for ordered durability, reads fan out to shards and reduce into a global topK">
+    <rect x="24" y="116" width="116" height="64" rx="11" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="82" y="144" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">Proxy</text>
+    <text x="82" y="164" text-anchor="middle" style="fill:var(--muted)">dispatch</text>
+    <path d="M140,130 C170,130 172,80 200,80" style="fill:none;stroke:var(--amber);stroke-width:2.5"/><path d="M200,80 l-12,-5 l2,11 z" style="fill:var(--amber)"/>
+    <rect x="202" y="58" width="160" height="44" rx="9" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="282" y="85" text-anchor="middle" style="fill:var(--amber);font-weight:700">WAL / MQ · by vchannel</text>
+    <line x1="362" y1="80" x2="398" y2="80" style="stroke:var(--line);stroke-width:2"/><path d="M398,80 l-11,-5 l0,10 z" style="fill:var(--line)"/>
+    <rect x="400" y="58" width="180" height="44" rx="9" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="490" y="85" text-anchor="middle" style="fill:var(--ink)">StreamingNode/DataNode flush</text>
+    <text x="600" y="76" style="fill:var(--amber);font-weight:700">write</text><text x="600" y="94" style="fill:var(--muted)">ordered+durable</text>
+    <path d="M140,166 C170,166 173,216 196,216" style="fill:none;stroke:var(--blue);stroke-width:2.5"/>
+    <line x1="178" y1="216" x2="200" y2="196" style="stroke:var(--blue);stroke-width:1.5"/><path d="M200,196 l-11,2 l5,7 z" style="fill:var(--blue)"/>
+    <line x1="178" y1="216" x2="200" y2="252" style="stroke:var(--blue);stroke-width:1.5"/><path d="M200,252 l-6,-9 l-3,10 z" style="fill:var(--blue)"/>
+    <rect x="200" y="182" width="150" height="28" rx="7" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="275" y="201" text-anchor="middle" style="fill:var(--ink)">QueryNode shard ①</text>
+    <rect x="200" y="216" width="150" height="28" rx="7" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="275" y="235" text-anchor="middle" style="fill:var(--ink)">QueryNode shard ②</text>
+    <rect x="200" y="250" width="150" height="28" rx="7" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="275" y="269" text-anchor="middle" style="fill:var(--ink)">QueryNode shard ③</text>
+    <line x1="350" y1="196" x2="430" y2="222" style="stroke:var(--blue);stroke-width:1.5"/>
+    <line x1="350" y1="230" x2="430" y2="228" style="stroke:var(--blue);stroke-width:1.5"/>
+    <line x1="350" y1="264" x2="430" y2="234" style="stroke:var(--blue);stroke-width:1.5"/>
+    <rect x="432" y="200" width="150" height="56" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="507" y="224" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">reduce</text><text x="507" y="244" text-anchor="middle" style="fill:var(--muted)">local topK → global</text>
+    <line x1="582" y1="228" x2="616" y2="228" style="stroke:var(--accent);stroke-width:2"/><path d="M616,228 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <text x="650" y="222" style="fill:var(--blue);font-weight:700">read</text><text x="650" y="240" style="fill:var(--muted)">concurrency+latency</text>
+  </svg>
+  <div class="figcap"><b>One Proxy, two paths</b>: a <b>write</b> lands on the <span class="mono">WAL</span> <b>in order, durably</b> (returns on success; flush happens in the background); a <b>read</b> <b>fans out</b> to shard QueryNodes for local topKs, then <b>reduces</b> them into a global topK — <b>the slowest shard sets the latency</b>.</div>
 </div>
 
 <p>This "fan-out / reduce" is the core difficulty of distributed search: each shard sees only local data, and their local optima must be <strong>correctly merged</strong> into the global optimum,

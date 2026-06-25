@@ -1313,9 +1313,9 @@ constants; the three everyday rulers are <span class="inline">L2</span>, <span c
     <path d="M162,213 A60,60 0 0 1 169,232" style="fill:none;stroke:var(--purple);stroke-width:2.5"/>
     <text x="146" y="206" style="fill:var(--purple);font-weight:700">θ</text>
     <text x="78" y="260" style="fill:var(--faint)">O</text>
-    <rect x="470" y="80" width="16" height="16" rx="3" style="fill:var(--amber)"/><text x="496" y="93" style="fill:var(--ink)">L2 (Euclidean) = straight-line gap · smaller = closer</text>
-    <rect x="470" y="120" width="16" height="16" rx="3" style="fill:var(--purple)"/><text x="496" y="133" style="fill:var(--ink)">COSINE = angle θ · direction only, ignores length</text>
-    <rect x="470" y="160" width="16" height="16" rx="3" style="fill:var(--teal)"/><text x="496" y="173" style="fill:var(--ink)">IP = |u|·|v|·cos θ · direction + magnitude both count</text>
+    <rect x="452" y="80" width="15" height="15" rx="3" style="fill:var(--amber)"/><text x="476" y="92" style="fill:var(--ink);font-size:12px">L2 = straight-line gap · smaller = closer</text>
+    <rect x="452" y="120" width="15" height="15" rx="3" style="fill:var(--purple)"/><text x="476" y="132" style="fill:var(--ink);font-size:12px">COSINE = angle θ · direction only</text>
+    <rect x="452" y="160" width="15" height="15" rx="3" style="fill:var(--teal)"/><text x="476" y="172" style="fill:var(--ink);font-size:12px">IP = |u|·|v|·cos θ · direction + magnitude</text>
   </svg>
   <div class="figcap"><b>Three rulers in one picture</b>: treat vectors as arrows from the origin — <b>L2</b> measures the straight-line gap between the two <b>arrow tips</b>, <b>COSINE</b> measures only the <b>angle θ</b>, and <b>IP</b> folds <b>direction and magnitude</b> together.</div>
 </div>
@@ -2476,17 +2476,17 @@ After flushing, each field corresponds to one <span class="inline">binlog</span>
     <line x1="300" y1="124" x2="340" y2="124" style="stroke:var(--line);stroke-width:2"/><path d="M340,124 l-11,-5 l0,10 z" style="fill:var(--line)"/>
     <text x="320" y="114" text-anchor="middle" style="fill:var(--muted)">by field</text>
     <text x="352" y="52" style="fill:var(--muted)">physical: each field contiguous · one binlog each</text>
-    <text x="354" y="86" style="fill:var(--blue);font-weight:700">id col</text>
+    <text x="354" y="86" style="fill:var(--blue);font-weight:700">id</text>
     <rect x="404" y="68" width="34" height="28" rx="5" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="421" y="87" text-anchor="middle" class="mono" style="fill:var(--blue)">1</text>
     <rect x="440" y="68" width="34" height="28" rx="5" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="457" y="87" text-anchor="middle" class="mono" style="fill:var(--blue)">2</text>
     <rect x="476" y="68" width="34" height="28" rx="5" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="493" y="87" text-anchor="middle" class="mono" style="fill:var(--blue)">3</text>
     <text x="528" y="86" style="fill:var(--muted)">→ 1 binlog</text>
-    <text x="354" y="142" style="fill:var(--accent-ink);font-weight:700">vector col</text>
+    <text x="354" y="142" style="fill:var(--accent-ink);font-weight:700">vector</text>
     <rect x="404" y="124" width="34" height="28" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="421" y="143" text-anchor="middle" style="fill:var(--accent-ink)">v</text>
     <rect x="440" y="124" width="34" height="28" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="457" y="143" text-anchor="middle" style="fill:var(--accent-ink)">v</text>
     <rect x="476" y="124" width="34" height="28" rx="5" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="493" y="143" text-anchor="middle" style="fill:var(--accent-ink)">v</text>
     <text x="528" y="142" style="fill:var(--muted)">→ 1 binlog</text>
-    <text x="354" y="198" style="fill:var(--amber);font-weight:700">price col</text>
+    <text x="354" y="198" style="fill:var(--amber);font-weight:700">price</text>
     <rect x="404" y="180" width="44" height="28" rx="5" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="426" y="199" text-anchor="middle" class="mono" style="fill:var(--amber)">9.9</text>
     <rect x="450" y="180" width="44" height="28" rx="5" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="472" y="199" text-anchor="middle" class="mono" style="fill:var(--amber)">3.5</text>
     <rect x="496" y="180" width="44" height="28" rx="5" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="518" y="199" text-anchor="middle" class="mono" style="fill:var(--amber)">7.0</text>
@@ -2534,7 +2534,7 @@ Segment, column, log, and index now close the loop.</p>
     <path d="M576,126 l12,0 M586,126 l-9,-4 l0,8 z" style="stroke:var(--line);fill:var(--line);stroke-width:2"/>
     <path d="M160,196 L718,196" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:5 4"/>
     <path d="M160,196 l0,-8 M718,196 l0,-8" style="stroke:var(--teal);stroke-width:1.5"/>
-    <text x="439" y="220" text-anchor="middle" style="fill:var(--teal);font-weight:700">in the log = landed · a query scans Growing + Sealed together, then merges</text>
+    <text x="439" y="220" text-anchor="middle" style="fill:var(--teal);font-weight:700">in the log = landed · a query scans Growing + all historical, then merges</text>
     <text x="439" y="250" text-anchor="middle" style="fill:var(--muted)">after compaction/delete → Dropped (✗, awaiting GC)</text>
   </svg>
   <div class="figcap"><b>The life of one row</b>: the moment it's in the <b>WAL</b> it has "landed". It is searchable instantly in the in-memory <b>Growing</b> segment, then sealed, flushed to a <b>binlog in object storage</b>, and <b>indexed</b> for efficient search — a query <b>always scans both Growing (newest) and Sealed (historical)</b>, which is why "just written" is immediately searchable.</div>
@@ -3072,6 +3072,30 @@ the interfaces defined in <span class="inline">types.go</span>, or sense each ot
 component independently, and as long as it still honors the interface contract and renews its session on time, the whole system keeps running. As you drill into each coordinator later, re-read it through these three disciplines —
 they snap the swirl of details back onto the "decide vs execute" through-line.</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="The control plane decides who does what; the data plane executes; user-data throughput flows only within the data plane and never crosses into the control plane">
+    <rect x="20" y="36" width="720" height="86" rx="12" style="fill:var(--accent-soft);opacity:.22"/>
+    <text x="36" y="58" style="fill:var(--accent-ink);font-weight:700">control plane · decides who does what (low frequency)</text>
+    <rect x="300" y="64" width="190" height="48" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="395" y="93" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">MixCoord</text>
+    <rect x="520" y="64" width="150" height="48" rx="10" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="595" y="93" text-anchor="middle" style="fill:var(--blue);font-weight:700">etcd · truth</text>
+    <line x1="490" y1="88" x2="518" y2="88" style="stroke:var(--line);stroke-width:1.5;stroke-dasharray:3 3"/>
+    <rect x="20" y="182" width="720" height="96" rx="12" style="fill:var(--teal-soft);opacity:.20"/>
+    <text x="36" y="204" style="fill:var(--teal);font-weight:700">data plane · does the work (high-frequency throughput)</text>
+    <rect x="60" y="214" width="160" height="50" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="140" y="244" text-anchor="middle" style="fill:var(--ink)">Proxy</text>
+    <rect x="300" y="214" width="160" height="50" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="380" y="244" text-anchor="middle" style="fill:var(--ink)">QueryNode</text>
+    <rect x="540" y="214" width="160" height="50" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="620" y="244" text-anchor="middle" style="fill:var(--ink)">DataNode</text>
+    <line x1="220" y1="231" x2="296" y2="231" style="stroke:var(--teal);stroke-width:4"/><path d="M296,231 l-12,-6 l0,12 z" style="fill:var(--teal)"/>
+    <line x1="220" y1="251" x2="536" y2="251" style="stroke:var(--teal);stroke-width:4"/><path d="M536,251 l-12,-6 l0,12 z" style="fill:var(--teal)"/>
+    <text x="474" y="206" style="fill:var(--teal)">user data: search / insert bytes</text>
+    <line x1="395" y1="112" x2="395" y2="178" style="stroke:var(--accent);stroke-width:2;stroke-dasharray:5 4"/><path d="M395,178 l-5,-11 l10,0 z" style="fill:var(--accent)"/>
+    <text x="406" y="152" style="fill:var(--accent-ink);font-weight:700">decide · schedule (low freq)</text>
+    <line x1="150" y1="206" x2="150" y2="156" style="stroke:var(--red);stroke-width:3"/><path d="M150,156 l-6,11 l12,0 z" style="fill:var(--red)"/>
+    <path d="M132,150 l24,18 M156,150 l-24,18" style="stroke:var(--red);stroke-width:3"/>
+    <text x="168" y="150" style="fill:var(--red);font-weight:700">throughput ✗ never hits control</text>
+  </svg>
+  <div class="figcap"><b>Decide vs execute</b>: the <b>control plane</b> (coordinators + etcd) only decides at low-frequency moments and holds the <b>authoritative metadata</b>; the <b>data plane</b> (nodes) absorbs high-frequency <b>user-data throughput</b>. Two hard rules: <b>throughput never crosses into control</b>, and cross-plane talk goes only through <b>interfaces and etcd</b>.</div>
+</div>
+
 <div class="card macro">
   <div class="tag">🌍 The big picture</div>
   In one line: <strong>the control plane (coordinators) decides who does what → the data plane (nodes) actually executes → types.go freezes the contract in interfaces → MixCoord packs the three coordinators into one process → etcd sessions let the two planes discover each other</strong>.
@@ -3192,6 +3216,41 @@ a set of middlewares vet the request one by one. Milvus splits them into clear, 
   <li><strong>Rate limit</strong>: are you hammering us today? <span class="inline">rate_limit_interceptor.go</span> throttles or blocks writes/queries by quota to protect the backend.</li>
 </ul>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="A request passes four interceptors in order — auth, privilege, db routing, rate-limit; failing any one stops it; only after passing does it reach queue and execution">
+    <rect x="22" y="120" width="104" height="52" rx="9" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <text x="74" y="143" text-anchor="middle" style="fill:var(--ink)">client</text>
+    <text x="74" y="161" text-anchor="middle" style="fill:var(--muted)">request</text>
+    <rect x="146" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/>
+    <text x="192" y="118" text-anchor="middle" style="fill:var(--blue);font-weight:700">① auth</text>
+    <text x="192" y="146" text-anchor="middle" style="fill:var(--muted)">who are you</text>
+    <text x="192" y="172" text-anchor="middle" style="fill:var(--faint)">token</text>
+    <rect x="278" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--purple);stroke-width:1.5"/>
+    <text x="324" y="118" text-anchor="middle" style="fill:var(--purple);font-weight:700">② privilege</text>
+    <text x="324" y="146" text-anchor="middle" style="fill:var(--muted)">allowed?</text>
+    <text x="324" y="172" text-anchor="middle" style="fill:var(--faint)">RBAC</text>
+    <rect x="410" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="456" y="118" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">③ database</text>
+    <text x="456" y="146" text-anchor="middle" style="fill:var(--muted)">which db</text>
+    <text x="456" y="172" text-anchor="middle" style="fill:var(--faint)">route</text>
+    <rect x="542" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/>
+    <text x="588" y="118" text-anchor="middle" style="fill:var(--amber);font-weight:700">④ rate-limit</text>
+    <text x="588" y="146" text-anchor="middle" style="fill:var(--muted)">too much?</text>
+    <text x="588" y="172" text-anchor="middle" style="fill:var(--faint)">quota</text>
+    <line x1="126" y1="146" x2="144" y2="146" style="stroke:var(--line);stroke-width:2"/><path d="M144,146 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+    <line x1="238" y1="146" x2="276" y2="146" style="stroke:var(--line);stroke-width:2"/><path d="M276,146 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+    <line x1="370" y1="146" x2="408" y2="146" style="stroke:var(--line);stroke-width:2"/><path d="M408,146 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+    <line x1="502" y1="146" x2="540" y2="146" style="stroke:var(--line);stroke-width:2"/><path d="M540,146 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+    <line x1="634" y1="146" x2="668" y2="146" style="stroke:var(--teal);stroke-width:2.5"/><path d="M668,146 l-11,-5 l0,10 z" style="fill:var(--teal)"/>
+    <text x="700" y="138" text-anchor="middle" style="fill:var(--teal);font-weight:700">✓ pass</text>
+    <text x="700" y="158" text-anchor="middle" style="fill:var(--muted)">queue &amp; run</text>
+    <path d="M588,202 l0,28" style="stroke:var(--red);stroke-width:2.5"/><path d="M588,230 l-5,-11 l10,0 z" style="fill:var(--red)"/>
+    <text x="588" y="250" text-anchor="middle" style="fill:var(--red);font-weight:700">over quota → backpressure</text>
+    <text x="300" y="250" text-anchor="middle" style="fill:var(--muted)">fail any gate → rejected (stateless, scale out)</text>
+  </svg>
+  <div class="figcap"><b>Four gates, layered doorkeeping</b>: a request passes <b>auth → privilege → db routing → rate-limit</b> — all <b>before business logic</b>. Illegal, unauthorized, or over-quota requests never reach execution; the checks are <b>stateless</b>, so Proxy can scale out and each instance vets independently.</div>
+</div>
+
 <p>Together these four gates are the Proxy's full "doorkeeper" duty. Because they sit <strong>before business logic</strong>, an illegal, unauthorized, or over-quota request is stopped
 before it ever reaches queueing and execution — saving backend compute and holding the line on security and stability. Note these are all <strong>stateless judgments</strong> (querying metadata and quotas),
 so spinning up more Proxy instances lets each one vet independently, with no need to sync with the others.</p>
@@ -3286,6 +3345,32 @@ ordering on RootCoord's TSO, fan-out and reduce on the shard distribution QueryC
   The Proxy cares about <strong>order and durability</strong> — once the write succeeds it returns; actual persistence happens in the background. This is the write-side entrance to Lesson 7's "log-as-data."</p></div>
   <div class="col"><h4>DQL query path</h4><p>search/query is <strong>fanned out</strong> to the QueryNodes serving each shard; each node computes a local topK on its in-memory index,
   then results are <strong>gathered back to the Proxy and reduced</strong> into a global topK. The Proxy cares about <strong>concurrency and latency</strong> — the slowest shard sets the overall speed.</p></div>
+</div>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Proxy splits writes and reads into two paths: writes go to the WAL for ordered durability, reads fan out to shards and reduce into a global topK">
+    <rect x="24" y="116" width="116" height="64" rx="11" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="82" y="144" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">Proxy</text>
+    <text x="82" y="164" text-anchor="middle" style="fill:var(--muted)">dispatch</text>
+    <path d="M140,130 C170,130 172,80 200,80" style="fill:none;stroke:var(--amber);stroke-width:2.5"/><path d="M200,80 l-12,-5 l2,11 z" style="fill:var(--amber)"/>
+    <rect x="202" y="58" width="160" height="44" rx="9" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="282" y="85" text-anchor="middle" style="fill:var(--amber);font-weight:700">WAL / MQ · by vchannel</text>
+    <line x1="362" y1="80" x2="398" y2="80" style="stroke:var(--line);stroke-width:2"/><path d="M398,80 l-11,-5 l0,10 z" style="fill:var(--line)"/>
+    <rect x="400" y="58" width="180" height="44" rx="9" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="490" y="85" text-anchor="middle" style="fill:var(--ink)">StreamingNode/DataNode flush</text>
+    <text x="600" y="76" style="fill:var(--amber);font-weight:700">write</text><text x="600" y="94" style="fill:var(--muted)">ordered+durable</text>
+    <path d="M140,166 C170,166 173,216 196,216" style="fill:none;stroke:var(--blue);stroke-width:2.5"/>
+    <line x1="178" y1="216" x2="200" y2="196" style="stroke:var(--blue);stroke-width:1.5"/><path d="M200,196 l-11,2 l5,7 z" style="fill:var(--blue)"/>
+    <line x1="178" y1="216" x2="200" y2="252" style="stroke:var(--blue);stroke-width:1.5"/><path d="M200,252 l-6,-9 l-3,10 z" style="fill:var(--blue)"/>
+    <rect x="200" y="182" width="150" height="28" rx="7" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="275" y="201" text-anchor="middle" style="fill:var(--ink)">QueryNode shard ①</text>
+    <rect x="200" y="216" width="150" height="28" rx="7" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="275" y="235" text-anchor="middle" style="fill:var(--ink)">QueryNode shard ②</text>
+    <rect x="200" y="250" width="150" height="28" rx="7" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="275" y="269" text-anchor="middle" style="fill:var(--ink)">QueryNode shard ③</text>
+    <line x1="350" y1="196" x2="430" y2="222" style="stroke:var(--blue);stroke-width:1.5"/>
+    <line x1="350" y1="230" x2="430" y2="228" style="stroke:var(--blue);stroke-width:1.5"/>
+    <line x1="350" y1="264" x2="430" y2="234" style="stroke:var(--blue);stroke-width:1.5"/>
+    <rect x="432" y="200" width="150" height="56" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="507" y="224" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">reduce</text><text x="507" y="244" text-anchor="middle" style="fill:var(--muted)">local topK → global</text>
+    <line x1="582" y1="228" x2="616" y2="228" style="stroke:var(--accent);stroke-width:2"/><path d="M616,228 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <text x="650" y="222" style="fill:var(--blue);font-weight:700">read</text><text x="650" y="240" style="fill:var(--muted)">concurrency+latency</text>
+  </svg>
+  <div class="figcap"><b>One Proxy, two paths</b>: a <b>write</b> lands on the <span class="mono">WAL</span> <b>in order, durably</b> (returns on success; flush happens in the background); a <b>read</b> <b>fans out</b> to shard QueryNodes for local topKs, then <b>reduces</b> them into a global topK — <b>the slowest shard sets the latency</b>.</div>
 </div>
 
 <p>This "fan-out / reduce" is the core difficulty of distributed search: each shard sees only local data, and their local optima must be <strong>correctly merged</strong> into the global optimum,
@@ -3460,6 +3545,36 @@ two clocks each issuing their own can never guarantee global monotonicity.</p>
 and only the periodic mark advance touches etcd. In other words, the slow step is amortized down to a very low frequency, while the fast step carries nearly all the traffic. This is a classic distributed-systems trade-off — "<strong>batch the expensive operation, make the cheap operation high-frequency</strong>" —
 and you'll see the same pattern again when we cover segment allocation and ID allocation. Grasp TSO and you hold the key to reading Milvus's consistency model.</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="TSO is the single time source: it issues globally unique, monotonically increasing timestamps to many Proxies and persists only a high-water mark to etcd, so it never regresses after a crash">
+    <rect x="280" y="70" width="200" height="76" rx="12" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="380" y="98" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">RootCoord · TSO</text>
+    <text x="380" y="122" text-anchor="middle" style="fill:var(--muted)">globally unique · monotonic</text>
+    <rect x="40" y="60" width="120" height="36" rx="8" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="100" y="83" text-anchor="middle" style="fill:var(--ink)">Proxy A</text>
+    <rect x="40" y="112" width="120" height="36" rx="8" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="100" y="135" text-anchor="middle" style="fill:var(--ink)">Proxy B</text>
+    <rect x="40" y="164" width="120" height="36" rx="8" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="100" y="187" text-anchor="middle" style="fill:var(--ink)">Proxy C</text>
+    <line x1="278" y1="96" x2="164" y2="78" style="stroke:var(--accent);stroke-width:1.5"/><path d="M164,78 l11,-2 l-3,-9 z" style="fill:var(--accent)"/>
+    <text x="208" y="74" class="mono" style="fill:var(--accent-ink)">ts=102</text>
+    <line x1="278" y1="110" x2="164" y2="130" style="stroke:var(--accent);stroke-width:1.5"/><path d="M164,130 l11,2 l-4,9 z" style="fill:var(--accent)"/>
+    <text x="208" y="118" class="mono" style="fill:var(--accent-ink)">ts=103</text>
+    <line x1="278" y1="124" x2="164" y2="182" style="stroke:var(--accent);stroke-width:1.5"/><path d="M164,182 l10,3 l1,-11 z" style="fill:var(--accent)"/>
+    <text x="208" y="162" class="mono" style="fill:var(--accent-ink)">ts=104</text>
+    <rect x="560" y="74" width="172" height="68" rx="10" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/>
+    <text x="646" y="100" text-anchor="middle" style="fill:var(--blue);font-weight:700">etcd · high-water</text>
+    <text x="646" y="122" text-anchor="middle" class="mono" style="fill:var(--muted)">high-water=200</text>
+    <line x1="480" y1="104" x2="558" y2="104" style="stroke:var(--blue);stroke-width:1.5;stroke-dasharray:5 4"/><path d="M558,104 l-11,-5 l0,10 z" style="fill:var(--blue)"/>
+    <text x="486" y="96" style="fill:var(--muted)">persist periodically</text>
+    <text x="40" y="226" style="fill:var(--muted)">issued timestamps (only increase):</text>
+    <rect x="288" y="208" width="54" height="30" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="315" y="228" text-anchor="middle" class="mono" style="fill:var(--muted)">100</text>
+    <rect x="348" y="208" width="54" height="30" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="375" y="228" text-anchor="middle" class="mono" style="fill:var(--muted)">101</text>
+    <rect x="408" y="208" width="54" height="30" rx="6" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="435" y="228" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">102</text>
+    <rect x="468" y="208" width="54" height="30" rx="6" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="495" y="228" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">103</text>
+    <rect x="528" y="208" width="54" height="30" rx="6" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="555" y="228" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">104</text>
+    <text x="596" y="228" style="fill:var(--teal);font-weight:700">→ never reused</text>
+  </svg>
+  <div class="figcap"><b>One cluster, one clock</b>: TSO hands many concurrently-requesting Proxies <b>globally unique, monotonically increasing</b> timestamps (mostly an instant in-memory op); it persists only a <b>high-water mark</b> to etcd — so after a crash it restarts <b>≥ the largest already issued, never regressing</b>. Comparing timestamps = ordering events globally.</div>
+</div>
+
 <div class="timeline">
   <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t1</span><span class="tl-c">Proxy enqueues write A, gets timestamp ts=100 from RootCoord</span></div>
   <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t2</span><span class="tl-c">Another Proxy writes B, gets ts=101 (100 is never reissued)</span></div>
@@ -3632,6 +3747,30 @@ Understand this transition and you understand the whole process of data "going f
   <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">Flushing</span><span class="tl-c">flushing: being written into binlog files persisted to object storage</span></div>
   <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">Flushed</span><span class="tl-c">flushed: becomes an <strong>immutable</strong> persistent segment, loadable, indexable, mergeable</span></div>
   <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">Dropped</span><span class="tl-c">dropped: merged away by compaction or deleted, awaiting GC to clean its files</span></div>
+</div>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="A segment's state machine: Growing to Sealed to Flushing to Flushed to Dropped, each step driven by a trigger; from Flushed on it is immutable and durable">
+    <text x="139" y="72" text-anchor="middle" style="fill:var(--muted)">full / timeout</text>
+    <text x="273" y="72" text-anchor="middle" style="fill:var(--muted)">flush</text>
+    <text x="407" y="72" text-anchor="middle" style="fill:var(--muted)">to object store</text>
+    <text x="541" y="72" text-anchor="middle" style="fill:var(--muted)">compaction</text>
+    <rect x="20" y="80" width="104" height="64" rx="10" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="72" y="106" text-anchor="middle" style="fill:var(--blue);font-weight:700">Growing</text><text x="72" y="128" text-anchor="middle" style="fill:var(--muted)">memory·mutable</text>
+    <rect x="154" y="80" width="104" height="64" rx="10" style="fill:var(--panel);stroke:var(--purple);stroke-width:1.5"/><text x="206" y="106" text-anchor="middle" style="fill:var(--purple);font-weight:700">Sealed</text><text x="206" y="128" text-anchor="middle" style="fill:var(--muted)">read-only</text>
+    <rect x="288" y="80" width="104" height="64" rx="10" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="340" y="106" text-anchor="middle" style="fill:var(--amber);font-weight:700">Flushing</text><text x="340" y="128" text-anchor="middle" style="fill:var(--muted)">writing binlog</text>
+    <rect x="422" y="80" width="104" height="64" rx="10" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:2"/><text x="474" y="106" text-anchor="middle" style="fill:var(--teal);font-weight:700">★ Flushed</text><text x="474" y="128" text-anchor="middle" style="fill:var(--muted)">immutable·durable</text>
+    <rect x="556" y="80" width="104" height="64" rx="10" style="fill:var(--panel-2);stroke:var(--line)"/><text x="608" y="106" text-anchor="middle" style="fill:var(--muted);font-weight:700">Dropped</text><text x="608" y="128" text-anchor="middle" style="fill:var(--faint)">awaiting GC</text>
+    <line x1="124" y1="112" x2="152" y2="112" style="stroke:var(--line);stroke-width:2"/><path d="M152,112 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+    <line x1="258" y1="112" x2="286" y2="112" style="stroke:var(--line);stroke-width:2"/><path d="M286,112 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+    <line x1="392" y1="112" x2="420" y2="112" style="stroke:var(--line);stroke-width:2"/><path d="M420,112 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+    <line x1="526" y1="112" x2="554" y2="112" style="stroke:var(--line);stroke-width:2"/><path d="M554,112 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+    <path d="M20,166 L258,166" style="stroke:var(--blue);stroke-width:1.5"/><path d="M20,166 l0,-8 M258,166 l0,-8" style="stroke:var(--blue);stroke-width:1.5"/>
+    <text x="139" y="186" text-anchor="middle" style="fill:var(--blue)">memory: node dies → may be lost</text>
+    <path d="M422,166 L526,166" style="stroke:var(--teal);stroke-width:1.5"/><path d="M422,166 l0,-8 M526,166 l0,-8" style="stroke:var(--teal);stroke-width:1.5"/>
+    <text x="474" y="186" text-anchor="middle" style="fill:var(--teal)">object store: recoverable</text>
+    <text x="380" y="222" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">★ from Flushed on it is immutable: safely loaded by many QueryNodes / indexed / cached</text>
+  </svg>
+  <div class="figcap"><b>A segment's life: an explicit state machine</b>: <b>Growing</b> (mutable in memory) → full/timeout → <b>Sealed</b> → flush → <b>Flushed</b> (in object storage, <b>now immutable</b>) → compaction → <b>Dropped</b>. DataCoord records each step in metadata — so "is my just-written data durable?" becomes a precise question: are the relevant segments all Flushed.</div>
 </div>
 
 <p>This path's key turning point is <strong>Flushed</strong>: once flushed, a segment becomes <strong>immutable</strong>. This is the cornerstone of Milvus's entire storage model — immutability means it can be safely loaded by many QueryNodes at once, indexed without worry, and cached without fear of being overwritten.
@@ -3914,6 +4053,29 @@ The other is the <strong>target</strong>: what it <strong>ought</strong> to look
 This "<strong>declare the target → continually correct the actual toward it</strong>" design is exactly the robust paradigm modern distributed systems (like Kubernetes' reconcile) acknowledge: instead of writing a long, brittle "do this step then that step" procedure, you only declare "the end state I want" and let the system converge round by round.
 The target itself further splits into <strong>current target</strong> and <strong>next target</strong>, to transition smoothly from old layout to new without interrupting in-flight queries. Grasp this "distribution approaching target" loop and you hold the soul that distinguishes QueryCoordV2 from the old architecture.</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="QueryCoordV2's core loop: observers continuously compare the actual distribution against the desired target and emit load or release actions so the distribution converges to the target, never stopping">
+    <rect x="36" y="50" width="300" height="150" rx="11" style="fill:var(--panel-2);stroke:var(--line);stroke-width:1.5"/>
+    <text x="52" y="74" style="fill:var(--ink);font-weight:700">① distribution (actual)</text>
+    <rect x="52" y="86" width="268" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="64" y="106" class="mono" style="fill:var(--ink)">Node1 ▸ segA · segB</text>
+    <rect x="52" y="122" width="268" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="64" y="142" class="mono" style="fill:var(--ink)">Node2 ▸ segD</text>
+    <rect x="52" y="158" width="268" height="30" rx="6" style="fill:var(--panel);stroke:var(--red)"/><text x="64" y="178" class="mono" style="fill:var(--red)">✗ segC not loaded</text>
+    <rect x="424" y="50" width="300" height="150" rx="11" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="440" y="74" style="fill:var(--accent-ink);font-weight:700">② target (desired)</text>
+    <rect x="440" y="86" width="268" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="452" y="106" class="mono" style="fill:var(--ink)">Node1 ▸ segA · segB</text>
+    <rect x="440" y="122" width="268" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="452" y="142" class="mono" style="fill:var(--ink)">Node2 ▸ segD</text>
+    <rect x="440" y="158" width="268" height="30" rx="6" style="fill:var(--panel);stroke:var(--teal)"/><text x="452" y="178" class="mono" style="fill:var(--teal)">✓ Node3 ▸ segC</text>
+    <text x="380" y="130" text-anchor="middle" style="fill:var(--amber);font-weight:700;font-size:26px">≠</text>
+    <rect x="150" y="236" width="460" height="44" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="380" y="263" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">③ observer diffs the gap → action: load segC onto Node3</text>
+    <line x1="186" y1="200" x2="224" y2="234" style="stroke:var(--line);stroke-width:1.5"/><path d="M224,234 l-11,-3 l2,-9 z" style="fill:var(--line)"/>
+    <line x1="560" y1="200" x2="536" y2="234" style="stroke:var(--line);stroke-width:1.5"/><path d="M536,234 l-2,-11 l9,3 z" style="fill:var(--line)"/>
+    <path d="M150,258 C72,258 36,232 36,202" style="fill:none;stroke:var(--teal);stroke-width:2;stroke-dasharray:5 4"/><path d="M36,202 l-5,11 l10,0 z" style="fill:var(--teal)"/>
+    <text x="40" y="224" style="fill:var(--teal);font-weight:700">distribution converges to target ↻</text>
+  </svg>
+  <div class="figcap"><b>Declare the end state, keep correcting</b>: QueryCoordV2 splits state into <b>distribution (actual)</b> and <b>target (desired)</b>; an observer keeps comparing them, and on a gap (segC missing) emits <b>load / release</b> actions so the distribution <b>converges to the target</b> — exactly like Kubernetes reconcile: you declare the end state, the system iterates toward it, never stopping.</div>
+</div>
+
 <p>Why split "current" and "next" targets? Imagine a large-scale reload or rebalance: swapping the target to a brand-new layout in one step could leave queries running on the old layout suddenly unable to find segments. The two-stage target lets the system <strong>prepare the next target first, then switch smoothly once the new layout is ready</strong>,
 letting old queries finish and new queries use the new layout, the whole process invisible to users. This "<strong>double-buffered</strong>" switch resolves the tension of "must change, yet must not stop" cleanly. With that, from load to assignment, to balancing, to replicas, and on to this distribution-approaching-target loop, QueryCoordV2's whole picture as the read side's brain is clear —
 it and last lesson's DataCoord, one writing and one reading, together hold up Milvus's two ends at the distributed layer: "store soundly, search swiftly."</p>
@@ -4037,6 +4199,30 @@ Because Catalog is that translator, RootCoord never needs to know "how many keys
 
 <p>Walk "create a collection" end to end to feel the pipeline. The client sends CreateCollection, Proxy forwards it to RootCoord; RootCoord first allocates a global timestamp and some IDs from itself (Lesson 11), assembles the schema into a <span class="mono">model.Collection</span> domain object, then calls <span class="mono">RootCoordCatalog.CreateCollection(ctx, coll, ts)</span>.
 At Catalog the object is <strong>decomposed</strong>: one key for the collection, one per field, one per partition... then <span class="mono">kv.MultiSave</span> writes that batch of key/values into etcd <strong>atomically in one transaction</strong>. Across the whole chain RootCoord only said "create a collection"; "into how many keys, and how to keep it atomic" was quietly absorbed by the two layers below. That is the hallmark of good abstraction: <strong>the upper intent is simple, the lower complexity is encapsulated</strong>.</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="etcd is the coordination hub: coordinators write authoritative metadata by transaction and watch for changes, nodes register leased sessions; real data traffic is point-to-point and never goes through etcd">
+    <rect x="70" y="38" width="150" height="44" rx="9" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="145" y="65" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">RootCoord</text>
+    <rect x="305" y="38" width="150" height="44" rx="9" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="380" y="65" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">DataCoord</text>
+    <rect x="540" y="38" width="150" height="44" rx="9" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="615" y="65" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">QueryCoord</text>
+    <ellipse cx="380" cy="118" rx="58" ry="14" style="fill:var(--blue-soft);stroke:var(--blue);stroke-width:1.5"/>
+    <path d="M322,118 L322,184 A58,14 0 0 0 438,184 L438,118" style="fill:var(--blue-soft);stroke:var(--blue);stroke-width:1.5"/>
+    <text x="380" y="150" text-anchor="middle" style="fill:var(--blue);font-weight:700">etcd</text>
+    <text x="380" y="170" text-anchor="middle" style="fill:var(--muted)">truth + directory</text>
+    <line x1="322" y1="84" x2="352" y2="110" style="stroke:var(--accent);stroke-width:2"/><path d="M352,110 l-11,-2 l2,-9 z" style="fill:var(--accent)"/>
+    <text x="242" y="100" style="fill:var(--accent-ink)">write metadata · txn/CAS</text>
+    <line x1="438" y1="110" x2="460" y2="84" style="stroke:var(--accent);stroke-width:2;stroke-dasharray:4 3"/><path d="M460,84 l-2,11 l9,-5 z" style="fill:var(--accent)"/>
+    <text x="470" y="100" style="fill:var(--muted)">watch</text>
+    <rect x="70" y="240" width="150" height="44" rx="9" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:1.5"/><text x="145" y="267" text-anchor="middle" style="fill:var(--teal);font-weight:700">Proxy</text>
+    <rect x="305" y="240" width="150" height="44" rx="9" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:1.5"/><text x="380" y="267" text-anchor="middle" style="fill:var(--teal);font-weight:700">QueryNode</text>
+    <rect x="540" y="240" width="150" height="44" rx="9" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:1.5"/><text x="615" y="267" text-anchor="middle" style="fill:var(--teal);font-weight:700">DataNode</text>
+    <line x1="380" y1="238" x2="380" y2="190" style="stroke:var(--teal);stroke-width:2"/><path d="M380,190 l-5,11 l10,0 z" style="fill:var(--teal)"/>
+    <text x="392" y="216" style="fill:var(--teal)">register session (lease + keepalive)</text>
+    <text x="497" y="232" text-anchor="middle" style="fill:var(--ink)">direct</text>
+    <line x1="457" y1="262" x2="538" y2="262" style="stroke:var(--ink);stroke-width:4"/><path d="M538,262 l-12,-6 l0,12 z" style="fill:var(--ink)"/>
+  </svg>
+  <div class="figcap"><b>etcd: the cluster's coordination hub</b>: coordinators write authoritative metadata by <b>transaction/CAS</b> and <b>watch</b> for changes; nodes register a <b>leased session</b> (kept alive by keepalive, auto-deleted on crash). But the real <b>search/insert traffic is point-to-point between nodes and never touches etcd</b> — control through etcd, data direct: a divide that runs through all of Milvus.</div>
+</div>
 
 <h2>etcd and sessions: how components discover each other</h2>
 <p>Metadata must "persist," but components must also "find" each other. Lesson 9 mentioned: at startup each component calls <span class="mono">Register()</span>, writing a <strong>leased</strong> session into etcd — "I am querynode-3, my gRPC address is here, I'm alive."

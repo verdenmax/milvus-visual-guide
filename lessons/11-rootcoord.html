@@ -418,6 +418,36 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 只有周期性推进水位才触碰 etcd。换句话说，慢的那一步被摊薄到很低的频率，快的那一步承担了几乎全部流量。这是分布式系统里一种典型的"<strong>把昂贵操作批量化、把廉价操作高频化</strong>"的取舍，
 后面讲段分配、ID 分配时你会反复见到同样的套路。理解了 TSO，就等于拿到了读懂 Milvus 一致性模型的钥匙。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="TSO 是唯一的授时源：向多个 Proxy 发出全局唯一、单调递增的时间戳，并把高水位批量持久化到 etcd，崩溃也不回退">
+    <rect x="280" y="70" width="200" height="76" rx="12" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="380" y="98" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">RootCoord · TSO 授时</text>
+    <text x="380" y="122" text-anchor="middle" style="fill:var(--muted)">全局唯一 · 单调递增</text>
+    <rect x="40" y="60" width="120" height="36" rx="8" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="100" y="83" text-anchor="middle" style="fill:var(--ink)">Proxy A</text>
+    <rect x="40" y="112" width="120" height="36" rx="8" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="100" y="135" text-anchor="middle" style="fill:var(--ink)">Proxy B</text>
+    <rect x="40" y="164" width="120" height="36" rx="8" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="100" y="187" text-anchor="middle" style="fill:var(--ink)">Proxy C</text>
+    <line x1="278" y1="96" x2="164" y2="78" style="stroke:var(--accent);stroke-width:1.5"/><path d="M164,78 l11,-2 l-3,-9 z" style="fill:var(--accent)"/>
+    <text x="208" y="74" class="mono" style="fill:var(--accent-ink)">ts=102</text>
+    <line x1="278" y1="110" x2="164" y2="130" style="stroke:var(--accent);stroke-width:1.5"/><path d="M164,130 l11,2 l-4,9 z" style="fill:var(--accent)"/>
+    <text x="208" y="118" class="mono" style="fill:var(--accent-ink)">ts=103</text>
+    <line x1="278" y1="124" x2="164" y2="182" style="stroke:var(--accent);stroke-width:1.5"/><path d="M164,182 l10,3 l1,-11 z" style="fill:var(--accent)"/>
+    <text x="208" y="162" class="mono" style="fill:var(--accent-ink)">ts=104</text>
+    <rect x="560" y="74" width="172" height="68" rx="10" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/>
+    <text x="646" y="100" text-anchor="middle" style="fill:var(--blue);font-weight:700">etcd · 高水位</text>
+    <text x="646" y="122" text-anchor="middle" class="mono" style="fill:var(--muted)">high-water=200</text>
+    <line x1="480" y1="104" x2="558" y2="104" style="stroke:var(--blue);stroke-width:1.5;stroke-dasharray:5 4"/><path d="M558,104 l-11,-5 l0,10 z" style="fill:var(--blue)"/>
+    <text x="486" y="96" style="fill:var(--muted)">周期持久化</text>
+    <text x="40" y="226" style="fill:var(--muted)">发出的时间戳（只增不减）：</text>
+    <rect x="240" y="208" width="54" height="30" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="267" y="228" text-anchor="middle" class="mono" style="fill:var(--muted)">100</text>
+    <rect x="300" y="208" width="54" height="30" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="327" y="228" text-anchor="middle" class="mono" style="fill:var(--muted)">101</text>
+    <rect x="360" y="208" width="54" height="30" rx="6" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="387" y="228" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">102</text>
+    <rect x="420" y="208" width="54" height="30" rx="6" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="447" y="228" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">103</text>
+    <rect x="480" y="208" width="54" height="30" rx="6" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="507" y="228" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">104</text>
+    <text x="548" y="228" style="fill:var(--teal);font-weight:700">→ 永不重复 / 倒退</text>
+  </svg>
+  <div class="figcap"><b>一个集群，唯一的时钟</b>：TSO 给并发取号的多个 Proxy 发出<b>全局唯一、单调递增</b>的时间戳（多在内存里瞬间完成）；只周期性把<b>高水位</b>持久化到 etcd——<b>崩溃重启也 ≥ 已发出的最大值，绝不倒退</b>。于是"比较时间戳大小"就等于"判断全局先后"。</div>
+</div>
+
 <div class="timeline">
   <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t1</span><span class="tl-c">Proxy 写入 A 入队，向 RootCoord 取时间戳 ts=100</span></div>
   <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t2</span><span class="tl-c">另一台 Proxy 写入 B，取得 ts=101（绝不会再发 100）</span></div>
@@ -623,6 +653,36 @@ two clocks each issuing their own can never guarantee global monotonicity.</p>
 <p>A common question lurks here: if issuing each timestamp is so careful, won't it become the cluster's bottleneck? The answer is no — precisely because of batch allocation, <strong>the vast majority of timestamp requests complete instantly in memory</strong>,
 and only the periodic mark advance touches etcd. In other words, the slow step is amortized down to a very low frequency, while the fast step carries nearly all the traffic. This is a classic distributed-systems trade-off — "<strong>batch the expensive operation, make the cheap operation high-frequency</strong>" —
 and you'll see the same pattern again when we cover segment allocation and ID allocation. Grasp TSO and you hold the key to reading Milvus's consistency model.</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="TSO is the single time source: it issues globally unique, monotonically increasing timestamps to many Proxies and persists only a high-water mark to etcd, so it never regresses after a crash">
+    <rect x="280" y="70" width="200" height="76" rx="12" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="380" y="98" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">RootCoord · TSO</text>
+    <text x="380" y="122" text-anchor="middle" style="fill:var(--muted)">globally unique · monotonic</text>
+    <rect x="40" y="60" width="120" height="36" rx="8" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="100" y="83" text-anchor="middle" style="fill:var(--ink)">Proxy A</text>
+    <rect x="40" y="112" width="120" height="36" rx="8" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="100" y="135" text-anchor="middle" style="fill:var(--ink)">Proxy B</text>
+    <rect x="40" y="164" width="120" height="36" rx="8" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="100" y="187" text-anchor="middle" style="fill:var(--ink)">Proxy C</text>
+    <line x1="278" y1="96" x2="164" y2="78" style="stroke:var(--accent);stroke-width:1.5"/><path d="M164,78 l11,-2 l-3,-9 z" style="fill:var(--accent)"/>
+    <text x="208" y="74" class="mono" style="fill:var(--accent-ink)">ts=102</text>
+    <line x1="278" y1="110" x2="164" y2="130" style="stroke:var(--accent);stroke-width:1.5"/><path d="M164,130 l11,2 l-4,9 z" style="fill:var(--accent)"/>
+    <text x="208" y="118" class="mono" style="fill:var(--accent-ink)">ts=103</text>
+    <line x1="278" y1="124" x2="164" y2="182" style="stroke:var(--accent);stroke-width:1.5"/><path d="M164,182 l10,3 l1,-11 z" style="fill:var(--accent)"/>
+    <text x="208" y="162" class="mono" style="fill:var(--accent-ink)">ts=104</text>
+    <rect x="560" y="74" width="172" height="68" rx="10" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/>
+    <text x="646" y="100" text-anchor="middle" style="fill:var(--blue);font-weight:700">etcd · high-water</text>
+    <text x="646" y="122" text-anchor="middle" class="mono" style="fill:var(--muted)">high-water=200</text>
+    <line x1="480" y1="104" x2="558" y2="104" style="stroke:var(--blue);stroke-width:1.5;stroke-dasharray:5 4"/><path d="M558,104 l-11,-5 l0,10 z" style="fill:var(--blue)"/>
+    <text x="486" y="96" style="fill:var(--muted)">persist periodically</text>
+    <text x="40" y="226" style="fill:var(--muted)">issued timestamps (only increase):</text>
+    <rect x="288" y="208" width="54" height="30" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="315" y="228" text-anchor="middle" class="mono" style="fill:var(--muted)">100</text>
+    <rect x="348" y="208" width="54" height="30" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="375" y="228" text-anchor="middle" class="mono" style="fill:var(--muted)">101</text>
+    <rect x="408" y="208" width="54" height="30" rx="6" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="435" y="228" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">102</text>
+    <rect x="468" y="208" width="54" height="30" rx="6" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="495" y="228" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">103</text>
+    <rect x="528" y="208" width="54" height="30" rx="6" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="555" y="228" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">104</text>
+    <text x="596" y="228" style="fill:var(--teal);font-weight:700">→ never reused</text>
+  </svg>
+  <div class="figcap"><b>One cluster, one clock</b>: TSO hands many concurrently-requesting Proxies <b>globally unique, monotonically increasing</b> timestamps (mostly an instant in-memory op); it persists only a <b>high-water mark</b> to etcd — so after a crash it restarts <b>≥ the largest already issued, never regressing</b>. Comparing timestamps = ordering events globally.</div>
+</div>
 
 <div class="timeline">
   <div class="tl-row"><span class="tl-dot"></span><span class="tl-t">t1</span><span class="tl-c">Proxy enqueues write A, gets timestamp ts=100 from RootCoord</span></div>

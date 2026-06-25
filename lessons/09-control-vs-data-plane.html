@@ -505,6 +505,30 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 要么通过 etcd 的 session 与 watch 间接感知。这条纪律换来的是<strong>松耦合</strong>：你可以独立升级、重启、扩缩任意一个组件，只要它仍遵守接口契约、仍按时续约 session，
 整个系统就能继续运转。后面每深入一个协调者，不妨都用这三条纪律回看一眼——它能帮你把纷繁的细节，重新归位到"决策 vs 执行"这条主线上。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="控制面决定谁做什么、数据面真正执行；用户数据吞吐只在数据面流动，不穿过控制面">
+    <rect x="20" y="36" width="720" height="86" rx="12" style="fill:var(--accent-soft);opacity:.22"/>
+    <text x="36" y="58" style="fill:var(--accent-ink);font-weight:700">控制面 control plane · 决定谁做什么（低频）</text>
+    <rect x="300" y="64" width="190" height="48" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="395" y="93" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">MixCoord 协调者</text>
+    <rect x="520" y="64" width="150" height="48" rx="10" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="595" y="93" text-anchor="middle" style="fill:var(--blue);font-weight:700">etcd · 真相</text>
+    <line x1="490" y1="88" x2="518" y2="88" style="stroke:var(--line);stroke-width:1.5;stroke-dasharray:3 3"/>
+    <rect x="20" y="182" width="720" height="96" rx="12" style="fill:var(--teal-soft);opacity:.20"/>
+    <text x="36" y="204" style="fill:var(--teal);font-weight:700">数据面 data plane · 真正干活（高频吞吐）</text>
+    <rect x="60" y="214" width="160" height="50" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="140" y="244" text-anchor="middle" style="fill:var(--ink)">Proxy</text>
+    <rect x="300" y="214" width="160" height="50" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="380" y="244" text-anchor="middle" style="fill:var(--ink)">QueryNode</text>
+    <rect x="540" y="214" width="160" height="50" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="620" y="244" text-anchor="middle" style="fill:var(--ink)">DataNode</text>
+    <line x1="220" y1="231" x2="296" y2="231" style="stroke:var(--teal);stroke-width:4"/><path d="M296,231 l-12,-6 l0,12 z" style="fill:var(--teal)"/>
+    <line x1="220" y1="251" x2="536" y2="251" style="stroke:var(--teal);stroke-width:4"/><path d="M536,251 l-12,-6 l0,12 z" style="fill:var(--teal)"/>
+    <text x="474" y="206" style="fill:var(--teal)">用户数据：search / insert 字节</text>
+    <line x1="395" y1="112" x2="395" y2="178" style="stroke:var(--accent);stroke-width:2;stroke-dasharray:5 4"/><path d="M395,178 l-5,-11 l10,0 z" style="fill:var(--accent)"/>
+    <text x="406" y="152" style="fill:var(--accent-ink);font-weight:700">决策·调度（低频）</text>
+    <line x1="150" y1="206" x2="150" y2="156" style="stroke:var(--red);stroke-width:3"/><path d="M150,156 l-6,11 l12,0 z" style="fill:var(--red)"/>
+    <path d="M132,150 l24,18 M156,150 l-24,18" style="stroke:var(--red);stroke-width:3"/>
+    <text x="168" y="150" style="fill:var(--red);font-weight:700">高频吞吐 ✗ 不上控制面</text>
+  </svg>
+  <div class="figcap"><b>决策 vs 执行</b>：<b>控制面</b>（协调者 + etcd）只在低频时刻做决定、持有<b>权威元数据</b>；<b>数据面</b>（节点）扛住高频的<b>用户数据吞吐</b>。两条铁律：<b>吞吐绝不穿过控制面</b>，跨面只走<b>接口与 etcd</b>。</div>
+</div>
+
 <div class="card macro">
   <div class="tag">🌍 宏观理解</div>
   一句话串起来：<strong>控制面（协调者）决定谁做什么 → 数据面（节点）真正执行 → types.go 用接口写死契约 → MixCoord 把三个协调者打包成一个进程 → etcd 的 session 让两面互相发现</strong>。
@@ -741,6 +765,30 @@ or the control plane gets crushed by traffic and global scheduling stalls with i
 the interfaces defined in <span class="inline">types.go</span>, or sense each other indirectly through etcd's sessions and watches. This discipline buys <strong>loose coupling</strong>: you can upgrade, restart, or scale any one
 component independently, and as long as it still honors the interface contract and renews its session on time, the whole system keeps running. As you drill into each coordinator later, re-read it through these three disciplines —
 they snap the swirl of details back onto the "decide vs execute" through-line.</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="The control plane decides who does what; the data plane executes; user-data throughput flows only within the data plane and never crosses into the control plane">
+    <rect x="20" y="36" width="720" height="86" rx="12" style="fill:var(--accent-soft);opacity:.22"/>
+    <text x="36" y="58" style="fill:var(--accent-ink);font-weight:700">control plane · decides who does what (low frequency)</text>
+    <rect x="300" y="64" width="190" height="48" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="395" y="93" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">MixCoord</text>
+    <rect x="520" y="64" width="150" height="48" rx="10" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="595" y="93" text-anchor="middle" style="fill:var(--blue);font-weight:700">etcd · truth</text>
+    <line x1="490" y1="88" x2="518" y2="88" style="stroke:var(--line);stroke-width:1.5;stroke-dasharray:3 3"/>
+    <rect x="20" y="182" width="720" height="96" rx="12" style="fill:var(--teal-soft);opacity:.20"/>
+    <text x="36" y="204" style="fill:var(--teal);font-weight:700">data plane · does the work (high-frequency throughput)</text>
+    <rect x="60" y="214" width="160" height="50" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="140" y="244" text-anchor="middle" style="fill:var(--ink)">Proxy</text>
+    <rect x="300" y="214" width="160" height="50" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="380" y="244" text-anchor="middle" style="fill:var(--ink)">QueryNode</text>
+    <rect x="540" y="214" width="160" height="50" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="620" y="244" text-anchor="middle" style="fill:var(--ink)">DataNode</text>
+    <line x1="220" y1="231" x2="296" y2="231" style="stroke:var(--teal);stroke-width:4"/><path d="M296,231 l-12,-6 l0,12 z" style="fill:var(--teal)"/>
+    <line x1="220" y1="251" x2="536" y2="251" style="stroke:var(--teal);stroke-width:4"/><path d="M536,251 l-12,-6 l0,12 z" style="fill:var(--teal)"/>
+    <text x="474" y="206" style="fill:var(--teal)">user data: search / insert bytes</text>
+    <line x1="395" y1="112" x2="395" y2="178" style="stroke:var(--accent);stroke-width:2;stroke-dasharray:5 4"/><path d="M395,178 l-5,-11 l10,0 z" style="fill:var(--accent)"/>
+    <text x="406" y="152" style="fill:var(--accent-ink);font-weight:700">decide · schedule (low freq)</text>
+    <line x1="150" y1="206" x2="150" y2="156" style="stroke:var(--red);stroke-width:3"/><path d="M150,156 l-6,11 l12,0 z" style="fill:var(--red)"/>
+    <path d="M132,150 l24,18 M156,150 l-24,18" style="stroke:var(--red);stroke-width:3"/>
+    <text x="168" y="150" style="fill:var(--red);font-weight:700">throughput ✗ never hits control</text>
+  </svg>
+  <div class="figcap"><b>Decide vs execute</b>: the <b>control plane</b> (coordinators + etcd) only decides at low-frequency moments and holds the <b>authoritative metadata</b>; the <b>data plane</b> (nodes) absorbs high-frequency <b>user-data throughput</b>. Two hard rules: <b>throughput never crosses into control</b>, and cross-plane talk goes only through <b>interfaces and etcd</b>.</div>
+</div>
 
 <div class="card macro">
   <div class="tag">🌍 The big picture</div>
