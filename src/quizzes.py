@@ -2058,6 +2058,67 @@ QUIZZES = {
             },
         ],
     },
+    "31-wal-architecture.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "在 Milvus 流式系统里，StreamingCoord 和 StreamingNode 的分工是什么？",
+                    "en": "In Milvus's streaming system, how do StreamingCoord and StreamingNode divide the work?",
+                },
+                "opts": [
+                    {"zh": "StreamingCoord(单例，在 RootCoord 内)调度——把 PChannel 分给 StreamingNode；StreamingNode 执行——真正写每条 PChannel 的 WAL", "en": "StreamingCoord (a singleton inside RootCoord) schedules — assigns PChannels to StreamingNodes; StreamingNode executes — actually writes each PChannel's WAL"},
+                    {"zh": "两者都直接写日志，没有分工", "en": "Both write the log directly, with no division"},
+                    {"zh": "StreamingNode 调度、StreamingCoord 写日志", "en": "StreamingNode schedules and StreamingCoord writes the log"},
+                    {"zh": "它们只负责读，不负责写", "en": "They only read, never write"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "这又是“协调者调度、节点执行”的体现：StreamingCoord 做通道管理(把 PChannel 分给节点、健康监控、再均衡)但自己不写日志；StreamingNode 为分到的每条 PChannel 跑完整 WAL(拦截器链+scanner+RecoveryStorage)。",
+                    "en": "Another 'coordinator schedules, node executes': StreamingCoord does channel management (assign PChannels, health monitoring, rebalancing) but writes no log; StreamingNode runs the full WAL (interceptor chain + scanner + RecoveryStorage) for each assigned PChannel.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "每次 Append 都要穿过一条“拦截器链”，下列哪组是它的主要环节？",
+                    "en": "Every Append passes an 'interceptor chain'. Which set are its main stages?",
+                },
+                "opts": [
+                    {"zh": "TimeTick(盖单调时间戳) / Txn(事务) / Shard(段分配) / Lock(独占或共享)", "en": "TimeTick (stamp a monotonic ts) / Txn (transaction) / Shard (segment assignment) / Lock (exclusive/shared)"},
+                    {"zh": "压缩 / 加密 / 去重 / 排序", "en": "compress / encrypt / dedup / sort"},
+                    {"zh": "解析 SQL / 优化 / 执行 / 返回", "en": "parse SQL / optimize / execute / return"},
+                    {"zh": "建索引 / 查索引 / 删索引 / 重建", "en": "build index / query index / drop index / rebuild"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "拦截器把横切关注点拆开、按序串联：TimeTick 盖那把读路径要等的时钟、Txn 管事务原子性、Shard 决定段 ID(段在此刻才分配)、Lock 控制并发独占。要加新写语义，挂个新拦截器即可。",
+                    "en": "The chain separates cross-cutting concerns in order: TimeTick stamps the clock the read path waits on, Txn handles transaction atomicity, Shard decides the segment ID (segments are assigned here), Lock controls concurrent exclusivity. A new write semantic is just a new interceptor.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "关于 WAL Backend 与崩溃恢复，下列哪种说法正确？",
+                    "en": "Which statement about the WAL Backend and crash recovery is correct?",
+                },
+                "opts": [
+                    {"zh": "Backend 可插拔(Kafka/Pulsar/Woodpecker/RocksMQ，一 PChannel 一 topic)；RecoveryStorage 靠检查点+重放 WAL 确定性地重建状态", "en": "The backend is pluggable (Kafka/Pulsar/Woodpecker/RocksMQ, one topic per PChannel); RecoveryStorage rebuilds state deterministically via checkpoint + WAL replay"},
+                    {"zh": "Backend 写死为 Kafka，不可更换", "en": "The backend is hard-coded to Kafka and cannot change"},
+                    {"zh": "崩溃后数据无法恢复，只能重灌", "en": "After a crash data can't recover, you must reload"},
+                    {"zh": "恢复靠各节点的本地时钟对齐", "en": "Recovery relies on aligning nodes' local clocks"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "Milvus 把“日志存储”抽象成可插拔接口(walimpls)，一个 PChannel 对应一个 topic；崩溃后 RecoveryStorage 从最近检查点重放其后的 WAL。因为 WAL 是单一事实来源且每条带单调 TimeTick，重放是确定性的，状态能一字不差重建。",
+                    "en": "Milvus abstracts log storage into a pluggable interface (walimpls), one PChannel per topic; after a crash RecoveryStorage replays the WAL from the latest checkpoint. Because the WAL is the single source of truth with monotonic TimeTicks, replay is deterministic and state rebuilds exactly.",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课说 Milvus 把“WAL=主角、段/索引=可由日志重建的派生数据”，这与传统单机数据库(WAL 只是为崩溃恢复的副产物、表才是主角)正好主次相反。请思考：这个“主次反转”让 Milvus 获得了哪些能力(如让段留在内存、多种数据形态异步追日志、副本/CDC 靠复制日志同步)？它又带来什么代价或前提(对 WAL 的可靠性、有序性、可重放性的强依赖)？",
+                "en": "This lesson says Milvus makes 'the WAL the protagonist, with segments/indexes as log-derivable derived data' — the opposite priority of a traditional single-node DB (where the WAL is just a crash-recovery byproduct and tables are the protagonist). Consider: what capabilities does this 'inversion' buy Milvus (segments in memory, multiple data forms tailing the log asynchronously, replicas/CDC syncing by copying the log)? And what cost or precondition does it impose (a strong dependence on the WAL's reliability, ordering and replayability)?",
+            },
+        ],
+    },
 }
 
 

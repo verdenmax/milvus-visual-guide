@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>31 · WAL 架构 / WAL architecture - Milvus 图解教程</title>
+<meta name="description" content="第七部分 · 流式系统｜WAL 架构 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="31 · WAL 架构 / WAL architecture - Milvus 图解教程">
+<meta property="og:description" content="第七部分 · 流式系统｜WAL 架构 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="31 · WAL 架构 / WAL architecture - Milvus 图解教程">
+<meta name="twitter:description" content="第七部分 · 流式系统｜WAL 架构 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.timeline .tl-row { display: flex; align-items: flex-start; gap: .6rem; padding: .12rem 0; }
+.timeline .tl-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: .45rem; }
+.timeline .tl-t { font-family: ui-monospace, monospace; font-weight: 700; color: var(--accent-ink); min-width: 2.4rem; font-size: .82rem; flex-shrink: 0; margin-top: .18rem; }
+.timeline .tl-c { font-size: .9rem; color: var(--muted); }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第七部分 · 流式系统</span><span class="lang-en">Part 7 · Streaming system</span></span>
+    <span class="pill">31 / 31</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:100%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第七部分 · 流式系统</span><span class="lang-en">Part 7 · Streaming system</span></div>
+    <h1><span class="lang-zh">WAL 架构</span><span class="lang-en">WAL architecture</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+第 16 课我们说过：Milvus 把所有写入都先记进一条 <strong>WAL（Write-Ahead Log，预写日志）</strong>，它是整个系统的<strong>单一事实来源</strong>。
+那一课只点到为止；这一部分（第七部分）我们就钻进这条日志的"引擎室"，看它到底由谁来管、怎么写、怎么在崩溃后恢复。先看骨架：
+<strong>StreamingCoord</strong> 负责"<strong>把哪条日志分给哪台机器</strong>"，<strong>StreamingNode</strong> 负责"<strong>真正地写这条日志</strong>"，底下垫着一个可换的
+<strong>WAL Backend</strong>（Kafka / Pulsar / Woodpecker / RocksMQ）。读懂这套架构，你就读懂了 Milvus"写"的最底层，也读懂了它<strong>为什么能既可靠、又可扩展、还能崩溃自愈</strong>——答案都藏在"一条可靠日志"这件事里。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 生活类比</div>
+  把 WAL 想成一家银行的<strong>流水账本</strong>：任何一笔操作，<strong>先记账、再办事</strong>——只要账记下了，哪怕柜员下班、系统重启，事后照着账本一条条重放，状态就能完整复原。
+  <strong>StreamingCoord</strong> 像<strong>总行调度</strong>：决定每个网点（PChannel）由哪位记账员（StreamingNode）负责；<strong>StreamingNode</strong> 是<strong>记账员</strong>本人，
+  一笔笔往账本上写，还要盖时间戳、管事务、必要时上锁。账本本身存在哪种纸上（Kafka/Pulsar/…）可以换，但"先记账后办事"这条铁律不变。账记下了，就<strong>什么都不怕</strong>：哪怕整个机房断电，只要账本还在，把它从头念一遍，每一笔钱该在哪儿就还在哪儿。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  一句话：<strong>StreamingCoord（单例，跑在 RootCoord 进程里）把 PChannel 分配给 StreamingNode；StreamingNode 通过一条"拦截器链"(TimeTick/Txn/Shard/Lock)把每次写入落进 WAL Backend，并由 RecoveryStorage 负责检查点与崩溃恢复</strong>。
+  WAL Backend 是可插拔的（Kafka/Pulsar/Woodpecker/RocksMQ），<strong>一个 PChannel 一个 topic</strong>。整条写入链路的可靠与有序，都由这套架构兜底。本课就沿"调度→写入→存储→恢复"这条线，把它逐层拆开看。
+</div>
+
+<h2>谁在管 WAL：StreamingCoord 与 StreamingNode</h2>
+<p>WAL 不是一条，而是<strong>很多条</strong>——回忆第 7 课：一个集合被切成若干 <strong>VChannel（逻辑分片）</strong>，它们映射到物理的 <strong>PChannel</strong>，每个 PChannel 就是一条独立的日志流。
+这么多条日志，得有人决定"<strong>哪条由哪台机器来写</strong>"，这就是 <strong>StreamingCoord</strong> 的活。它是一个<strong>单例</strong>，并不单独起进程，而是<strong>跑在 RootCoord（也就是今天 MixCoord 里）那部分</strong>。
+它做<strong>通道管理（channel management）</strong>：把 PChannel 分配给各个 StreamingNode、监控节点健康、在节点上下线时重新均衡（balancer），还负责 VChannel/CChannel 的分配。简言之，StreamingCoord 是"<strong>日志的调度大脑</strong>"，但它<strong>自己不写日志</strong>。</p>
+
+<p>真正写日志的是 <strong>StreamingNode</strong>。每个 StreamingNode 负责一批分给它的 PChannel，为每条 PChannel 跑一套完整的 WAL 机制（代码在 <span class="mono">internal/streamingnode/server/wal/</span>）。
+它要做的事不少：给每条写入<strong>盖 TimeTick</strong>（那把单调时钟）、维护<strong>事务</strong>、做<strong>段分配（Shard Management）</strong>、必要时<strong>上锁</strong>保证独占写入、提供<strong>scanner</strong> 让消费者读日志、
+以及最关键的——通过 <strong>RecoveryStorage</strong> 打检查点、在崩溃后从日志里把状态重建回来。一句话：<strong>StreamingCoord 管"谁来写"，StreamingNode 管"怎么写好、写稳、写得能恢复"</strong>。
+这正是 Milvus 反复出现的"<strong>协调者调度、节点执行</strong>"分工，在写入最底层的又一次体现。</p>
+
+<p>为什么要把一个集合的写入拆成<strong>多条 PChannel</strong>，而不是图省事用一条大日志？因为<strong>一条日志的吞吐有上限</strong>：写入是顺序追加的，一条 PChannel 再快，也终究是单点。
+把集合切成多条 VChannel/PChannel、分散到多个 StreamingNode 上并行写，<strong>整体写入吞吐就能随机器数线性扩展</strong>——这正是"存算分离 + 水平扩展"在写入侧的体现。
+代价是要有人统筹这些分片：哪条 PChannel 在哪台机器、某台机器挂了它负责的 PChannel 怎么办、新加机器后要不要把一些 PChannel 迁过去再均衡……这些"<strong>调度</strong>"工作正是 StreamingCoord 的 balancer 在做。
+它持续<strong>监控各 StreamingNode 的健康</strong>：一旦某个节点失联，就把它名下的 PChannel <strong>重新分配</strong>给健康节点，新节点接手后从 WAL 的检查点处<strong>重放恢复</strong>，继续写。
+于是对外看，写入<strong>既能横向扩展、又能在节点故障时自愈</strong>——而这一切的前提，正是"日志可被任何一台机器接手重放"。把"谁来写"这件会随集群变动的事，交给一个统一的大脑集中决策，是把复杂度收敛的关键一招。</p>
+
+<div class="layers">
+  <div class="layer l-core"><div class="lh"><span class="badge">调度</span><span class="name">StreamingCoord</span></div><div class="ld">单例，跑在 RootCoord 进程；把 PChannel 分给 StreamingNode、健康监控、再均衡（不写日志）</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">执行</span><span class="name">StreamingNode</span></div><div class="ld">为每条 PChannel 跑 WAL：拦截器链(TimeTick/Txn/Shard/Lock) + scanner + RecoveryStorage</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">存储</span><span class="name">WAL Backend</span></div><div class="ld">可插拔：Kafka / Pulsar / Woodpecker / RocksMQ，一个 PChannel 一个 topic</div></div>
+</div>
+
+<h2>拦截器链：每次写入都要"过五关"</h2>
+<p>StreamingNode 写日志不是"直接往后追加"那么简单。每一次 <span class="inline">Append</span>，都要先穿过一条<strong>拦截器链（interceptor chain）</strong>——一组按顺序挂上去的处理器，每个负责一件横切的事。
+这套设计的妙处在于：把"盖时间戳""管事务""分配段""上锁"这些<strong>正交的关注点拆开</strong>，各做各的、可插拔、易测试，而不是揉成一坨。主要的几关是：</p>
+
+<p>这条链的<strong>顺序很有讲究</strong>：TimeTick 必须先盖，后面的事务、段分配才有统一的时间基准；Lock 通常在更外层，保证整段处理的原子性。你可以把它想成一条<strong>装配线</strong>——
+每个工位只拧一种螺丝，零件按固定顺序流过，最后下线的就是一条"<strong>盖好戳、归好属、入好账</strong>"的合规日志。这种"<strong>责任单一、按序串联</strong>"的设计，让 Milvus 能<strong>灵活增减横切能力</strong>：
+要支持一种新的写语义，往链上挂一个新拦截器即可，不必去动核心的追加逻辑。这也是为什么 DDL/DCL、事务、复制这些后来才加的能力，能比较干净地融进来——它们大多就是链上多挂的一环。</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>TimeTick 拦截器</h4><p>给这条消息盖上 PChannel 级<strong>单调递增</strong>的 TimeTick——这把"日志时钟"正是读路径 tsafe 等待的对象（第 30 课）。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Txn 拦截器</h4><p>管理<strong>事务</strong>的生命周期：把一批本应"要么都见、要么都不见"的写入，框在一个事务里原子地落日志。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Shard 拦截器</h4><p>做<strong>段分配</strong>：决定这批行落到哪个 growing 段（段 ID 在此刻才定，回忆第 15 课"段 ID 在 StreamingNode 才分配"）。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Lock 拦截器</h4><p>在 VChannel 或 PChannel 粒度上做<strong>独占/共享</strong>访问控制，保证并发写入的正确顺序。</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>落 Backend</h4><p>穿过所有拦截器后，消息被<strong>真正追加</strong>到 WAL Backend 的对应 topic，成为不可变的一条日志。</p></div></div>
+</div>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/streamingnode/server/wal/</span><span class="ln">WAL 与拦截器链（节选示意）</span></div>
+  <pre><span class="cm">// 每条 PChannel 对应一个 WAL；Append 前穿过拦截器链</span>
+<span class="kw">type</span> WAL <span class="kw">interface</span> {
+    Append(ctx, msg) (MessageID, error)   <span class="cm">// 经拦截器链 -> 落 backend</span>
+    Read(opt) (Scanner, error)            <span class="cm">// 消费者顺序读日志</span>
+}
+<span class="cm">// interceptors: timetick / txn / shard / lock，按序挂载</span></pre>
+</div>
+
+<h2>WAL Backend：底层那张"日志纸"可以换</h2>
+<p>拦截器链的尽头，是把消息真正写进 <strong>WAL Backend</strong>。Milvus 把"底层用什么存日志"抽象成了一个可插拔的接口（<span class="mono">walimpls</span>），于是你可以按部署形态选不同的实现，
+而上层的写入逻辑<strong>一行都不用改</strong>。约定很简单：<strong>一个 PChannel 对应后端里的一个 topic</strong>，日志在 topic 里顺序追加、可被多个消费者重放。常见的几种后端各有取舍：</p>
+
+<p>为什么坚持"<strong>一个 PChannel 一个 topic</strong>"？因为 PChannel 是 Milvus 保证<strong>有序</strong>的最小单位：同一条 PChannel 内的所有写入，TimeTick 严格递增、消费时也严格按这个顺序，
+于是"先写的先被看到"在分片内永远成立。不同 PChannel 之间不要求全局有序（那样会牺牲并行度），跨分片的全局协调另有 CChannel（控制通道）兜底。把"<strong>分片内强有序、分片间高并行</strong>"这两件看似矛盾的事同时拿到，
+正是靠"一分片一日志一 topic"的清爽对应关系。理解了这点，你也就明白为什么扩容是"加分片/加 PChannel"——每多一条独立日志，就多一份可并行的吞吐，而每条日志内部的有序性丝毫不受影响。</p>
+
+<table class="t">
+  <tr><th>后端</th><th>形态</th><th>适合</th></tr>
+  <tr><td><strong>Woodpecker</strong></td><td class="mono">Milvus 内置的 WAL</td><td>新实例推荐：性能好、运维简单、成本低</td></tr>
+  <tr><td><strong>Pulsar</strong></td><td class="mono">外部消息队列</td><td>集群模式的传统默认，生态成熟</td></tr>
+  <tr><td><strong>Kafka</strong></td><td class="mono">外部消息队列</td><td>已有 Kafka 基础设施时</td></tr>
+  <tr><td><strong>RocksMQ</strong></td><td class="mono">单机本地队列</td><td>Standalone 模式默认（不支持集群）</td></tr>
+</table>
+
+<p>把"日志的<strong>语义</strong>（追加、有序、可重放）"和"日志的<strong>实现</strong>（用 Kafka 还是 Woodpecker）"分开，是这套架构最聪明的地方之一：语义是 Milvus 自己牢牢握住的契约，实现则交给最合适的存储。
+这也呼应了第 8 课讲的部署形态——同一套代码，Standalone 用 RocksMQ、集群用 Pulsar 或 Woodpecker，对上层完全透明。</p>
+
+<p>值得专门提一句 <strong>Woodpecker</strong>：它是 Milvus<strong>自研、内置</strong>的 WAL 实现，目标是把"日志存储"这件事做得<strong>更贴合向量数据库的需求</strong>——既不必额外部署运维一套重型消息队列（像 Pulsar 那样），
+又能在性能、成本、运维简单度上取得更好的平衡。所以官方建议<strong>新实例优先用 Woodpecker</strong>。这件事本身也印证了"把语义和实现分开"的价值：正因为上层只依赖抽象的 WAL 语义，Milvus 才能<strong>在不惊动上层的情况下，换上一套更合适的底层日志</strong>。
+一个良好的抽象，让系统能随需求演进而"换底盘不换车身"——这是任何想长期演进的系统都该追求的。</p>
+
+<h2>RecoveryStorage：崩了之后，照着日志重来</h2>
+<p>WAL 之所以叫"<strong>预写</strong>日志，价值就在崩溃时兑现。设想一个 StreamingNode 突然宕机：它内存里的 growing 段、刚分配的段信息、消费到哪儿的进度，全没了。怎么办？
+答案是 <strong>RecoveryStorage</strong>（<span class="mono">internal/streamingnode/server/wal/recovery</span>）：它在正常运行时<strong>周期性打检查点（checkpoint）</strong>，记下"我已经把日志安全处理到哪个位置、对应的元数据是什么"；
+崩溃重启后，它<strong>从最近的检查点出发、重放检查点之后的那段 WAL</strong>，就能把段、进度等状态<strong>一字不差地重建</strong>回来。因为 WAL 是单一事实来源、且每条都带单调的 TimeTick，所以"重放"是确定性的——
+重放同一段日志，必然得到同一个状态。<strong>检查点 + 重放</strong>，就是分布式系统里"<strong>故障即默认</strong>、靠日志兜底"哲学的又一次落地（回忆第 14 课的"故障即默认"）。
+检查点的频率，还藏着一个工程取舍：打得越勤，崩溃后要重放的日志越短、恢复越快，但平时的开销越大；打得越疏则反之。这正是分布式系统里典型的"恢复时间 vs 常态开销"的权衡，Milvus 用合理的默认值替你兜住，必要时也可调。</p>
+
+<p>如果你用过传统数据库，会觉得"WAL + 检查点 + 崩溃重放"很眼熟——单机数据库（如 MySQL 的 redo log、PostgreSQL 的 WAL）正是靠它保证崩溃后不丢已提交事务。
+Milvus 借用了同一套朴素而强大的思想，但把它<strong>放大到了分布式、并做成了系统的主干而非辅助</strong>：在单机数据库里 WAL 是"为了崩溃恢复而存在的副产物"，主角是表和索引；
+而在 Milvus 里，<strong>WAL 本身就是主角、是唯一的事实来源</strong>，表（段）、索引反而是"由日志派生、随时可由日志重建"的次生数据。这个主次的<strong>反转</strong>，是"日志即数据（log as data）"的精髓，
+也解释了为什么 Milvus 敢让段在内存里、敢让多种数据形态异步追日志——因为只要 WAL 在，丢什么都能从头重放回来。</p>
+
+<p>还有一面我们一直没细说：<strong>消费侧</strong>。日志写进去，总要有人读出来用。StreamingNode 提供 <strong>scanner</strong> 让消费者<strong>顺序读</strong>某条 PChannel 的日志——
+回忆第 17 课：正是 StreamingNode 的 flusher 顺着 WAL 把消息变成 growing 段、再 flush 成 binlog；第 26 课里 QueryNode 的 delegator 也靠消费 WAL 尾巴让 growing 数据保持新鲜。
+也就是说，<strong>同一条 WAL，被多个消费者按各自的进度重放</strong>，各自维护自己"读到哪儿"（checkpoint/seek 位置）。这种"<strong>一份日志、多方按需重放</strong>"的模式，让写入、落盘、查询、复制彼此解耦：
+谁都不直接调谁，只是各自盯着同一条日志、按自己的节奏前进。把"协作"简化成"共享一条只增的日志"，是这套架构能既复杂又不乱的根本原因。</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">检查点</div><div class="nd">记录已处理到的日志位置 + 元数据</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">崩溃</div><div class="nd">内存状态丢失</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">重放</div><div class="nd">从检查点之后重放 WAL</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">状态复原</div><div class="nd">段/进度一字不差重建</div></div>
+</div>
+
+<h2>这一切，为了"单一事实来源"</h2>
+<p>退一步看，这套又是调度、又是拦截器、又是可插拔后端、又是检查点重放的复杂机制，最终都服务于一句话：<strong>让 WAL 成为可靠、有序、可重放的单一事实来源</strong>。
+一旦做到这一点，上层一切都顺了——读路径靠 TimeTick/tsafe 等到该看的数据（第 30 课）、DataNode/StreamingNode 靠重放 WAL 重建段、副本与 CDC 靠复制 WAL 同步（下两课）。
+<strong>"写"被收敛成"往一条可靠日志上追加"，"恢复/同步/一致性"则统统化简为"重放这条日志"</strong>。这就是"日志即数据"在工程上的全部威力。下一课，我们看一类特殊的写入——<strong>DDL/DCL</strong>，
+为什么它不能像普通写入那样只进一条日志，而要靠一个叫 <strong>Broadcaster</strong> 的机制，<strong>原子地广播到很多条日志</strong>上。</p>
+
+<p>临走前再把这一课的<strong>三层抽象</strong>钉一下，它们层层垫高、各管一段：最上是 <strong>StreamingCoord</strong> 的"<strong>调度</strong>"——决定布局（谁写哪条），它面对的是"集群会变"这件事；
+中间是 <strong>StreamingNode</strong> 的"<strong>写好一条日志</strong>"——拦截器链 + scanner + RecoveryStorage，它面对的是"写要正确、要能被读、要能恢复"；最下是 <strong>WAL Backend</strong> 的"<strong>把字节落到持久存储</strong>"——它面对的是"用什么存"。
+三层之间只通过<strong>清晰的接口</strong>耦合，于是每一层都能独立演进、独立扩展、独立替换。当你以后在日志里看到一条诡异的消息、或排查一次写入为什么慢，<strong>先想清楚问题落在哪一层</strong>（是分配不均？是某个拦截器？还是后端慢？），
+就已经赢了一半。把一个复杂系统拆成"几层各自单一职责、以接口相连"的结构，既是读懂它的钥匙，也是设计它的范式。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>分工</strong>：StreamingCoord（单例，在 RootCoord 内）调度——把 PChannel 分给 StreamingNode；StreamingNode 执行——真正写每条 PChannel 的 WAL。</li>
+    <li><strong>拦截器链</strong>：每次 Append 依次过 <strong>TimeTick / Txn / Shard / Lock</strong>，把盖时间戳、事务、段分配、上锁等横切关注点拆开处理。</li>
+    <li><strong>WAL Backend 可插拔</strong>：Kafka / Pulsar / Woodpecker / RocksMQ，<strong>一个 PChannel 一个 topic</strong>；语义(追加/有序/可重放)固定，实现可换。</li>
+    <li><strong>RecoveryStorage</strong>：周期检查点 + 崩溃后从检查点重放 WAL，确定性地重建状态——"故障即默认，靠日志兜底"。</li>
+    <li><strong>归宿</strong>：一切复杂度都服务于"让 WAL 成为单一事实来源"；恢复/同步/一致性都化简为"重放日志"。</li>
+    <li><strong>主次反转</strong>：传统库里 WAL 是为崩溃恢复的副产物、表才是主角；Milvus 里 WAL 是主角与唯一事实来源，段/索引是可由日志重建的派生数据。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. 在 Milvus 流式系统里，StreamingCoord 和 StreamingNode 的分工是什么？</div>
+  <ol class="opts">
+    <li>StreamingCoord(单例，在 RootCoord 内)调度——把 PChannel 分给 StreamingNode；StreamingNode 执行——真正写每条 PChannel 的 WAL</li>
+    <li>StreamingNode 调度、StreamingCoord 写日志</li>
+    <li>两者都直接写日志，没有分工</li>
+    <li>它们只负责读，不负责写</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：A</strong>。这又是“协调者调度、节点执行”的体现：StreamingCoord 做通道管理(把 PChannel 分给节点、健康监控、再均衡)但自己不写日志；StreamingNode 为分到的每条 PChannel 跑完整 WAL(拦截器链+scanner+RecoveryStorage)。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. 每次 Append 都要穿过一条“拦截器链”，下列哪组是它的主要环节？</div>
+  <ol class="opts">
+    <li>压缩 / 加密 / 去重 / 排序</li>
+    <li>建索引 / 查索引 / 删索引 / 重建</li>
+    <li>TimeTick(盖单调时间戳) / Txn(事务) / Shard(段分配) / Lock(独占或共享)</li>
+    <li>解析 SQL / 优化 / 执行 / 返回</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：C</strong>。拦截器把横切关注点拆开、按序串联：TimeTick 盖那把读路径要等的时钟、Txn 管事务原子性、Shard 决定段 ID(段在此刻才分配)、Lock 控制并发独占。要加新写语义，挂个新拦截器即可。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 关于 WAL Backend 与崩溃恢复，下列哪种说法正确？</div>
+  <ol class="opts">
+    <li>Backend 可插拔(Kafka/Pulsar/Woodpecker/RocksMQ，一 PChannel 一 topic)；RecoveryStorage 靠检查点+重放 WAL 确定性地重建状态</li>
+    <li>崩溃后数据无法恢复，只能重灌</li>
+    <li>恢复靠各节点的本地时钟对齐</li>
+    <li>Backend 写死为 Kafka，不可更换</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：A</strong>。Milvus 把“日志存储”抽象成可插拔接口(walimpls)，一个 PChannel 对应一个 topic；崩溃后 RecoveryStorage 从最近检查点重放其后的 WAL。因为 WAL 是单一事实来源且每条带单调 TimeTick，重放是确定性的，状态能一字不差重建。</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>本课说 Milvus 把“WAL=主角、段/索引=可由日志重建的派生数据”，这与传统单机数据库(WAL 只是为崩溃恢复的副产物、表才是主角)正好主次相反。请思考：这个“主次反转”让 Milvus 获得了哪些能力(如让段留在内存、多种数据形态异步追日志、副本/CDC 靠复制日志同步)？它又带来什么代价或前提(对 WAL 的可靠性、有序性、可重放性的强依赖)？</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Lesson 16 said it: Milvus records every write into a <strong>WAL (Write-Ahead Log)</strong> first, and that log is the system's
+<strong>single source of truth</strong>. That lesson only sketched it; this part (Part 7) goes into the log's "engine room" — who runs it,
+how it is written, and how it recovers after a crash. The skeleton: <strong>StreamingCoord</strong> decides "<strong>which log goes to which
+machine</strong>", <strong>StreamingNode</strong> "<strong>actually writes that log</strong>", and underneath sits a pluggable <strong>WAL
+Backend</strong> (Kafka / Pulsar / Woodpecker / RocksMQ). Understand this and you understand the very bottom of how Milvus "writes".
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of the WAL as a bank's <strong>ledger</strong>: for any operation, <strong>record first, then act</strong> — once it's in the ledger,
+  even if the teller goes home or the system reboots, replaying the entries one by one fully restores the state. <strong>StreamingCoord</strong>
+  is like <strong>head-office dispatch</strong>: deciding which branch (PChannel) each bookkeeper (StreamingNode) handles. <strong>StreamingNode</strong>
+  is the <strong>bookkeeper</strong>: writing entry by entry, stamping timestamps, managing transactions, locking when needed. The kind of paper the
+  ledger is on (Kafka/Pulsar/…) can change, but the iron rule "record before you act" does not.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>StreamingCoord (a singleton inside the RootCoord process) assigns PChannels to StreamingNodes; a StreamingNode lands each
+  write into the WAL Backend through an "interceptor chain" (TimeTick/Txn/Shard/Lock), and RecoveryStorage handles checkpoints and crash
+  recovery</strong>. The WAL Backend is pluggable (Kafka/Pulsar/Woodpecker/RocksMQ), with <strong>one topic per PChannel</strong>. The whole write
+  path's reliability and ordering rest on this architecture.
+</div>
+
+<h2>Who runs the WAL: StreamingCoord and StreamingNode</h2>
+<p>There isn't one WAL but <strong>many</strong> — recall Lesson 7: a collection is sharded into <strong>VChannels</strong> mapped to physical
+<strong>PChannels</strong>, and each PChannel is an independent log stream. With so many logs, someone must decide "<strong>which log is written by
+which machine</strong>", and that's <strong>StreamingCoord</strong>'s job. It is a <strong>singleton</strong>, doesn't run as a separate process,
+but <strong>runs inside the RootCoord part (today, inside MixCoord)</strong>. It does <strong>channel management</strong>: assigning PChannels to
+StreamingNodes, monitoring node health, rebalancing on join/leave (the balancer), and allocating VChannel/CChannel. In short, StreamingCoord is
+the "<strong>scheduling brain of the log</strong>", but it <strong>writes no log itself</strong>.</p>
+
+<p>The one that actually writes is <strong>StreamingNode</strong>. Each StreamingNode owns a batch of assigned PChannels and runs a full WAL
+mechanism per PChannel (code in <span class="mono">internal/streamingnode/server/wal/</span>). It has plenty to do: <strong>stamp each write with a
+TimeTick</strong> (the monotonic clock), manage <strong>transactions</strong>, do <strong>segment assignment (Shard Management)</strong>,
+<strong>lock</strong> for exclusive writes when needed, provide a <strong>scanner</strong> for consumers to read the log, and — most importantly —
+checkpoint via <strong>RecoveryStorage</strong> and rebuild state from the log after a crash. In a line: <strong>StreamingCoord owns "who writes",
+StreamingNode owns "how to write it well, stably, and recoverably"</strong>. This is Milvus's recurring "<strong>coordinator schedules, node
+executes</strong>" split, showing up once more at the very bottom of the write path.</p>
+
+<div class="layers">
+  <div class="layer l-core"><div class="lh"><span class="badge">schedule</span><span class="name">StreamingCoord</span></div><div class="ld">singleton inside RootCoord; assigns PChannels to StreamingNodes, health monitoring, rebalancing (writes no log)</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">execute</span><span class="name">StreamingNode</span></div><div class="ld">runs the WAL per PChannel: interceptor chain (TimeTick/Txn/Shard/Lock) + scanner + RecoveryStorage</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">storage</span><span class="name">WAL Backend</span></div><div class="ld">pluggable: Kafka / Pulsar / Woodpecker / RocksMQ, one topic per PChannel</div></div>
+</div>
+
+<h2>The interceptor chain: every write "runs the gauntlet"</h2>
+<p>A StreamingNode doesn't just "append straight to the end". Every <span class="inline">Append</span> first passes through an <strong>interceptor
+chain</strong> — an ordered set of handlers, each owning one cross-cutting concern. The beauty: <strong>separate orthogonal concerns</strong> — stamping
+timestamps, managing transactions, assigning segments, locking — so each is independent, pluggable and testable, rather than tangled together. The main
+gates are:</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>TimeTick interceptor</h4><p>stamps the message with a PChannel-level <strong>monotonically increasing</strong> TimeTick — the "log clock" that the read path's tsafe waits on (Lesson 30).</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Txn interceptor</h4><p>manages the <strong>transaction</strong> lifecycle: framing a batch that should be "all-or-nothing visible" into one atomic log transaction.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Shard interceptor</h4><p>does <strong>segment assignment</strong>: which growing segment these rows land in (the segment ID is decided here — recall Lesson 15, "segment ID is assigned at the StreamingNode").</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Lock interceptor</h4><p><strong>exclusive/shared</strong> access control at VChannel or PChannel scope, ensuring correct ordering of concurrent writes.</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>Land in the Backend</h4><p>after all interceptors, the message is <strong>actually appended</strong> to the WAL Backend's topic, becoming one immutable log entry.</p></div></div>
+</div>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/streamingnode/server/wal/</span><span class="ln">the WAL and its interceptor chain (illustrative)</span></div>
+  <pre><span class="cm">// each PChannel has a WAL; Append passes the interceptor chain first</span>
+<span class="kw">type</span> WAL <span class="kw">interface</span> {
+    Append(ctx, msg) (MessageID, error)   <span class="cm">// via interceptors -> land in backend</span>
+    Read(opt) (Scanner, error)            <span class="cm">// consumers read the log in order</span>
+}
+<span class="cm">// interceptors: timetick / txn / shard / lock, mounted in order</span></pre>
+</div>
+
+<h2>WAL Backend: the underlying "log paper" is swappable</h2>
+<p>At the end of the interceptor chain, the message is actually written to the <strong>WAL Backend</strong>. Milvus abstracts "what stores the log
+underneath" into a pluggable interface (<span class="mono">walimpls</span>), so you can pick different implementations per deployment shape while the
+upper write logic <strong>doesn't change a line</strong>. The contract is simple: <strong>one PChannel maps to one topic in the backend</strong>; the log is
+appended in order within a topic and can be replayed by multiple consumers. The common backends each have trade-offs:</p>
+
+<table class="t">
+  <tr><th>Backend</th><th>Form</th><th>Good for</th></tr>
+  <tr><td><strong>Woodpecker</strong></td><td class="mono">Milvus's built-in WAL</td><td>recommended for new instances: good perf, simple ops, low cost</td></tr>
+  <tr><td><strong>Pulsar</strong></td><td class="mono">external message queue</td><td>the traditional cluster default, mature ecosystem</td></tr>
+  <tr><td><strong>Kafka</strong></td><td class="mono">external message queue</td><td>when you already have Kafka infrastructure</td></tr>
+  <tr><td><strong>RocksMQ</strong></td><td class="mono">single-node local queue</td><td>Standalone default (not supported in cluster)</td></tr>
+</table>
+
+<p>Separating the log's <strong>semantics</strong> (append, ordered, replayable) from its <strong>implementation</strong> (Kafka or Woodpecker) is one of
+the smartest parts of this architecture: the semantics are a contract Milvus holds firmly, while the implementation is delegated to the most suitable
+storage. This echoes Lesson 8's deployment shapes — the same code uses RocksMQ in Standalone and Pulsar/Woodpecker in a cluster, entirely transparent to
+the upper layers.</p>
+
+<h2>RecoveryStorage: after a crash, redo it from the log</h2>
+<p>The WAL is called a "<strong>write-ahead</strong>" log precisely because its value pays off on a crash. Picture a StreamingNode suddenly dying: its
+in-memory growing segments, freshly assigned segment info, and consume progress are all gone. What now? The answer is <strong>RecoveryStorage</strong>
+(<span class="mono">internal/streamingnode/server/wal/recovery</span>): during normal operation it <strong>periodically checkpoints</strong>, recording "how far
+I've safely processed the log and the corresponding metadata"; after a restart it <strong>starts from the latest checkpoint and replays the WAL after
+it</strong>, rebuilding segments, progress and other state <strong>exactly</strong>. Because the WAL is the single source of truth and every entry carries a
+monotonic TimeTick, "replay" is deterministic — replaying the same log necessarily yields the same state. <strong>Checkpoint + replay</strong> is another
+landing of the distributed-systems philosophy "<strong>failure is the default, backed by the log</strong>" (recall Lesson 14's "failure as default").</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">Checkpoint</div><div class="nd">record processed log position + metadata</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">Crash</div><div class="nd">in-memory state lost</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">Replay</div><div class="nd">replay WAL after the checkpoint</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">State restored</div><div class="nd">segments/progress rebuilt exactly</div></div>
+</div>
+
+<h2>All of it, for a "single source of truth"</h2>
+<p>Step back: this whole machinery — scheduling, interceptors, a pluggable backend, checkpoint-replay — ultimately serves one sentence: <strong>make the
+WAL a reliable, ordered, replayable single source of truth</strong>. Once that holds, everything above falls into place — the read path waits on
+TimeTick/tsafe for the data it should see (Lesson 30), DataNode/StreamingNode rebuild segments by replaying the WAL, replicas and CDC sync by copying the
+WAL (the next two lessons). <strong>"Writing" collapses into "append to one reliable log", and "recovery/sync/consistency" all reduce to "replay that
+log"</strong>. That is the full power of "log as data". Next lesson, we look at a special kind of write — <strong>DDL/DCL</strong> — and why it can't just go
+into one log like an ordinary write, but needs a mechanism called the <strong>Broadcaster</strong> to <strong>atomically broadcast across many logs</strong>.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Split</strong>: StreamingCoord (singleton, inside RootCoord) schedules — assigns PChannels to StreamingNodes; StreamingNode executes — actually writes each PChannel's WAL.</li>
+    <li><strong>Interceptor chain</strong>: every Append passes <strong>TimeTick / Txn / Shard / Lock</strong> in order, separating timestamp-stamping, transactions, segment assignment and locking.</li>
+    <li><strong>Pluggable WAL Backend</strong>: Kafka / Pulsar / Woodpecker / RocksMQ, <strong>one topic per PChannel</strong>; the semantics (append/ordered/replayable) are fixed, the implementation swappable.</li>
+    <li><strong>RecoveryStorage</strong>: periodic checkpoints + replay the WAL from a checkpoint after a crash, deterministically rebuilding state — "failure is the default, backed by the log".</li>
+    <li><strong>The destination</strong>: all the complexity serves "make the WAL the single source of truth"; recovery/sync/consistency all reduce to "replay the log".</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. In Milvus's streaming system, how do StreamingCoord and StreamingNode divide the work?</div>
+  <ol class="opts">
+    <li>StreamingCoord (a singleton inside RootCoord) schedules — assigns PChannels to StreamingNodes; StreamingNode executes — actually writes each PChannel's WAL</li>
+    <li>StreamingNode schedules and StreamingCoord writes the log</li>
+    <li>Both write the log directly, with no division</li>
+    <li>They only read, never write</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. Another 'coordinator schedules, node executes': StreamingCoord does channel management (assign PChannels, health monitoring, rebalancing) but writes no log; StreamingNode runs the full WAL (interceptor chain + scanner + RecoveryStorage) for each assigned PChannel.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Every Append passes an 'interceptor chain'. Which set are its main stages?</div>
+  <ol class="opts">
+    <li>compress / encrypt / dedup / sort</li>
+    <li>build index / query index / drop index / rebuild</li>
+    <li>TimeTick (stamp a monotonic ts) / Txn (transaction) / Shard (segment assignment) / Lock (exclusive/shared)</li>
+    <li>parse SQL / optimize / execute / return</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. The chain separates cross-cutting concerns in order: TimeTick stamps the clock the read path waits on, Txn handles transaction atomicity, Shard decides the segment ID (segments are assigned here), Lock controls concurrent exclusivity. A new write semantic is just a new interceptor.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Which statement about the WAL Backend and crash recovery is correct?</div>
+  <ol class="opts">
+    <li>The backend is pluggable (Kafka/Pulsar/Woodpecker/RocksMQ, one topic per PChannel); RecoveryStorage rebuilds state deterministically via checkpoint + WAL replay</li>
+    <li>After a crash data can't recover, you must reload</li>
+    <li>Recovery relies on aligning nodes' local clocks</li>
+    <li>The backend is hard-coded to Kafka and cannot change</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. Milvus abstracts log storage into a pluggable interface (walimpls), one PChannel per topic; after a crash RecoveryStorage replays the WAL from the latest checkpoint. Because the WAL is the single source of truth with monotonic TimeTicks, replay is deterministic and state rebuilds exactly.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson says Milvus makes 'the WAL the protagonist, with segments/indexes as log-derivable derived data' — the opposite priority of a traditional single-node DB (where the WAL is just a crash-recovery byproduct and tables are the protagonist). Consider: what capabilities does this 'inversion' buy Milvus (segments in memory, multiple data forms tailing the log asynchronously, replicas/CDC syncing by copying the log)? And what cost or precondition does it impose (a strong dependence on the WAL's reliability, ordering and replayability)?</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="30-consistency-and-timestamps.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">一致性与时间戳</span><span class="lang-en">Consistency &amp; timestamps</span></div></a><a class="next" href="../index.html"><div class="dir"><span class="lang-zh">完成 →</span><span class="lang-en">Done →</span></div><div class="ttl"><span class="lang-zh">返回目录</span><span class="lang-en">Back to index</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>

@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus 图解学习指南 - 打印版</h1>
-<p style="color:var(--muted)">全 30 课 - 逐课分页。用浏览器 Ctrl/Cmd+P 即可导出 PDF。</p>
+<p style="color:var(--muted)">全 31 课 - 逐课分页。用浏览器 Ctrl/Cmd+P 即可导出 PDF。</p>
 <div class="print-toc"><h2>目录</h2>
 <ol>
   <li>Milvus 是什么</li>
@@ -358,6 +358,7 @@ details[open] > summary { list-style: none; }
   <li>执行引擎</li>
   <li>Reduce 与结果归并</li>
   <li>一致性与时间戳</li>
+  <li>WAL 架构</li>
 </ol></div>
 <section class="lesson-print">
 <h1>Milvus 是什么</h1>
@@ -6552,6 +6553,199 @@ Session 保证你<strong>至少能读到自己刚写的</strong>，对"写完马
   <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
   <ul>
     <li>为你自己的一个场景选一个一致性级别并说明理由：比如“用户上传一张图后立刻以图搜图”“电商首页的相似商品推荐(高并发)”“离线批量去重”“审计回放某历史时刻的数据”。分别该选 Strong / Bounded / Session / Eventually / Customized 中的哪个？把“能容忍多旧”与“延迟要求”这两条线索用上。</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>WAL 架构</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+第 16 课我们说过：Milvus 把所有写入都先记进一条 <strong>WAL（Write-Ahead Log，预写日志）</strong>，它是整个系统的<strong>单一事实来源</strong>。
+那一课只点到为止；这一部分（第七部分）我们就钻进这条日志的"引擎室"，看它到底由谁来管、怎么写、怎么在崩溃后恢复。先看骨架：
+<strong>StreamingCoord</strong> 负责"<strong>把哪条日志分给哪台机器</strong>"，<strong>StreamingNode</strong> 负责"<strong>真正地写这条日志</strong>"，底下垫着一个可换的
+<strong>WAL Backend</strong>（Kafka / Pulsar / Woodpecker / RocksMQ）。读懂这套架构，你就读懂了 Milvus"写"的最底层，也读懂了它<strong>为什么能既可靠、又可扩展、还能崩溃自愈</strong>——答案都藏在"一条可靠日志"这件事里。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 生活类比</div>
+  把 WAL 想成一家银行的<strong>流水账本</strong>：任何一笔操作，<strong>先记账、再办事</strong>——只要账记下了，哪怕柜员下班、系统重启，事后照着账本一条条重放，状态就能完整复原。
+  <strong>StreamingCoord</strong> 像<strong>总行调度</strong>：决定每个网点（PChannel）由哪位记账员（StreamingNode）负责；<strong>StreamingNode</strong> 是<strong>记账员</strong>本人，
+  一笔笔往账本上写，还要盖时间戳、管事务、必要时上锁。账本本身存在哪种纸上（Kafka/Pulsar/…）可以换，但"先记账后办事"这条铁律不变。账记下了，就<strong>什么都不怕</strong>：哪怕整个机房断电，只要账本还在，把它从头念一遍，每一笔钱该在哪儿就还在哪儿。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  一句话：<strong>StreamingCoord（单例，跑在 RootCoord 进程里）把 PChannel 分配给 StreamingNode；StreamingNode 通过一条"拦截器链"(TimeTick/Txn/Shard/Lock)把每次写入落进 WAL Backend，并由 RecoveryStorage 负责检查点与崩溃恢复</strong>。
+  WAL Backend 是可插拔的（Kafka/Pulsar/Woodpecker/RocksMQ），<strong>一个 PChannel 一个 topic</strong>。整条写入链路的可靠与有序，都由这套架构兜底。本课就沿"调度→写入→存储→恢复"这条线，把它逐层拆开看。
+</div>
+
+<h2>谁在管 WAL：StreamingCoord 与 StreamingNode</h2>
+<p>WAL 不是一条，而是<strong>很多条</strong>——回忆第 7 课：一个集合被切成若干 <strong>VChannel（逻辑分片）</strong>，它们映射到物理的 <strong>PChannel</strong>，每个 PChannel 就是一条独立的日志流。
+这么多条日志，得有人决定"<strong>哪条由哪台机器来写</strong>"，这就是 <strong>StreamingCoord</strong> 的活。它是一个<strong>单例</strong>，并不单独起进程，而是<strong>跑在 RootCoord（也就是今天 MixCoord 里）那部分</strong>。
+它做<strong>通道管理（channel management）</strong>：把 PChannel 分配给各个 StreamingNode、监控节点健康、在节点上下线时重新均衡（balancer），还负责 VChannel/CChannel 的分配。简言之，StreamingCoord 是"<strong>日志的调度大脑</strong>"，但它<strong>自己不写日志</strong>。</p>
+
+<p>真正写日志的是 <strong>StreamingNode</strong>。每个 StreamingNode 负责一批分给它的 PChannel，为每条 PChannel 跑一套完整的 WAL 机制（代码在 <span class="mono">internal/streamingnode/server/wal/</span>）。
+它要做的事不少：给每条写入<strong>盖 TimeTick</strong>（那把单调时钟）、维护<strong>事务</strong>、做<strong>段分配（Shard Management）</strong>、必要时<strong>上锁</strong>保证独占写入、提供<strong>scanner</strong> 让消费者读日志、
+以及最关键的——通过 <strong>RecoveryStorage</strong> 打检查点、在崩溃后从日志里把状态重建回来。一句话：<strong>StreamingCoord 管"谁来写"，StreamingNode 管"怎么写好、写稳、写得能恢复"</strong>。
+这正是 Milvus 反复出现的"<strong>协调者调度、节点执行</strong>"分工，在写入最底层的又一次体现。</p>
+
+<p>为什么要把一个集合的写入拆成<strong>多条 PChannel</strong>，而不是图省事用一条大日志？因为<strong>一条日志的吞吐有上限</strong>：写入是顺序追加的，一条 PChannel 再快，也终究是单点。
+把集合切成多条 VChannel/PChannel、分散到多个 StreamingNode 上并行写，<strong>整体写入吞吐就能随机器数线性扩展</strong>——这正是"存算分离 + 水平扩展"在写入侧的体现。
+代价是要有人统筹这些分片：哪条 PChannel 在哪台机器、某台机器挂了它负责的 PChannel 怎么办、新加机器后要不要把一些 PChannel 迁过去再均衡……这些"<strong>调度</strong>"工作正是 StreamingCoord 的 balancer 在做。
+它持续<strong>监控各 StreamingNode 的健康</strong>：一旦某个节点失联，就把它名下的 PChannel <strong>重新分配</strong>给健康节点，新节点接手后从 WAL 的检查点处<strong>重放恢复</strong>，继续写。
+于是对外看，写入<strong>既能横向扩展、又能在节点故障时自愈</strong>——而这一切的前提，正是"日志可被任何一台机器接手重放"。把"谁来写"这件会随集群变动的事，交给一个统一的大脑集中决策，是把复杂度收敛的关键一招。</p>
+
+<div class="layers">
+  <div class="layer l-core"><div class="lh"><span class="badge">调度</span><span class="name">StreamingCoord</span></div><div class="ld">单例，跑在 RootCoord 进程；把 PChannel 分给 StreamingNode、健康监控、再均衡（不写日志）</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">执行</span><span class="name">StreamingNode</span></div><div class="ld">为每条 PChannel 跑 WAL：拦截器链(TimeTick/Txn/Shard/Lock) + scanner + RecoveryStorage</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">存储</span><span class="name">WAL Backend</span></div><div class="ld">可插拔：Kafka / Pulsar / Woodpecker / RocksMQ，一个 PChannel 一个 topic</div></div>
+</div>
+
+<h2>拦截器链：每次写入都要"过五关"</h2>
+<p>StreamingNode 写日志不是"直接往后追加"那么简单。每一次 <span class="inline">Append</span>，都要先穿过一条<strong>拦截器链（interceptor chain）</strong>——一组按顺序挂上去的处理器，每个负责一件横切的事。
+这套设计的妙处在于：把"盖时间戳""管事务""分配段""上锁"这些<strong>正交的关注点拆开</strong>，各做各的、可插拔、易测试，而不是揉成一坨。主要的几关是：</p>
+
+<p>这条链的<strong>顺序很有讲究</strong>：TimeTick 必须先盖，后面的事务、段分配才有统一的时间基准；Lock 通常在更外层，保证整段处理的原子性。你可以把它想成一条<strong>装配线</strong>——
+每个工位只拧一种螺丝，零件按固定顺序流过，最后下线的就是一条"<strong>盖好戳、归好属、入好账</strong>"的合规日志。这种"<strong>责任单一、按序串联</strong>"的设计，让 Milvus 能<strong>灵活增减横切能力</strong>：
+要支持一种新的写语义，往链上挂一个新拦截器即可，不必去动核心的追加逻辑。这也是为什么 DDL/DCL、事务、复制这些后来才加的能力，能比较干净地融进来——它们大多就是链上多挂的一环。</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>TimeTick 拦截器</h4><p>给这条消息盖上 PChannel 级<strong>单调递增</strong>的 TimeTick——这把"日志时钟"正是读路径 tsafe 等待的对象（第 30 课）。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Txn 拦截器</h4><p>管理<strong>事务</strong>的生命周期：把一批本应"要么都见、要么都不见"的写入，框在一个事务里原子地落日志。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Shard 拦截器</h4><p>做<strong>段分配</strong>：决定这批行落到哪个 growing 段（段 ID 在此刻才定，回忆第 15 课"段 ID 在 StreamingNode 才分配"）。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Lock 拦截器</h4><p>在 VChannel 或 PChannel 粒度上做<strong>独占/共享</strong>访问控制，保证并发写入的正确顺序。</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>落 Backend</h4><p>穿过所有拦截器后，消息被<strong>真正追加</strong>到 WAL Backend 的对应 topic，成为不可变的一条日志。</p></div></div>
+</div>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/streamingnode/server/wal/</span><span class="ln">WAL 与拦截器链（节选示意）</span></div>
+  <pre><span class="cm">// 每条 PChannel 对应一个 WAL；Append 前穿过拦截器链</span>
+<span class="kw">type</span> WAL <span class="kw">interface</span> {
+    Append(ctx, msg) (MessageID, error)   <span class="cm">// 经拦截器链 -> 落 backend</span>
+    Read(opt) (Scanner, error)            <span class="cm">// 消费者顺序读日志</span>
+}
+<span class="cm">// interceptors: timetick / txn / shard / lock，按序挂载</span></pre>
+</div>
+
+<h2>WAL Backend：底层那张"日志纸"可以换</h2>
+<p>拦截器链的尽头，是把消息真正写进 <strong>WAL Backend</strong>。Milvus 把"底层用什么存日志"抽象成了一个可插拔的接口（<span class="mono">walimpls</span>），于是你可以按部署形态选不同的实现，
+而上层的写入逻辑<strong>一行都不用改</strong>。约定很简单：<strong>一个 PChannel 对应后端里的一个 topic</strong>，日志在 topic 里顺序追加、可被多个消费者重放。常见的几种后端各有取舍：</p>
+
+<p>为什么坚持"<strong>一个 PChannel 一个 topic</strong>"？因为 PChannel 是 Milvus 保证<strong>有序</strong>的最小单位：同一条 PChannel 内的所有写入，TimeTick 严格递增、消费时也严格按这个顺序，
+于是"先写的先被看到"在分片内永远成立。不同 PChannel 之间不要求全局有序（那样会牺牲并行度），跨分片的全局协调另有 CChannel（控制通道）兜底。把"<strong>分片内强有序、分片间高并行</strong>"这两件看似矛盾的事同时拿到，
+正是靠"一分片一日志一 topic"的清爽对应关系。理解了这点，你也就明白为什么扩容是"加分片/加 PChannel"——每多一条独立日志，就多一份可并行的吞吐，而每条日志内部的有序性丝毫不受影响。</p>
+
+<table class="t">
+  <tr><th>后端</th><th>形态</th><th>适合</th></tr>
+  <tr><td><strong>Woodpecker</strong></td><td class="mono">Milvus 内置的 WAL</td><td>新实例推荐：性能好、运维简单、成本低</td></tr>
+  <tr><td><strong>Pulsar</strong></td><td class="mono">外部消息队列</td><td>集群模式的传统默认，生态成熟</td></tr>
+  <tr><td><strong>Kafka</strong></td><td class="mono">外部消息队列</td><td>已有 Kafka 基础设施时</td></tr>
+  <tr><td><strong>RocksMQ</strong></td><td class="mono">单机本地队列</td><td>Standalone 模式默认（不支持集群）</td></tr>
+</table>
+
+<p>把"日志的<strong>语义</strong>（追加、有序、可重放）"和"日志的<strong>实现</strong>（用 Kafka 还是 Woodpecker）"分开，是这套架构最聪明的地方之一：语义是 Milvus 自己牢牢握住的契约，实现则交给最合适的存储。
+这也呼应了第 8 课讲的部署形态——同一套代码，Standalone 用 RocksMQ、集群用 Pulsar 或 Woodpecker，对上层完全透明。</p>
+
+<p>值得专门提一句 <strong>Woodpecker</strong>：它是 Milvus<strong>自研、内置</strong>的 WAL 实现，目标是把"日志存储"这件事做得<strong>更贴合向量数据库的需求</strong>——既不必额外部署运维一套重型消息队列（像 Pulsar 那样），
+又能在性能、成本、运维简单度上取得更好的平衡。所以官方建议<strong>新实例优先用 Woodpecker</strong>。这件事本身也印证了"把语义和实现分开"的价值：正因为上层只依赖抽象的 WAL 语义，Milvus 才能<strong>在不惊动上层的情况下，换上一套更合适的底层日志</strong>。
+一个良好的抽象，让系统能随需求演进而"换底盘不换车身"——这是任何想长期演进的系统都该追求的。</p>
+
+<h2>RecoveryStorage：崩了之后，照着日志重来</h2>
+<p>WAL 之所以叫"<strong>预写</strong>日志，价值就在崩溃时兑现。设想一个 StreamingNode 突然宕机：它内存里的 growing 段、刚分配的段信息、消费到哪儿的进度，全没了。怎么办？
+答案是 <strong>RecoveryStorage</strong>（<span class="mono">internal/streamingnode/server/wal/recovery</span>）：它在正常运行时<strong>周期性打检查点（checkpoint）</strong>，记下"我已经把日志安全处理到哪个位置、对应的元数据是什么"；
+崩溃重启后，它<strong>从最近的检查点出发、重放检查点之后的那段 WAL</strong>，就能把段、进度等状态<strong>一字不差地重建</strong>回来。因为 WAL 是单一事实来源、且每条都带单调的 TimeTick，所以"重放"是确定性的——
+重放同一段日志，必然得到同一个状态。<strong>检查点 + 重放</strong>，就是分布式系统里"<strong>故障即默认</strong>、靠日志兜底"哲学的又一次落地（回忆第 14 课的"故障即默认"）。
+检查点的频率，还藏着一个工程取舍：打得越勤，崩溃后要重放的日志越短、恢复越快，但平时的开销越大；打得越疏则反之。这正是分布式系统里典型的"恢复时间 vs 常态开销"的权衡，Milvus 用合理的默认值替你兜住，必要时也可调。</p>
+
+<p>如果你用过传统数据库，会觉得"WAL + 检查点 + 崩溃重放"很眼熟——单机数据库（如 MySQL 的 redo log、PostgreSQL 的 WAL）正是靠它保证崩溃后不丢已提交事务。
+Milvus 借用了同一套朴素而强大的思想，但把它<strong>放大到了分布式、并做成了系统的主干而非辅助</strong>：在单机数据库里 WAL 是"为了崩溃恢复而存在的副产物"，主角是表和索引；
+而在 Milvus 里，<strong>WAL 本身就是主角、是唯一的事实来源</strong>，表（段）、索引反而是"由日志派生、随时可由日志重建"的次生数据。这个主次的<strong>反转</strong>，是"日志即数据（log as data）"的精髓，
+也解释了为什么 Milvus 敢让段在内存里、敢让多种数据形态异步追日志——因为只要 WAL 在，丢什么都能从头重放回来。</p>
+
+<p>还有一面我们一直没细说：<strong>消费侧</strong>。日志写进去，总要有人读出来用。StreamingNode 提供 <strong>scanner</strong> 让消费者<strong>顺序读</strong>某条 PChannel 的日志——
+回忆第 17 课：正是 StreamingNode 的 flusher 顺着 WAL 把消息变成 growing 段、再 flush 成 binlog；第 26 课里 QueryNode 的 delegator 也靠消费 WAL 尾巴让 growing 数据保持新鲜。
+也就是说，<strong>同一条 WAL，被多个消费者按各自的进度重放</strong>，各自维护自己"读到哪儿"（checkpoint/seek 位置）。这种"<strong>一份日志、多方按需重放</strong>"的模式，让写入、落盘、查询、复制彼此解耦：
+谁都不直接调谁，只是各自盯着同一条日志、按自己的节奏前进。把"协作"简化成"共享一条只增的日志"，是这套架构能既复杂又不乱的根本原因。</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">检查点</div><div class="nd">记录已处理到的日志位置 + 元数据</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">崩溃</div><div class="nd">内存状态丢失</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">重放</div><div class="nd">从检查点之后重放 WAL</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">状态复原</div><div class="nd">段/进度一字不差重建</div></div>
+</div>
+
+<h2>这一切，为了"单一事实来源"</h2>
+<p>退一步看，这套又是调度、又是拦截器、又是可插拔后端、又是检查点重放的复杂机制，最终都服务于一句话：<strong>让 WAL 成为可靠、有序、可重放的单一事实来源</strong>。
+一旦做到这一点，上层一切都顺了——读路径靠 TimeTick/tsafe 等到该看的数据（第 30 课）、DataNode/StreamingNode 靠重放 WAL 重建段、副本与 CDC 靠复制 WAL 同步（下两课）。
+<strong>"写"被收敛成"往一条可靠日志上追加"，"恢复/同步/一致性"则统统化简为"重放这条日志"</strong>。这就是"日志即数据"在工程上的全部威力。下一课，我们看一类特殊的写入——<strong>DDL/DCL</strong>，
+为什么它不能像普通写入那样只进一条日志，而要靠一个叫 <strong>Broadcaster</strong> 的机制，<strong>原子地广播到很多条日志</strong>上。</p>
+
+<p>临走前再把这一课的<strong>三层抽象</strong>钉一下，它们层层垫高、各管一段：最上是 <strong>StreamingCoord</strong> 的"<strong>调度</strong>"——决定布局（谁写哪条），它面对的是"集群会变"这件事；
+中间是 <strong>StreamingNode</strong> 的"<strong>写好一条日志</strong>"——拦截器链 + scanner + RecoveryStorage，它面对的是"写要正确、要能被读、要能恢复"；最下是 <strong>WAL Backend</strong> 的"<strong>把字节落到持久存储</strong>"——它面对的是"用什么存"。
+三层之间只通过<strong>清晰的接口</strong>耦合，于是每一层都能独立演进、独立扩展、独立替换。当你以后在日志里看到一条诡异的消息、或排查一次写入为什么慢，<strong>先想清楚问题落在哪一层</strong>（是分配不均？是某个拦截器？还是后端慢？），
+就已经赢了一半。把一个复杂系统拆成"几层各自单一职责、以接口相连"的结构，既是读懂它的钥匙，也是设计它的范式。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>分工</strong>：StreamingCoord（单例，在 RootCoord 内）调度——把 PChannel 分给 StreamingNode；StreamingNode 执行——真正写每条 PChannel 的 WAL。</li>
+    <li><strong>拦截器链</strong>：每次 Append 依次过 <strong>TimeTick / Txn / Shard / Lock</strong>，把盖时间戳、事务、段分配、上锁等横切关注点拆开处理。</li>
+    <li><strong>WAL Backend 可插拔</strong>：Kafka / Pulsar / Woodpecker / RocksMQ，<strong>一个 PChannel 一个 topic</strong>；语义(追加/有序/可重放)固定，实现可换。</li>
+    <li><strong>RecoveryStorage</strong>：周期检查点 + 崩溃后从检查点重放 WAL，确定性地重建状态——"故障即默认，靠日志兜底"。</li>
+    <li><strong>归宿</strong>：一切复杂度都服务于"让 WAL 成为单一事实来源"；恢复/同步/一致性都化简为"重放日志"。</li>
+    <li><strong>主次反转</strong>：传统库里 WAL 是为崩溃恢复的副产物、表才是主角；Milvus 里 WAL 是主角与唯一事实来源，段/索引是可由日志重建的派生数据。</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. 在 Milvus 流式系统里，StreamingCoord 和 StreamingNode 的分工是什么？</div>
+  <ol class="opts">
+    <li>StreamingCoord(单例，在 RootCoord 内)调度——把 PChannel 分给 StreamingNode；StreamingNode 执行——真正写每条 PChannel 的 WAL</li>
+    <li>StreamingNode 调度、StreamingCoord 写日志</li>
+    <li>两者都直接写日志，没有分工</li>
+    <li>它们只负责读，不负责写</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：A</strong>。这又是“协调者调度、节点执行”的体现：StreamingCoord 做通道管理(把 PChannel 分给节点、健康监控、再均衡)但自己不写日志；StreamingNode 为分到的每条 PChannel 跑完整 WAL(拦截器链+scanner+RecoveryStorage)。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. 每次 Append 都要穿过一条“拦截器链”，下列哪组是它的主要环节？</div>
+  <ol class="opts">
+    <li>压缩 / 加密 / 去重 / 排序</li>
+    <li>建索引 / 查索引 / 删索引 / 重建</li>
+    <li>TimeTick(盖单调时间戳) / Txn(事务) / Shard(段分配) / Lock(独占或共享)</li>
+    <li>解析 SQL / 优化 / 执行 / 返回</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：C</strong>。拦截器把横切关注点拆开、按序串联：TimeTick 盖那把读路径要等的时钟、Txn 管事务原子性、Shard 决定段 ID(段在此刻才分配)、Lock 控制并发独占。要加新写语义，挂个新拦截器即可。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 关于 WAL Backend 与崩溃恢复，下列哪种说法正确？</div>
+  <ol class="opts">
+    <li>Backend 可插拔(Kafka/Pulsar/Woodpecker/RocksMQ，一 PChannel 一 topic)；RecoveryStorage 靠检查点+重放 WAL 确定性地重建状态</li>
+    <li>崩溃后数据无法恢复，只能重灌</li>
+    <li>恢复靠各节点的本地时钟对齐</li>
+    <li>Backend 写死为 Kafka，不可更换</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：A</strong>。Milvus 把“日志存储”抽象成可插拔接口(walimpls)，一个 PChannel 对应一个 topic；崩溃后 RecoveryStorage 从最近检查点重放其后的 WAL。因为 WAL 是单一事实来源且每条带单调 TimeTick，重放是确定性的，状态能一字不差重建。</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>本课说 Milvus 把“WAL=主角、段/索引=可由日志重建的派生数据”，这与传统单机数据库(WAL 只是为崩溃恢复的副产物、表才是主角)正好主次相反。请思考：这个“主次反转”让 Milvus 获得了哪些能力(如让段留在内存、多种数据形态异步追日志、副本/CDC 靠复制日志同步)？它又带来什么代价或前提(对 WAL 的可靠性、有序性、可重放性的强依赖)？</li>
   </ul>
 </div>
 </div>

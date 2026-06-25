@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 30 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 31 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
@@ -358,6 +358,7 @@ details[open] > summary { list-style: none; }
   <li>The execution engine</li>
   <li>Reduce & result assembly</li>
   <li>Consistency & timestamps</li>
+  <li>WAL architecture</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -6676,6 +6677,186 @@ operations and contributing) drill further down and reach further out, but they 
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
     <li>Pick a consistency level for one of your own scenarios and justify it: e.g. 'a user uploads an image then immediately does image-to-image search', 'similar-product recommendation on a busy storefront (high concurrency)', 'offline batch dedup', 'audit replay of data as of a historical moment'. Which of Strong / Bounded / Session / Eventually / Customized fits each? Use the two clues: 'how stale can it tolerate' and 'latency requirement'.</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>WAL architecture</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Lesson 16 said it: Milvus records every write into a <strong>WAL (Write-Ahead Log)</strong> first, and that log is the system's
+<strong>single source of truth</strong>. That lesson only sketched it; this part (Part 7) goes into the log's "engine room" — who runs it,
+how it is written, and how it recovers after a crash. The skeleton: <strong>StreamingCoord</strong> decides "<strong>which log goes to which
+machine</strong>", <strong>StreamingNode</strong> "<strong>actually writes that log</strong>", and underneath sits a pluggable <strong>WAL
+Backend</strong> (Kafka / Pulsar / Woodpecker / RocksMQ). Understand this and you understand the very bottom of how Milvus "writes".
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of the WAL as a bank's <strong>ledger</strong>: for any operation, <strong>record first, then act</strong> — once it's in the ledger,
+  even if the teller goes home or the system reboots, replaying the entries one by one fully restores the state. <strong>StreamingCoord</strong>
+  is like <strong>head-office dispatch</strong>: deciding which branch (PChannel) each bookkeeper (StreamingNode) handles. <strong>StreamingNode</strong>
+  is the <strong>bookkeeper</strong>: writing entry by entry, stamping timestamps, managing transactions, locking when needed. The kind of paper the
+  ledger is on (Kafka/Pulsar/…) can change, but the iron rule "record before you act" does not.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>StreamingCoord (a singleton inside the RootCoord process) assigns PChannels to StreamingNodes; a StreamingNode lands each
+  write into the WAL Backend through an "interceptor chain" (TimeTick/Txn/Shard/Lock), and RecoveryStorage handles checkpoints and crash
+  recovery</strong>. The WAL Backend is pluggable (Kafka/Pulsar/Woodpecker/RocksMQ), with <strong>one topic per PChannel</strong>. The whole write
+  path's reliability and ordering rest on this architecture.
+</div>
+
+<h2>Who runs the WAL: StreamingCoord and StreamingNode</h2>
+<p>There isn't one WAL but <strong>many</strong> — recall Lesson 7: a collection is sharded into <strong>VChannels</strong> mapped to physical
+<strong>PChannels</strong>, and each PChannel is an independent log stream. With so many logs, someone must decide "<strong>which log is written by
+which machine</strong>", and that's <strong>StreamingCoord</strong>'s job. It is a <strong>singleton</strong>, doesn't run as a separate process,
+but <strong>runs inside the RootCoord part (today, inside MixCoord)</strong>. It does <strong>channel management</strong>: assigning PChannels to
+StreamingNodes, monitoring node health, rebalancing on join/leave (the balancer), and allocating VChannel/CChannel. In short, StreamingCoord is
+the "<strong>scheduling brain of the log</strong>", but it <strong>writes no log itself</strong>.</p>
+
+<p>The one that actually writes is <strong>StreamingNode</strong>. Each StreamingNode owns a batch of assigned PChannels and runs a full WAL
+mechanism per PChannel (code in <span class="mono">internal/streamingnode/server/wal/</span>). It has plenty to do: <strong>stamp each write with a
+TimeTick</strong> (the monotonic clock), manage <strong>transactions</strong>, do <strong>segment assignment (Shard Management)</strong>,
+<strong>lock</strong> for exclusive writes when needed, provide a <strong>scanner</strong> for consumers to read the log, and — most importantly —
+checkpoint via <strong>RecoveryStorage</strong> and rebuild state from the log after a crash. In a line: <strong>StreamingCoord owns "who writes",
+StreamingNode owns "how to write it well, stably, and recoverably"</strong>. This is Milvus's recurring "<strong>coordinator schedules, node
+executes</strong>" split, showing up once more at the very bottom of the write path.</p>
+
+<div class="layers">
+  <div class="layer l-core"><div class="lh"><span class="badge">schedule</span><span class="name">StreamingCoord</span></div><div class="ld">singleton inside RootCoord; assigns PChannels to StreamingNodes, health monitoring, rebalancing (writes no log)</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">execute</span><span class="name">StreamingNode</span></div><div class="ld">runs the WAL per PChannel: interceptor chain (TimeTick/Txn/Shard/Lock) + scanner + RecoveryStorage</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">storage</span><span class="name">WAL Backend</span></div><div class="ld">pluggable: Kafka / Pulsar / Woodpecker / RocksMQ, one topic per PChannel</div></div>
+</div>
+
+<h2>The interceptor chain: every write "runs the gauntlet"</h2>
+<p>A StreamingNode doesn't just "append straight to the end". Every <span class="inline">Append</span> first passes through an <strong>interceptor
+chain</strong> — an ordered set of handlers, each owning one cross-cutting concern. The beauty: <strong>separate orthogonal concerns</strong> — stamping
+timestamps, managing transactions, assigning segments, locking — so each is independent, pluggable and testable, rather than tangled together. The main
+gates are:</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>TimeTick interceptor</h4><p>stamps the message with a PChannel-level <strong>monotonically increasing</strong> TimeTick — the "log clock" that the read path's tsafe waits on (Lesson 30).</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Txn interceptor</h4><p>manages the <strong>transaction</strong> lifecycle: framing a batch that should be "all-or-nothing visible" into one atomic log transaction.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Shard interceptor</h4><p>does <strong>segment assignment</strong>: which growing segment these rows land in (the segment ID is decided here — recall Lesson 15, "segment ID is assigned at the StreamingNode").</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Lock interceptor</h4><p><strong>exclusive/shared</strong> access control at VChannel or PChannel scope, ensuring correct ordering of concurrent writes.</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>Land in the Backend</h4><p>after all interceptors, the message is <strong>actually appended</strong> to the WAL Backend's topic, becoming one immutable log entry.</p></div></div>
+</div>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/streamingnode/server/wal/</span><span class="ln">the WAL and its interceptor chain (illustrative)</span></div>
+  <pre><span class="cm">// each PChannel has a WAL; Append passes the interceptor chain first</span>
+<span class="kw">type</span> WAL <span class="kw">interface</span> {
+    Append(ctx, msg) (MessageID, error)   <span class="cm">// via interceptors -> land in backend</span>
+    Read(opt) (Scanner, error)            <span class="cm">// consumers read the log in order</span>
+}
+<span class="cm">// interceptors: timetick / txn / shard / lock, mounted in order</span></pre>
+</div>
+
+<h2>WAL Backend: the underlying "log paper" is swappable</h2>
+<p>At the end of the interceptor chain, the message is actually written to the <strong>WAL Backend</strong>. Milvus abstracts "what stores the log
+underneath" into a pluggable interface (<span class="mono">walimpls</span>), so you can pick different implementations per deployment shape while the
+upper write logic <strong>doesn't change a line</strong>. The contract is simple: <strong>one PChannel maps to one topic in the backend</strong>; the log is
+appended in order within a topic and can be replayed by multiple consumers. The common backends each have trade-offs:</p>
+
+<table class="t">
+  <tr><th>Backend</th><th>Form</th><th>Good for</th></tr>
+  <tr><td><strong>Woodpecker</strong></td><td class="mono">Milvus's built-in WAL</td><td>recommended for new instances: good perf, simple ops, low cost</td></tr>
+  <tr><td><strong>Pulsar</strong></td><td class="mono">external message queue</td><td>the traditional cluster default, mature ecosystem</td></tr>
+  <tr><td><strong>Kafka</strong></td><td class="mono">external message queue</td><td>when you already have Kafka infrastructure</td></tr>
+  <tr><td><strong>RocksMQ</strong></td><td class="mono">single-node local queue</td><td>Standalone default (not supported in cluster)</td></tr>
+</table>
+
+<p>Separating the log's <strong>semantics</strong> (append, ordered, replayable) from its <strong>implementation</strong> (Kafka or Woodpecker) is one of
+the smartest parts of this architecture: the semantics are a contract Milvus holds firmly, while the implementation is delegated to the most suitable
+storage. This echoes Lesson 8's deployment shapes — the same code uses RocksMQ in Standalone and Pulsar/Woodpecker in a cluster, entirely transparent to
+the upper layers.</p>
+
+<h2>RecoveryStorage: after a crash, redo it from the log</h2>
+<p>The WAL is called a "<strong>write-ahead</strong>" log precisely because its value pays off on a crash. Picture a StreamingNode suddenly dying: its
+in-memory growing segments, freshly assigned segment info, and consume progress are all gone. What now? The answer is <strong>RecoveryStorage</strong>
+(<span class="mono">internal/streamingnode/server/wal/recovery</span>): during normal operation it <strong>periodically checkpoints</strong>, recording "how far
+I've safely processed the log and the corresponding metadata"; after a restart it <strong>starts from the latest checkpoint and replays the WAL after
+it</strong>, rebuilding segments, progress and other state <strong>exactly</strong>. Because the WAL is the single source of truth and every entry carries a
+monotonic TimeTick, "replay" is deterministic — replaying the same log necessarily yields the same state. <strong>Checkpoint + replay</strong> is another
+landing of the distributed-systems philosophy "<strong>failure is the default, backed by the log</strong>" (recall Lesson 14's "failure as default").</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">Checkpoint</div><div class="nd">record processed log position + metadata</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">Crash</div><div class="nd">in-memory state lost</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">Replay</div><div class="nd">replay WAL after the checkpoint</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">State restored</div><div class="nd">segments/progress rebuilt exactly</div></div>
+</div>
+
+<h2>All of it, for a "single source of truth"</h2>
+<p>Step back: this whole machinery — scheduling, interceptors, a pluggable backend, checkpoint-replay — ultimately serves one sentence: <strong>make the
+WAL a reliable, ordered, replayable single source of truth</strong>. Once that holds, everything above falls into place — the read path waits on
+TimeTick/tsafe for the data it should see (Lesson 30), DataNode/StreamingNode rebuild segments by replaying the WAL, replicas and CDC sync by copying the
+WAL (the next two lessons). <strong>"Writing" collapses into "append to one reliable log", and "recovery/sync/consistency" all reduce to "replay that
+log"</strong>. That is the full power of "log as data". Next lesson, we look at a special kind of write — <strong>DDL/DCL</strong> — and why it can't just go
+into one log like an ordinary write, but needs a mechanism called the <strong>Broadcaster</strong> to <strong>atomically broadcast across many logs</strong>.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Split</strong>: StreamingCoord (singleton, inside RootCoord) schedules — assigns PChannels to StreamingNodes; StreamingNode executes — actually writes each PChannel's WAL.</li>
+    <li><strong>Interceptor chain</strong>: every Append passes <strong>TimeTick / Txn / Shard / Lock</strong> in order, separating timestamp-stamping, transactions, segment assignment and locking.</li>
+    <li><strong>Pluggable WAL Backend</strong>: Kafka / Pulsar / Woodpecker / RocksMQ, <strong>one topic per PChannel</strong>; the semantics (append/ordered/replayable) are fixed, the implementation swappable.</li>
+    <li><strong>RecoveryStorage</strong>: periodic checkpoints + replay the WAL from a checkpoint after a crash, deterministically rebuilding state — "failure is the default, backed by the log".</li>
+    <li><strong>The destination</strong>: all the complexity serves "make the WAL the single source of truth"; recovery/sync/consistency all reduce to "replay the log".</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. In Milvus's streaming system, how do StreamingCoord and StreamingNode divide the work?</div>
+  <ol class="opts">
+    <li>StreamingCoord (a singleton inside RootCoord) schedules — assigns PChannels to StreamingNodes; StreamingNode executes — actually writes each PChannel's WAL</li>
+    <li>StreamingNode schedules and StreamingCoord writes the log</li>
+    <li>Both write the log directly, with no division</li>
+    <li>They only read, never write</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. Another 'coordinator schedules, node executes': StreamingCoord does channel management (assign PChannels, health monitoring, rebalancing) but writes no log; StreamingNode runs the full WAL (interceptor chain + scanner + RecoveryStorage) for each assigned PChannel.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Every Append passes an 'interceptor chain'. Which set are its main stages?</div>
+  <ol class="opts">
+    <li>compress / encrypt / dedup / sort</li>
+    <li>build index / query index / drop index / rebuild</li>
+    <li>TimeTick (stamp a monotonic ts) / Txn (transaction) / Shard (segment assignment) / Lock (exclusive/shared)</li>
+    <li>parse SQL / optimize / execute / return</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. The chain separates cross-cutting concerns in order: TimeTick stamps the clock the read path waits on, Txn handles transaction atomicity, Shard decides the segment ID (segments are assigned here), Lock controls concurrent exclusivity. A new write semantic is just a new interceptor.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Which statement about the WAL Backend and crash recovery is correct?</div>
+  <ol class="opts">
+    <li>The backend is pluggable (Kafka/Pulsar/Woodpecker/RocksMQ, one topic per PChannel); RecoveryStorage rebuilds state deterministically via checkpoint + WAL replay</li>
+    <li>After a crash data can't recover, you must reload</li>
+    <li>Recovery relies on aligning nodes' local clocks</li>
+    <li>The backend is hard-coded to Kafka and cannot change</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. Milvus abstracts log storage into a pluggable interface (walimpls), one PChannel per topic; after a crash RecoveryStorage replays the WAL from the latest checkpoint. Because the WAL is the single source of truth with monotonic TimeTicks, replay is deterministic and state rebuilds exactly.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson says Milvus makes 'the WAL the protagonist, with segments/indexes as log-derivable derived data' — the opposite priority of a traditional single-node DB (where the WAL is just a crash-recovery byproduct and tables are the protagonist). Consider: what capabilities does this 'inversion' buy Milvus (segments in memory, multiple data forms tailing the log asynchronously, replicas/CDC syncing by copying the log)? And what cost or precondition does it impose (a strong dependence on the WAL's reliability, ordering and replayability)?</li>
   </ul>
 </div>
 </div>
