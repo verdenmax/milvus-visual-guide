@@ -29,4 +29,7 @@ CONTENT = {
     "15-insert-via-proxy.html": part4.LESSON_15,
     "16-streaming-and-wal.html": part4.LESSON_16,
     "17-datanode-and-flush.html": part4.LESSON_17,
+    "18-binlog-and-storage.html": part4.LESSON_18,
+    "19-compaction-and-gc.html": part4.LESSON_19,
+    "20-delete-and-upsert.html": part4.LESSON_20,
 }

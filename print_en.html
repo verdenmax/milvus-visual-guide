@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 17 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 20 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
@@ -345,6 +345,9 @@ details[open] > summary { list-style: none; }
   <li>Insert via Proxy</li>
   <li>Streaming &amp; WAL</li>
   <li>DataNode &amp; flush</li>
+  <li>Binlog &amp; storage format</li>
+  <li>Compaction &amp; GC</li>
+  <li>Delete &amp; upsert</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -4455,6 +4458,592 @@ As for what happens after persistence: what a binlog looks like inside, how smal
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
     <li>This lesson stresses a segment may flush multiple times in its life, so a segment in object storage often maps to 'a set' of binlog files, not one — the very root of why compaction is later needed. Follow this thread: as flushes pile up small binlogs, what concrete cost does this impose on 'retrieval'? After compaction merges them, which aspects improve and how? (Tie in Lesson 7's columnar layout and the upcoming Lesson 19.)</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Binlog &amp; storage format</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Last lesson a segment was flushed into binlogs in object storage — but what does a binlog file <strong>actually look like inside</strong>? This lesson <strong>cracks it open</strong>: a segment in object storage isn't one file but <strong>a family of files</strong> —
+the <strong>insert binlog</strong> for the inserted data, the <strong>delete binlog</strong> for delete markers, the <strong>stats binlog</strong> for statistics, plus the built <strong>index files</strong>.
+We'll see what each <strong>holds</strong>, why insert binlogs store by <strong>column</strong> rather than by <strong>row</strong>, how they are laid out by <strong>path</strong> in object storage, and where the serialization code lives in <span class="mono">internal/storage</span>.
+</p>
+
+<div class="card analogy">
+  <div class="tag">📚 Analogy</div>
+  Picture a segment as <strong>the holdings of one bookshelf</strong> in a library, and binlogs as the <strong>different volumes</strong> that archive this batch into the warehouse. The <strong>insert binlog</strong> is the <strong>main text</strong> — but not whole books stacked together; rather, <strong>all the "title pages" bound into one volume, all the "author pages" into another</strong> (that is <strong>columnar</strong>: values of the same field gathered together).
+  The <strong>delete binlog</strong> is a <strong>cancellation list</strong> recording "which books were struck off at what moment," without actually tearing pages from the main text. The <strong>stats binlog</strong> is an <strong>index card</strong> — noting this shelf's number range (min/max primary key) and tucking in a <strong>bloom-filter</strong> "quick not-here" card, so you can judge "is a certain book <strong>probably</strong> here" without scanning the whole shelf.
+  The <strong>index files</strong> are a separately-built <strong>lookup catalogue</strong>, made for fast search. All these volumes hang on the warehouse shelves by a fixed <strong>library/zone/shelf/category</strong> numbering — that is the path layout in object storage.
+</div>
+
+<h2>One segment, a family of files: four kinds of artifact</h2>
+<p>Recall last lesson's <span class="inline">SyncTask</span>: one flush produces three kinds — insertBinlogs, statsBinlogs, deltaBinlog. Counting indexes too, a segment in object storage ultimately maps to <strong>four kinds of artifact</strong>, each holding its own content:</p>
+
+<table class="t">
+  <tr><th>artifact</th><th>holds</th><th>path prefix</th></tr>
+  <tr><td><strong>insert binlog</strong></td><td>each field's <strong>columnar</strong> data: the PK column, vector column, scalar columns — one file each</td><td class="mono">insert_log/</td></tr>
+  <tr><td><strong>delete binlog</strong></td><td>deleted <strong>primary keys + delete timestamps</strong> — a "cancellation list," not a real erase</td><td class="mono">delta_log/</td></tr>
+  <tr><td><strong>stats binlog</strong></td><td>the PK <strong>min/max</strong> and a <strong>bloom filter</strong>, to quickly rule out "this segment lacks a given PK"</td><td class="mono">stats_log/</td></tr>
+  <tr><td><strong>index file</strong></td><td>the ANN index built on the sealed segment (e.g. HNSW/IVF), built and stored separately</td><td class="mono">index_files/</td></tr>
+</table>
+
+<p>Among these four, the first thing to make clear is their <strong>division-of-labor philosophy</strong>: <strong>the insert binlog is the "real body"</strong> — the data itself, only one copy; <strong>the delete binlog is an "overlay"</strong> — it does not modify the insert binlog, only <strong>appends a layer of "these PKs are void" markers</strong> on top;
+<strong>the stats binlog is an "acceleration card"</strong> — it holds no raw data, just a summary distilled from the data so queries can <strong>skip</strong> irrelevant segments; <strong>the index file is "another viewpoint"</strong> — the same vector data, reorganized to optimize fast nearest-neighbor search.
+This layering of "<strong>real body + overlay + acceleration card + another viewpoint</strong>" is the micro-level embodiment of how Milvus decouples "writing fast" from "reading fast": writing only <strong>appends</strong> the real body and the cancellation list to disk (fast), leaving "tidying the body, applying cancellations, building accelerators" for the background to do slowly.</p>
+
+<p>It's worth spelling out the delete binlog's "<strong>doesn't truly delete</strong>" philosophy. Deleting a row does <strong>not</strong> go back into the insert binlog to erase that row — binlogs in object storage are <strong>read-only and immutable</strong>, unchangeable by nature.
+Instead, a delete is recorded as a <strong>tombstone</strong> in delta_log: "<strong>primary key X voided at time t</strong>." At query time the insert binlog and delete binlog are <strong>overlaid</strong>: a row is visible only if "it exists and isn't struck off by a later tombstone."
+Actually <strong>physically applying</strong> tombstones — purging void rows from the data — is the job of background <strong>compaction</strong> (Lesson 19). The full mechanism of delete and visibility is dissected in Lesson 20.</p>
+
+<h2>The stats binlog and bloom filter: teaching queries to "skip"</h2>
+<p>Of the four artifacts, the stats binlog is the most inconspicuous, yet it's the <strong>invisible hero of query speed</strong>. It <strong>stores no raw data</strong>, only two things distilled from this segment's primary-key column: the PK's <strong>min/max range</strong>, and a <strong>bloom filter</strong>.
+Both do the same job — let a query judge, <strong>before actually opening a segment</strong>, that "<strong>this segment has none of the PK I want</strong>," and thus <strong>skip the whole segment</strong>, saving all the cost of opening binlogs, decoding columns, and row-by-row comparison. In a collection with hundreds or thousands of segments, this "rule out first, examine later" pruning is the key to compressing a "full scan" down to "look at only the relevant few segments."</p>
+
+<p>A bloom filter is a <strong>probabilistic set</strong>: ask it "is PK X in this segment," and it answers only one of two things — "<strong>definitely not</strong>" or "<strong>maybe</strong>." It <strong>never misses</strong> (if it says not present, it truly isn't), but <strong>allows a tiny chance of false positive</strong> (says maybe, then a closer look finds nothing).
+This asymmetry of "<strong>rather over-check than ever miss</strong>" fits a database's need perfectly: it is used only to <strong>safely exclude</strong> impossible segments, never causing a truly-existing row to be missed. Milvus's bloom filter lives in <span class="mono">internal/util/bloomfilter</span>, held by <span class="inline">PrimaryKeyStats</span> (<span class="mono">internal/storage/stats.go</span>) and serialized into the stats binlog alongside the segment.
+When the next lessons cover delete routing and Lesson 20 covers delete and upsert, you'll meet it again — a delete message finding "which segment the to-be-voided PK actually lands in" relies precisely on screening each segment's bloom filter one by one.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/storage/stats.go</span><span class="ln">PrimaryKeyStats: a segment-level PK summary (excerpt)</span></div>
+  <pre><span class="kw">type</span> PrimaryKeyStats <span class="kw">struct</span> {
+    FieldID int64                            <span class="cm">// the PK field</span>
+    Min, Max int64                           <span class="cm">// PK range, for range pruning</span>
+    BF       bloomfilter.BloomFilterInterface <span class="cm">// bloom filter: quick "no such PK"</span>
+}</pre>
+</div>
+
+<p>As for the <strong>index file</strong>, it differs essentially from the other three: the first three are produced <strong>incidentally</strong> at flush time (they exist on the write path), whereas the index is built later in a <strong>dedicated step</strong> on the sealed segment (scheduled by DataCoord, recall Lesson 12).
+The reason is plain: <strong>an index can only be built on immutable data</strong> — if the data still changes, the built graph/inverted-list would go stale. So an index is naturally a "<strong>post-seal</strong>" product, built, stored, and loaded separately. A sealed segment may therefore have two sets of things — "data binlogs + index files" — used on demand at query time: take the index if present, brute-force scan the binlogs if not. This is also why "freshly-written data queries a bit slower, then speeds up after a while" — the index is built asynchronously only after persistence, and until it's ready the raw binlogs must be scanned.</p>
+
+<h2>Why insert binlogs store by column</h2>
+<p>The key design of insert binlogs is <strong>columnar</strong>: within one segment, <strong>each field is stored as its own binlog file</strong>, rather than packing all fields of a whole row together. If a segment has four fields "pk, vector, age, city," after persisting it becomes <strong>four insert binlog files</strong>, each holding only that one column's contiguous values.</p>
+
+<div class="cellgroup">
+  <div class="cg-cap">Columnar layout: values of one field gather into one contiguous binlog file (a segment = many column files)</div>
+  <div class="cells">
+    <div class="cell hl"><span class="lab">pk</span><span class="q">101,102,103,…</span></div>
+    <div class="cell"><span class="lab">vector</span><span class="q">[…],[…],[…]</span></div>
+    <div class="cell"><span class="lab">age</span><span class="q">23,31,27,…</span></div>
+    <div class="cell dim"><span class="lab">city</span><span class="q">"BJ","SH",…</span></div>
+  </div>
+</div>
+
+<p>Why do vector databases especially favor columnar? Three reasons, escalating. First, <strong>the retrieval access pattern is "columnar"</strong>: a vector query wants <strong>the vector column of all rows</strong> to compute similarity, and barely touches a row's other fields.
+Under columnar layout the vector column lies <strong>contiguously</strong> in one file — sequential reads when scanning, cache-friendly, and a <strong>whole column at once</strong> can be fed into SIMD/GPU to batch-compute distances; row storage would <strong>shred</strong> vectors between other fields, forcing a jumpy read per vector — dreadful performance.</p>
+
+<p>Second, <strong>same column, same type, excellent compression</strong>. A column of "age" all small integers, a column of "city" repeating a few strings — gathered together they have natural regularity, compressing hard with dictionary, run-length, and bit packing; row storage mixes different types together, leaving the compressor nowhere to start.
+Third, <strong>read-on-demand (column pruning)</strong>: when a query cares about only a few columns, columnar lets you <strong>open just the needed column files</strong>, skipping all I/O for the rest. These three together dictate that a vector DB's binlogs <strong>must be columnar</strong> — echoing the "columnar storage" hook planted back in Lesson 7 on segments.</p>
+
+<p>Let's also clear up a common confusion: <strong>why does the same segment and same field often have more than one binlog file in object storage?</strong> The answer hides in the last lesson — a segment <strong>flushes multiple times</strong> over its life, each time slicing off only "<strong>the new increment just accumulated</strong>" to disk.
+So the same field produces a series of binlogs across successive flushes, and that <span class="mono">{logID}</span> at the path's tail is the <strong>sequence number</strong> distinguishing them. In other words, "a column of a segment" is physically <strong>a set of binlog files laid out by logID</strong>; only stitched together logically do they form this column's complete data.
+That is the root motivation for compaction: as writes continue, small binlogs pile up and a query's file fragments grow ever more fragmented — they must be periodically <strong>merged</strong> into larger, tidier files (Lesson 19).</p>
+
+<p>Columnar brings another easily-overlooked but engineering-critical benefit: <strong>schema-evolution friendliness</strong>. <strong>Adding a field</strong> to a collection is, under columnar layout, just "<strong>one more column file</strong>," leaving old column files untouched and needing no rewrite; under row storage, adding a column changes every row's physical layout, forcing nearly all historical data to be reshuffled.
+A vector DB's fields are often big vectors of hundreds or thousands of dimensions, so the cost of a row-wise reshuffle is astronomical. Columnar turns "add a column" into an <strong>almost zero-cost</strong> incremental act — one of the deep reasons nearly all modern analytical stores choose columnar.</p>
+
+<p>What serializes "a column of values" into a file underneath is the <strong>PayloadWriter</strong> in <span class="mono">internal/storage</span> (<span class="mono">NewPayloadWriter</span> returns a <span class="inline">PayloadWriterInterface</span>). By the field's data type it writes a column's values into Milvus's chosen columnar substrate (an <strong>Apache Arrow / Parquet</strong>-family columnar encoding).
+Above it, the <strong>InsertCodec</strong> (<span class="mono">data_codec.go</span>) serializes a whole <span class="inline">InsertData</span> (several in-memory columns of a segment) into a batch of <span class="inline">Blob</span>s, each Blob one field's insert binlog; the <strong>DeleteCodec</strong> serializes <span class="inline">DeleteData</span> (PKs + timestamps) into a delta binlog. They are the entry point of the "in-memory data → binlog file" step.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/storage/data_codec.go</span><span class="ln">InsertCodec: a segment's columns → a batch of binlogs (excerpt)</span></div>
+  <pre><span class="cm">// Blob key looks like:</span>
+<span class="cm">// ${tenant}/insert_log/${collection_id}/${partition_id}/${segment_id}/${field_id}/${log_idx}</span>
+<span class="kw">type</span> InsertCodec <span class="kw">struct</span> {
+    Schema *etcdpb.CollectionMeta
+}
+
+<span class="cm">// serialize a segment's in-memory data into multiple Blobs (one binlog per field)</span>
+<span class="kw">func</span> (c *InsertCodec) <span class="fn">Serialize</span>(
+    partitionID, segmentID UniqueID, data ...*InsertData,
+) ([]*Blob, <span class="nb">error</span>) { <span class="cm">/* call PayloadWriter per field */</span> }</pre>
+</div>
+
+<h2>The path layout in object storage</h2>
+<p>These binlogs aren't dumped flat; they hang in object storage by a <strong>fixed hierarchical path</strong> that carries "whose I am" info. Take an insert binlog: its key looks like:</p>
+
+<div class="layers">
+  <div class="layer l-app"><span class="badge">kind</span><span class="name">insert_log</span><span class="ld">artifact-type prefix: insert_log / delta_log / stats_log / index_files</span></div>
+  <div class="layer l-main"><span class="badge">collection</span><span class="name">{collectionID}</span><span class="ld">which collection</span></div>
+  <div class="layer l-part"><span class="badge">partition</span><span class="name">{partitionID}</span><span class="ld">which partition</span></div>
+  <div class="layer l-core"><span class="badge">segment</span><span class="name">{segmentID}</span><span class="ld">which segment</span></div>
+  <div class="layer l-core"><span class="badge">field</span><span class="name">{fieldID}/{logID}</span><span class="ld">which field's which binlog (same segment+field may have several)</span></div>
+</div>
+
+<p>Read this path and you grasp the "<strong>self-describing</strong>" beauty of object storage: <span class="mono">insert_log/{collectionID}/{partitionID}/{segmentID}/{fieldID}/{logID}</span> —
+the key alone tells you "which collection, partition, segment, and field, and which insert binlog of that field," so you can <strong>locate and classify it without consulting metadata</strong>.
+These prefix constants are defined in <span class="mono">pkg/common</span>: <span class="inline">SegmentInsertLogPath="insert_log"</span>, <span class="inline">SegmentDeltaLogPath="delta_log"</span>, <span class="inline">SegmentStatslogPath="stats_log"</span>.
+Delete and stats binlogs follow the same hierarchy, only swapping the leading prefix to <span class="mono">delta_log</span> / <span class="mono">stats_log</span>.</p>
+
+<p>This path layout hides a big operational benefit too: <strong>batch operations by prefix</strong>. Delete all of a segment's data? Delete objects under the <span class="mono">.../{segmentID}/</span> prefix. Clear a collection? Delete the <span class="mono">.../{collectionID}/</span> prefix.
+Background GC (Lesson 19) relies on exactly this <strong>prefixed, enumerable</strong> layout to identify and clean "unclaimed" orphan objects. <strong>Path is ownership</strong> — object storage has no directory tree, but these hierarchy-bearing key prefixes let it <strong>be used like one</strong>.</p>
+
+<p>Let's spell out an underlying fact: object stores like S3, MinIO, and OSS are <strong>essentially one flat "key→value" big table</strong>, with <strong>no real folders</strong> — the "directories" you see are just <strong>prefix grouping</strong> of keys by the <span class="mono">/</span> separator. Milvus's <span class="mono">kind/collection/partition/segment/field/logID</span> key design goes precisely <strong>with the grain of object storage</strong>: structured key prefixes "virtualize" a hierarchy tree over a flat namespace.
+This also explains why Milvus chose object storage rather than a traditional filesystem as its substrate — object storage's <strong>near-infinite capacity, pay-as-you-go, and built-in multi-replica high availability</strong> match a vector DB's traits of "big data, append-only, must persist"; and its weaknesses of "fears small files, can't update in place" are dissolved exactly by the two moves above — "<strong>batch-accumulate into big binlogs, and overlay deletes as tombstones</strong>." The persistence format and the underlying storage are a pair of designs that <strong>make each other work</strong>.</p>
+
+<h2>From rows to binlog: the serialization hop</h2>
+<p>String this step into a line and you see what really happens inside last lesson's "serialize" cell of the SyncTask:</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>columns in memory</h4><p class="mono">InsertData</p><p>the rows a segment accumulated, organized into columns by field.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>serialize per column</h4><p class="mono">PayloadWriter</p><p>each field's column of values written in columnar encoding (Arrow/Parquet-family).</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>pack into Blobs</h4><p class="mono">InsertCodec.Serialize</p><p>one Blob per field = one insert binlog; plus stats (with bloom).</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>write to object storage by path</h4><p>hang at insert_log/collection/partition/segment/field/logID.</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>write back metadata</h4><p>register binlog paths into DataCoord's segment meta (Lesson 12).</p></div></div>
+</div>
+
+<p>Zoom out a level and you see the binlog format is really the <strong>common language</strong> among Milvus's components. The StreamingNode's flusher <strong>writes</strong> in this format, the QueryNode <strong>reads</strong> it when loading a segment, the DataNode <strong>reads-and-rewrites</strong> it during compaction, index building <strong>reads</strong> it — the four never talk directly, cooperating entirely through "<strong>a shared agreement on one persistence format</strong>."
+For exactly this reason the binlog format must be <strong>self-describing, evolvable, and backward-compatible</strong>: each binlog file carries an event header (recording type, timestamp range, version and other metadata) by which the reader decodes correctly. This design of "<strong>a stable on-disk format as the contract between components</strong>" lets Milvus upgrade each component independently, without fearing that newly-written data can't be read by old components or vice versa — the bedrock on which a large storage system evolves over time.</p>
+
+<p>Finally, a word on <strong>storage format v2</strong>. The above is the classic binlog layout (<span class="mono">internal/storage</span>, one file per field). Milvus is also evolving a more compact <strong>packed columnar format</strong> —
+<span class="mono">internal/storagev2</span> (the packed format), bundling multiple columns into fewer files, closer to modern Parquet columnar storage, aiming to cut the number of small files and improve large-column scan efficiency.
+You only need to know it <strong>exists and coexists with classic binlogs</strong>; this lesson's mental model of "columnar + path layout + serialization entry" applies to both. Understand what a binlog is, why columnar, and how it's laid out, and you hold the master outline of Milvus's persistence format — next lesson, we see how compaction and GC tidy these binlogs once they pile up.</p>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>a segment in object storage maps to a family of files — insert binlogs (one per field, columnar data), a delete binlog (tombstones of void PK + timestamp), a stats binlog (PK min/max + bloom filter), and index files (the ANN index)</strong>.
+  Insert is the real body, delete an overlay, stats an acceleration card, index another viewpoint. Serialization is done by <span class="mono">internal/storage</span>'s <span class="inline">PayloadWriter</span> / <span class="inline">InsertCodec</span> / <span class="inline">DeleteCodec</span>; paths hang self-describingly as <span class="mono">kind/collection/partition/segment/field/logID</span>. The more compact <span class="mono">storagev2</span> packed format coexists with it.
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Four artifacts</strong>: insert binlog (columnar data), delete binlog (tombstone: void PK + ts), stats binlog (min/max + bloom), index file (ANN index).</li>
+    <li><strong>Columnar storage</strong>: insert binlog is one file per field, contiguous values of one column — fits vector scans, compresses well, allows column pruning (echoes Lesson 7).</li>
+    <li><strong>Deletes don't truly delete</strong>: a delete is a delta_log tombstone, overlaid at query time; physical removal waits for compaction (Lesson 19) / visibility in Lesson 20.</li>
+    <li><strong>Serialization entry</strong>: <span class="mono">internal/storage</span>'s <span class="inline">PayloadWriter</span> (writes a column), <span class="inline">InsertCodec</span>/<span class="inline">DeleteCodec</span> (pack into Blobs).</li>
+    <li><strong>Self-describing paths</strong>: <span class="mono">insert_log/{collectionID}/{partitionID}/{segmentID}/{fieldID}/{logID}</span>, prefix constants in <span class="mono">pkg/common</span>.</li>
+    <li><strong>storagev2</strong>: a more compact packed columnar format, coexisting with classic binlogs.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. What kinds of artifact does a sealed segment usually map to in object storage, and what does each hold?</div>
+  <ol class="opts">
+    <li>insert binlog (one per field, columnar data), delete binlog (tombstones of void PK + delete timestamp), stats binlog (PK min/max + bloom filter), index file (the ANN index)</li>
+    <li>Just one big file packing all fields by row</li>
+    <li>One file per segment, rewritten in place on delete</li>
+    <li>Only vector data; scalar fields are not persisted</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. Insert is the real body, delete an overlay (tombstone, no true erase), stats an acceleration card (lets queries skip irrelevant segments), index another viewpoint. Serialization is by internal/storage's PayloadWriter/InsertCodec/DeleteCodec</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Why is the insert binlog columnar (one file per field) rather than row-stored?</div>
+  <ol class="opts">
+    <li>Because object storage only supports columnar files</li>
+    <li>It fits vector retrieval's access pattern (scan a whole column contiguously, feed SIMD/GPU), compresses well for same-type columns, allows column pruning; adding a field is just one more column file — near-zero-cost schema evolution</li>
+    <li>Because columnar allows in-place data modification</li>
+    <li>Because row storage cannot hold vectors</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. A vector query wants the vector column of all rows for similarity; columnar keeps vectors contiguous in one file, sequential and cache-friendly — echoing Lesson 7's columnar hook</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. What role does the bloom filter in the stats binlog play in queries?</div>
+  <ol class="opts">
+    <li>Compress vector data to save storage</li>
+    <li>Replace the PK index for exact point lookups</li>
+    <li>Before opening a segment, judge that 'this segment definitely lacks a given PK' and skip the whole segment; it never has false negatives, allows only a tiny false-positive rate, used to safely exclude impossible segments</li>
+    <li>Precisely record each row's delete time</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. A bloom filter is a probabilistic set answering only 'definitely not / maybe'. Milvus implements it in internal/util/bloomfilter, held by PrimaryKeyStats; delete routing also screens segments by it (Lesson 20)</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson calls the binlog format the 'common language' among Milvus components: the flusher writes it, QueryNode reads it, compaction reads-and-rewrites it, index building reads it. Consider: why is a 'stable, self-describing, backward-compatible' on-disk format so critical for a distributed system that upgrades components independently over time? If the format changed incompatibly and often, what chain reactions would follow? (Tie in Lesson 18's event header and Lesson 12's DataCoord segment metadata.)</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Compaction &amp; GC</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Last lesson we saw what a binlog looks like, and planted two "troublesome seeds": one, writes accumulate <strong>ever more small binlogs</strong> (each flush slices off a fragment, piling up shards); two, deletes <strong>only record tombstones, never truly erase</strong> (the void markers in delta_log keep stacking up).
+This lesson covers Milvus's two <strong>background janitors</strong>: <strong>compaction</strong> merges fragmented segments into larger, cleaner ones and <strong>physically applies</strong> tombstones; <strong>GC</strong> sweeps unclaimed <strong>orphan objects</strong> out of object storage.
+We'll see what each <strong>solves</strong>, the kinds of compaction, who <strong>schedules</strong> and who <strong>executes</strong>, and where the code lives in <span class="mono">internal/datacoord</span>.
+</p>
+
+<div class="card analogy">
+  <div class="tag">📚 Analogy</div>
+  Remember last lesson's library, "one bookshelf = a family of volumes"? After a while, two messes appear in the warehouse: <strong>one, a single shelf gets split into dozens of thin pamphlets</strong> (each archives just a little new stock), so reading one shelf means opening dozens; <strong>two, the cancellation list keeps growing</strong>, yet the struck-off books still sit on the shelf untouched.
+  <strong>Compaction</strong> is the <strong>tidying clerk</strong> who comes periodically: he <strong>binds the thin pamphlets of one shelf into a few thick volumes</strong>, <strong>actually pulls out the void books per the cancellation list</strong>, and can even <strong>re-shelve by topic</strong> so similar books sit together — afterward, a reader opens fewer volumes and reads only valid books.
+  <strong>GC</strong> is the warehouse's <strong>hauler</strong>: once the clerk finishes binding, the old thin pamphlets are unclaimed; the hauler <strong>waits past a set deadline</strong>, confirms no one uses them, then carts these orphan boxes off for destruction, freeing shelf space. Division of labor: the clerk makes <strong>reads fast</strong>, the hauler makes <strong>storage cheap</strong>.
+</div>
+
+<h2>Why compaction is needed: from fragments to tidiness</h2>
+<p>Compaction's motivation is exactly the two hooks planted at last lesson's end. First, <strong>small-file fragmentation</strong>: a segment flushes many times, producing a string of small binlogs by logID per field; and a collection has hundreds or thousands of segments. The more fragmented the files a query must open, the more <strong>metadata overhead, random I/O, and decode passes</strong> — especially fatal for object storage, which "fears small files."
+Second, <strong>tombstone buildup</strong>: a delete only appends "PK X voided at t" into delta_log, while the deleted row still sits in the insert binlog. As tombstones stack up, every row read must <strong>overlay-compare against the delete set</strong> — slow and memory-hungry. Compaction solves both at once: <strong>merge fragments + apply tombstones</strong>.</p>
+
+<div class="timeline">
+  <div class="lane"><span class="lane-label">before</span><span class="tslot">seg A (small)</span><span class="tslot">seg B (small)</span><span class="tslot">seg C (small)</span><span class="tslot span">+ a pile of delta tombstones</span></div>
+  <div class="lane"><span class="lane-label">compaction</span><span class="tslot now">merge + physically delete void rows</span></div>
+  <div class="lane"><span class="lane-label">after</span><span class="tslot now">seg D (large · clean · no tombstones)</span></div>
+</div>
+
+<p>The payoff after tidying is <strong>real read efficiency</strong>: fewer segments to open, each larger and more contiguous (friendlier sequential I/O), tombstones already cleared (no more overlay-compare), and data better-suited to indexing.
+In other words, compaction is the <strong>reconciler</strong> of Milvus's "write fast vs read fast" tension — writing only <strong>appends</strong> (fast but fragmented, with tombstones), leaving the slow work of "reshaping into a read-friendly form" for the background to do when the system is idle. This is the classic <strong>LSM-style</strong> idea: append fast, merge-and-tidy in the background.</p>
+
+<p>It's worth thinking through one tradeoff: since compaction will eventually <strong>rewrite</strong> the data anyway, why not write large, tidy segments directly at write time, in one shot? The answer hides in the tradeoff between "<strong>write amplification</strong>" and "<strong>write latency</strong>."
+If writes had to keep data perfectly tidy, then every small batch arriving would have to read the existing big segment, merge with the new data, and rewrite the whole segment — one small write triggering one big rewrite, making <strong>write amplification</strong> explode and write latency unacceptable.
+Milvus's choice is to <strong>decouple</strong> the two: the write path does only the very fast thing of "appending small segments," <strong>guaranteeing low-latency, high-throughput writes</strong>; while "reshaping into big segments" is done once in the background, <strong>in batches, amortized</strong>, after enough has accumulated. The same rewrite cost, spread across thousands of writes, leaves <strong>each individual write almost unaffected</strong>. This is the essence of LSM-class systems: <strong>trade background batch-tidying for foreground write speed</strong>.</p>
+
+<p>One more note on compaction's <strong>throttling philosophy</strong>: it is a background task that "<strong>saves where it can, defers where it may</strong>." DataCoord won't trigger immediately for a little fragmentation, but sets thresholds by segment size, small-file count, tombstone ratio, and so on, <strong>merging only when it's worthwhile</strong>; execution is also bounded by <strong>concurrency</strong>, lest background tidying steal resources from foreground reads and writes.
+This restraint of "<strong>don't disturb the main path</strong>" is a general rule for background maintenance — it serves reads and writes, but must never drag them down in return. Grasp this tradeoff and you understand why compaction always proceeds quietly "<strong>a beat behind</strong>" in the background, rather than racing to chase every single write.</p>
+
+<h2>Kinds of compaction: what each tidies</h2>
+<p>Compaction isn't a single thing. DataCoord, by different <strong>triggers</strong>, schedules different <strong>types</strong> of compaction, each doing one class of work. Their type enum is defined in proto's <span class="inline">datapb.CompactionType</span>:</p>
+
+<table class="t">
+  <tr><th>type</th><th>trigger</th><th>tidying effect</th></tr>
+  <tr><td><strong>MixCompaction</strong></td><td>one segment amassed too many small binlogs / fragments</td><td><strong>merges</strong> fragmented binlogs into a larger, tidier segment (most common)</td></tr>
+  <tr><td><strong>MergeCompaction</strong></td><td>several under-full small segments need joining</td><td><strong>merges</strong> several small segments into one bigger segment</td></tr>
+  <tr><td><strong>Level0DeleteCompaction</strong></td><td>Level-0 delete data (tombstones) accumulated</td><td><strong>physically applies</strong> L0 tombstones into the matching sealed segments</td></tr>
+  <tr><td><strong>ClusteringCompaction</strong></td><td>re-organize by a <strong>clustering key</strong> for retrieval locality</td><td><strong>re-buckets data by clustering key</strong>, gathering similar data together</td></tr>
+  <tr><td><strong>SortCompaction</strong></td><td>need PK order to speed lookups</td><td><strong>sorts a segment's data by PK</strong> and rewrites it</td></tr>
+</table>
+
+<p>Read this table and you'll see these compactions fall roughly into two camps: <strong>Mix and Merge are the "merge camp"</strong> — their core goal is stitching <strong>fragmented, scattered, small</strong> segments into <strong>large, tidy</strong> ones, applying ordinary tombstones along the way; this is the most frequently triggered class day to day.
+<strong>Clustering and Sort are the "reorder camp"</strong> — beyond merging, they <strong>actively adjust the physical order of data</strong> to boost read efficiency (see the next section); and <strong>Level0DeleteCompaction is a class of its own</strong>, dedicated to "actually landing hovering deletes onto segments."
+The key to understanding their distinctions isn't memorizing each name, but grasping one through-line: <strong>all compaction serves "reads"</strong> — by making segments fewer and tidier, clearing tombstones, or arranging data for better pruning.</p>
+
+<p>The one worth spelling out is <strong>Level0DeleteCompaction</strong>, the <strong>second half</strong> of last lesson's "deletes don't truly delete." A delete message is first buffered as <strong>Level-0</strong> delete data — a batch of deltalogs holding only "void PK + timestamp," <strong>not yet landed on any specific sealed segment</strong>, like a layer of "pending deletes" hovering above all segments.
+Level0DeleteCompaction is exactly what <strong>sinks and applies</strong> this L0 tombstone layer into the sealed segments they should act on, making the deleted rows physically vanish. DataCoord keeps an <strong>L0 delete view</strong> (<span class="inline">LevelZeroCompactionView</span> in <span class="mono">internal/datacoord/compaction_l0_view.go</span>) to track "which L0 tombstones should merge with which segments." The full visibility mechanism of deletes is dissected next lesson.</p>
+
+<div class="cellgroup">
+  <div class="cg-cap">Level0DeleteCompaction: sink the hovering L0 tombstones, apply them into sealed segments</div>
+  <div class="cells">
+    <div class="cell hl"><span class="lab">L0 tombstones</span><span class="q">pk=102@t9 · pk=205@t9</span></div>
+    <div class="cell sep"><span class="lab">↓ apply</span><span class="q">route to segments holding the pk</span></div>
+    <div class="cell dim"><span class="lab">segment (after)</span><span class="q">rows 102/205 physically deleted</span></div>
+  </div>
+</div>
+
+<h2>Who schedules, who executes</h2>
+<p>Before getting to the division of labor, let's fully explain <strong>ClusteringCompaction</strong> and <strong>SortCompaction</strong> — the two kinds that "<strong>don't just merge but also reorder</strong>" — because they directly serve <strong>faster reads</strong>. Ordinary Mix/Merge only stitch fragments larger and apply tombstones, <strong>without changing the data's arrangement</strong>; whereas Clustering and Sort <strong>actively reorganize the physical order of data within segments</strong>, letting later queries skip more irrelevant data.</p>
+
+<p><strong>ClusteringCompaction (reorganize by clustering key)</strong> works like this: give the collection a <strong>clustering key</strong> (say "region" or "category"), and at compaction time <strong>re-bucket data by that key</strong>, gathering "same-class" data into neighboring segments.
+Then a filtered query (e.g. "only East China") can, by each segment's <strong>min/max stats</strong> (recall last lesson's stats binlog), <strong>skip whole segments</strong> of irrelevant buckets and scan only the few that truly match — this is the power of "<strong>data locality</strong>" in databases: place data frequently queried together physically together, and the query's pruning rate rises.
+<strong>SortCompaction (sort by primary key)</strong> rewrites a segment's data <strong>ordered by PK</strong>, making PK point lookups, range scans, and dedup more efficient; sorted data also tightens min/max ranges and eases bloom checks. Both share a trait: at the cost of one background rewrite, they <strong>pre-shape data into a read-friendly form</strong>, amortizing the cost from "every query" forward into "one tidying pass."</p>
+
+<p>Compaction's division of labor again proves the refrain "<strong>coordinators schedule, nodes execute</strong>" (Lesson 9). <strong>DataCoord</strong> is the brain: it scans segment metadata, by various compaction policies (<span class="mono">compaction_policy_*</span>) decides "which segments to merge and which compaction to run," generates compaction tasks, enqueues and dispatches them.
+The one doing the heavy lifting — reading old binlogs, merging, applying tombstones, writing new binlogs — is the <strong>compaction worker on a datanode</strong>. This is precisely <strong>Lesson 17</strong>'s point that "DataNode's main present role is compaction": streaming writes went to StreamingNode, and DataNode steps back to focus on this background tidying.</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">DataCoord</div><div class="nd">scan meta · pick policy · generate tasks</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">compaction queue</div><div class="nd">prioritize · dispatch</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">datanode worker</div><div class="nd">read old binlogs · merge · apply tombstones · write new binlogs</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">write back meta</div><div class="nd">new segment online · old segments marked dropped</div></div>
+</div>
+
+<p>On completion comes a key act: the worker writes new segments, and DataCoord <strong>atomically</strong> switches metadata from "the old small segments" to "the new big segment," bringing the new one online for queries and <strong>marking the old ones dropped</strong>.
+This step must be <strong>atomic</strong>, and that matters greatly: it guarantees any query, at any instant, sees either <strong>the whole batch of old segments</strong> or <strong>the one new segment</strong> — never an intermediate state where "old and new are both visible and a row gets counted twice" or "the old is withdrawn, the new not yet online, and data vanishes into thin air." It is precisely this "<strong>atomic metadata switch</strong>" guarantee that lets compaction — a major operation that "quietly swaps out data in the background" — be <strong>completely transparent and imperceptible</strong> to foreground queries.
+Note — at this moment the old segments' binlogs <strong>still sit in object storage, undeleted</strong>; they are merely no longer referenced by metadata. Truly sweeping away these "dropped, unreferenced" physical files is the job of the other janitor, GC.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">pkg/proto/datapb/data_coord.pb.go</span><span class="ln">CompactionType: the compaction-type enum (excerpt)</span></div>
+  <pre><span class="cm">// generated from milvus-proto/go-api; datacoord schedules by these</span>
+<span class="kw">const</span> (
+    CompactionType_MergeCompaction         CompactionType = <span class="nb">2</span>
+    CompactionType_MixCompaction           CompactionType = <span class="nb">3</span>
+    CompactionType_Level0DeleteCompaction  CompactionType = <span class="nb">7</span> <span class="cm">// apply L0 tombstones</span>
+    CompactionType_ClusteringCompaction    CompactionType = <span class="nb">8</span> <span class="cm">// reorganize by clustering key</span>
+    CompactionType_SortCompaction          CompactionType = <span class="nb">9</span> <span class="cm">// sort by primary key</span>
+)</pre>
+</div>
+
+<h2>GC: sweeping away ownerless orphan objects</h2>
+<p>Compaction produces a batch of old binlogs that are "logically discarded, physically still present"; dropping a collection, partition, or segment also leaves many no-longer-referenced objects. <strong>GC (garbage collector)</strong> is the background loop responsible for reclaiming these <strong>orphan objects</strong>, with code in <span class="mono">internal/datacoord/garbage_collector.go</span>.
+It periodically scans the binlogs in object storage, checks against metadata "<strong>is this object still referenced by any live segment</strong>," and for those of <strong>dropped segments</strong> or <strong>orphan files no one claims</strong>, deletes them from object storage.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>scan and compare</h4><p class="mono">recycleUnusedBinlogFiles</p><p>enumerate binlogs in object storage, find orphans "referenced by no live segment" against metadata.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>handle dropped segments</h4><p class="mono">recycleDroppedSegments</p><p>for segments marked dropped, reclaim all their binlogs (insert/delta/stats).</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>delete only past TTL</h4><p>delete only objects <strong>past the retention period (TTL)</strong>, leaving a safe window for in-flight reads and rollback.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>physical delete</h4><p>batch-delete by object-storage prefix, truly freeing space.</p></div></div>
+</div>
+
+<p>The most crucial safety valve in GC's design is the <strong>TTL (retention period)</strong>: it <strong>never</strong> deletes an object the instant it becomes an orphan. The reason is the many "<strong>time skews</strong>" in a distributed system — some QueryNode may still be reading an old segment just replaced by compaction, some operation may need to roll back.
+Deleting only objects "<strong>orphaned beyond TTL</strong>" gives every in-flight reference a <strong>safe window</strong>: better to let garbage linger a while than to ever mis-delete data still in use. This echoes last lesson's point: object storage's <strong>prefixed, enumerable</strong> layout lets GC efficiently enumerate and clean by segment or collection prefix.</p>
+
+<p>It's worth pausing to ask: where do "<strong>orphans</strong>" in object storage actually come from? Their sources are more numerous than you'd think. Old segments replaced by <strong>compaction</strong> are the biggest class — one merge batch-creates a pile of "dropped, awaiting reclaim" old binlogs;
+DDL that <strong>drops a collection / partition / segment</strong> makes swaths of objects instantly lose their references; <strong>failed or timed-out flush, compaction, or index-build tasks</strong> may break off mid-write, leaving <strong>half-finished orphans</strong> that "wrote files but never registered into metadata";
+even a <strong>metadata rollback</strong> can turn some already-persisted objects ownerless. GC's decision logic therefore can't just look at "does the file exist," but must <strong>take metadata as the yardstick</strong> and check in reverse: anything present in object storage but with <strong>no reference found in live-segment metadata</strong> is an orphan candidate. This is the classic reclaim mindset of "<strong>authoritative metadata is truth, physical storage aligns to it</strong>" — only when metadata says it's no longer needed may the physical file be cleaned.</p>
+
+<p>A common <strong>misconception</strong> needs clearing up here too: a delete does <strong>not</strong> immediately make data vanish from object storage, and even a DDL "drop segment" only first <strong>marks the segment dropped</strong>. The real release of physical space is <strong>always done asynchronously by GC, past TTL</strong>.
+So if you delete a batch of data and notice object-storage usage doesn't drop right away, that's not a bug but the <strong>normal behavior</strong> of this "<strong>separate logical voiding from physical reclaim</strong>" design — it trades a little storage delay for deletes that are <strong>low-latency, rollback-able, and friendly to in-flight reads</strong>. Grasp this, and you grasp the same wisdom recurring across Milvus's whole write path: <strong>decouple "fast bookkeeping" from "slow settling."</strong></p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/datacoord/garbage_collector.go</span><span class="ln">garbageCollector: reclaim orphans and dropped segments (excerpt)</span></div>
+  <pre><span class="kw">type</span> garbageCollector <span class="kw">struct</span> {
+    meta    *meta
+    handler Handler
+    option  GcOption <span class="cm">// holds TTL and retention policy</span>
+}
+
+<span class="cm">// background loop: clean unreferenced binlogs and dropped segments</span>
+<span class="kw">func</span> (gc *garbageCollector) <span class="fn">recycleUnusedBinlogFiles</span>(ctx context.Context) { <span class="cm">/* enumerate · compare · past-TTL · delete */</span> }
+<span class="kw">func</span> (gc *garbageCollector) <span class="fn">recycleDroppedSegments</span>(ctx context.Context, signal &lt;-<span class="kw">chan</span> gcCmd) { <span class="cm">/* reclaim all binlogs of dropped segments */</span> }</pre>
+</div>
+
+<p>Seen together, compaction and GC are a <strong>relay</strong>, one after the other: compaction rewrites "fragmented, dirty" data into "tidy, clean" new segments and voids the old ones <strong>logically</strong>; GC, past TTL, sweeps these old segments away <strong>physically</strong>.
+The former optimizes <strong>reads</strong> (fewer, cleaner segments), the latter optimizes <strong>storage</strong> (don't keep paying for discarded data). Both are <strong>scheduled by DataCoord</strong> — the silent yet vital self-maintenance of Milvus's write path "<strong>after the write</strong>"; without them, the system slowly chokes on small files and tombstones, queries grow ever slower and storage ever more bloated. These two background janitors, though never on the main stage of writes and queries, are the behind-the-scenes bedrock that lets Milvus <strong>run stably over the long haul</strong>. Next lesson, we formally crack open "delete and upsert," seeing how tombstones, bloom filters, and the MVCC timestamp together decide "whether a row is visible at all."</p>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: writing only <strong>appends fast</strong>, leaving two "tech debts" — <strong>small-file fragments</strong> and <strong>delete tombstones</strong> — repaid by two background janitors. <strong>Compaction</strong> (scheduled by DataCoord, executed by a datanode worker) <strong>merges</strong> fragments and <strong>physically applies</strong> L0 tombstones (<span class="inline">datapb.CompactionType_Level0DeleteCompaction</span>), and can reorganize by clustering key (Clustering) or sort by PK (Sort); <strong>GC</strong> (<span class="mono">garbage_collector.go</span>), past <strong>TTL</strong>, sweeps away objects of <strong>orphans and dropped segments</strong>. The former speeds reads, the latter saves storage.
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Two tech debts</strong>: small-file fragments from repeated flushes + tombstone-only deletes, repaid by compaction and GC.</li>
+    <li><strong>Compaction types</strong>: MixCompaction/MergeCompaction (merge fragments), Level0DeleteCompaction (physically apply L0 tombstones), ClusteringCompaction (reorganize by clustering key), SortCompaction (sort by PK).</li>
+    <li><strong>Schedule vs execute</strong>: DataCoord picks policy and generates tasks; a datanode worker reads old binlogs, merges, writes new segments (echoes Lesson 17).</li>
+    <li><strong>Level-0 deletes</strong>: a delete is first buffered as an L0 tombstone, tracked by <span class="mono">compaction_l0_view.go</span>, and only Level0DeleteCompaction applies it physically into segments (expanded in Lesson 20).</li>
+    <li><strong>GC and TTL</strong>: <span class="mono">garbage_collector.go</span> reclaims orphan / dropped-segment objects, deleting only those past TTL, leaving a safe window for in-flight references.</li>
+    <li><strong>Division of labor</strong>: compaction optimizes reads, GC optimizes storage; both scheduled by DataCoord.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Regarding the scheduling and execution of compaction, which statement matches Milvus's current architecture?</div>
+  <ol class="opts">
+    <li>DataCoord scans segment metadata and, by policy, generates and dispatches compaction tasks; the one actually reading old binlogs, merging, and writing new segments is the compaction worker on a datanode</li>
+    <li>Compaction is done synchronously by the Proxy on the write path</li>
+    <li>Compaction must be executed by a dedicated indexnode</li>
+    <li>Compaction is merged on the fly by QueryNode at query time</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. This is the refrain 'coordinators schedule, nodes execute': DataCoord schedules, a datanode worker executes — echoing Lesson 17's 'DataNode's main present role is compaction'</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. What role does Level0DeleteCompaction (datapb.CompactionType_Level0DeleteCompaction) play among compactions?</div>
+  <ol class="opts">
+    <li>It re-buckets data by a clustering key</li>
+    <li>It merges several small segments by size</li>
+    <li>A delete is first buffered as a Level-0 (L0) tombstone (void PK + timestamp), not yet on a specific sealed segment; Level0DeleteCompaction physically applies this L0 tombstone layer into the matching segments, truly removing deleted rows</li>
+    <li>It sorts a segment's data by primary key</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. This is the second half of last lesson's 'deletes don't truly delete'. DataCoord tracks which L0 tombstones merge with which segments via LevelZeroCompactionView in compaction_l0_view.go; full visibility in Lesson 20</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Why does GC (garbage_collector.go) delete only objects 'orphaned beyond TTL (retention period)' rather than the instant they become orphans?</div>
+  <ol class="opts">
+    <li>Distributed time skews exist: some QueryNode may still read an old segment just replaced by compaction, some operation may roll back; TTL leaves a safe window for in-flight references — better let garbage linger than ever mis-delete data in use</li>
+    <li>Because TTL compresses binlog size</li>
+    <li>Because object storage doesn't support immediate deletion</li>
+    <li>Because orphan objects auto-expire on their own</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. Compaction only marks old segments dropped in metadata while physical files remain; GC takes metadata as the yardstick to reverse-check unreferenced objects and deletes only past TTL — the 'separate logical voiding from physical reclaim' design</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson likens compaction and GC to 'a relay, one after the other': the former rewrites fragmented, dirty data into tidy, clean new segments and logically voids the old; the latter, past TTL, physically sweeps the old away. Consider: why does Milvus choose 'writes only append fast, tidying left to background batches' (LSM-style) rather than 'tidy at write time'? What tradeoffs does this decoupling make among write amplification, write latency, read efficiency, and storage cost? (Tie in Lesson 17's flush and Lesson 18's columnar binlogs.)</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Delete &amp; upsert</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+"Delete a row" sounds like the most trivial operation in a database, yet on an <strong>append-only, immutable</strong> storage substrate it hides a twist: once a binlog is written it can't be changed — so what does "delete" actually delete? This lesson fully cracks open <strong>delete</strong> and <strong>upsert</strong> —
+how a delete becomes a <strong>delete message</strong> in the WAL, then settles into <strong>Level-0 (L0) delete data / deltalogs</strong>; how <strong>bloom filters</strong> <strong>route</strong> a delete to the segments that might hold the PK; <strong>why upsert is just "delete + insert"</strong>; and the key that unifies it all — <strong>timestamp-based MVCC (multi-version concurrency control)</strong>: whether a row is "visible at all" is decided jointly by the read's guarantee timestamp and each version's timestamp.
+</p>
+
+<div class="card analogy">
+  <div class="tag">📚 Analogy</div>
+  Picture a collection as a hotel's <strong>guest registry</strong> — and one that can <strong>only be appended to, never altered</strong>. When a guest checks out, the front desk does <strong>not</strong> flip back and strike out that line (the ledger can't be changed); instead it stamps on a new page: "<strong>guest X checked out at time t</strong>" — that is a <strong>delete tombstone</strong>.
+  To know "which page a guest is on," the desk needn't read the whole ledger but checks a <strong>quick index card</strong> (bloom filter): it tells you only "<strong>this ledger <em>definitely lacks</em> this guest</strong>" or "<strong>maybe has them, go look</strong>" — to quickly rule out impossible ledgers.
+  A guest wants to <strong>change rooms</strong> (update info)? The way is "<strong>stamp checkout on the old room + write a check-in for the new</strong>" — that is exactly <strong>upsert = delete + insert</strong>. And the question "<strong>who is actually staying now</strong>" depends on <strong>which moment you read the ledger as-of</strong>: read the "as-of-now" snapshot to cleanly count current guests — that is <strong>timestamp-based MVCC</strong>.
+</div>
+
+<h2>A delete's journey: message → WAL → L0 deltalog</h2>
+<p>Recall <strong>Lessons 15 and 16</strong>: a write doesn't go straight to storage but first becomes a message <strong>Appended into the WAL</strong>, and the WAL is the single source of truth. A delete takes <strong>the same road</strong> — it doesn't go to object storage to "find that row and erase it," but generates a <strong>delete message</strong> carrying the <strong>PK to void</strong> and a <strong>delete timestamp</strong>, Appended into the WAL, queued into the <strong>same global time order</strong> as inserts.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>client issues delete</h4><p>specify "whom to delete" by PK or expression.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Proxy stamps a timestamp</h4><p>asks TSO for a delete ts, fixing this delete's place in the global order.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Append to WAL</h4><p>the delete message (PK + ts) is written to the WAL, in the same stream as inserts.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>settle as L0 deltalog</h4><p>the consumer buffers the delete as Level-0 delete data (deltalog), not yet landed on a specific sealed segment.</p></div></div>
+  <div class="step"><div class="num">5</div><div class="sc"><h4>Level0DeleteCompaction applies it</h4><p>the background sinks and applies the L0 tombstone into the matching segments (Lesson 19).</p></div></div>
+</div>
+
+<p>The key insight here is: a delete is modeled as a <strong>timestamped, immutable event</strong>, not an "in-place modification." It first exists as <strong>Level-0 delete data</strong> — a batch of deltalogs holding only "<strong>void PK + delete timestamp</strong>," <strong>hovering above all sealed segments, not yet applied to any specific one</strong>.
+Why hover first? Because "which segments this delete should act on" needs per-segment judgment (next section), and the rewrite cost of truly erasing rows from data is large — so, like inserts, deletes follow "<strong>book fast, settle in the background</strong>": record the tombstone quickly into L0, leaving the slow "physical apply" to Lesson 19's <strong>Level0DeleteCompaction</strong>. This is the full landing, on the <strong>write side</strong>, of last lesson's "deletes don't truly delete."</p>
+
+<p>There's also an easily-overlooked yet crucial design here: <strong>deletes and inserts share the same WAL, queued in the same global time order</strong>. Why does this matter so much? Because only when "insert this row" and "delete this row" are placed on the <strong>same monotonically-increasing time axis</strong> can the system unambiguously decide their <strong>ordering</strong> — is it "insert first, delete later" (then the row should vanish), or "delete first, then a new row of the same PK inserted later" (then the new row should stay)?
+Imagine if deletes took a separate channel: the two streams' orderings would need extra coordination to align, and the slightest slip would produce bizarre results like "deleted yet alive, or alive yet wrongly deleted." Folding deletes <strong>into the same WAL as inserts</strong> lets the TSO, that "global number-issuer" (Lesson 16), <strong>adjudicate the ordering of all write events together</strong>, dissolving delete/insert ordering conflicts at the source. This is the natural extension, to delete semantics, of Milvus's creed "<strong>log as data, WAL as the single source of truth</strong>."</p>
+
+<h2>Routing a delete with bloom filters</h2>
+<p>A delete message says "<strong>void PK X</strong>," but row X may sit in <strong>one</strong> of hundreds or thousands of segments — you can't blindly stuff this tombstone into every segment. This is where the <strong>bloom filter</strong> comes in (recall Lesson 18: it's serialized into the stats binlog alongside PK stats).
+The system takes PK X and <strong>asks each segment's bloom</strong>: "could this segment <strong>possibly</strong> hold X?" — the bloom answers only "<strong>definitely not</strong>" or "<strong>maybe</strong>." Every segment answering "definitely not" is <strong>safely skipped</strong>, and only the few answering "maybe" need the tombstone applied.</p>
+
+<div class="cellgroup">
+  <div class="cg-cap">Bloom routing: screen each segment with the to-delete PK X, land the tombstone only on segments that "might hold X"</div>
+  <div class="cells">
+    <div class="cell dim"><span class="lab">seg1</span><span class="q">bloom: definitely not → skip</span></div>
+    <div class="cell hl"><span class="lab">seg2</span><span class="q">bloom: maybe → apply tombstone</span></div>
+    <div class="cell dim"><span class="lab">seg3</span><span class="q">bloom: definitely not → skip</span></div>
+    <div class="cell"><span class="lab">seg4</span><span class="q">bloom: maybe → apply tombstone</span></div>
+  </div>
+</div>
+
+<p>The bloom filter's "<strong>never a false negative</strong>" property is the <strong>lifeline of correctness</strong> here: if it says "definitely not," it <strong>truly isn't</strong>, so a skipped segment never wrongly misses a row that should be deleted; while its occasional "false positive" (says maybe, a closer look finds nothing) at most causes <strong>a little wasted work</strong>, never a wrong delete.
+This asymmetric guarantee of "<strong>rather over-check than ever miss</strong>" is exactly the foundation on which delete routing can confidently prune. In Milvus this bloom filter is held by <span class="inline">FieldStats</span> (<span class="mono">internal/storage/field_stats.go</span>) — it carries the field's min/max and that <span class="inline">BF</span> (<span class="inline">bloomfilter.BloomFilterInterface</span>), the <strong>decision basis</strong> for "which segments a delete should land on."</p>
+
+<p>It's worth appreciating bloom routing's significance at <strong>scale</strong>: a large collection may have thousands of segments, and if every delete stuffed its tombstone indiscriminately into each one, the cost of a delete would <strong>balloon linearly</strong> with the segment count, with the vast majority of tombstones landing on segments that "don't hold the PK at all" — pure waste.
+The bloom filter compresses this from "<strong>broadcast to all segments</strong>" down to "<strong>precise delivery to a few candidate segments</strong>" — at the price of one tiny probabilistic bitmap per segment, it <strong>greatly shrinks</strong> the delete write volume and leaves far fewer tombstones for later Level0DeleteCompaction to process. This is the classic engineering tradeoff of "<strong>spend a little summary space to save a lot of blind I/O</strong>," two sides of the same mechanism as Lesson 18's bloom helping queries "<strong>skip whole segments</strong>": <strong>queries use it to skip irrelevant segments, deletes use it to deliver only to relevant ones</strong>.</p>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/storage/field_stats.go</span><span class="ln">FieldStats: a segment-level field summary, with bloom filter (excerpt)</span></div>
+  <pre><span class="kw">type</span> FieldStats <span class="kw">struct</span> {
+    FieldID int64                            <span class="cm">// the field (incl. PK)</span>
+    Max, Min ScalarFieldValue                <span class="cm">// range, for range pruning</span>
+    BF       bloomfilter.BloomFilterInterface <span class="cm">// bloom: quick "no such PK"; routes deletes</span>
+}</pre>
+</div>
+
+<h2>upsert = delete + insert</h2>
+<p>Once you see that a delete is "append a timestamped tombstone" and an insert is "append a timestamped new row," <strong>upsert</strong> becomes obvious: it is <strong>not</strong> "change the old value to the new in place," but is split into two steps — <strong>for the same PK, delete first, then insert</strong>.
+The old version is voided by a tombstone, and the new version is written as a row with a <strong>later timestamp</strong>; the same PK thus physically holds <strong>both old and new versions at once</strong>, distinguished by timestamp. This explains the true meaning of last lesson's line "<strong>upsert = delete + insert (same PK, new version)</strong>."</p>
+
+<div class="cellgroup">
+  <div class="cg-cap">upsert PK 102: the old version is voided by a tombstone, the new written with a later ts (both coexist, latest-ts wins)</div>
+  <div class="cells">
+    <div class="cell dim"><span class="lab">old version</span><span class="q">pk=102 · v0 · inserted@t3</span></div>
+    <div class="cell hl"><span class="lab">tombstone</span><span class="q">pk=102 · voided@t8</span></div>
+    <div class="cell"><span class="lab">new version</span><span class="q">pk=102 · v1 · inserted@t8</span></div>
+  </div>
+</div>
+
+<p>Seeing upsert as "delete + insert" has a very practical benefit: <strong>the whole write path needs no special mechanism just for upsert</strong>. Whatever delete has (tombstones, bloom routing, L0, compaction apply), upsert reuses directly; whatever insert has (columnar binlogs, ordering by ts), upsert reuses too.
+A seemingly standalone "update" semantic is elegantly <strong>reduced</strong> to a composition of two existing primitives — a model example of "<strong>building rich semantics from a few orthogonal primitives</strong>" in system design. The cost is that a PK briefly holds multiple versions, but that is exactly <strong>caught</strong> by the MVCC below: multiple versions are MVCC's bread and butter.</p>
+
+<p>This "delete + insert" reduction also incidentally explains a <strong>semantic detail</strong> of upsert: it <strong>does not guarantee field-level partial updates</strong>. Because the new version is rewritten as <strong>a whole row</strong>, if you upsert with only some fields, the <strong>omitted fields are wholesale overwritten by defaults or rewrite rules</strong>, not preserved as SQL's <span class="inline">UPDATE ... SET col=...</span> would by touching one column and keeping the rest.
+Understand that "upsert is essentially a <strong>whole-row replacement</strong> (void the old row + write a new row)," and you won't mistakenly assume it can "change one field in place" — a common cognitive gap between vector DBs and traditional row stores on update semantics. The root cause is again that iron law: <strong>the underlying binlog is immutable</strong>, so any "change" can only be expressed as "void the old, append the new" — there is no true in-place modification.</p>
+
+<p>A frequently-asked detail: since upsert is "delete then insert," what happens when <strong>the same PK is upserted many times over</strong>? The answer — each time <strong>appends</strong> a "tombstone + new version" pair, so a PK accumulates a string of versions laid out by timestamp, but <strong>any read at any moment only hits the latest non-voided version</strong> (adjudicated by the next section's MVCC rule).
+Those earlier old versions are neither read nor occupy space forever — they are exactly the targets of <strong>compaction</strong> from last lesson and Lesson 19: when tombstones are physically applied and segments merged, the voided old versions are truly erased. So even "the historical baggage left by repeated upserts" is backstopped and reclaimed by background compaction, and the write side still only <strong>appends fast</strong> without worrying about cleanup — once more proving the through-line spanning the whole write path: <strong>fast bookkeeping in the foreground, slow settling in the background</strong>.</p>
+
+<h2>Unifying it all: timestamp-based MVCC</h2>
+<p>By now, insert, delete, and upsert have all been reduced to "<strong>a pile of timestamped immutable events</strong>": an insert is "a row born at ts," a delete is "a PK voided at ts." So how is "<strong>whether a row is visible right now</strong>" decided? The answer is the core rule of <strong>MVCC (multi-version concurrency control)</strong> — <strong>everything is judged by timestamp</strong>. MVCC doesn't "remove" or "overwrite" anything; it keeps all versions on the time axis and hands the question of "which version counts" to the timestamp a read carries.</p>
+
+<p>A read carries a <strong>guarantee timestamp T</strong> (guarantee-ts, determined by the consistency level, expanded in Lesson 30). A row is <strong>visible</strong> to this read <strong>if and only if</strong> two conditions both hold:</p>
+
+<div class="cellgroup">
+  <div class="cg-cap">MVCC visibility rule: read at guarantee-ts T, a row is visible ⇔ already inserted AND not voided by an earlier tombstone</div>
+  <div class="cells">
+    <div class="cell hl"><span class="lab">condition 1</span><span class="q">the row's insert ts ≤ T (born before T)</span></div>
+    <div class="cell sep"><span class="lab">and</span><span class="q">AND</span></div>
+    <div class="cell hl"><span class="lab">condition 2</span><span class="q">no tombstone with ts ≤ T voids it (not deleted as of T)</span></div>
+  </div>
+</div>
+
+<p>Apply this rule to the earlier example and it's crystal clear. For PK 102: reading at <strong>T=t5</strong>, you see <strong>v0</strong> (inserted@t3 ≤ t5, while voided@t8 is still in the future, not yet in effect); reading at <strong>T=t9</strong>, v0 is voided by the t8 tombstone and invisible, so you see <strong>v1</strong> (inserted@t8 ≤ t9).
+<strong>The same underlying data, with a different read timestamp T, carves out a different point-in-time snapshot</strong> — that is the power of "multi-version": writers just <strong>keep appending</strong> new versions and tombstones, while a reader, with one T, <strong>cleanly carves out</strong> a consistent "as-of-now" view, and reads and writes never block each other.</p>
+
+<p>This concurrency model of "reads take a snapshot, writes append" yields a property extremely precious in a distributed vector DB: <strong>reads and writes never wait on or lock each other</strong>. In a traditional database, "modifying while reading" often means lock contention, reads blocked by writes; under MVCC, the new versions and tombstones being continuously written <strong>simply don't disturb</strong> a query running at an earlier T — that query always sees the <strong>consistent snapshot</strong> corresponding to its departure moment T, even if the underlying data has since been changed beyond recognition.
+For a vector DB needing <strong>high-throughput writes yet stable low-latency retrieval</strong>, this is vital: massive inserts, deletes, and upserts keep appending to the tail of the time axis, while every search grabs a T to cleanly "<strong>freeze</strong>" a motionless world to retrieve over — the two run on separate tracks, never dragging each other down. This is what the words "<strong>multi-version</strong>" truly buy — not to preserve history, but to <strong>decouple reads and writes along the time axis</strong>.</p>
+
+<div class="timeline">
+  <div class="lane"><span class="lane-label">events of PK 102</span><span class="tslot">insert v0 @t3</span><span class="tslot">tombstone void @t8</span><span class="tslot span">insert v1 @t8</span></div>
+  <div class="lane"><span class="lane-label">read T=t5</span><span class="tslot now">see v0 (t8 is future)</span></div>
+  <div class="lane"><span class="lane-label">read T=t9</span><span class="tslot now">see v1 (v0 voided)</span></div>
+</div>
+
+<p>This key of "<strong>timestamp decides visibility</strong>" is the very foundation by which Milvus reconciles <strong>consistency</strong> and <strong>high concurrency</strong> in a distributed setting. It needs no read/write locks on the data; instead it lets "reads" and "writes" each advance along the time axis: writes only append, a read takes a snapshot.
+But it leaves one question unanswered: <strong>how exactly is that guarantee timestamp T set?</strong> How long must reading "the latest" wait to guarantee seeing everything? That is the stage of <strong>consistency levels</strong> (Strong / Bounded / Eventual, etc.) — they trade off "how fresh you see" against "how long you wait." The full mechanism — how TSO issues numbers, how the delegator waits on watermarks, how snapshots align — is reserved for <strong>Lesson 30</strong>. For this lesson, firmly remember the unifying rule: <strong>an insert stamps a row's birthday, a delete stamps its deathday; a read holding T sees only rows whose "birthday ≤ T and deathday > T or none."</strong> Hold this rule firmly and you grasp the single yardstick spanning all three write operations — insert, delete, and upsert.</p>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: on append-only storage, <strong>a delete is not an erase but stamping a timestamped tombstone</strong> — it enters the WAL as a <strong>delete message</strong>, settles into an <strong>L0 deltalog</strong>, is routed by <strong>bloom filters</strong> (<span class="inline">FieldStats</span>'s <span class="inline">BF</span>, <span class="mono">internal/storage/field_stats.go</span>) to segments that might hold the PK, and is finally physically applied by <strong>Level0DeleteCompaction</strong> (Lesson 19). <strong>upsert = delete + insert</strong> (same PK, a new version with later ts). Unifying it all is <strong>timestamp-based MVCC</strong>: read at guarantee-ts T, a row is visible ⇔ insert ts ≤ T and no tombstone with ts ≤ T voids it; how T is set is decided by the consistency level (Lesson 30).
+</div>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Delete is a tombstone</strong>: a delete becomes a WAL delete message (PK + ts), settling into L0 delete data / deltalogs, with no in-place erase.</li>
+    <li><strong>Bloom routing</strong>: ask each segment's bloom with the to-delete PK (<span class="inline">FieldStats.BF</span>, <span class="mono">internal/storage/field_stats.go</span>); "definitely not" segments are skipped, the tombstone lands only on "maybe" segments; no false negatives guarantees no wrong delete.</li>
+    <li><strong>Physical apply</strong>: L0 tombstones are truly sunk and applied into segments by Level0DeleteCompaction (Lesson 19); the write side only books fast.</li>
+    <li><strong>upsert = delete + insert</strong>: for the same PK, delete then insert, old and new versions distinguished by ts; reuses all delete and insert machinery, no special path.</li>
+    <li><strong>Timestamp-based MVCC</strong>: read at guarantee-ts T, a row is visible ⇔ insert ts ≤ T and no tombstone with ts ≤ T; the same data with a different T is a different snapshot, reads and writes never block.</li>
+    <li><strong>How T is set</strong>: the consistency level (Strong/Bounded/Eventual) trades "how fresh vs how long to wait"; full mechanism in Lesson 30.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. On an append-only, immutable storage substrate, what does a Milvus delete actually do?</div>
+  <ol class="opts">
+    <li>Mark it in memory and never persist</li>
+    <li>Immediately find and delete that row in object storage</li>
+    <li>Rewrite the whole segment to drop that row</li>
+    <li>Generate a delete message (PK + delete timestamp) into the WAL, settling as Level-0 (L0) delete data/deltalog (a tombstone), without erasing in place in the insert binlog; physical removal is left to Level0DeleteCompaction</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. Binlogs are immutable, so a delete can only be expressed as 'append a timestamped tombstone'. Deletes and inserts share the same WAL in one global order, with TSO adjudicating their ordering</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. A delete message says 'void PK X'; how does the system decide which segments to land this tombstone on?</div>
+  <ol class="opts">
+    <li>Only land it on the newest-created segment</li>
+    <li>Ask each segment's bloom filter with PK X (FieldStats.BF, internal/storage/field_stats.go): segments answering 'definitely not' are skipped, the tombstone lands only on those that 'might hold X'; the bloom never has false negatives, guaranteeing no missed delete</li>
+    <li>Stuff the tombstone indiscriminately into every segment</li>
+    <li>Apply it to a few random segments</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. The bloom filter is serialized into the stats binlog alongside PK stats (Lesson 18); 'no false negatives' is the lifeline of correctness, a false positive only wastes a little work. This compresses broadcast into precise delivery, so delete cost doesn't balloon linearly with segment count</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Under timestamp-based MVCC, reading at guarantee-ts T, when is a row visible? And how does upsert fit this rule?</div>
+  <ol class="opts">
+    <li>Visible ⇔ the row was written last, regardless of timestamp</li>
+    <li>Visibility is decided by whether the segment has an index built</li>
+    <li>Upsert modifies a field in place without adding a version</li>
+    <li>Visible ⇔ the row's insert ts ≤ T and no tombstone with ts ≤ T voids it; upsert = for the same PK delete then insert, the old version voided by a tombstone and the new written with a later ts, so a read by T naturally hits the latest non-voided version</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. An insert stamps a 'birthday', a delete a 'deathday'; a read with T sees only rows whose 'birthday ≤ T and no deathday with ts ≤ T'. The same data with a different T is a different snapshot, reads and writes never block; how T is set is decided by the consistency level (Lesson 30)</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson unifies insert, delete, and upsert into 'a pile of timestamped immutable events,' then adjudicates visibility with one MVCC rule. Consider: compared with a traditional database's 'in-place update + read/write locking,' what are the advantages and costs of this 'writes only append, reads take a snapshot, judged by timestamp' design under high-concurrency vector retrieval? What question does it leave open about 'how guarantee-ts T is set,' to be answered by consistency levels (Lesson 30)? (Tie in Lesson 16's WAL and TSO, and Lesson 19's compaction reclaiming old versions.)</li>
   </ul>
 </div>
 </div>

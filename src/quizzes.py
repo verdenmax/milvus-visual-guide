@@ -1255,6 +1255,216 @@ QUIZZES = {
             },
         ],
     },
+    "18-binlog-and-storage.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "一个 sealed 段在对象存储里通常对应哪几类产物，它们各装什么？",
+                    "en": "What kinds of artifact does a sealed segment usually map to in object storage, and what does each hold?",
+                },
+                "opts": [
+                    {
+                        "zh": "insert binlog（每字段一个、列式数据）、delete binlog（作废主键+删除时间戳的墓碑）、stats binlog（主键 min/max + 布隆过滤器）、index file（ANN 索引）",
+                        "en": "insert binlog (one per field, columnar data), delete binlog (tombstones of void PK + delete timestamp), stats binlog (PK min/max + bloom filter), index file (the ANN index)",
+                    },
+                    {"zh": "只有一个把所有字段按行打包的大文件", "en": "Just one big file packing all fields by row"},
+                    {"zh": "一个段一个文件，删除时原地改写", "en": "One file per segment, rewritten in place on delete"},
+                    {"zh": "只有向量数据，标量字段不落盘", "en": "Only vector data; scalar fields are not persisted"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "insert 是真身、delete 是叠加层（墓碑，不真删）、stats 是加速卡（让查询跳过无关段）、index 是另一种视角。序列化由 internal/storage 的 PayloadWriter/InsertCodec/DeleteCodec 完成",
+                    "en": "Insert is the real body, delete an overlay (tombstone, no true erase), stats an acceleration card (lets queries skip irrelevant segments), index another viewpoint. Serialization is by internal/storage's PayloadWriter/InsertCodec/DeleteCodec",
+                },
+            },
+            {
+                "q": {
+                    "zh": "为什么 insert binlog 采用列式（每字段一个文件），而不是按行存？",
+                    "en": "Why is the insert binlog columnar (one file per field) rather than row-stored?",
+                },
+                "opts": [
+                    {
+                        "zh": "契合向量检索的访问模式（整列连续扫描、可送 SIMD/GPU）、同列同类型压缩率高、查询可列裁剪只读需要的列；加列也只是多一个列文件，schema 演进近乎零成本",
+                        "en": "It fits vector retrieval's access pattern (scan a whole column contiguously, feed SIMD/GPU), compresses well for same-type columns, allows column pruning; adding a field is just one more column file — near-zero-cost schema evolution",
+                    },
+                    {"zh": "因为对象存储只支持列式文件", "en": "Because object storage only supports columnar files"},
+                    {"zh": "因为按行存无法保存向量", "en": "Because row storage cannot hold vectors"},
+                    {"zh": "因为列式可以原地修改数据", "en": "Because columnar allows in-place data modification"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "向量查询要的是所有行的向量列去算相似度，列式让向量连续躺在一个文件里、扫描顺序读且缓存友好；这呼应第 7 课段的列式存储伏笔",
+                    "en": "A vector query wants the vector column of all rows for similarity; columnar keeps vectors contiguous in one file, sequential and cache-friendly — echoing Lesson 7's columnar hook",
+                },
+            },
+            {
+                "q": {
+                    "zh": "stats binlog 里的布隆过滤器（Bloom filter）在查询中起什么作用？",
+                    "en": "What role does the bloom filter in the stats binlog play in queries?",
+                },
+                "opts": [
+                    {
+                        "zh": "在打开一个段之前先判断“这个段里肯定没有某主键”，从而整段跳过；它绝不漏报，只允许极小概率误报，用于安全地排除不可能的段",
+                        "en": "Before opening a segment, judge that 'this segment definitely lacks a given PK' and skip the whole segment; it never has false negatives, allows only a tiny false-positive rate, used to safely exclude impossible segments",
+                    },
+                    {"zh": "压缩向量数据以节省存储", "en": "Compress vector data to save storage"},
+                    {"zh": "精确记录每一行的删除时间", "en": "Precisely record each row's delete time"},
+                    {"zh": "替代主键索引做精确点查", "en": "Replace the PK index for exact point lookups"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "布隆过滤器是概率型集合，只回答“肯定不在/可能在”。Milvus 实现于 internal/util/bloomfilter，由 PrimaryKeyStats 持有；删除路由也靠它逐段筛查（第 20 课）",
+                    "en": "A bloom filter is a probabilistic set answering only 'definitely not / maybe'. Milvus implements it in internal/util/bloomfilter, held by PrimaryKeyStats; delete routing also screens segments by it (Lesson 20)",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课说 binlog 格式是 Milvus 各组件之间的“通用语言”：flusher 按它写、QueryNode 按它读、compaction 按它读改写、索引构建按它读。请思考：为什么一种“稳定、自描述、向后兼容”的磁盘格式，对一个能长期独立升级各组件的分布式系统如此关键？如果格式频繁不兼容地改动，会引发哪些连锁问题？（可结合第 18 课的 event header 与第 12 课 DataCoord 的段元数据。）",
+                "en": "This lesson calls the binlog format the 'common language' among Milvus components: the flusher writes it, QueryNode reads it, compaction reads-and-rewrites it, index building reads it. Consider: why is a 'stable, self-describing, backward-compatible' on-disk format so critical for a distributed system that upgrades components independently over time? If the format changed incompatibly and often, what chain reactions would follow? (Tie in Lesson 18's event header and Lesson 12's DataCoord segment metadata.)",
+            },
+        ],
+    },
+    "19-compaction-and-gc.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "关于 compaction 的调度与执行，下面哪种说法符合 Milvus 当前架构？",
+                    "en": "Regarding the scheduling and execution of compaction, which statement matches Milvus's current architecture?",
+                },
+                "opts": [
+                    {
+                        "zh": "DataCoord 扫描段元数据、按策略生成并分派 compaction 任务；真正读旧 binlog、合并、写新段的是 datanode 上的 compaction worker",
+                        "en": "DataCoord scans segment metadata and, by policy, generates and dispatches compaction tasks; the one actually reading old binlogs, merging, and writing new segments is the compaction worker on a datanode",
+                    },
+                    {"zh": "compaction 由 Proxy 在写入路径上同步完成", "en": "Compaction is done synchronously by the Proxy on the write path"},
+                    {"zh": "compaction 由 QueryNode 在查询时即时合并", "en": "Compaction is merged on the fly by QueryNode at query time"},
+                    {"zh": "compaction 必须由独立的 indexnode 执行", "en": "Compaction must be executed by a dedicated indexnode"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "这正是“协调器管调度、节点管执行”的主旋律：DataCoord 调度，datanode worker 执行——也呼应第 17 课“DataNode 当下主要职责是 compaction”",
+                    "en": "This is the refrain 'coordinators schedule, nodes execute': DataCoord schedules, a datanode worker executes — echoing Lesson 17's 'DataNode's main present role is compaction'",
+                },
+            },
+            {
+                "q": {
+                    "zh": "Level0DeleteCompaction（datapb.CompactionType_Level0DeleteCompaction）在 compaction 里扮演什么角色？",
+                    "en": "What role does Level0DeleteCompaction (datapb.CompactionType_Level0DeleteCompaction) play among compactions?",
+                },
+                "opts": [
+                    {
+                        "zh": "删除先被缓冲为第零层（L0）的墓碑（作废主键+时间戳），尚未落到具体 sealed 段；Level0DeleteCompaction 把这层 L0 墓碑物理应用进对应的段，让被删的行真正消失",
+                        "en": "A delete is first buffered as a Level-0 (L0) tombstone (void PK + timestamp), not yet on a specific sealed segment; Level0DeleteCompaction physically applies this L0 tombstone layer into the matching segments, truly removing deleted rows",
+                    },
+                    {"zh": "它负责把多个小段按大小合并", "en": "It merges several small segments by size"},
+                    {"zh": "它把段内数据按主键排序", "en": "It sorts a segment's data by primary key"},
+                    {"zh": "它按聚类键重新分桶数据", "en": "It re-buckets data by a clustering key"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "这是上一课“删除不真删”的下半场。DataCoord 用 compaction_l0_view.go 的 LevelZeroCompactionView 追踪哪些 L0 墓碑该和哪些段合并；完整可见性见第 20 课",
+                    "en": "This is the second half of last lesson's 'deletes don't truly delete'. DataCoord tracks which L0 tombstones merge with which segments via LevelZeroCompactionView in compaction_l0_view.go; full visibility in Lesson 20",
+                },
+            },
+            {
+                "q": {
+                    "zh": "为什么 GC（garbage_collector.go）只删“孤儿超过 TTL（保留期）”的对象，而不是一变孤儿就删？",
+                    "en": "Why does GC (garbage_collector.go) delete only objects 'orphaned beyond TTL (retention period)' rather than the instant they become orphans?",
+                },
+                "opts": [
+                    {
+                        "zh": "分布式系统存在时间差：某 QueryNode 可能仍在读刚被 compaction 替换的旧段，某操作可能要回滚；TTL 给在途引用留一个安全窗口，宁可垃圾多躺一会儿也绝不误删在用数据",
+                        "en": "Distributed time skews exist: some QueryNode may still read an old segment just replaced by compaction, some operation may roll back; TTL leaves a safe window for in-flight references — better let garbage linger than ever mis-delete data in use",
+                    },
+                    {"zh": "因为对象存储不支持立即删除", "en": "Because object storage doesn't support immediate deletion"},
+                    {"zh": "因为 TTL 能压缩 binlog 体积", "en": "Because TTL compresses binlog size"},
+                    {"zh": "因为孤儿对象会自动过期失效", "en": "Because orphan objects auto-expire on their own"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "compaction 只在元数据上把旧段标记 dropped，物理文件仍在；GC 以元数据为准绳反向核对无引用对象，过 TTL 才删——这是“逻辑作废与物理回收分离”的设计",
+                    "en": "Compaction only marks old segments dropped in metadata while physical files remain; GC takes metadata as the yardstick to reverse-check unreferenced objects and deletes only past TTL — the 'separate logical voiding from physical reclaim' design",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课把 compaction 与 GC 比作“一前一后的接力”：前者把碎、脏数据重写成整、净新段并把旧段逻辑作废，后者在 TTL 之后把旧段物理清走。请思考：为什么 Milvus 选择“写入只快速追加、整理留给后台批量做”（LSM 式）而不是“写入时就整理好”？这种解耦在写放大、写入延迟、读效率、存储成本之间各做了什么取舍？（可结合第 17 课 flush 与第 18 课列式 binlog。）",
+                "en": "This lesson likens compaction and GC to 'a relay, one after the other': the former rewrites fragmented, dirty data into tidy, clean new segments and logically voids the old; the latter, past TTL, physically sweeps the old away. Consider: why does Milvus choose 'writes only append fast, tidying left to background batches' (LSM-style) rather than 'tidy at write time'? What tradeoffs does this decoupling make among write amplification, write latency, read efficiency, and storage cost? (Tie in Lesson 17's flush and Lesson 18's columnar binlogs.)",
+            },
+        ],
+    },
+    "20-delete-and-upsert.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "在只追加、不可变的存储底座上，Milvus 的一次 delete 实际做了什么？",
+                    "en": "On an append-only, immutable storage substrate, what does a Milvus delete actually do?",
+                },
+                "opts": [
+                    {
+                        "zh": "生成一条带主键和删除时间戳的删除消息进 WAL，沉淀为第零层（L0）删除数据/deltalog（墓碑），并不回到 insert binlog 原地抹除；物理删除留给 Level0DeleteCompaction",
+                        "en": "Generate a delete message (PK + delete timestamp) into the WAL, settling as Level-0 (L0) delete data/deltalog (a tombstone), without erasing in place in the insert binlog; physical removal is left to Level0DeleteCompaction",
+                    },
+                    {"zh": "立即在对象存储里找到该行并删除", "en": "Immediately find and delete that row in object storage"},
+                    {"zh": "把整个段重写一遍以去掉该行", "en": "Rewrite the whole segment to drop that row"},
+                    {"zh": "在内存里标记后从不落盘", "en": "Mark it in memory and never persist"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "binlog 不可变，删除只能表达成“追加一枚带时间戳的墓碑”。删除与插入共用同一条 WAL、排同一条全局时序，由 TSO 统一裁定先后",
+                    "en": "Binlogs are immutable, so a delete can only be expressed as 'append a timestamped tombstone'. Deletes and inserts share the same WAL in one global order, with TSO adjudicating their ordering",
+                },
+            },
+            {
+                "q": {
+                    "zh": "一条删除消息说“作废主键 X”，系统如何决定把这枚墓碑落到哪些段？",
+                    "en": "A delete message says 'void PK X'; how does the system decide which segments to land this tombstone on?",
+                },
+                "opts": [
+                    {
+                        "zh": "拿主键 X 逐段问布隆过滤器（FieldStats.BF，internal/storage/field_stats.go）：回答“肯定没有”的段跳过，只把墓碑落到“可能含 X”的段；布隆绝不漏报，保证不会漏删",
+                        "en": "Ask each segment's bloom filter with PK X (FieldStats.BF, internal/storage/field_stats.go): segments answering 'definitely not' are skipped, the tombstone lands only on those that 'might hold X'; the bloom never has false negatives, guaranteeing no missed delete",
+                    },
+                    {"zh": "把墓碑无差别地塞进每一个段", "en": "Stuff the tombstone indiscriminately into every segment"},
+                    {"zh": "随机选几个段应用", "en": "Apply it to a few random segments"},
+                    {"zh": "只落到最新创建的段", "en": "Only land it on the newest-created segment"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "布隆过滤器随 PK stats 序列化进 stats binlog（第 18 课）；“绝不漏报”是正确性命脉，误报只是多做无用功。这把广播压成精准投递，删除代价不随段数线性膨胀",
+                    "en": "The bloom filter is serialized into the stats binlog alongside PK stats (Lesson 18); 'no false negatives' is the lifeline of correctness, a false positive only wastes a little work. This compresses broadcast into precise delivery, so delete cost doesn't balloon linearly with segment count",
+                },
+            },
+            {
+                "q": {
+                    "zh": "在按时间戳的 MVCC 下，以保证时间戳 T 读取，一行在什么条件下可见？upsert 又如何融入这套规则？",
+                    "en": "Under timestamp-based MVCC, reading at guarantee-ts T, when is a row visible? And how does upsert fit this rule?",
+                },
+                "opts": [
+                    {
+                        "zh": "可见 ⇔ 该行插入 ts ≤ T 且不存在 ts ≤ T 的墓碑作废它；upsert = 同主键先删后插，旧版本被墓碑作废、新版本以更晚 ts 写入，读取按 T 自然命中最新未作废版本",
+                        "en": "Visible ⇔ the row's insert ts ≤ T and no tombstone with ts ≤ T voids it; upsert = for the same PK delete then insert, the old version voided by a tombstone and the new written with a later ts, so a read by T naturally hits the latest non-voided version",
+                    },
+                    {"zh": "可见 ⇔ 该行是最后写入的，无关时间戳", "en": "Visible ⇔ the row was written last, regardless of timestamp"},
+                    {"zh": "upsert 会原地修改某个字段而不新增版本", "en": "Upsert modifies a field in place without adding a version"},
+                    {"zh": "可见性由段是否建好索引决定", "en": "Visibility is decided by whether the segment has an index built"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "插入给行盖“生日”、删除盖“忌日”，读取拿 T 只认“生日 ≤ T 且无 ts ≤ T 的忌日”的行。同一数据换 T 即换快照，读写互不阻塞；T 怎么定由一致性级别决定（第 30 课）",
+                    "en": "An insert stamps a 'birthday', a delete a 'deathday'; a read with T sees only rows whose 'birthday ≤ T and no deathday with ts ≤ T'. The same data with a different T is a different snapshot, reads and writes never block; how T is set is decided by the consistency level (Lesson 30)",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课把插入、删除、upsert 统一成“一堆带时间戳的不可变事件”，再用一条 MVCC 规则裁决可见性。请思考：这种“写只追加、读取快照、按时间戳裁决”的设计，相比传统数据库“原地更新 + 读写加锁”，在高并发向量检索场景下有什么优势与代价？它给“保证时间戳 T 怎么定”留下了什么问题，需要一致性级别（第 30 课）来回答？（可结合第 16 课 WAL 与 TSO、第 19 课 compaction 回收旧版本。）",
+                "en": "This lesson unifies insert, delete, and upsert into 'a pile of timestamped immutable events,' then adjudicates visibility with one MVCC rule. Consider: compared with a traditional database's 'in-place update + read/write locking,' what are the advantages and costs of this 'writes only append, reads take a snapshot, judged by timestamp' design under high-concurrency vector retrieval? What question does it leave open about 'how guarantee-ts T is set,' to be answered by consistency levels (Lesson 30)? (Tie in Lesson 16's WAL and TSO, and Lesson 19's compaction reclaiming old versions.)",
+            },
+        ],
+    },
 }
 
 

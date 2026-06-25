@@ -81,6 +81,12 @@ PAGES = [
      "第四部分 · 写入链路", "Part 4 · The write path"),
     ("17-datanode-and-flush.html", "DataNode 与 flush", "DataNode &amp; flush",
      "第四部分 · 写入链路", "Part 4 · The write path"),
+    ("18-binlog-and-storage.html", "Binlog 与存储格式", "Binlog &amp; storage format",
+     "第四部分 · 写入链路", "Part 4 · The write path"),
+    ("19-compaction-and-gc.html", "Compaction 与 GC", "Compaction &amp; GC",
+     "第四部分 · 写入链路", "Part 4 · The write path"),
+    ("20-delete-and-upsert.html", "删除与 Upsert", "Delete &amp; upsert",
+     "第四部分 · 写入链路", "Part 4 · The write path"),
 ]
 
 
@@ -556,6 +562,12 @@ SUBTITLES = {
                                   "WAL single source of truth; message & TimeTick; PChannel/VChannel/CChannel; StreamingClient; log as data"),
     "17-datanode-and-flush.html": ("growing 段 · flush 触发 · binlog 落对象存储 · StreamingNode vs DataNode · growing/sealed 相变",
                                    "growing segment; flush triggers; binlogs to object storage; StreamingNode vs DataNode; growing/sealed transition"),
+    "18-binlog-and-storage.html": ("insert/delete/stats binlog 与索引文件 · 列式布局 · 对象存储路径布局 · internal/storage 序列化 · storagev2",
+                                   "insert/delete/stats binlogs & index files; columnar layout; object-storage path layout; internal/storage serialization; storagev2"),
+    "19-compaction-and-gc.html": ("compaction 合并碎段·应用 L0 墓碑 · Mix/Merge/Clustering/Sort/Level0 类型 · DataCoord 调度·datanode 执行 · GC 按 TTL 清孤儿",
+                                  "compaction merges fragments & applies L0 tombstones; Mix/Merge/Clustering/Sort/Level0 types; DataCoord schedules, datanode executes; GC reclaims orphans past TTL"),
+    "20-delete-and-upsert.html": ("删除即墓碑·进 WAL·沉淀 L0 deltalog · 布隆过滤器路由删除 · upsert = 删除 + 插入 · 按时间戳的 MVCC 可见性",
+                                  "delete as tombstone; into WAL; settle as L0 deltalog; bloom filters route deletes; upsert = delete + insert; timestamp-based MVCC visibility"),
 }
 
 
