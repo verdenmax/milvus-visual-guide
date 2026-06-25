@@ -1,5 +1,11 @@
 # Milvus Visual Guide / Milvus 图解学习指南
 
+<p align="center">
+  <a href="https://verdenmax.github.io/milvus-visual-guide/"><b>📖&nbsp; Read the guide online&nbsp; →&nbsp; verdenmax.github.io/milvus-visual-guide</b></a>
+  <br>
+  <sub>The complete bilingual (English&nbsp;+&nbsp;中文) visual guide to Milvus internals — 50 lessons, runs in your browser, zero install.<br>点开即读这份 Milvus 内部原理图解指南 · 中英双语 · 50 课 · 无需安装</sub>
+</p>
+
 [![Read online](https://img.shields.io/badge/Read_online-Live_Demo-1296db?logo=githubpages&logoColor=white)](https://verdenmax.github.io/milvus-visual-guide/)
 [![CI](https://github.com/verdenmax/milvus-visual-guide/actions/workflows/ci.yml/badge.svg)](https://github.com/verdenmax/milvus-visual-guide/actions/workflows/ci.yml)
 [![Deploy](https://github.com/verdenmax/milvus-visual-guide/actions/workflows/deploy.yml/badge.svg)](https://github.com/verdenmax/milvus-visual-guide/actions/workflows/deploy.yml)
