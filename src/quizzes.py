@@ -1936,6 +1936,67 @@ QUIZZES = {
             },
         ],
     },
+    "29-reduce.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "Milvus 一次分布式搜索的结果归并（Reduce）发生在哪几层？",
+                    "en": "At which levels does Milvus merge (Reduce) the results of one distributed search?",
+                },
+                "opts": [
+                    {"zh": "三层：段内(segcore Reduce.cpp) → 节点内(delegator) → 跨分片(Proxy)，逐级向上", "en": "Three levels: in-segment (segcore Reduce.cpp) → in-node (delegator) → cross-shard (Proxy), bottom-up"},
+                    {"zh": "只在 Proxy 一处一次性完成", "en": "Only once, entirely at the Proxy"},
+                    {"zh": "只在每个段内完成，不需要再合并", "en": "Only inside each segment, no further merging"},
+                    {"zh": "在客户端 SDK 里完成", "en": "In the client SDK"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "归并顺着数据的物理分布分三层：段内先 reduce 出本段 topK，节点(delegator)把本分片各段合并，Proxy 最后跨分片合并出全局 topK。每层只上交局部 topK。",
+                    "en": "Merging follows the data's physical layout in three levels: each segment reduces to its topK, the node (delegator) merges a shard's segments, and the Proxy finally merges across shards into the global topK. Each level only sends up a local topK.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "为什么分层归并能扩展到十亿级，而“把所有候选发到一处统一排序”不行？",
+                    "en": "Why does hierarchical merging scale to billions while 'send all candidates to one place and sort' does not?",
+                },
+                "opts": [
+                    {"zh": "因为局部 topK 的并集必含全局 topK，每层只需上交 K 条，网络上始终只流动 K 量级数据", "en": "Because the union of local topKs contains the global topK, so each level sends only K items — only K-scale data ever crosses the network"},
+                    {"zh": "因为分层用了 GPU", "en": "Because levels use the GPU"},
+                    {"zh": "因为分层不需要排序", "en": "Because levels skip sorting"},
+                    {"zh": "因为分层把数据压缩了", "en": "Because levels compress the data"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "最终只要 K 条，凡是进不了某层前 K 的都进不了全局前 K，所以每层只上交自己的前 K。于是 Proxy 只面对 S×K 条（与底层总量无关），而一次性汇总要搬运/排序随数据量爆炸的海量候选。",
+                    "en": "Only K items are needed; anything outside a level's top K can't be in the global top K, so each level sends only its top K. The Proxy then faces just S×K (independent of total data), whereas one-shot gather must move/sort candidates that explode with data volume.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "归并时为什么必须“按主键去重”？",
+                    "en": "Why must a merge 'dedup by primary key'?",
+                },
+                "opts": [
+                    {"zh": "因为同一实体可能跨多个段出现(growing 新值/sealed 旧值/删除墓碑)，不去重会返回重复或过期版本", "en": "Because the same entity may appear across segments (growing new value / sealed old value / delete tombstone); without dedup you'd return duplicates or stale versions"},
+                    {"zh": "因为主键能让结果按字母排序", "en": "Because the PK sorts results alphabetically"},
+                    {"zh": "因为去重能减少网络流量", "en": "Because dedup reduces network traffic"},
+                    {"zh": "因为不去重会损坏索引", "en": "Because not deduping corrupts the index"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "在“日志即数据、段不可变”的模型里，一条数据可能同时存在于多个段（旧值、新 upsert、墓碑并存）。归并必须按主键认人，并配合时间戳/删除位图只留“该看到”的那一版，否则结果会重复或过期。",
+                    "en": "In a 'log-as-data, immutable-segment' model, one row may exist in several segments (old value, new upsert, tombstone). The merge must identify by PK and, with timestamp/delete bitmap, keep only the 'should-be-seen' version, or results would be duplicated or stale.",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课说“归并本身是精确的，近似发生在段内 ANN 检索”。请据此推理：如果一次搜索召回率不理想，你应该调哪些旋钮（提示：nprobe/ef、段内检索精度），而不是动归并？再想想：为什么深翻页(offset 很大)会让归并变贵？要支持“无限下滑”的场景，比用大 offset 更好的做法是什么？",
+                "en": "This lesson says 'the merge is exact; approximation happens in the in-segment ANN search'. Reason from that: if a search's recall is poor, which knobs should you tune (hint: nprobe/ef, in-segment search precision) rather than the merge? Then consider: why does deep pagination (large offset) make the merge expensive, and what is a better approach than a large offset for an 'infinite scroll' scenario?",
+            },
+        ],
+    },
 }
 
 

@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 28 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 29 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
@@ -356,6 +356,7 @@ details[open] > summary { list-style: none; }
   <li>QueryNode &amp; the delegator</li>
   <li>Segcore (C++)</li>
   <li>The execution engine</li>
+  <li>Reduce & result assembly</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -6340,6 +6341,155 @@ vectorization + a bitset, that step is very fast.</p>
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
     <li>Imagine a very selective query (only 0.1% of rows qualify) that also needs similarity search on a graph index like HNSW. 'Filter first' can make the navigable graph too sparse to hop through, hurting recall. Consider: what strategies can the engine use to balance the filter constraint with recall? (Hints: widen the search scope, brute-force a tiny candidate set…) What does this reveal about how filter selectivity feeds back into search strategy?</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Reduce & result assembly</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+In the last few lessons, a search is <strong>scattered</strong> far and wide: the Proxy fans it out to multiple shards, each shard's
+delegator sends it to the QueryNodes holding different segments, and each segment searches its own little slice in segcore. So the
+question is: how do all these "local topKs" merge into <strong>one final answer that is correctly ordered, deduplicated and complete</strong>?
+That is what <strong>Reduce</strong> does. It is not one step but <strong>three levels</strong> of bottom-up merging — within a segment,
+within a node, across shards — and each level only passes its own topK upward, so the data shrinks as it climbs. Understand Reduce and you
+understand "distributed topK", which looks simple but has real subtlety.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Like a <strong>tiered selection</strong>: first each <strong>class</strong> picks its top 3 (segment topK), then the classes' top-3s
+  compete at the <strong>grade</strong> level for the grade's top 3 (node merge), and finally the grades' top-3s meet in the
+  <strong>school</strong> final for the school's top 3 (cross-shard merge). No need to make all thousands compete at once — <strong>each
+  level only sends up its own top few</strong>: fair and cheap. Reduce is that tiered selection, and the final "school top 3" is your topK.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>segment topK (segcore) → node merge (delegator) → cross-shard merge (Proxy)</strong>, merged level by level. Each
+  level only sends up a local topK, so the data crossing the network stays small; merging also <strong>dedups by primary key, sorts by
+  distance, then paginates by offset/limit</strong>. This <strong>scatter-gather</strong> shape is the universal skeleton of almost every
+  distributed retrieval/query engine.
+</div>
+
+<h2>Three levels: from segment to node to Proxy</h2>
+<p>Walk the scatter backwards and you get the three merge levels. <strong>Level one, in the segment</strong>: after segcore computes all
+candidate distances in a segment it does NOT return them all — too many — but does a local <strong>reduce</strong>
+(<span class="mono">internal/core/src/segcore/reduce/Reduce.cpp</span>), keeping only that segment's topK. <strong>Level two, in the node</strong>:
+a QueryNode (delegator/shard leader) holds many segments of this shard (sealed + growing); it <strong>merges</strong> their topKs into "this
+<strong>shard's</strong> topK". <strong>Level three, at the Proxy</strong>: the Proxy receives every shard's topK and does the <strong>final
+cross-shard merge</strong> (see <span class="mono">docs/developer_guides/proxy-reduce.md</span>), producing the global topK, and returns it —
+with the requested scalar fields — to the client.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Segment reduce (segcore)</h4><p>each segment computes candidate distances and locally selects its topK, sending up only that slice. <span class="mono">Reduce.cpp</span></p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Node merge (delegator)</h4><p>a shard's many segments (sealed+growing) topKs are merged into "this shard's topK".</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Cross-shard merge (Proxy)</h4><p>shards' topKs gather at the Proxy for a final merge into the <strong>global topK</strong>.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Fill &amp; return</h4><p>fetch <span class="mono">output_fields</span> by PK, assemble the result, return to the client.</p></div></div>
+</div>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/core/src/segcore/reduce/Reduce.cpp</span><span class="ln">segment-level reduce: converge candidates into the segment's topK (illustrative)</span></div>
+  <pre><span class="cm">// in a segment: for each query vector (nq of them), take the best topK by distance</span>
+<span class="cm">// key actions: sort by distance + dedup by primary key + truncate to topK</span>
+ReduceHelper::Reduce();          <span class="cm">// converge each segment's search results</span>
+ReduceHelper::Marshal();         <span class="cm">// pack into a cross-process transmittable result</span></pre>
+</div>
+
+<h2>Why levels? Can't we merge all at once?</h2>
+<p>Picture the naive approach: every segment and node ships <strong>all candidates</strong> to the Proxy, which sorts once and takes the topK.
+That might be fine at small scale, but at billions it <strong>collapses</strong> — the network hauls enormous data and the Proxy sorts an
+astronomical number of records: slow and memory-hungry. <strong>The essence of hierarchical merging is "converge early"</strong>: since the
+final answer is only K items, each level <strong>only needs to send up its own top K</strong> (anything beyond can't make the global top K).
+So each segment sends K, each shard sends K, and <strong>the data crossing the network is pinned to a tiny size</strong>. It is a humble but
+powerful observation: <strong>topK merging is divide-and-conquer</strong> — the union of local topKs is guaranteed to contain the global topK.</p>
+
+<div class="cols">
+  <div class="col"><h4>✅ Hierarchical merge (Milvus)</h4><p>each level sends only a local topK; data shrinks upward; the Proxy merges just "K × number-of-shards". <strong>Scales to billions</strong>, stable latency.</p></div>
+  <div class="col"><h4>⚠️ One-shot full gather</h4><p>all candidates to one place for a single sort: network and memory explode with data volume, <strong>can't withstand scale</strong>. Only holds at toy size.</p></div>
+</div>
+
+<h2>What does a merge actually do</h2>
+<p>At every level a merge is the same three things, just over a different scope. <strong>(1) Sort by distance/score</strong>: merge several
+sorted results into one still-sorted result (k-way merge). <strong>(2) Dedup by primary key</strong>: the same entity can appear in multiple
+segments — e.g. it was just written into a growing segment and also has an old version in a sealed one, or a delete and insert coexist;
+the merge must <strong>identify by primary key</strong> and keep only the "should-be-seen" row, so no entity appears twice. <strong>(3)
+Paginate by offset/limit</strong>: after the global sort and dedup, skip the first <span class="mono">offset</span> and take
+<span class="mono">limit</span>, supporting pagination. Note: pagination happens <strong>after</strong> the merge — you need a correct global
+order first, which is also why deep pagination (large offset) is inherently more expensive in distributed retrieval.</p>
+
+<table class="t">
+  <tr><th>Action</th><th>What</th><th>Why</th></tr>
+  <tr><td><strong>Sort</strong></td><td class="mono">k-way sorted merge, by distance/score</td><td>fuse several local topKs into one global order</td></tr>
+  <tr><td><strong>Dedup</strong></td><td class="mono">identify by PK, keep the "should-see" version</td><td>same entity may appear across segments; avoid dup/stale</td></tr>
+  <tr><td><strong>Paginate</strong></td><td class="mono">skip offset, take limit</td><td>support paging; deep paging is inherently pricier</td></tr>
+</table>
+
+<h2>A concrete walk-through</h2>
+<p>Let topK=3, with 2 shards, each holding 3 segments. Bottom level: the 6 segments each search their own top 3, giving 6 "segment topKs".
+Second level: shard A's 3 segments (9 candidates total) merge+dedup down to shard A's top 3, and shard B likewise to its top 3. Third level:
+the Proxy takes A's and B's top 3 (6 total) and finally merges, dedups, sorts, and takes the <strong>global top 3</strong>. Throughout, the most
+that ever crosses the network is "3 per segment", "3 per shard", "6 at the end" — <strong>always on the order of K, independent of the total
+underlying data</strong>. That is exactly why distributed topK can be both correct and scalable. Back to the full chain: Lesson 28's filter
+narrowed the candidates, Lesson 27 found the topK inside a segment, and <strong>this lesson merges the scattered topKs into the final answer</strong>;
+the next lesson (30) supplies the last piece — exactly <strong>which moment's</strong> data these segments and nodes searched, i.e. consistency and timestamps.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Three merge levels</strong>: segment (segcore <span class="mono">Reduce.cpp</span>) → node (delegator) → cross-shard (Proxy, see <span class="mono">proxy-reduce.md</span>).</li>
+    <li><strong>Divide-and-conquer</strong>: each level sends only a local topK; the union of local topKs contains the global topK; only K-scale data crosses the network, so it scales to billions.</li>
+    <li><strong>A merge does three things</strong>: <strong>sort</strong> by distance (k-way), <strong>dedup</strong> by PK (an entity may appear across segments), <strong>paginate</strong> by offset/limit (deep paging is pricier).</li>
+    <li><strong>Scatter-gather</strong>: fan out to shards/segments, search local topKs, gather and merge upward — the universal skeleton of distributed retrieval/query engines.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. At which levels does Milvus merge (Reduce) the results of one distributed search?</div>
+  <ol class="opts">
+    <li>Only inside each segment, no further merging</li>
+    <li>In the client SDK</li>
+    <li>Only once, entirely at the Proxy</li>
+    <li>Three levels: in-segment (segcore Reduce.cpp) → in-node (delegator) → cross-shard (Proxy), bottom-up</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. Merging follows the data's physical layout in three levels: each segment reduces to its topK, the node (delegator) merges a shard's segments, and the Proxy finally merges across shards into the global topK. Each level only sends up a local topK.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Why does hierarchical merging scale to billions while 'send all candidates to one place and sort' does not?</div>
+  <ol class="opts">
+    <li>Because levels use the GPU</li>
+    <li>Because levels compress the data</li>
+    <li>Because levels skip sorting</li>
+    <li>Because the union of local topKs contains the global topK, so each level sends only K items — only K-scale data ever crosses the network</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. Only K items are needed; anything outside a level's top K can't be in the global top K, so each level sends only its top K. The Proxy then faces just S×K (independent of total data), whereas one-shot gather must move/sort candidates that explode with data volume.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Why must a merge 'dedup by primary key'?</div>
+  <ol class="opts">
+    <li>Because the PK sorts results alphabetically</li>
+    <li>Because not deduping corrupts the index</li>
+    <li>Because dedup reduces network traffic</li>
+    <li>Because the same entity may appear across segments (growing new value / sealed old value / delete tombstone); without dedup you'd return duplicates or stale versions</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. In a 'log-as-data, immutable-segment' model, one row may exist in several segments (old value, new upsert, tombstone). The merge must identify by PK and, with timestamp/delete bitmap, keep only the 'should-be-seen' version, or results would be duplicated or stale.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson says 'the merge is exact; approximation happens in the in-segment ANN search'. Reason from that: if a search's recall is poor, which knobs should you tune (hint: nprobe/ef, in-segment search precision) rather than the merge? Then consider: why does deep pagination (large offset) make the merge expensive, and what is a better approach than a large offset for an 'infinite scroll' scenario?</li>
   </ul>
 </div>
 </div>

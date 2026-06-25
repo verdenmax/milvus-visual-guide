@@ -42,4 +42,5 @@ CONTENT = {
     "26-querynode-and-delegator.html": part6.LESSON_26,
     "27-segcore.html": part6.LESSON_27,
     "28-execution-engine.html": part6.LESSON_28,
+    "29-reduce.html": part6.LESSON_29,
 }

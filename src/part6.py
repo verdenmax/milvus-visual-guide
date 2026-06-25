@@ -980,3 +980,238 @@ vectorization + a bitset, that step is very fast.</p>
 </div>
 """,
 }
+
+
+LESSON_29 = {
+    "zh": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+前几课里，一次搜索被<strong>扇出（scatter）</strong>到很多地方：Proxy 分发给多个分片（shard），每个分片的 delegator 又把它发给持有不同段的 QueryNode，
+每个段在 segcore 里各自搜出自己的一小份结果。问题来了：这么多份"局部 topK"，怎么合成<strong>唯一一份、正确排序、不重不漏</strong>的最终答案？
+这就是 <strong>Reduce（归并）</strong>要做的事。它不是一步，而是<strong>分三层</strong>层层向上合并——段内、节点内、跨分片——每一层都只把自己的 topK 往上交，
+数据越往上越少。读懂 Reduce，你就读懂了"分布式 topK"这件看似简单、实则讲究的事。它也是把"一次相似检索"从"一个段里的事"放大成"整个集群协同完成的事"的关键缝合点。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 生活类比</div>
+  像一场<strong>分赛区选拔</strong>：先在每个<strong>班级</strong>里选出前 3 名（段内 topK），再把各班前 3 名拿到<strong>年级</strong>里 PK、选出年级前 3（节点内归并），
+  最后各年级的前 3 汇到<strong>校级</strong>决赛，排出全校前 3（跨分片归并）。没必要让全校几千人一起比——<strong>每一层只上交自己的前几名</strong>，
+  既公平、又省力。Reduce 就是这套"逐层选拔"，最后那份"全校前 3"就是你要的 topK。如果硬要把全校几千人拉到一个操场上一起比，光是把人聚齐、排队、记录就乱成一团——
+这恰好对应"把所有候选一次性汇总排序"的灾难。<strong>逐层选拔之所以高效，正是因为每一层都把规模摁在"前几名"，让上一层永远只面对很少的人。</strong>把这套朴素的智慧记牢，下面的所有细节都只是它在不同尺度上的展开而已。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  一句话：<strong>段内 topK（segcore）→ 节点内归并（delegator）→ 跨分片归并（Proxy）</strong>，三层逐级合并。每层只上交局部 topK，
+  所以网络上流动的数据始终很小；归并时还要<strong>按主键去重、按距离排序、再按 offset/limit 分页</strong>。这套<strong>scatter-gather（扇出-归并）</strong>
+  正是几乎所有分布式检索/查询引擎的通用骨架。
+</div>
+
+<h2>三层归并：从段到节点到 Proxy</h2>
+<p>把扇出反过来走一遍，就是归并的三层。<strong>第一层在段内</strong>：segcore 在一个段里算完所有候选的距离后，并不会把全部结果都返回——那太多了——
+而是就地做一次 <strong>reduce</strong>（<span class="mono">internal/core/src/segcore/reduce/Reduce.cpp</span>），只留下这个段里最好的 topK。<strong>第二层在节点</strong>：
+一个 QueryNode（delegator/shard leader）手里有这个分片的很多段（sealed + growing），它把各段交上来的 topK <strong>再归并一次</strong>，得到"<strong>这个分片</strong>的 topK"。
+<strong>第三层在 Proxy</strong>：Proxy 收到所有分片各自的 topK，做<strong>最后一次跨分片归并</strong>（参见 <span class="mono">docs/developer_guides/proxy-reduce.md</span>），
+排出全局 topK，连同需要的标量字段一起返回给客户端。</p>
+
+<p>这三层不是随意切的，而是<strong>顺着数据的物理分布自然分出来的</strong>：数据天然按段存放、段按分片归属、分片散在不同节点，所以"先在最小单位（段）里收敛、再逐级向上"是最省力的路径。
+还有一个容易忽略的细节：在节点这一层，delegator 要把 <strong>sealed 段</strong>（已建索引、不可变）和 <strong>growing 段</strong>（还在消费 WAL、可变）的结果<strong>一起归并</strong>——
+前者来自索引检索、后者来自暴力检索（第 27 课），但它们产出的都是"距离 + 主键"的有序小份，归并时一视同仁。正因为如此，<strong>刚写入还没建索引的新数据，也能立刻参与搜索并出现在结果里</strong>——
+这正是第 1 课说的"边写边查"在查询侧的落地。<strong>段内收敛得越狠，往上要归并的就越少</strong>，这也是为什么 segcore 要在最底层就先做一次 reduce，而不是把成千上万条候选一股脑往上抛。</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>段内 reduce（segcore）</h4><p>每个段算完候选距离，就地选出本段 topK，只上交这一小份。<span class="mono">Reduce.cpp</span></p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>节点内归并（delegator）</h4><p>一个分片的多段（sealed+growing）topK 再合并，得到"本分片 topK"。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>跨分片归并（Proxy）</h4><p>各分片 topK 汇到 Proxy，做最后一次合并，排出<strong>全局 topK</strong>。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>回填与返回</h4><p>按主键取回 <span class="mono">output_fields</span> 等标量字段，组装成结果返回客户端。</p></div></div>
+</div>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/core/src/segcore/reduce/Reduce.cpp</span><span class="ln">段内归并：把候选收敛成本段 topK（节选示意）</span></div>
+  <pre><span class="cm">// 段内：对每个查询向量(nq 个)，从候选里取距离最优的 topK</span>
+<span class="cm">// 关键动作：按距离排序 + 按主键去重 + 截断到 topK</span>
+ReduceHelper::Reduce();          <span class="cm">// 收敛每个段的搜索结果</span>
+ReduceHelper::Marshal();         <span class="cm">// 打包成可跨进程传输的结果</span></pre>
+</div>
+
+<h2>为什么非要分层？一次性合并不行吗？</h2>
+<p>设想最朴素的做法：让所有段、所有节点把<strong>全部候选</strong>都发到 Proxy，由 Proxy 一次性排序取 topK。这在小规模也许还行，但到了十亿级就<strong>彻底崩溃</strong>——
+网络要搬运海量数据、Proxy 要排序天文数字条记录，既慢又占内存。<strong>分层归并的精髓在于"早收敛"</strong>：既然最终只要 K 条，那么每一层都<strong>只需上交自己的前 K 条</strong>就够了
+（再多的也进不了全局前 K）。于是每个段只传 K 条、每个分片只传 K 条，<strong>网络上流动的数据量被死死摁在很小的规模</strong>。这是一个朴素却极有力的观察：
+<strong>topK 的归并可以分治</strong>——局部 topK 的并集，一定包含全局 topK。</p>
+
+<p>用一点点数学就更清楚了：设有 <span class="mono">S</span> 个分片、每个分片 <span class="mono">G</span> 个段。一次性全量汇总，Proxy 要面对的是"<strong>所有段里所有命中的候选</strong>"，
+量级随数据规模线性膨胀，可能是上亿条。而分层归并里，每个段只上交 <span class="mono">K</span> 条，节点把 <span class="mono">G×K</span> 条收敛成 <span class="mono">K</span> 条，
+Proxy 最后只面对 <span class="mono">S×K</span> 条——<strong>与底层总数据量完全无关，只和 K、分片数、段数有关</strong>。当 K=10、分片=8、每分片 16 段时，
+最坏也不过是"每节点归并 160 条、Proxy 归并 80 条"这种<strong>极小的规模</strong>。这就是为什么 Milvus 能在十亿向量上做毫秒级 topK：<strong>真正昂贵的是底层的距离计算（被索引和过滤摁住了），
+而归并这一步永远很轻</strong>。把"重计算下沉到数据所在处、只让轻量的 topK 往上汇聚"，是分布式系统里反复出现的智慧。</p>
+
+<p>这里也藏着一个常见误区：以为"分片越多，归并越慢"。其实恰恰相反——分片多，意味着每个分片管的数据更少、底层检索更快，而归并端只多了"几条 K"而已（<span class="mono">S×K</span> 仍然很小）。
+真正拖慢归并的从来不是分片数，而是<strong>过大的 K 或过深的 offset</strong>。所以扩容时大胆加分片/加节点去分担底层计算，归并这一层几乎不会成为瓶颈——这也是"存算分离 + 水平扩展"在查询侧能成立的微观原因之一。</p>
+
+<div class="cols">
+  <div class="col"><h4>✅ 分层归并（Milvus）</h4><p>每层只上交局部 topK，数据越往上越少；Proxy 只需合并"K × 分片数"条。<strong>可扩展到十亿级</strong>，延迟稳定。</p></div>
+  <div class="col"><h4>⚠️ 一次性全量汇总</h4><p>所有候选发给一处统一排序：网络与内存随数据量爆炸，<strong>根本扛不住规模</strong>。只在玩具规模成立。</p></div>
+</div>
+
+<h2>归并到底做哪几件事</h2>
+<p>每一层的归并，核心都是同样三件事，只是作用范围不同。<strong>① 按距离/相似度排序</strong>：把多份有序结果合并成一份仍然有序的结果（多路归并）。
+<strong>② 按主键去重</strong>：同一个实体可能同时出现在多个段里——比如它在某个 growing 段里刚被写入、又在某个 sealed 段里有旧版本，或者删除与插入并存；
+归并必须<strong>按主键认人</strong>，只保留"该看到"的那一条，避免同一条数据在结果里出现两次。<strong>③ 按 offset/limit 分页</strong>：在全局有序、去重之后，
+跳过前 <span class="mono">offset</span> 条、取 <span class="mono">limit</span> 条，支撑"翻页"。注意：分页是在<strong>归并完成后</strong>做的——
+要先有正确的全局排序，分页才有意义，这也是为什么深翻页（offset 很大）在分布式检索里天然更贵。</p>
+
+<p>这里的<strong>去重</strong>值得多说一句，因为它直接关系到结果的正确性。在一个"日志即数据、段不可变"的系统里，同一个主键的数据可能<strong>同时存在于多个段</strong>：
+它可能在某个 sealed 段里有一份旧值，又在某个 growing 段里有刚 upsert 进来的新值；也可能它已经被删除，却仍以"墓碑"的形式散落在某些段里（回忆第 20 课）。
+如果归并时不按主键认人，结果里就会出现<strong>同一条数据的两份、甚至本该被删掉的旧版本</strong>。所以归并必须做两件事：一是<strong>按主键去重</strong>，二是配合<strong>时间戳与删除位图</strong>
+只保留"在本次查询的可见时刻里、该被看到"的那一版。前者是"认人"，后者是"认时刻"——而"认时刻"正是下一课一致性要展开的主题。可以说，<strong>归并不仅是把结果排好序，更是把"分布在各处、带着不同版本"的数据，
+收敛成一份逻辑上自洽的答案</strong>。</p>
+
+<p>把它和你熟悉的 SQL <span class="inline">ORDER BY ... LIMIT</span> 对照一下会很有帮助：单机数据库里排序分页是一次完成的；而在 Milvus 这种分布式向量库里，
+"排序键"是<strong>向量距离/相似度</strong>，数据又散在大量段与节点上，于是同样的"排序 + 截断"被拆成了<strong>三层逐级归并</strong>。本质没变——都是"取按某个键排序后的前若干条"——
+但实现上要把它<strong>分治化、并行化</strong>，才扛得住规模。理解了这层对应关系，你就能把单机数据库的直觉，平滑迁移到分布式向量检索上：<strong>scatter 对应"并行扫描"，gather/reduce 对应"归并排序"，
+offset/limit 对应"分页"</strong>，只是每一步都被放大到了集群尺度。</p>
+
+<table class="t">
+  <tr><th>动作</th><th>做什么</th><th>为什么</th></tr>
+  <tr><td><strong>排序</strong></td><td class="mono">多路有序合并，按距离/分数</td><td>把多份局部 topK 合成一份全局有序</td></tr>
+  <tr><td><strong>去重</strong></td><td class="mono">按主键认人，留"该看到"的版本</td><td>同一实体可能跨段出现，避免重复/旧版本</td></tr>
+  <tr><td><strong>分页</strong></td><td class="mono">跳过 offset、取 limit</td><td>支撑翻页；深翻页天然更贵</td></tr>
+</table>
+
+<p>这三件事里，<strong>排序为什么用"多路归并"而不是"全部倒进一个数组再排"</strong>？因为各层交上来的每一份本身<strong>已经是有序的</strong>（段内 reduce 时就排好了）——
+合并多份有序序列，用一个小顶堆（按距离）每次弹出最优的一条，复杂度只与"总条数 × log(份数)"有关，远比把所有候选打散重排划算。这其实就是经典的"<strong>归并排序的 merge 步</strong>"，
+只不过被搬到了分布式场景：每个段、每个分片都是一条预先排好的"流"，归并器像拉链一样把它们咬合成一条全局有序的流，再截断出 topK。理解了这一点，你就明白为什么"<strong>每层都先排好再上交</strong>"如此重要——
+它让上层的合并始终是廉价的多路归并，而不是昂贵的全量重排。</p>
+
+<h2>一个具体例子：走一遍</h2>
+<p>设 topK=3、有 2 个分片，每个分片各有 3 个段。最底层：6 个段各自搜出自己的前 3，得到 6 份"段 topK"。第二层：分片 A 的 3 个段（共 9 条候选）归并去重后留下分片 A 的前 3，
+分片 B 同理留下前 3。第三层：Proxy 拿到 A、B 各自的前 3（共 6 条），最后归并、去重、排序，取出<strong>全局前 3</strong>。整个过程里，跨网络传输的最多就是
+"每段 3 条""每分片 3 条""最后 6 条"——<strong>始终是 K 的量级，与底层总数据量无关</strong>。这正是分布式 topK 既能正确、又能扩展的根本原因。</p>
+
+<p>顺着这个例子，再看两个现实里很关键的"变贵点"。其一是<strong>深翻页</strong>：要取第 1000 页、每页 10 条，意味着全局前 10010 条都得先被正确排出来——
+每个分片就不能只交 10 条，而要交够"足以覆盖到第 10010 名"的量，<strong>归并的输入随 offset 线性变大</strong>，又慢又耗内存。所以向量检索里通常建议用"<strong>按上一页最后一条游标续取</strong>"
+这类方式替代深翻页。其二是 <strong>nq（一次搜多少个查询向量）</strong>：批量搜 100 个向量，相当于把上面这套三层归并<strong>并行做 100 份</strong>，每份各自归出自己的 topK——
+归并天然按 nq 并行，这也是 Milvus 鼓励"批量搜"以摊薄固定开销的原因。把这两点记住，你在调 <span class="mono">limit</span>/<span class="mono">offset</span>/批量大小时，
+就知道每个旋钮背后动的是归并的哪根弦。</p>
+
+<p>最后给"归并"一个准确的定位：它<strong>本身很轻</strong>，却处在"<strong>正确性的咽喉</strong>"上。轻，是因为它只搬运和合并 K 量级的数据；咽喉，是因为<strong>去重认人、版本认时刻、排序认距离</strong>
+任何一处出错，用户拿到的就是重复、过期或乱序的结果。所以 Milvus 把段内 reduce 放在最贴近数据的 C++ segcore 里、把跨分片 reduce 放在 Proxy 里，每一层职责单一、边界清晰，
+既能并行加速，又能把"正确性"逐层守住。</p>
+
+<p>还有一点值得澄清：<strong>归并本身是"精确"的</strong>，它对收到的那些局部 topK 一定能合出正确的全局排序；真正"近似"的是<strong>每个段内的 ANN 检索</strong>（第 5 课）——
+段内可能因为图/桶的近似而漏掉个别真正的近邻。所以一次搜索的召回率，<strong>取决于段内检索的近似程度（nprobe/ef 等），而不是归并</strong>。这提醒我们：
+要想结果更准，旋钮在"段内检索的精度"上，而不是在"归并"上；归并只忠实地把各段交来的结果合好。把"近似在哪、精确在哪"分清楚，你对一次相似检索的质量来源就有了准确的判断。</p>
+
+<p>回到全链路：第 28 课的过滤缩小了候选、第 27 课在段内搜出 topK，<strong>本课把分散的 topK 归并成最终答案</strong>；下一课（第 30 课）我们补上最后一块拼图——
+这些段、这些节点搜到的，到底是<strong>哪个时刻</strong>的数据，即一致性与时间戳。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>三层归并</strong>：段内（segcore <span class="mono">Reduce.cpp</span>）→ 节点内（delegator）→ 跨分片（Proxy，见 <span class="mono">proxy-reduce.md</span>）。</li>
+    <li><strong>分治的本质</strong>：每层只上交局部 topK，局部 topK 的并集必含全局 topK；网络上始终只流动 K 量级的数据，因而可扩展到十亿级。</li>
+    <li><strong>归并三件事</strong>：按距离<strong>排序</strong>（多路归并）、按主键<strong>去重</strong>（同一实体可能跨段出现）、按 offset/limit <strong>分页</strong>（深翻页天然更贵）。</li>
+    <li><strong>scatter-gather</strong>：扇出到分片/段、各搜局部 topK、再逐层 gather 归并——分布式检索/查询引擎的通用骨架。</li>
+    <li><strong>近似在段内、精确在归并</strong>：召回率由段内 ANN 的精度（nprobe/ef）决定，归并只忠实合并；要更准就调段内检索，而非归并。深翻页与过大 K 才是归并变贵的主因。</li>
+  </ul>
+</div>
+""",
+    "en": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+In the last few lessons, a search is <strong>scattered</strong> far and wide: the Proxy fans it out to multiple shards, each shard's
+delegator sends it to the QueryNodes holding different segments, and each segment searches its own little slice in segcore. So the
+question is: how do all these "local topKs" merge into <strong>one final answer that is correctly ordered, deduplicated and complete</strong>?
+That is what <strong>Reduce</strong> does. It is not one step but <strong>three levels</strong> of bottom-up merging — within a segment,
+within a node, across shards — and each level only passes its own topK upward, so the data shrinks as it climbs. Understand Reduce and you
+understand "distributed topK", which looks simple but has real subtlety.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Like a <strong>tiered selection</strong>: first each <strong>class</strong> picks its top 3 (segment topK), then the classes' top-3s
+  compete at the <strong>grade</strong> level for the grade's top 3 (node merge), and finally the grades' top-3s meet in the
+  <strong>school</strong> final for the school's top 3 (cross-shard merge). No need to make all thousands compete at once — <strong>each
+  level only sends up its own top few</strong>: fair and cheap. Reduce is that tiered selection, and the final "school top 3" is your topK.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>segment topK (segcore) → node merge (delegator) → cross-shard merge (Proxy)</strong>, merged level by level. Each
+  level only sends up a local topK, so the data crossing the network stays small; merging also <strong>dedups by primary key, sorts by
+  distance, then paginates by offset/limit</strong>. This <strong>scatter-gather</strong> shape is the universal skeleton of almost every
+  distributed retrieval/query engine.
+</div>
+
+<h2>Three levels: from segment to node to Proxy</h2>
+<p>Walk the scatter backwards and you get the three merge levels. <strong>Level one, in the segment</strong>: after segcore computes all
+candidate distances in a segment it does NOT return them all — too many — but does a local <strong>reduce</strong>
+(<span class="mono">internal/core/src/segcore/reduce/Reduce.cpp</span>), keeping only that segment's topK. <strong>Level two, in the node</strong>:
+a QueryNode (delegator/shard leader) holds many segments of this shard (sealed + growing); it <strong>merges</strong> their topKs into "this
+<strong>shard's</strong> topK". <strong>Level three, at the Proxy</strong>: the Proxy receives every shard's topK and does the <strong>final
+cross-shard merge</strong> (see <span class="mono">docs/developer_guides/proxy-reduce.md</span>), producing the global topK, and returns it —
+with the requested scalar fields — to the client.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Segment reduce (segcore)</h4><p>each segment computes candidate distances and locally selects its topK, sending up only that slice. <span class="mono">Reduce.cpp</span></p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Node merge (delegator)</h4><p>a shard's many segments (sealed+growing) topKs are merged into "this shard's topK".</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Cross-shard merge (Proxy)</h4><p>shards' topKs gather at the Proxy for a final merge into the <strong>global topK</strong>.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Fill &amp; return</h4><p>fetch <span class="mono">output_fields</span> by PK, assemble the result, return to the client.</p></div></div>
+</div>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/core/src/segcore/reduce/Reduce.cpp</span><span class="ln">segment-level reduce: converge candidates into the segment's topK (illustrative)</span></div>
+  <pre><span class="cm">// in a segment: for each query vector (nq of them), take the best topK by distance</span>
+<span class="cm">// key actions: sort by distance + dedup by primary key + truncate to topK</span>
+ReduceHelper::Reduce();          <span class="cm">// converge each segment's search results</span>
+ReduceHelper::Marshal();         <span class="cm">// pack into a cross-process transmittable result</span></pre>
+</div>
+
+<h2>Why levels? Can't we merge all at once?</h2>
+<p>Picture the naive approach: every segment and node ships <strong>all candidates</strong> to the Proxy, which sorts once and takes the topK.
+That might be fine at small scale, but at billions it <strong>collapses</strong> — the network hauls enormous data and the Proxy sorts an
+astronomical number of records: slow and memory-hungry. <strong>The essence of hierarchical merging is "converge early"</strong>: since the
+final answer is only K items, each level <strong>only needs to send up its own top K</strong> (anything beyond can't make the global top K).
+So each segment sends K, each shard sends K, and <strong>the data crossing the network is pinned to a tiny size</strong>. It is a humble but
+powerful observation: <strong>topK merging is divide-and-conquer</strong> — the union of local topKs is guaranteed to contain the global topK.</p>
+
+<div class="cols">
+  <div class="col"><h4>✅ Hierarchical merge (Milvus)</h4><p>each level sends only a local topK; data shrinks upward; the Proxy merges just "K × number-of-shards". <strong>Scales to billions</strong>, stable latency.</p></div>
+  <div class="col"><h4>⚠️ One-shot full gather</h4><p>all candidates to one place for a single sort: network and memory explode with data volume, <strong>can't withstand scale</strong>. Only holds at toy size.</p></div>
+</div>
+
+<h2>What does a merge actually do</h2>
+<p>At every level a merge is the same three things, just over a different scope. <strong>(1) Sort by distance/score</strong>: merge several
+sorted results into one still-sorted result (k-way merge). <strong>(2) Dedup by primary key</strong>: the same entity can appear in multiple
+segments — e.g. it was just written into a growing segment and also has an old version in a sealed one, or a delete and insert coexist;
+the merge must <strong>identify by primary key</strong> and keep only the "should-be-seen" row, so no entity appears twice. <strong>(3)
+Paginate by offset/limit</strong>: after the global sort and dedup, skip the first <span class="mono">offset</span> and take
+<span class="mono">limit</span>, supporting pagination. Note: pagination happens <strong>after</strong> the merge — you need a correct global
+order first, which is also why deep pagination (large offset) is inherently more expensive in distributed retrieval.</p>
+
+<table class="t">
+  <tr><th>Action</th><th>What</th><th>Why</th></tr>
+  <tr><td><strong>Sort</strong></td><td class="mono">k-way sorted merge, by distance/score</td><td>fuse several local topKs into one global order</td></tr>
+  <tr><td><strong>Dedup</strong></td><td class="mono">identify by PK, keep the "should-see" version</td><td>same entity may appear across segments; avoid dup/stale</td></tr>
+  <tr><td><strong>Paginate</strong></td><td class="mono">skip offset, take limit</td><td>support paging; deep paging is inherently pricier</td></tr>
+</table>
+
+<h2>A concrete walk-through</h2>
+<p>Let topK=3, with 2 shards, each holding 3 segments. Bottom level: the 6 segments each search their own top 3, giving 6 "segment topKs".
+Second level: shard A's 3 segments (9 candidates total) merge+dedup down to shard A's top 3, and shard B likewise to its top 3. Third level:
+the Proxy takes A's and B's top 3 (6 total) and finally merges, dedups, sorts, and takes the <strong>global top 3</strong>. Throughout, the most
+that ever crosses the network is "3 per segment", "3 per shard", "6 at the end" — <strong>always on the order of K, independent of the total
+underlying data</strong>. That is exactly why distributed topK can be both correct and scalable. Back to the full chain: Lesson 28's filter
+narrowed the candidates, Lesson 27 found the topK inside a segment, and <strong>this lesson merges the scattered topKs into the final answer</strong>;
+the next lesson (30) supplies the last piece — exactly <strong>which moment's</strong> data these segments and nodes searched, i.e. consistency and timestamps.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Three merge levels</strong>: segment (segcore <span class="mono">Reduce.cpp</span>) → node (delegator) → cross-shard (Proxy, see <span class="mono">proxy-reduce.md</span>).</li>
+    <li><strong>Divide-and-conquer</strong>: each level sends only a local topK; the union of local topKs contains the global topK; only K-scale data crosses the network, so it scales to billions.</li>
+    <li><strong>A merge does three things</strong>: <strong>sort</strong> by distance (k-way), <strong>dedup</strong> by PK (an entity may appear across segments), <strong>paginate</strong> by offset/limit (deep paging is pricier).</li>
+    <li><strong>Scatter-gather</strong>: fan out to shards/segments, search local topKs, gather and merge upward — the universal skeleton of distributed retrieval/query engines.</li>
+  </ul>
+</div>
+""",
+}
