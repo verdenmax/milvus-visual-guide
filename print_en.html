@@ -494,6 +494,35 @@ the <strong>K</strong> nearest items in the collection (the <strong>topK</strong
   <div class="cells"><span class="lab">v4</span><span class="cell">0.10</span><span class="cell">0.30</span><span class="cell">0.90</span><span class="sep">→</span><span class="cell dim">dist 0.83</span></div>
 </div>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Finding nearest neighbors by distance: a query point and four candidates; the two closest are selected">
+    <text x="40" y="32" style="fill:var(--muted)">vector space (sketch · 2D projection)</text>
+    <circle cx="250" cy="166" r="112" style="fill:var(--accent-soft);opacity:.30"/>
+    <circle cx="250" cy="166" r="112" style="fill:none;stroke:var(--accent);stroke-width:1.5;stroke-dasharray:5 5"/>
+    <text x="250" y="296" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">topK=2 · keep the two nearest inside the radius</text>
+    <line x1="250" y1="166" x2="322" y2="140" style="stroke:var(--accent);stroke-width:2"/>
+    <line x1="250" y1="166" x2="300" y2="230" style="stroke:var(--accent);stroke-width:2"/>
+    <line x1="250" y1="166" x2="600" y2="250" style="stroke:var(--line);stroke-width:1.5;stroke-dasharray:4 4"/>
+    <line x1="250" y1="166" x2="618" y2="92" style="stroke:var(--line);stroke-width:1.5;stroke-dasharray:4 4"/>
+    <circle cx="322" cy="140" r="11" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:2"/>
+    <text x="322" y="120" text-anchor="middle" style="fill:var(--ink);font-weight:600">v1</text>
+    <text x="348" y="150" class="mono" style="fill:var(--accent-ink)">0.03 ✓</text>
+    <circle cx="300" cy="230" r="11" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:2"/>
+    <text x="300" y="254" text-anchor="middle" style="fill:var(--ink);font-weight:600">v3</text>
+    <text x="322" y="230" class="mono" style="fill:var(--accent-ink)">0.08 ✓</text>
+    <circle cx="600" cy="250" r="11" style="fill:var(--panel-2);stroke:var(--line);stroke-width:1.5"/>
+    <text x="600" y="234" text-anchor="middle" style="fill:var(--muted)">v4</text>
+    <text x="548" y="266" class="mono" style="fill:var(--muted)">0.83</text>
+    <circle cx="618" cy="92" r="11" style="fill:var(--panel-2);stroke:var(--line);stroke-width:1.5"/>
+    <text x="618" y="76" text-anchor="middle" style="fill:var(--muted)">v2</text>
+    <text x="566" y="92" class="mono" style="fill:var(--muted)">1.28</text>
+    <circle cx="250" cy="166" r="9" style="fill:var(--accent)"/>
+    <circle cx="250" cy="166" r="15" style="fill:none;stroke:var(--accent);stroke-width:1.5"/>
+    <text x="222" y="171" text-anchor="end" style="fill:var(--accent-ink);font-weight:700">q</text>
+  </svg>
+  <div class="figcap"><b>Search = nearest neighbors</b>: treat the query <span class="mono">q</span> and stored vectors as points; sort by <b>distance</b> and keep the K closest. <span class="mono">v1·0.03</span> and <span class="mono">v3·0.08</span> fall inside the topK radius and are selected; <span class="mono">v4·0.83</span> and <span class="mono">v2·1.28</span> are too far and dropped.</div>
+</div>
+
 <p>Which metric to pick depends on how your vectors are made: <strong>normalized</strong> embeddings usually use
 <span class="inline">COSINE</span> or <span class="inline">IP</span> (the more aligned the direction, the more similar), while
 <span class="inline">L2</span> is used when absolute position matters. Within one collection, <strong>index and search must use the same
@@ -765,6 +794,37 @@ processes they live in".</p>
 <strong>Cluster</strong> <strong>splits each into its own K8s Pod</strong> that scales independently. Note: <strong>to your code, the two are identical</strong> — the same
 <span class="inline">create_collection / insert / search</span>; the underside just grows from "one process" to "one cluster", with the same API and concepts.</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="One set of logical roles takes two physical shapes: a single standalone process, or many independent cluster Pods">
+    <text x="40" y="26" style="fill:var(--muted)">logical view · one picture</text>
+    <rect x="40" y="40" width="170" height="216" rx="12" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="125" y="66" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">one collection · one API</text>
+    <rect x="60" y="80" width="130" height="36" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="125" y="103" text-anchor="middle" style="fill:var(--ink)">MixCoord brain</text>
+    <rect x="60" y="122" width="130" height="36" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="125" y="145" text-anchor="middle" style="fill:var(--ink)">Proxy facade</text>
+    <rect x="60" y="164" width="130" height="36" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="125" y="187" text-anchor="middle" style="fill:var(--ink)">QueryNode read</text>
+    <rect x="60" y="206" width="130" height="36" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="125" y="229" text-anchor="middle" style="fill:var(--ink)">DataNode write</text>
+    <line x1="214" y1="148" x2="258" y2="148" style="stroke:var(--line);stroke-width:2"/>
+    <path d="M258,148 l-11,-5 l0,10 z" style="fill:var(--line)"/>
+    <text x="236" y="138" text-anchor="middle" style="fill:var(--muted)">physically</text>
+    <text x="272" y="26" style="fill:var(--muted)">Standalone: packed into <tspan style="fill:var(--blue);font-weight:700">one process</tspan></text>
+    <rect x="272" y="40" width="472" height="72" rx="10" style="fill:var(--panel-2);stroke:var(--blue);stroke-width:1.5;stroke-dasharray:6 4"/>
+    <rect x="286" y="62" width="102" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="337" y="82" text-anchor="middle" style="fill:var(--ink)">MixCoord</text>
+    <rect x="402" y="62" width="102" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="453" y="82" text-anchor="middle" style="fill:var(--ink)">Proxy</text>
+    <rect x="518" y="62" width="102" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="569" y="82" text-anchor="middle" style="fill:var(--ink)">QueryNode</text>
+    <rect x="634" y="62" width="102" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="685" y="82" text-anchor="middle" style="fill:var(--ink)">DataNode</text>
+    <text x="272" y="148" style="fill:var(--muted)">Cluster: each component an <tspan style="fill:var(--teal);font-weight:700">independent Pod</tspan>, scaled on its own</text>
+    <rect x="286" y="162" width="102" height="44" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="337" y="188" text-anchor="middle" style="fill:var(--ink)">MixCoord</text>
+    <rect x="402" y="162" width="102" height="44" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="453" y="188" text-anchor="middle" style="fill:var(--ink)">Proxy</text>
+    <rect x="526" y="168" width="102" height="44" rx="8" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <rect x="518" y="162" width="102" height="44" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="569" y="188" text-anchor="middle" style="fill:var(--ink)">QueryNode</text>
+    <text x="626" y="158" text-anchor="middle" style="fill:var(--teal);font-weight:700">×N</text>
+    <rect x="642" y="168" width="102" height="44" rx="8" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <rect x="634" y="162" width="102" height="44" rx="8" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="685" y="188" text-anchor="middle" style="fill:var(--ink)">DataNode</text>
+    <text x="742" y="158" text-anchor="middle" style="fill:var(--teal);font-weight:700">×N</text>
+  </svg>
+  <div class="figcap"><b>One logical picture, two physical shapes</b>: the same <span class="mono">create_collection / insert / search</span> — <b>Standalone</b> packs every role into one process, <b>Cluster</b> splits each into an independent Pod that scales on demand — <b>identical to your code</b>.</div>
+</div>
+
 <div class="cols">
   <div class="col"><h4>Standalone (single host)</h4><p>MixCoord + Proxy + the three Nodes + CDC <strong>all in one process</strong>; dependencies (etcd / object storage / MQ) can be embedded or external. <strong>Simple to deploy</strong>, fits small/medium and single-host production.</p></div>
   <div class="col"><h4>Cluster</h4><p>Each component is an <strong>independent Pod</strong>; QueryNode / DataNode scale to many replicas. <strong>Elastic, highly available</strong>, for billion-scale production. The logical roles are unchanged — they've just "moved into separate houses".</p></div>
@@ -979,6 +1039,36 @@ the tension between "<strong>writing fast</strong>" and "<strong>querying fast</
 <p>"Log as data" sounds like a slogan, but its most concrete payoff only cashes out at <strong>crash recovery</strong>. Picture the worker node that consumes the log and builds growing segments <strong>suddenly dying</strong>: the not-yet-flushed growing segments in memory vanish in an instant. In a system that "writes segments directly", that often means <strong>data loss</strong>; but in Milvus, what's lost is merely the "<strong>intermediate result materialized from the log</strong>", while the <strong>single source of truth</strong> — the WAL — sits safely in the message queue / object storage, <strong>not a byte missing</strong>.</p>
 
 <p>So recovery becomes mechanical: after the node restarts, it <strong>need not replay the whole log from the start</strong>; it resumes from the <strong>checkpoint (its consume position / seek position)</strong> it last recorded, <strong>replays</strong> the slice of log "<strong>after that checkpoint</strong>", and the growing segment is <strong>rebuilt exactly as before</strong>, as if nothing happened. A checkpoint is like a bookmark: you don't reread from page one, you flip to the bookmark and continue. Precisely because the log is <strong>naturally ordered and replayable</strong>, "where did I get to" is always a definite position, and after a crash you just keep reading — that is the biggest assurance bought by designing a "write" as a "<strong>timestamped, append-only log</strong>".</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Crash and replay: the in-memory growing segment is lost on crash but rebuilt by replaying the WAL after the checkpoint">
+    <rect x="250" y="46" width="300" height="86" rx="12" style="fill:var(--panel-2);stroke:var(--line);stroke-width:1.5"/>
+    <text x="400" y="72" text-anchor="middle" style="fill:var(--ink);font-weight:700">growing segment · in-memory intermediate</text>
+    <rect x="298" y="86" width="92" height="32" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="344" y="107" text-anchor="middle" class="mono" style="fill:var(--muted)">row 104</text>
+    <rect x="410" y="86" width="92" height="32" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="456" y="107" text-anchor="middle" class="mono" style="fill:var(--muted)">row 105</text>
+    <path d="M150,52 l34,0 l-20,30 l28,0 l-50,66 l14,-44 l-26,0 z" style="fill:var(--red);opacity:.9"/>
+    <text x="150" y="170" text-anchor="middle" style="fill:var(--red);font-weight:700">① crash: memory wiped</text>
+    <line x1="186" y1="90" x2="248" y2="90" style="stroke:var(--red);stroke-width:2;stroke-dasharray:3 3"/>
+    <path d="M248,90 l-11,-5 l0,10 z" style="fill:var(--red)"/>
+    <path d="M410,232 C410,190 520,196 520,134" style="fill:none;stroke:var(--teal);stroke-width:2.5"/>
+    <path d="M520,134 l-5,11 l10,-1 z" style="fill:var(--teal)"/>
+    <text x="548" y="146" style="fill:var(--teal);font-weight:700">② replay after</text>
+    <text x="548" y="166" style="fill:var(--teal);font-weight:700">the checkpoint</text>
+    <text x="548" y="186" style="fill:var(--teal)">→ rebuilt as-is</text>
+    <text x="70" y="224" style="fill:var(--muted)">WAL · append-only, ordered, replayable (MQ / object storage · single source of truth)</text>
+    <rect x="70" y="234" width="92" height="42" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="116" y="261" text-anchor="middle" class="mono" style="fill:var(--muted)">100</text>
+    <rect x="168" y="234" width="92" height="42" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="214" y="261" text-anchor="middle" class="mono" style="fill:var(--muted)">101</text>
+    <rect x="266" y="234" width="92" height="42" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="312" y="261" text-anchor="middle" class="mono" style="fill:var(--muted)">102</text>
+    <rect x="364" y="234" width="92" height="42" rx="6" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="410" y="261" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">103</text>
+    <rect x="462" y="234" width="92" height="42" rx="6" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="508" y="261" text-anchor="middle" class="mono" style="fill:var(--ink)">104</text>
+    <rect x="560" y="234" width="92" height="42" rx="6" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="606" y="261" text-anchor="middle" class="mono" style="fill:var(--ink)">105</text>
+    <text x="410" y="294" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">↑ checkpoint (bookmark)</text>
+    <line x1="654" y1="255" x2="692" y2="255" style="stroke:var(--line);stroke-width:2"/>
+    <path d="M692,255 l-11,-5 l0,10 z" style="fill:var(--line)"/>
+    <text x="700" y="240" style="fill:var(--muted)">append</text>
+  </svg>
+  <div class="figcap"><b>Crash = replay</b>: the in-memory growing segment vanishes on crash, but the <b>single source of truth, the WAL</b>, is intact. On restart it need not reread from the start — it replays only <span class="mono">104, 105</span> <b>after checkpoint 103</b>, rebuilding the segment <b>exactly</b> — the most concrete payoff of "log as data".</div>
+</div>
 
 <p>One layer up, this also explains why Milvus's worker nodes can be "<strong>stateless, disposable</strong>": since any node's in-memory state can be rebuilt by replaying the log, a dead node is simply replaced and a busy load simply gets more nodes — <strong>data safety never depends on one machine staying alive</strong>. "Log as data" and last lesson's "storage-compute separation" are, in essence, <strong>two sides of one design philosophy</strong>: entrust the single source of truth to a replayable log and object storage, and compute nodes gain the freedom to scale and rebuild at will.</p>
 

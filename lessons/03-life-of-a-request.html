@@ -392,6 +392,35 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 
 <p>于是恢复就变成一件机械的事：节点重启后，<strong>不必从头重放整条日志</strong>，而是从它上次记下的<strong>检查点（checkpoint，即消费位点 / seek position）</strong>开始，把"<strong>检查点之后</strong>"的那段日志<strong>重新消费一遍（replay）</strong>，增长段就被<strong>原样重建</strong>出来，仿佛什么都没发生过。检查点的作用就像看书夹的书签：你不必每次从第一页读起，翻到书签那页接着读即可。正因为日志<strong>天然有序、可重放</strong>，"读到哪了"永远是一个明确的位置，崩溃后接着读就行——这就是把"写"设计成"<strong>带时间戳的、只追加的日志</strong>"换来的最大底气。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="崩溃与重放：内存增长段宕机即丢，但可从 WAL 检查点之后重放、原样重建">
+    <rect x="250" y="46" width="300" height="86" rx="12" style="fill:var(--panel-2);stroke:var(--line);stroke-width:1.5"/>
+    <text x="400" y="72" text-anchor="middle" style="fill:var(--ink);font-weight:700">增长段 · 内存中的中间结果</text>
+    <rect x="298" y="86" width="92" height="32" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="344" y="107" text-anchor="middle" class="mono" style="fill:var(--muted)">row 104</text>
+    <rect x="410" y="86" width="92" height="32" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="456" y="107" text-anchor="middle" class="mono" style="fill:var(--muted)">row 105</text>
+    <path d="M150,52 l34,0 l-20,30 l28,0 l-50,66 l14,-44 l-26,0 z" style="fill:var(--red);opacity:.9"/>
+    <text x="150" y="170" text-anchor="middle" style="fill:var(--red);font-weight:700">① 宕机：内存清空</text>
+    <line x1="186" y1="90" x2="248" y2="90" style="stroke:var(--red);stroke-width:2;stroke-dasharray:3 3"/>
+    <path d="M248,90 l-11,-5 l0,10 z" style="fill:var(--red)"/>
+    <path d="M410,232 C410,190 520,196 520,134" style="fill:none;stroke:var(--teal);stroke-width:2.5"/>
+    <path d="M520,134 l-5,11 l10,-1 z" style="fill:var(--teal)"/>
+    <text x="548" y="150" style="fill:var(--teal);font-weight:700">② 检查点后重放</text>
+    <text x="548" y="172" style="fill:var(--teal)">→ 原样重建</text>
+    <text x="70" y="224" style="fill:var(--muted)">WAL · 只追加、天然有序、可重放（消息队列 / 对象存储 · 唯一真相）</text>
+    <rect x="70" y="234" width="92" height="42" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="116" y="261" text-anchor="middle" class="mono" style="fill:var(--muted)">100</text>
+    <rect x="168" y="234" width="92" height="42" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="214" y="261" text-anchor="middle" class="mono" style="fill:var(--muted)">101</text>
+    <rect x="266" y="234" width="92" height="42" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="312" y="261" text-anchor="middle" class="mono" style="fill:var(--muted)">102</text>
+    <rect x="364" y="234" width="92" height="42" rx="6" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="410" y="261" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">103</text>
+    <rect x="462" y="234" width="92" height="42" rx="6" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="508" y="261" text-anchor="middle" class="mono" style="fill:var(--ink)">104</text>
+    <rect x="560" y="234" width="92" height="42" rx="6" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="606" y="261" text-anchor="middle" class="mono" style="fill:var(--ink)">105</text>
+    <text x="410" y="294" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">↑ checkpoint（书签）</text>
+    <line x1="654" y1="255" x2="692" y2="255" style="stroke:var(--line);stroke-width:2"/>
+    <path d="M692,255 l-11,-5 l0,10 z" style="fill:var(--line)"/>
+    <text x="700" y="240" style="fill:var(--muted)">追加</text>
+  </svg>
+  <div class="figcap"><b>崩溃即重放</b>：内存里的增长段宕机就没了，但<b>唯一真相 WAL</b> 完好。重启后不必从头读，只<b>从检查点 103 之后</b>重放 <span class="mono">104、105</span>，增长段被<b>原样重建</b>——这正是"日志即数据"最实在的红利。</div>
+</div>
+
 <p>再往上看一层，这也解释了为什么 Milvus 的工作节点能做到"<strong>无状态、用完即弃</strong>"：既然任何节点的内存状态都能靠重放日志重建，那么节点挂了就换一个、负载高了就多拉几个，<strong>数据安全完全不依赖某一台机器还活着</strong>。"日志即数据"与上一课的"存算分离"，本质上是<strong>同一个设计哲学的一体两面</strong>——把唯一真相托管给可重放的日志与对象存储，计算节点便获得了随意伸缩、随时重建的自由。</p>
 
 <p>还有一个常被忽略的细节值得点一句：<strong>检查点不是凭空前进的，而是跟着"刷盘"走</strong>。当增长段刷成 binlog、稳稳落进对象存储后，"这段日志已被安全物化"才算坐实，消费位点便可以<strong>安全地往前挪</strong>——这样崩溃后要重放的日志就越来越短，恢复也越来越快。换句话说，<strong>flush 既是为了让历史数据落盘，也是为了给日志"减负"</strong>。这条"<strong>写日志 → 消费 → 刷盘 → 推进检查点</strong>"的循环，正是写入链路在背后悄悄转动的飞轮，第 15 课起我们会逐圈拆解它。值得一提的是，检查点也不必"每条都记"——记得太频繁本身是种开销，记得太稀疏又会拉长崩溃后的重放窗口，<strong>多久推进一次</strong>是吞吐与恢复速度之间的又一处工程权衡。你会发现，这种"快与稳之间拿捏分寸"的取舍，几乎是贯穿整个 Milvus 设计的母题。</p>
@@ -593,6 +622,36 @@ the tension between "<strong>writing fast</strong>" and "<strong>querying fast</
 <p>"Log as data" sounds like a slogan, but its most concrete payoff only cashes out at <strong>crash recovery</strong>. Picture the worker node that consumes the log and builds growing segments <strong>suddenly dying</strong>: the not-yet-flushed growing segments in memory vanish in an instant. In a system that "writes segments directly", that often means <strong>data loss</strong>; but in Milvus, what's lost is merely the "<strong>intermediate result materialized from the log</strong>", while the <strong>single source of truth</strong> — the WAL — sits safely in the message queue / object storage, <strong>not a byte missing</strong>.</p>
 
 <p>So recovery becomes mechanical: after the node restarts, it <strong>need not replay the whole log from the start</strong>; it resumes from the <strong>checkpoint (its consume position / seek position)</strong> it last recorded, <strong>replays</strong> the slice of log "<strong>after that checkpoint</strong>", and the growing segment is <strong>rebuilt exactly as before</strong>, as if nothing happened. A checkpoint is like a bookmark: you don't reread from page one, you flip to the bookmark and continue. Precisely because the log is <strong>naturally ordered and replayable</strong>, "where did I get to" is always a definite position, and after a crash you just keep reading — that is the biggest assurance bought by designing a "write" as a "<strong>timestamped, append-only log</strong>".</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Crash and replay: the in-memory growing segment is lost on crash but rebuilt by replaying the WAL after the checkpoint">
+    <rect x="250" y="46" width="300" height="86" rx="12" style="fill:var(--panel-2);stroke:var(--line);stroke-width:1.5"/>
+    <text x="400" y="72" text-anchor="middle" style="fill:var(--ink);font-weight:700">growing segment · in-memory intermediate</text>
+    <rect x="298" y="86" width="92" height="32" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="344" y="107" text-anchor="middle" class="mono" style="fill:var(--muted)">row 104</text>
+    <rect x="410" y="86" width="92" height="32" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="456" y="107" text-anchor="middle" class="mono" style="fill:var(--muted)">row 105</text>
+    <path d="M150,52 l34,0 l-20,30 l28,0 l-50,66 l14,-44 l-26,0 z" style="fill:var(--red);opacity:.9"/>
+    <text x="150" y="170" text-anchor="middle" style="fill:var(--red);font-weight:700">① crash: memory wiped</text>
+    <line x1="186" y1="90" x2="248" y2="90" style="stroke:var(--red);stroke-width:2;stroke-dasharray:3 3"/>
+    <path d="M248,90 l-11,-5 l0,10 z" style="fill:var(--red)"/>
+    <path d="M410,232 C410,190 520,196 520,134" style="fill:none;stroke:var(--teal);stroke-width:2.5"/>
+    <path d="M520,134 l-5,11 l10,-1 z" style="fill:var(--teal)"/>
+    <text x="548" y="146" style="fill:var(--teal);font-weight:700">② replay after</text>
+    <text x="548" y="166" style="fill:var(--teal);font-weight:700">the checkpoint</text>
+    <text x="548" y="186" style="fill:var(--teal)">→ rebuilt as-is</text>
+    <text x="70" y="224" style="fill:var(--muted)">WAL · append-only, ordered, replayable (MQ / object storage · single source of truth)</text>
+    <rect x="70" y="234" width="92" height="42" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="116" y="261" text-anchor="middle" class="mono" style="fill:var(--muted)">100</text>
+    <rect x="168" y="234" width="92" height="42" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="214" y="261" text-anchor="middle" class="mono" style="fill:var(--muted)">101</text>
+    <rect x="266" y="234" width="92" height="42" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="312" y="261" text-anchor="middle" class="mono" style="fill:var(--muted)">102</text>
+    <rect x="364" y="234" width="92" height="42" rx="6" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="410" y="261" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">103</text>
+    <rect x="462" y="234" width="92" height="42" rx="6" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="508" y="261" text-anchor="middle" class="mono" style="fill:var(--ink)">104</text>
+    <rect x="560" y="234" width="92" height="42" rx="6" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="606" y="261" text-anchor="middle" class="mono" style="fill:var(--ink)">105</text>
+    <text x="410" y="294" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">↑ checkpoint (bookmark)</text>
+    <line x1="654" y1="255" x2="692" y2="255" style="stroke:var(--line);stroke-width:2"/>
+    <path d="M692,255 l-11,-5 l0,10 z" style="fill:var(--line)"/>
+    <text x="700" y="240" style="fill:var(--muted)">append</text>
+  </svg>
+  <div class="figcap"><b>Crash = replay</b>: the in-memory growing segment vanishes on crash, but the <b>single source of truth, the WAL</b>, is intact. On restart it need not reread from the start — it replays only <span class="mono">104, 105</span> <b>after checkpoint 103</b>, rebuilding the segment <b>exactly</b> — the most concrete payoff of "log as data".</div>
+</div>
 
 <p>One layer up, this also explains why Milvus's worker nodes can be "<strong>stateless, disposable</strong>": since any node's in-memory state can be rebuilt by replaying the log, a dead node is simply replaced and a busy load simply gets more nodes — <strong>data safety never depends on one machine staying alive</strong>. "Log as data" and last lesson's "storage-compute separation" are, in essence, <strong>two sides of one design philosophy</strong>: entrust the single source of truth to a replayable log and object storage, and compute nodes gain the freedom to scale and rebuild at will.</p>
 
