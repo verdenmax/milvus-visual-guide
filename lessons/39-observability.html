@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>39 · 可观测性：日志/指标/追踪 / Observability: logs/metrics/traces - Milvus 图解教程</title>
+<meta name="description" content="第九部分 · API、工具与运维｜可观测性：日志/指标/追踪 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="39 · 可观测性：日志/指标/追踪 / Observability: logs/metrics/traces - Milvus 图解教程">
+<meta property="og:description" content="第九部分 · API、工具与运维｜可观测性：日志/指标/追踪 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="39 · 可观测性：日志/指标/追踪 / Observability: logs/metrics/traces - Milvus 图解教程">
+<meta name="twitter:description" content="第九部分 · API、工具与运维｜可观测性：日志/指标/追踪 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.timeline .tl-row { display: flex; align-items: flex-start; gap: .6rem; padding: .12rem 0; }
+.timeline .tl-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: .45rem; }
+.timeline .tl-t { font-family: ui-monospace, monospace; font-weight: 700; color: var(--accent-ink); min-width: 2.4rem; font-size: .82rem; flex-shrink: 0; margin-top: .18rem; }
+.timeline .tl-c { font-size: .9rem; color: var(--muted); }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第九部分 · API、工具与运维</span><span class="lang-en">Part 9 · API, tools &amp; ops</span></span>
+    <span class="pill">39 / 39</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:100%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第九部分 · API、工具与运维</span><span class="lang-en">Part 9 · API, tools &amp; ops</span></div>
+    <h1><span class="lang-zh">可观测性：日志/指标/追踪</span><span class="lang-en">Observability: logs/metrics/traces</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+上一课，一个请求经 API 进了门。可它在 Milvus 这套<strong>分布式系统</strong>里跑起来后——穿过 Proxy、扇到几个 QueryNode、又牵动 DataCoord——我们怎么<strong>"看见"它</strong>？一旦出问题，去哪儿找线索？这就是<strong>可观测性</strong>要解决的事。它有三根支柱：<strong>日志</strong>（发生了什么）、<strong>指标</strong>（整体好不好）、<strong>链路追踪</strong>（一个请求走过了哪些节点）。这一课看 Milvus 怎么把三者落地，尤其是它们如何<strong>携手追踪一个跨越多节点的请求</strong>。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 类比</div>
+  把运维一套分布式系统，想成<strong>医院监护一位病人</strong>。<strong>日志</strong>像<strong>详细的病程记录</strong>：几点几分发生了什么、用了什么药、医生写了哪句话——<strong>逐条、带时间、可回溯</strong>。<strong>指标</strong>像<strong>床头的生命体征监视器</strong>：心率、血压、血氧，是<strong>随时间变化的一串数字</strong>，一眼看出"整体状况好不好、有没有异常波动"。
+  <strong>链路追踪</strong>则像<strong>跟着这一位病人走完全程</strong>：挂号→门诊→化验→取药，每一站花了多久、在哪卡住了。在"<strong>多个科室协作</strong>"（多节点）的医院里，光看某科的记录不够——你得把<strong>同一个病人</strong>在各科的足迹<strong>串成一条线</strong>，才知道慢在哪、错在哪。三者缺一不可。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观视角</div>
+  一句话：<strong>Milvus 的可观测性由三根支柱组成——日志用 <span class="mono">pkg/mlog</span>（强制带 ctx、结构化字段、可经 gRPC 跨节点传播）；指标用 Prometheus 风格的 <span class="mono">pkg/metrics</span>（各组件分别埋点）；链路追踪用 OpenTelemetry（<span class="mono">pkg/tracer</span> + otelgrpc 拦截器，span 随 RPC 跨节点流动）</strong>。三者共同回答"<strong>一个请求在分布式系统里到底经历了什么</strong>"。
+</div>
+
+<h2>可观测性的三大支柱</h2>
+<p>"可观测性"听起来抽象，拆开就是三件具体的事，各答一个不同的问题。<strong>日志（Logs）</strong>答"<strong>到底发生了什么</strong>"：一条条带时间戳的事件记录，是出问题后<strong>翻案底</strong>的第一手资料。<strong>指标（Metrics）</strong>答"<strong>整体状况如何</strong>"：把大量事件<strong>聚合成数字</strong>——每秒请求数、平均延迟、内存占用、队列长度——随时间画成曲线，最适合<strong>看趋势、设告警</strong>。<strong>链路追踪（Traces）</strong>答"<strong>一个请求走过了哪些环节、各花多久</strong>"：把<strong>同一个请求</strong>在各节点、各阶段的足迹串成一条带层级的时间线。</p>
+<p>为什么三者缺一不可？因为它们各有盲区。光有指标，你能看到"延迟突然涨了"，却不知道是<strong>哪个请求、卡在哪一步</strong>；光有日志，海量分散在各节点的日志里，你很难把"<strong>属于同一个请求</strong>"的那些条目<strong>挑出来连成线</strong>；光有链路追踪，你知道"卡在 QueryNode 那一段"，却可能需要那一刻的<strong>详细日志</strong>才能看清根因。所以成熟系统都是<strong>三管齐下</strong>：指标用来<strong>发现</strong>异常（告警），链路追踪用来<strong>定位</strong>是哪个请求、哪个环节，日志用来<strong>还原</strong>那个环节的细节。下面这张表把三者并排，帮你记住"<strong>各答什么问、用什么实现</strong>"。</p>
+
+<p>这里特别值得点破"<strong>聚合</strong>"这件事，它是日志与指标最本质的分野。日志是<strong>不聚合</strong>的：每发生一件事，就老老实实记一条，于是它<strong>细节满满</strong>，但量也<strong>大得吓人</strong>——一个繁忙集群一天能产出几亿条日志，你不可能靠"一条条读"来掌握全局。指标恰恰相反，它从一开始就<strong>把同类事件合并成数字</strong>：不是记录"第 10001 次请求耗时 8 毫秒"，而是维护"<strong>过去一分钟平均耗时</strong>""<strong>请求总数</strong>"这样的<strong>累计量或分布</strong>。这一聚合，让指标<strong>极其轻量</strong>（存的是数字曲线，不是海量文本），适合<strong>长期保留、快速画图、实时告警</strong>；代价是<strong>丢掉了个体细节</strong>——它能告诉你"延迟涨了"，却没法告诉你"是哪一条请求"。所以日志与指标天生互补：<strong>一个细而重、一个粗而轻</strong>，一个用来事后查案、一个用来实时盯盘。理解了这层"聚合与否"的取舍，你就明白为什么不能只留其一——只靠日志会被海量淹没、且没法实时告警；只靠指标又会在出事时"<strong>看得见烟、找不到火</strong>"。</p>
+
+<table class="t">
+  <tr><th>支柱</th><th>回答的问题</th><th>形态</th><th>Milvus 实现</th></tr>
+  <tr><td><strong>日志 Logs</strong></td><td>到底发生了什么（逐条事件）</td><td>带时间戳的文本/结构化记录</td><td class="mono">pkg/mlog（zap）</td></tr>
+  <tr><td><strong>指标 Metrics</strong></td><td>整体状况如何（趋势/告警）</td><td>随时间变化的数字曲线</td><td class="mono">pkg/metrics（Prometheus）</td></tr>
+  <tr><td><strong>链路追踪 Traces</strong></td><td>一个请求走过哪些环节、各花多久</td><td>带层级的跨节点时间线</td><td class="mono">pkg/tracer（OpenTelemetry）</td></tr>
+</table>
+
+<h2>日志：mlog——强制带 ctx、结构化、可跨节点传播</h2>
+<p>先看三根支柱里你最常打交道的——日志。Milvus 有一条<strong>铁律</strong>：日志只能用 <span class="mono">pkg/mlog</span>，不准用标准库 <span class="mono">log</span>、不准直接 <span class="mono">fmt.Println</span>、也不准裸用 zap。为什么管得这么严？因为 <span class="mono">mlog</span> 替你扛起了分布式日志最难的几件事，而它的设计处处是讲究。</p>
+<p>第一个讲究：<strong>每条日志都必须带 ctx</strong>。你写的是 <span class="mono">mlog.Info(ctx, "消息", mlog.String("字段", 值))</span>——第一个参数永远是上下文。为什么强制？因为 ctx 里可以<strong>挂上一路累积的"身份信息"</strong>。第二个讲究：<strong>结构化字段</strong>。不是把变量拼进一句话（<span class="mono">"user " + id + " failed"</span>），而是用 <span class="mono">mlog.String</span>、<span class="mono">mlog.Int64</span> 这样的<strong>带类型的键值对</strong>。结构化日志的好处是<strong>机器可查</strong>：日志收集系统能按"字段 = 值"精确过滤，而不是在文本里瞎搜。第三个、也是最妙的讲究：<strong>字段能跨节点传播</strong>。用 <span class="mono">mlog.WithFields(ctx, ...)</span> 把字段挂到 ctx 上，子上下文会自动继承；更进一步，给字段加上 <span class="mono">mlog.OptPropagated()</span>（比如集合名、集合 ID），再配合 gRPC 拦截器（<span class="mono">mlog.UnaryServerInterceptor</span> / <span class="mono">UnaryClientInterceptor</span>），这些字段就能<strong>随着 RPC 调用一起"飞"到下游节点</strong>。于是 Proxy 上给一个请求打的标记，会原样出现在它触发的 QueryNode、DataNode 日志里——你<strong>用一个 ID 就能把散落在全集群的相关日志一网打尽</strong>。这正是分布式排错时最珍贵的能力。下面对比一下"拼字符串"与"结构化 + 可传播"的差别。</p>
+
+<p>多说一句这条"<strong>每条日志必带 ctx</strong>"的铁律为什么值得严格执行。在单机程序里，日志带不带上下文，差别也许不大——反正都在一个进程里，前后翻翻就能对上。但 Milvus 是<strong>分布式</strong>的：一个请求的"故事"被<strong>拆散在好几个进程、好几台机器</strong>上书写。如果每个节点都只顾埋头记自己那一段、彼此没有共同的"线索 ID"，那这些日志就像<strong>一地散落、没有页码的稿纸</strong>——信息都在，却永远拼不回一个完整故事。ctx 的作用，就是给每一页稿纸<strong>盖上同一个编号</strong>。正因为这个编号能随 ctx 一路传递、还能经拦截器跨节点传播，事后你才能拿着它，把十几台机器上属于同一个请求的日志<strong>一键归拢</strong>。所以这条铁律绝不是"代码规范洁癖"，而是<strong>分布式系统能否被排查</strong>的生死线——少传一个 ctx，可能就意味着某段关键日志从此"<strong>失联</strong>"、再也归不进它该属于的那个故事。把这一点刻进肌肉记忆，是每个 Milvus 贡献者的必修课。</p>
+
+<div class="cols">
+  <div class="col"><h4>❌ 拼字符串的日志</h4><p><span class="mono">log.Printf("user %d search failed", id)</span>。信息埋在文本里，跨节点各打各的、对不上号；想按 user 过滤只能正则瞎搜；换节点就断了线索。</p></div>
+  <div class="col"><h4>✅ mlog：结构化 + 可传播</h4><p><span class="mono">mlog.Info(ctx, "search failed", mlog.Int64("user", id))</span>。字段带类型、可精确过滤；经 ctx + <span class="mono">OptPropagated</span> + 拦截器，标记<strong>跟着请求跨节点流动</strong>，全集群一个 ID 串起来。</p></div>
+</div>
+
+<h2>指标与链路追踪：Prometheus + OpenTelemetry</h2>
+<p>再看另外两根支柱，它们都建立在业界<strong>开放标准</strong>之上，所以能直接接入成熟的生态工具。<strong>指标</strong>用的是 <strong>Prometheus 风格</strong>：在 <span class="inline">pkg/metrics</span> 下，每个组件都有自己的埋点文件（<span class="mono">datacoord_metrics.go</span>、<span class="mono">datanode_metrics.go</span>、querynode、proxy，甚至还有 <span class="mono">cgo_metrics.go</span> 盯着 Go↔C++ 那道桥）。这些指标暴露成一个 HTTP 端点，由 Prometheus 定期<strong>抓取</strong>、存成时间序列，再用 <strong>Grafana</strong> 画成仪表盘——延迟、QPS、各队列水位、内存占用一目了然，还能设阈值<strong>自动告警</strong>。</p>
+<p><strong>链路追踪</strong>用的是 <strong>OpenTelemetry</strong>（当前最通行的追踪标准）：核心在 <span class="inline">pkg/tracer</span>，依赖 <span class="mono">go.opentelemetry.io/otel</span>。它的关键同样是"<strong>跨节点把线索串起来</strong>"——靠的是 <strong>otelgrpc 拦截器</strong>（<span class="mono">GetInterceptorOpts</span>）：当一次请求从 Proxy 经 gRPC 调到 QueryNode 时，拦截器会把"<strong>追踪上下文</strong>"（trace context，含本次追踪的唯一 ID 与当前 span）<strong>塞进 RPC 元数据带过去</strong>；下游节点收到后，把自己这段处理作为一个<strong>子 span</strong> 挂到同一条 trace 上。所有节点的 span 汇集到 Jaeger 这类后端，就拼成一棵<strong>完整的调用树</strong>：哪一段最耗时、在哪一跳出的错，画成一条时间线，<strong>一眼看穿</strong>。你会发现日志（OptPropagated 字段）和追踪（otel trace context）<strong>用的是同一招</strong>——<strong>把"身份"塞进 ctx、再随 RPC 传播</strong>。这不是巧合，而是分布式可观测性的<strong>核心心法</strong>。</p>
+
+<p>顺带说说为什么 Milvus 要<strong>站在 Prometheus、OpenTelemetry 这些开放标准上</strong>，而不是自造一套。可观测性的价值，很大程度上取决于<strong>能不能接进顺手的工具去看</strong>——光把指标、span 采集出来还不够，还得有人画图、有人告警、有人按 trace ID 检索。Prometheus（指标存储与告警）、Grafana（仪表盘）、Jaeger（追踪可视化）这些工具，早已是云原生世界的<strong>事实标准</strong>，运维同学大多<strong>本来就会用</strong>。Milvus 只要让自己的指标、追踪<strong>说这些工具听得懂的"普通话"</strong>，用户就能把它<strong>无缝接进既有的监控体系</strong>，而不必为了一个数据库专门学一套私有面板。这是一种很务实的<strong>生态思维</strong>：在"<strong>采集</strong>"这件 Milvus 该做的事上认真做（埋点、传播、暴露端点），在"<strong>展示与告警</strong>"这件成熟生态已做得很好的事上<strong>不重复造轮子</strong>，而是开放对接。这和第 37 课"GPU 算法交给 Knowhere/RAFT、自己专注集成"、第 8 课"依赖 etcd/对象存储等成熟组件"是同一种克制——<strong>把专业的事交给专业的工具，自己只做好那道连接的胶水</strong>。</p>
+
+<h2>三者合一：在分布式系统里追一个请求</h2>
+<p>把三根支柱接起来，看一次"搜索变慢了"的排查实战。<strong>第一步，指标发现异常</strong>：Grafana 上 P99 延迟曲线突然抬头、告警触发——你知道"<strong>出事了</strong>"，但还不知道是谁、卡在哪。<strong>第二步，链路追踪定位环节</strong>：翻看慢请求的 trace，那棵调用树清清楚楚——Proxy 很快、扇出的三个 QueryNode 里有<strong>一个</strong>的子 span 特别长，问题缩小到了"<strong>那一跳</strong>"。<strong>第三步，日志还原细节</strong>：拿着这个请求的传播 ID，去那个 QueryNode 的日志里一过滤，相关条目<strong>整整齐齐</strong>地浮出来——原来是某个段在做 mmap 缺页、冷数据首次加载慢（第 35 课）。三步走完，根因水落石出。</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>指标发现</h4><p>Grafana 上 P99 延迟曲线抬头、告警触发——知道"出事了"，但不知是谁、卡在哪。（Prometheus 指标）</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>追踪定位</h4><p>看慢请求的 trace 调用树：某个 QueryNode 的子 span 特别长，问题缩小到"那一跳"。（OpenTelemetry）</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>日志还原</h4><p>用该请求的传播 ID 过滤那个节点的日志，细节浮现：原来是 mmap 缺页、冷段首次加载慢。（mlog）</p></div></div>
+</div>
+<p>这套配合的<strong>灵魂</strong>，就是那条反复出现的主线：<strong>给请求一个能跨节点传播的"身份"</strong>。无论是 mlog 的可传播字段，还是 otel 的 trace context，本质都是<strong>把一个标识塞进 ctx、再让 gRPC 拦截器带着它走遍全程</strong>。正因如此，散落在十几个节点、成千上万条日志/指标/span 里的碎片，才能围绕"<strong>同一个请求</strong>"重新聚拢成一个完整故事。回想第 38 课"每条日志必须带 ctx"那条铁律，你现在该明白它的深意了——<strong>ctx 不只是个参数，它是串起整个分布式可观测性的那根线</strong>。下一课我们转向另一件运维基本功：这套系统成百上千的<strong>配置项</strong>是怎么管理的（paramtable 与 milvus.yaml）。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>三大支柱</strong>：日志(发生了什么)、指标(整体趋势/告警)、链路追踪(一个请求走过哪些环节)，各有盲区、三管齐下：指标<strong>发现</strong>、追踪<strong>定位</strong>、日志<strong>还原</strong>。</li>
+    <li><strong>日志=mlog</strong>：强制带 ctx、结构化字段(mlog.String/Int64)、可经 <span class="mono">WithFields</span>+<span class="mono">OptPropagated</span>+gRPC 拦截器<strong>跨节点传播</strong>，一个 ID 串起全集群日志。</li>
+    <li><strong>指标=Prometheus</strong>(<span class="inline">pkg/metrics</span> 各组件埋点→抓取→Grafana)；<strong>追踪=OpenTelemetry</strong>(<span class="inline">pkg/tracer</span> + otelgrpc，trace context 随 RPC 传播、子 span 拼成调用树)。</li>
+    <li><strong>核心心法</strong>：把请求的"身份"塞进 ctx、再随 gRPC 传播——日志与追踪用的是同一招，这正是"每条日志必带 ctx"铁律的深意。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. 可观测性的“三大支柱”各回答什么问题、如何配合？</div>
+  <ol class="opts">
+    <li>三者是同一种数据的三个名字，留一个即可</li>
+    <li>日志=发生了什么(细节)、指标=整体趋势(告警)、追踪=一个请求走过哪些环节；配合：指标发现异常→追踪定位环节→日志还原细节</li>
+    <li>三者都只在单机内有用，分布式下无意义</li>
+    <li>日志负责告警、指标负责存细节、追踪负责画仪表盘</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。三者各有盲区：只看指标知道“延迟涨了”却不知哪个请求/哪一步；只看日志，海量分散难以把同一请求的条目连起来；只看追踪知道卡在某段却缺细节。所以三管齐下：指标用来发现(告警)、追踪用来定位(哪个请求/哪一跳)、日志用来还原(那一段的细节)。Milvus 分别用 pkg/mlog、pkg/metrics(Prometheus)、pkg/tracer(OpenTelemetry)。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Milvus 规定日志必须用 pkg/mlog 且每条都带 ctx，最关键的好处是什么？</div>
+  <ol class="opts">
+    <li>mlog 会把日志直接写进向量索引</li>
+    <li>ctx 能让日志自动变成中文</li>
+    <li>ctx 能携带可传播的结构化字段：经 WithFields+OptPropagated+gRPC 拦截器，请求的“身份”随 RPC 跨节点流动，一个 ID 就能把全集群相关日志归拢</li>
+    <li>带 ctx 纯粹是为了让函数签名更长</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：C</strong>。Milvus 是分布式的：一个请求的“故事”被拆散在多个进程/机器上书写。mlog 强制带 ctx，使日志能携带结构化字段(mlog.String/Int64)；用 WithFields 挂到 ctx、加 OptPropagated 并配 gRPC 拦截器(UnaryServer/ClientInterceptor)，这些字段就随 RPC 传到下游节点。于是 Proxy 给请求打的标记会出现在它触发的 QueryNode/DataNode 日志里，事后用一个 ID 就能把散落全集群的相关日志一网打尽——这是分布式排错的生死线。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 本课说日志(mlog 可传播字段)与链路追踪(OpenTelemetry)“用的是同一招”。这一招是什么？</div>
+  <ol class="opts">
+    <li>把请求的“身份/上下文”塞进 ctx，再由 gRPC 拦截器随 RPC 带到下游节点，从而把散落多节点的碎片围绕“同一个请求”重新聚拢</li>
+    <li>把所有数据压缩后写到一个文件里</li>
+    <li>把日志和 span 都发给同一个 GPU 处理</li>
+    <li>让每个节点用本地时钟各自编号</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：A</strong>。otelgrpc 拦截器在一次 RPC 里把“trace context”(本次追踪的唯一 ID 与当前 span)塞进 RPC 元数据带给下游，下游把自己这段作为子 span 挂到同一条 trace；mlog 的 OptPropagated 字段同理随 RPC 传播。两者本质都是“把标识塞进 ctx、再随 gRPC 传播”，这正是分布式可观测性的核心心法，也是“每条日志必带 ctx”铁律的深意——ctx 是串起整个分布式可观测性的那根线。</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>本课用“医院监护病人”类比三大支柱，并强调它们靠“给请求一个能跨节点传播的身份”协作。请：(1) 用自己的话说清，当线上“搜索 P99 突然变慢”，你会如何依次用指标、追踪、日志把根因定位出来；(2) 解释为什么在分布式系统里，光有日志或光有指标都不够；(3) 结合第 38 课“每条日志必带 ctx”的铁律，谈谈“把身份塞进 ctx 再随 gRPC 传播”这一招，为什么同时支撑了日志聚合与链路追踪。</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Last lesson, a request came in through the API. But once it runs through Milvus's <strong>distributed system</strong> — across the Proxy, fanned to several QueryNodes, stirring DataCoord — how do we <strong>"see" it</strong>? When something breaks, where do we look? That's what <strong>observability</strong> solves. It has three pillars: <strong>logs</strong> (what happened), <strong>metrics</strong> (how's the whole doing), and <strong>traces</strong> (which nodes one request crossed). This lesson shows how Milvus implements all three — especially how they <strong>jointly trace a request spanning many nodes</strong>.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of operating a distributed system as a <strong>hospital monitoring a patient</strong>. <strong>Logs</strong> are the <strong>detailed chart notes</strong>: at what time what happened, which medicine, what the doctor wrote — <strong>line by line, timestamped, traceable</strong>. <strong>Metrics</strong> are the <strong>bedside vital-signs monitor</strong>: heart rate, blood pressure, oxygen — <strong>numbers over time</strong>, telling at a glance "is the overall condition fine, any abnormal swings".
+  <strong>Traces</strong> are <strong>following this one patient end to end</strong>: registration → exam → lab → pharmacy, how long each took, where it stalled. In a hospital of "<strong>many cooperating departments</strong>" (many nodes), one department's notes aren't enough — you must <strong>stitch the same patient's footprints across departments into one line</strong> to see where it's slow or wrong. All three are indispensable.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>Milvus's observability has three pillars — logs via <span class="mono">pkg/mlog</span> (ctx mandatory, structured fields, propagatable across nodes over gRPC); metrics via Prometheus-style <span class="mono">pkg/metrics</span> (each component instrumented); traces via OpenTelemetry (<span class="mono">pkg/tracer</span> + otelgrpc interceptors, spans flowing across RPCs)</strong>. Together they answer "<strong>what a request actually experienced across the distributed system</strong>".
+</div>
+
+<h2>The three pillars of observability</h2>
+<p>"Observability" sounds abstract; unpacked it's three concrete things, each answering a different question. <strong>Logs</strong> answer "<strong>what exactly happened</strong>": timestamped event records, the first-hand evidence for <strong>going through the case file</strong> after a problem. <strong>Metrics</strong> answer "<strong>how's the whole doing</strong>": masses of events <strong>aggregated into numbers</strong> — requests per second, average latency, memory, queue length — plotted over time, ideal for <strong>watching trends and setting alerts</strong>. <strong>Traces</strong> answer "<strong>which stages one request crossed, and how long each took</strong>": the footprints of <strong>one request</strong> across nodes and phases, stitched into a hierarchical timeline.</p>
+<p>Why is each indispensable? Each has blind spots. With only metrics, you see "latency spiked" but not <strong>which request, stuck where</strong>; with only logs, amid masses scattered across nodes, it's hard to <strong>pick out and connect</strong> the entries "<strong>belonging to the same request</strong>"; with only traces, you know "it stalled in the QueryNode segment" but may need that moment's <strong>detailed logs</strong> for the root cause. So mature systems go <strong>three-pronged</strong>: metrics to <strong>detect</strong> anomalies (alert), traces to <strong>locate</strong> which request and stage, logs to <strong>reconstruct</strong> that stage's detail. The table puts the three side by side, to remember "<strong>what each answers, implemented by what</strong>".</p>
+
+<table class="t">
+  <tr><th>Pillar</th><th>Question answered</th><th>Form</th><th>Milvus impl</th></tr>
+  <tr><td><strong>Logs</strong></td><td>what exactly happened (event by event)</td><td>timestamped text/structured records</td><td class="mono">pkg/mlog (zap)</td></tr>
+  <tr><td><strong>Metrics</strong></td><td>how's the whole doing (trends/alerts)</td><td>numeric curves over time</td><td class="mono">pkg/metrics (Prometheus)</td></tr>
+  <tr><td><strong>Traces</strong></td><td>which stages a request crossed, how long each</td><td>hierarchical cross-node timeline</td><td class="mono">pkg/tracer (OpenTelemetry)</td></tr>
+</table>
+
+<h2>Logs: mlog — ctx mandatory, structured, propagatable across nodes</h2>
+<p>First the pillar you deal with most — logs. Milvus has an <strong>iron rule</strong>: logging may only use <span class="mono">pkg/mlog</span> — not the standard <span class="mono">log</span>, not bare <span class="mono">fmt.Println</span>, not raw zap. Why so strict? Because <span class="mono">mlog</span> shoulders the hardest parts of distributed logging for you, and its design is thoughtful throughout.</p>
+<p>First touch: <strong>every log must carry ctx</strong>. You write <span class="mono">mlog.Info(ctx, "message", mlog.String("field", value))</span> — the first argument is always the context. Why mandatory? Because ctx can <strong>carry "identity" accumulated along the way</strong>. Second touch: <strong>structured fields</strong>. Not splicing variables into a sentence (<span class="mono">"user " + id + " failed"</span>) but typed key-value pairs like <span class="mono">mlog.String</span>, <span class="mono">mlog.Int64</span>. Structured logs are <strong>machine-queryable</strong>: a log system can filter precisely by "field = value" instead of grepping text. Third and most elegant: <strong>fields can propagate across nodes</strong>. Attach fields to ctx with <span class="mono">mlog.WithFields(ctx, ...)</span> and child contexts inherit them; further, mark a field with <span class="mono">mlog.OptPropagated()</span> (e.g. collection name, collection ID) and, via gRPC interceptors (<span class="mono">mlog.UnaryServerInterceptor</span> / <span class="mono">UnaryClientInterceptor</span>), those fields <strong>"fly" with the RPC to downstream nodes</strong>. So a marker stamped on a request at the Proxy reappears verbatim in the QueryNode and DataNode logs it triggers — <strong>one ID nets every related log across the whole cluster</strong>. That's the most precious ability when debugging distributed systems. The two styles compared:</p>
+
+<div class="cols">
+  <div class="col"><h4>❌ String-spliced logs</h4><p><span class="mono">log.Printf("user %d search failed", id)</span>. Info buried in text; each node logs its own, unmatchable; filtering by user means regex guessing; cross a node and the trail breaks.</p></div>
+  <div class="col"><h4>✅ mlog: structured + propagatable</h4><p><span class="mono">mlog.Info(ctx, "search failed", mlog.Int64("user", id))</span>. Typed fields, precisely filterable; via ctx + <span class="mono">OptPropagated</span> + interceptors, the marker <strong>flows with the request across nodes</strong>, one ID stitching the whole cluster.</p></div>
+</div>
+
+<h2>Metrics & traces: Prometheus + OpenTelemetry</h2>
+<p>The other two pillars both build on industry <strong>open standards</strong>, so they plug straight into mature ecosystem tools. <strong>Metrics</strong> are <strong>Prometheus-style</strong>: under <span class="inline">pkg/metrics</span>, each component has its own instrumentation file (<span class="mono">datacoord_metrics.go</span>, <span class="mono">datanode_metrics.go</span>, querynode, proxy, even <span class="mono">cgo_metrics.go</span> watching the Go↔C++ bridge). These are exposed at an HTTP endpoint, periodically <strong>scraped</strong> by Prometheus into time series, then drawn into dashboards by <strong>Grafana</strong> — latency, QPS, queue levels, memory at a glance, with thresholds for <strong>automatic alerts</strong>.</p>
+<p><strong>Traces</strong> use <strong>OpenTelemetry</strong> (today's prevailing tracing standard): the core is in <span class="inline">pkg/tracer</span>, depending on <span class="mono">go.opentelemetry.io/otel</span>. Its key is again "<strong>stitching the trail across nodes</strong>" — via <strong>otelgrpc interceptors</strong> (<span class="mono">GetInterceptorOpts</span>): when a request goes from Proxy over gRPC to a QueryNode, the interceptor <strong>tucks the "trace context"</strong> (containing this trace's unique ID and current span) <strong>into the RPC metadata</strong>; the downstream node, on receipt, attaches its own processing as a <strong>child span</strong> on the same trace. All nodes' spans, gathered into a backend like Jaeger, assemble a <strong>complete call tree</strong>: which segment is slowest, which hop errored, drawn as a timeline you <strong>see through at a glance</strong>. Notice logs (OptPropagated fields) and traces (otel trace context) <strong>use the same move</strong> — <strong>tuck "identity" into ctx, then propagate with the RPC</strong>. No coincidence — it's the <strong>core method</strong> of distributed observability.</p>
+
+<h2>Three as one: tracing a request across the distributed system</h2>
+<p>Wire the three pillars together for a real "search got slow" investigation. <strong>Step 1, metrics detect the anomaly</strong>: on Grafana the P99 latency curve suddenly rises, an alert fires — you know "<strong>something's wrong</strong>", but not who or where. <strong>Step 2, traces locate the stage</strong>: open a slow request's trace and the call tree is clear — the Proxy was fast, but among the three fanned-out QueryNodes, <strong>one</strong> child span is unusually long; the problem narrows to "<strong>that hop</strong>". <strong>Step 3, logs reconstruct the detail</strong>: take this request's propagated ID, filter the logs of that QueryNode, and the related entries surface <strong>neatly</strong> — turns out a segment was faulting in via mmap, cold data slow on first load (Lesson 35). Three steps, root cause in hand.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Metrics detect</h4><p>Grafana's P99 latency rises, an alert fires — you know "something's wrong" but not who or where. (Prometheus metrics)</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Traces locate</h4><p>open the slow request's trace tree: one QueryNode's child span is unusually long; the problem narrows to "that hop". (OpenTelemetry)</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Logs reconstruct</h4><p>filter that node's logs by the request's propagated ID; the detail surfaces: an mmap fault, a cold segment slow on first load. (mlog)</p></div></div>
+</div>
+<p>The <strong>soul</strong> of this teamwork is that recurring throughline: <strong>give the request an "identity" that propagates across nodes</strong>. Whether mlog's propagatable fields or otel's trace context, the essence is <strong>tucking an identifier into ctx and letting gRPC interceptors carry it the whole way</strong>. That's why fragments scattered across a dozen nodes and thousands of logs/metrics/spans can re-gather, around "<strong>the same request</strong>", into one complete story. Recall Lesson 38's iron rule "every log must carry ctx" — now you see its depth: <strong>ctx isn't just a parameter, it's the thread stitching the whole distributed observability together</strong>. Next lesson turns to another ops fundamental: how this system's hundreds of <strong>configuration items</strong> are managed (paramtable and milvus.yaml).</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Three pillars</strong>: logs (what happened), metrics (overall trend/alert), traces (which stages a request crossed) — each has blind spots, so three-pronged: metrics <strong>detect</strong>, traces <strong>locate</strong>, logs <strong>reconstruct</strong>.</li>
+    <li><strong>Logs = mlog</strong>: ctx mandatory, structured fields (mlog.String/Int64), propagatable across nodes via <span class="mono">WithFields</span>+<span class="mono">OptPropagated</span>+gRPC interceptors — one ID stitches cluster-wide logs.</li>
+    <li><strong>Metrics = Prometheus</strong> (<span class="inline">pkg/metrics</span> per-component → scrape → Grafana); <strong>traces = OpenTelemetry</strong> (<span class="inline">pkg/tracer</span> + otelgrpc, trace context propagated over RPC, child spans forming a call tree).</li>
+    <li><strong>Core method</strong>: tuck the request's "identity" into ctx and propagate with gRPC — logs and traces use the same move, which is the deeper point of the "every log carries ctx" rule.</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. What does each of the 'three pillars' of observability answer, and how do they work together?</div>
+  <ol class="opts">
+    <li>All three are names for the same data; keep just one</li>
+    <li>Logs = what happened (detail), metrics = overall trend (alert), traces = which stages a request crossed; together: metrics detect → traces locate → logs reconstruct</li>
+    <li>All three only matter on a single machine, useless in distributed mode</li>
+    <li>Logs alert, metrics store details, traces draw dashboards</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. Each has blind spots: metrics show 'latency rose' but not which request/step; logs are massive and scattered, hard to connect one request's entries; traces show 'stuck in a segment' but lack detail. So three-pronged: metrics detect (alert), traces locate (which request/hop), logs reconstruct (that segment's detail). Milvus uses pkg/mlog, pkg/metrics (Prometheus), pkg/tracer (OpenTelemetry) respectively.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Milvus mandates logging via pkg/mlog with ctx on every call. What's the key benefit?</div>
+  <ol class="opts">
+    <li>mlog writes logs straight into the vector index</li>
+    <li>ctx automatically translates logs into Chinese</li>
+    <li>ctx can carry propagatable structured fields: via WithFields+OptPropagated+gRPC interceptors, the request's 'identity' flows with RPCs across nodes, so one ID gathers related logs cluster-wide</li>
+    <li>Carrying ctx is purely to make signatures longer</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. Milvus is distributed: one request's 'story' is written across many processes/machines. mlog mandates ctx so logs carry structured fields (mlog.String/Int64); attaching them via WithFields with OptPropagated plus gRPC interceptors (Unary Server/Client) propagates them downstream. So a marker stamped at the Proxy reappears in the QueryNode/DataNode logs it triggers, and one ID later nets all related logs cluster-wide — a lifeline for distributed debugging.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. This lesson says logs (mlog propagatable fields) and tracing (OpenTelemetry) 'use the same move'. What is it?</div>
+  <ol class="opts">
+    <li>Tuck the request's 'identity/context' into ctx and let gRPC interceptors carry it with the RPC to downstream nodes, re-gathering fragments scattered across nodes around 'the same request'</li>
+    <li>Compress everything into one file</li>
+    <li>Send both logs and spans to the same GPU</li>
+    <li>Have each node number things by its local clock</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. The otelgrpc interceptor tucks the 'trace context' (the trace's unique ID and current span) into RPC metadata for downstream, which attaches its work as a child span on the same trace; mlog's OptPropagated fields propagate over RPC the same way. Both are 'tuck an identifier into ctx, propagate with gRPC' — the core method of distributed observability and the deeper point of 'every log carries ctx': ctx is the thread stitching it all together.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson uses 'a hospital monitoring a patient' for the three pillars and stresses they cooperate by 'giving a request an identity that propagates across nodes'. Please: (1) in your own words, describe how you'd use metrics, then traces, then logs in turn to locate the root cause when 'search P99 suddenly slows' in production; (2) explain why, in a distributed system, logs alone or metrics alone are insufficient; (3) tying to Lesson 38's 'every log carries ctx' rule, discuss why 'tuck identity into ctx, propagate over gRPC' underpins both log aggregation and tracing.</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="38-api-and-sdks.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">API 与多语言 SDK</span><span class="lang-en">API &amp; multi-language SDKs</span></div></a><a class="next" href="../index.html"><div class="dir"><span class="lang-zh">完成 →</span><span class="lang-en">Done →</span></div><div class="ttl"><span class="lang-zh">返回目录</span><span class="lang-en">Back to index</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>

@@ -2546,6 +2546,67 @@ QUIZZES = {
             },
         ],
     },
+    "39-observability.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "可观测性的“三大支柱”各回答什么问题、如何配合？",
+                    "en": "What does each of the 'three pillars' of observability answer, and how do they work together?",
+                },
+                "opts": [
+                    {"zh": "日志=发生了什么(细节)、指标=整体趋势(告警)、追踪=一个请求走过哪些环节；配合：指标发现异常→追踪定位环节→日志还原细节", "en": "Logs = what happened (detail), metrics = overall trend (alert), traces = which stages a request crossed; together: metrics detect → traces locate → logs reconstruct"},
+                    {"zh": "三者是同一种数据的三个名字，留一个即可", "en": "All three are names for the same data; keep just one"},
+                    {"zh": "日志负责告警、指标负责存细节、追踪负责画仪表盘", "en": "Logs alert, metrics store details, traces draw dashboards"},
+                    {"zh": "三者都只在单机内有用，分布式下无意义", "en": "All three only matter on a single machine, useless in distributed mode"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "三者各有盲区：只看指标知道“延迟涨了”却不知哪个请求/哪一步；只看日志，海量分散难以把同一请求的条目连起来；只看追踪知道卡在某段却缺细节。所以三管齐下：指标用来发现(告警)、追踪用来定位(哪个请求/哪一跳)、日志用来还原(那一段的细节)。Milvus 分别用 pkg/mlog、pkg/metrics(Prometheus)、pkg/tracer(OpenTelemetry)。",
+                    "en": "Each has blind spots: metrics show 'latency rose' but not which request/step; logs are massive and scattered, hard to connect one request's entries; traces show 'stuck in a segment' but lack detail. So three-pronged: metrics detect (alert), traces locate (which request/hop), logs reconstruct (that segment's detail). Milvus uses pkg/mlog, pkg/metrics (Prometheus), pkg/tracer (OpenTelemetry) respectively.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "Milvus 规定日志必须用 pkg/mlog 且每条都带 ctx，最关键的好处是什么？",
+                    "en": "Milvus mandates logging via pkg/mlog with ctx on every call. What's the key benefit?",
+                },
+                "opts": [
+                    {"zh": "ctx 能携带可传播的结构化字段：经 WithFields+OptPropagated+gRPC 拦截器，请求的“身份”随 RPC 跨节点流动，一个 ID 就能把全集群相关日志归拢", "en": "ctx can carry propagatable structured fields: via WithFields+OptPropagated+gRPC interceptors, the request's 'identity' flows with RPCs across nodes, so one ID gathers related logs cluster-wide"},
+                    {"zh": "ctx 能让日志自动变成中文", "en": "ctx automatically translates logs into Chinese"},
+                    {"zh": "带 ctx 纯粹是为了让函数签名更长", "en": "Carrying ctx is purely to make signatures longer"},
+                    {"zh": "mlog 会把日志直接写进向量索引", "en": "mlog writes logs straight into the vector index"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "Milvus 是分布式的：一个请求的“故事”被拆散在多个进程/机器上书写。mlog 强制带 ctx，使日志能携带结构化字段(mlog.String/Int64)；用 WithFields 挂到 ctx、加 OptPropagated 并配 gRPC 拦截器(UnaryServer/ClientInterceptor)，这些字段就随 RPC 传到下游节点。于是 Proxy 给请求打的标记会出现在它触发的 QueryNode/DataNode 日志里，事后用一个 ID 就能把散落全集群的相关日志一网打尽——这是分布式排错的生死线。",
+                    "en": "Milvus is distributed: one request's 'story' is written across many processes/machines. mlog mandates ctx so logs carry structured fields (mlog.String/Int64); attaching them via WithFields with OptPropagated plus gRPC interceptors (Unary Server/Client) propagates them downstream. So a marker stamped at the Proxy reappears in the QueryNode/DataNode logs it triggers, and one ID later nets all related logs cluster-wide — a lifeline for distributed debugging.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "本课说日志(mlog 可传播字段)与链路追踪(OpenTelemetry)“用的是同一招”。这一招是什么？",
+                    "en": "This lesson says logs (mlog propagatable fields) and tracing (OpenTelemetry) 'use the same move'. What is it?",
+                },
+                "opts": [
+                    {"zh": "把请求的“身份/上下文”塞进 ctx，再由 gRPC 拦截器随 RPC 带到下游节点，从而把散落多节点的碎片围绕“同一个请求”重新聚拢", "en": "Tuck the request's 'identity/context' into ctx and let gRPC interceptors carry it with the RPC to downstream nodes, re-gathering fragments scattered across nodes around 'the same request'"},
+                    {"zh": "把所有数据压缩后写到一个文件里", "en": "Compress everything into one file"},
+                    {"zh": "让每个节点用本地时钟各自编号", "en": "Have each node number things by its local clock"},
+                    {"zh": "把日志和 span 都发给同一个 GPU 处理", "en": "Send both logs and spans to the same GPU"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "otelgrpc 拦截器在一次 RPC 里把“trace context”(本次追踪的唯一 ID 与当前 span)塞进 RPC 元数据带给下游，下游把自己这段作为子 span 挂到同一条 trace；mlog 的 OptPropagated 字段同理随 RPC 传播。两者本质都是“把标识塞进 ctx、再随 gRPC 传播”，这正是分布式可观测性的核心心法，也是“每条日志必带 ctx”铁律的深意——ctx 是串起整个分布式可观测性的那根线。",
+                    "en": "The otelgrpc interceptor tucks the 'trace context' (the trace's unique ID and current span) into RPC metadata for downstream, which attaches its work as a child span on the same trace; mlog's OptPropagated fields propagate over RPC the same way. Both are 'tuck an identifier into ctx, propagate with gRPC' — the core method of distributed observability and the deeper point of 'every log carries ctx': ctx is the thread stitching it all together.",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课用“医院监护病人”类比三大支柱，并强调它们靠“给请求一个能跨节点传播的身份”协作。请：(1) 用自己的话说清，当线上“搜索 P99 突然变慢”，你会如何依次用指标、追踪、日志把根因定位出来；(2) 解释为什么在分布式系统里，光有日志或光有指标都不够；(3) 结合第 38 课“每条日志必带 ctx”的铁律，谈谈“把身份塞进 ctx 再随 gRPC 传播”这一招，为什么同时支撑了日志聚合与链路追踪。",
+                "en": "This lesson uses 'a hospital monitoring a patient' for the three pillars and stresses they cooperate by 'giving a request an identity that propagates across nodes'. Please: (1) in your own words, describe how you'd use metrics, then traces, then logs in turn to locate the root cause when 'search P99 suddenly slows' in production; (2) explain why, in a distributed system, logs alone or metrics alone are insufficient; (3) tying to Lesson 38's 'every log carries ctx' rule, discuss why 'tuck identity into ctx, propagate over gRPC' underpins both log aggregation and tracing.",
+            },
+        ],
+    },
 }
 
 

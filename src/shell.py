@@ -123,6 +123,8 @@ PAGES = [
      "第八部分 · C++ 内核", "Part 8 · C++ core internals"),
     ("38-api-and-sdks.html", "API 与多语言 SDK", "API & multi-language SDKs",
      "第九部分 · API、工具与运维", "Part 9 · API, tools & ops"),
+    ("39-observability.html", "可观测性：日志/指标/追踪", "Observability: logs/metrics/traces",
+     "第九部分 · API、工具与运维", "Part 9 · API, tools & ops"),
 ]
 
 
@@ -640,6 +642,8 @@ SUBTITLES = {
                                  "GPU indexes (GPU_CAGRA/IVF/BRUTE): types in Milvus, algorithms in Knowhere/RAFT; compile-time milvus-gpu; VRAM pool; IndexEngineVersionManager takes the MIN version"),
     "38-api-and-sdks.html": ("一份契约 milvus-proto(MilvusService→milvuspb) · 传输层 distributed/proxy vs 逻辑层 proxy/impl.go · 多语言 SDK · gRPC 与 REST 两道门",
                              "one contract milvus-proto (MilvusService→milvuspb); transport distributed/proxy vs logic proxy/impl.go; multi-language SDKs; gRPC & REST two doors"),
+    "39-observability.html": ("三大支柱：日志 mlog(带 ctx/结构化/跨节点传播) · 指标 Prometheus(pkg/metrics) · 追踪 OpenTelemetry(pkg/tracer+otelgrpc) · 用 ctx 串起一个请求",
+                              "three pillars: logs mlog (ctx/structured/cross-node propagation); metrics Prometheus (pkg/metrics); traces OpenTelemetry (pkg/tracer+otelgrpc); stitch one request via ctx"),
 }
 
 

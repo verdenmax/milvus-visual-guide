@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 38 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 39 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
@@ -366,6 +366,7 @@ details[open] > summary { list-style: none; }
   <li>Expressions & vectorized execution</li>
   <li>GPU acceleration</li>
   <li>API & multi-language SDKs</li>
+  <li>Observability: logs/metrics/traces</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -7815,6 +7816,117 @@ The first eight parts drilled from macro architecture down to the C++ core. From
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
     <li>This lesson says 'one contract + one facade + two wrappings'. Tie to Lesson 3 (a request's journey) and Lesson 10 (Proxy): (1) From calling client.search(...) in pymilvus to getting results, which layers are crossed (SDK→proto→which door→transport Server→logic Proxy→cluster)? (2) Why does splitting 'transport (distributed/proxy)' from 'logic (proxy/impl.go)' help with adding new protocol entrances, doing auth/rate-limiting, and writing unit tests? (3) If you suspect a search result is wrong, how can you use 'gRPC and REST land on the same Proxy' to quickly tell whether it's a server-side or SDK-side problem?</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Observability: logs/metrics/traces</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Last lesson, a request came in through the API. But once it runs through Milvus's <strong>distributed system</strong> — across the Proxy, fanned to several QueryNodes, stirring DataCoord — how do we <strong>"see" it</strong>? When something breaks, where do we look? That's what <strong>observability</strong> solves. It has three pillars: <strong>logs</strong> (what happened), <strong>metrics</strong> (how's the whole doing), and <strong>traces</strong> (which nodes one request crossed). This lesson shows how Milvus implements all three — especially how they <strong>jointly trace a request spanning many nodes</strong>.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of operating a distributed system as a <strong>hospital monitoring a patient</strong>. <strong>Logs</strong> are the <strong>detailed chart notes</strong>: at what time what happened, which medicine, what the doctor wrote — <strong>line by line, timestamped, traceable</strong>. <strong>Metrics</strong> are the <strong>bedside vital-signs monitor</strong>: heart rate, blood pressure, oxygen — <strong>numbers over time</strong>, telling at a glance "is the overall condition fine, any abnormal swings".
+  <strong>Traces</strong> are <strong>following this one patient end to end</strong>: registration → exam → lab → pharmacy, how long each took, where it stalled. In a hospital of "<strong>many cooperating departments</strong>" (many nodes), one department's notes aren't enough — you must <strong>stitch the same patient's footprints across departments into one line</strong> to see where it's slow or wrong. All three are indispensable.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>Milvus's observability has three pillars — logs via <span class="mono">pkg/mlog</span> (ctx mandatory, structured fields, propagatable across nodes over gRPC); metrics via Prometheus-style <span class="mono">pkg/metrics</span> (each component instrumented); traces via OpenTelemetry (<span class="mono">pkg/tracer</span> + otelgrpc interceptors, spans flowing across RPCs)</strong>. Together they answer "<strong>what a request actually experienced across the distributed system</strong>".
+</div>
+
+<h2>The three pillars of observability</h2>
+<p>"Observability" sounds abstract; unpacked it's three concrete things, each answering a different question. <strong>Logs</strong> answer "<strong>what exactly happened</strong>": timestamped event records, the first-hand evidence for <strong>going through the case file</strong> after a problem. <strong>Metrics</strong> answer "<strong>how's the whole doing</strong>": masses of events <strong>aggregated into numbers</strong> — requests per second, average latency, memory, queue length — plotted over time, ideal for <strong>watching trends and setting alerts</strong>. <strong>Traces</strong> answer "<strong>which stages one request crossed, and how long each took</strong>": the footprints of <strong>one request</strong> across nodes and phases, stitched into a hierarchical timeline.</p>
+<p>Why is each indispensable? Each has blind spots. With only metrics, you see "latency spiked" but not <strong>which request, stuck where</strong>; with only logs, amid masses scattered across nodes, it's hard to <strong>pick out and connect</strong> the entries "<strong>belonging to the same request</strong>"; with only traces, you know "it stalled in the QueryNode segment" but may need that moment's <strong>detailed logs</strong> for the root cause. So mature systems go <strong>three-pronged</strong>: metrics to <strong>detect</strong> anomalies (alert), traces to <strong>locate</strong> which request and stage, logs to <strong>reconstruct</strong> that stage's detail. The table puts the three side by side, to remember "<strong>what each answers, implemented by what</strong>".</p>
+
+<table class="t">
+  <tr><th>Pillar</th><th>Question answered</th><th>Form</th><th>Milvus impl</th></tr>
+  <tr><td><strong>Logs</strong></td><td>what exactly happened (event by event)</td><td>timestamped text/structured records</td><td class="mono">pkg/mlog (zap)</td></tr>
+  <tr><td><strong>Metrics</strong></td><td>how's the whole doing (trends/alerts)</td><td>numeric curves over time</td><td class="mono">pkg/metrics (Prometheus)</td></tr>
+  <tr><td><strong>Traces</strong></td><td>which stages a request crossed, how long each</td><td>hierarchical cross-node timeline</td><td class="mono">pkg/tracer (OpenTelemetry)</td></tr>
+</table>
+
+<h2>Logs: mlog — ctx mandatory, structured, propagatable across nodes</h2>
+<p>First the pillar you deal with most — logs. Milvus has an <strong>iron rule</strong>: logging may only use <span class="mono">pkg/mlog</span> — not the standard <span class="mono">log</span>, not bare <span class="mono">fmt.Println</span>, not raw zap. Why so strict? Because <span class="mono">mlog</span> shoulders the hardest parts of distributed logging for you, and its design is thoughtful throughout.</p>
+<p>First touch: <strong>every log must carry ctx</strong>. You write <span class="mono">mlog.Info(ctx, "message", mlog.String("field", value))</span> — the first argument is always the context. Why mandatory? Because ctx can <strong>carry "identity" accumulated along the way</strong>. Second touch: <strong>structured fields</strong>. Not splicing variables into a sentence (<span class="mono">"user " + id + " failed"</span>) but typed key-value pairs like <span class="mono">mlog.String</span>, <span class="mono">mlog.Int64</span>. Structured logs are <strong>machine-queryable</strong>: a log system can filter precisely by "field = value" instead of grepping text. Third and most elegant: <strong>fields can propagate across nodes</strong>. Attach fields to ctx with <span class="mono">mlog.WithFields(ctx, ...)</span> and child contexts inherit them; further, mark a field with <span class="mono">mlog.OptPropagated()</span> (e.g. collection name, collection ID) and, via gRPC interceptors (<span class="mono">mlog.UnaryServerInterceptor</span> / <span class="mono">UnaryClientInterceptor</span>), those fields <strong>"fly" with the RPC to downstream nodes</strong>. So a marker stamped on a request at the Proxy reappears verbatim in the QueryNode and DataNode logs it triggers — <strong>one ID nets every related log across the whole cluster</strong>. That's the most precious ability when debugging distributed systems. The two styles compared:</p>
+
+<div class="cols">
+  <div class="col"><h4>❌ String-spliced logs</h4><p><span class="mono">log.Printf("user %d search failed", id)</span>. Info buried in text; each node logs its own, unmatchable; filtering by user means regex guessing; cross a node and the trail breaks.</p></div>
+  <div class="col"><h4>✅ mlog: structured + propagatable</h4><p><span class="mono">mlog.Info(ctx, "search failed", mlog.Int64("user", id))</span>. Typed fields, precisely filterable; via ctx + <span class="mono">OptPropagated</span> + interceptors, the marker <strong>flows with the request across nodes</strong>, one ID stitching the whole cluster.</p></div>
+</div>
+
+<h2>Metrics & traces: Prometheus + OpenTelemetry</h2>
+<p>The other two pillars both build on industry <strong>open standards</strong>, so they plug straight into mature ecosystem tools. <strong>Metrics</strong> are <strong>Prometheus-style</strong>: under <span class="inline">pkg/metrics</span>, each component has its own instrumentation file (<span class="mono">datacoord_metrics.go</span>, <span class="mono">datanode_metrics.go</span>, querynode, proxy, even <span class="mono">cgo_metrics.go</span> watching the Go↔C++ bridge). These are exposed at an HTTP endpoint, periodically <strong>scraped</strong> by Prometheus into time series, then drawn into dashboards by <strong>Grafana</strong> — latency, QPS, queue levels, memory at a glance, with thresholds for <strong>automatic alerts</strong>.</p>
+<p><strong>Traces</strong> use <strong>OpenTelemetry</strong> (today's prevailing tracing standard): the core is in <span class="inline">pkg/tracer</span>, depending on <span class="mono">go.opentelemetry.io/otel</span>. Its key is again "<strong>stitching the trail across nodes</strong>" — via <strong>otelgrpc interceptors</strong> (<span class="mono">GetInterceptorOpts</span>): when a request goes from Proxy over gRPC to a QueryNode, the interceptor <strong>tucks the "trace context"</strong> (containing this trace's unique ID and current span) <strong>into the RPC metadata</strong>; the downstream node, on receipt, attaches its own processing as a <strong>child span</strong> on the same trace. All nodes' spans, gathered into a backend like Jaeger, assemble a <strong>complete call tree</strong>: which segment is slowest, which hop errored, drawn as a timeline you <strong>see through at a glance</strong>. Notice logs (OptPropagated fields) and traces (otel trace context) <strong>use the same move</strong> — <strong>tuck "identity" into ctx, then propagate with the RPC</strong>. No coincidence — it's the <strong>core method</strong> of distributed observability.</p>
+
+<h2>Three as one: tracing a request across the distributed system</h2>
+<p>Wire the three pillars together for a real "search got slow" investigation. <strong>Step 1, metrics detect the anomaly</strong>: on Grafana the P99 latency curve suddenly rises, an alert fires — you know "<strong>something's wrong</strong>", but not who or where. <strong>Step 2, traces locate the stage</strong>: open a slow request's trace and the call tree is clear — the Proxy was fast, but among the three fanned-out QueryNodes, <strong>one</strong> child span is unusually long; the problem narrows to "<strong>that hop</strong>". <strong>Step 3, logs reconstruct the detail</strong>: take this request's propagated ID, filter the logs of that QueryNode, and the related entries surface <strong>neatly</strong> — turns out a segment was faulting in via mmap, cold data slow on first load (Lesson 35). Three steps, root cause in hand.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Metrics detect</h4><p>Grafana's P99 latency rises, an alert fires — you know "something's wrong" but not who or where. (Prometheus metrics)</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Traces locate</h4><p>open the slow request's trace tree: one QueryNode's child span is unusually long; the problem narrows to "that hop". (OpenTelemetry)</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Logs reconstruct</h4><p>filter that node's logs by the request's propagated ID; the detail surfaces: an mmap fault, a cold segment slow on first load. (mlog)</p></div></div>
+</div>
+<p>The <strong>soul</strong> of this teamwork is that recurring throughline: <strong>give the request an "identity" that propagates across nodes</strong>. Whether mlog's propagatable fields or otel's trace context, the essence is <strong>tucking an identifier into ctx and letting gRPC interceptors carry it the whole way</strong>. That's why fragments scattered across a dozen nodes and thousands of logs/metrics/spans can re-gather, around "<strong>the same request</strong>", into one complete story. Recall Lesson 38's iron rule "every log must carry ctx" — now you see its depth: <strong>ctx isn't just a parameter, it's the thread stitching the whole distributed observability together</strong>. Next lesson turns to another ops fundamental: how this system's hundreds of <strong>configuration items</strong> are managed (paramtable and milvus.yaml).</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Three pillars</strong>: logs (what happened), metrics (overall trend/alert), traces (which stages a request crossed) — each has blind spots, so three-pronged: metrics <strong>detect</strong>, traces <strong>locate</strong>, logs <strong>reconstruct</strong>.</li>
+    <li><strong>Logs = mlog</strong>: ctx mandatory, structured fields (mlog.String/Int64), propagatable across nodes via <span class="mono">WithFields</span>+<span class="mono">OptPropagated</span>+gRPC interceptors — one ID stitches cluster-wide logs.</li>
+    <li><strong>Metrics = Prometheus</strong> (<span class="inline">pkg/metrics</span> per-component → scrape → Grafana); <strong>traces = OpenTelemetry</strong> (<span class="inline">pkg/tracer</span> + otelgrpc, trace context propagated over RPC, child spans forming a call tree).</li>
+    <li><strong>Core method</strong>: tuck the request's "identity" into ctx and propagate with gRPC — logs and traces use the same move, which is the deeper point of the "every log carries ctx" rule.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. What does each of the 'three pillars' of observability answer, and how do they work together?</div>
+  <ol class="opts">
+    <li>All three are names for the same data; keep just one</li>
+    <li>Logs = what happened (detail), metrics = overall trend (alert), traces = which stages a request crossed; together: metrics detect → traces locate → logs reconstruct</li>
+    <li>All three only matter on a single machine, useless in distributed mode</li>
+    <li>Logs alert, metrics store details, traces draw dashboards</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. Each has blind spots: metrics show 'latency rose' but not which request/step; logs are massive and scattered, hard to connect one request's entries; traces show 'stuck in a segment' but lack detail. So three-pronged: metrics detect (alert), traces locate (which request/hop), logs reconstruct (that segment's detail). Milvus uses pkg/mlog, pkg/metrics (Prometheus), pkg/tracer (OpenTelemetry) respectively.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Milvus mandates logging via pkg/mlog with ctx on every call. What's the key benefit?</div>
+  <ol class="opts">
+    <li>mlog writes logs straight into the vector index</li>
+    <li>ctx automatically translates logs into Chinese</li>
+    <li>ctx can carry propagatable structured fields: via WithFields+OptPropagated+gRPC interceptors, the request's 'identity' flows with RPCs across nodes, so one ID gathers related logs cluster-wide</li>
+    <li>Carrying ctx is purely to make signatures longer</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. Milvus is distributed: one request's 'story' is written across many processes/machines. mlog mandates ctx so logs carry structured fields (mlog.String/Int64); attaching them via WithFields with OptPropagated plus gRPC interceptors (Unary Server/Client) propagates them downstream. So a marker stamped at the Proxy reappears in the QueryNode/DataNode logs it triggers, and one ID later nets all related logs cluster-wide — a lifeline for distributed debugging.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. This lesson says logs (mlog propagatable fields) and tracing (OpenTelemetry) 'use the same move'. What is it?</div>
+  <ol class="opts">
+    <li>Tuck the request's 'identity/context' into ctx and let gRPC interceptors carry it with the RPC to downstream nodes, re-gathering fragments scattered across nodes around 'the same request'</li>
+    <li>Compress everything into one file</li>
+    <li>Send both logs and spans to the same GPU</li>
+    <li>Have each node number things by its local clock</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. The otelgrpc interceptor tucks the 'trace context' (the trace's unique ID and current span) into RPC metadata for downstream, which attaches its work as a child span on the same trace; mlog's OptPropagated fields propagate over RPC the same way. Both are 'tuck an identifier into ctx, propagate with gRPC' — the core method of distributed observability and the deeper point of 'every log carries ctx': ctx is the thread stitching it all together.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson uses 'a hospital monitoring a patient' for the three pillars and stresses they cooperate by 'giving a request an identity that propagates across nodes'. Please: (1) in your own words, describe how you'd use metrics, then traces, then logs in turn to locate the root cause when 'search P99 suddenly slows' in production; (2) explain why, in a distributed system, logs alone or metrics alone are insufficient; (3) tying to Lesson 38's 'every log carries ctx' rule, discuss why 'tuck identity into ctx, propagate over gRPC' underpins both log aggregation and tracing.</li>
   </ul>
 </div>
 </div>
