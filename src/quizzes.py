@@ -3627,6 +3627,76 @@ QUIZZES = {
             },
         ],
     },
+    "56-design-failure-as-default.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "“假定故障是常态”意味着什么？Milvus 为此准备了哪三件事？",
+                    "en": "What does 'assume failure is the default' mean, and which three things does Milvus prepare for it?",
+                },
+                "opts": [
+                    {
+                        "zh": "大规模下总有东西在坏，所以从设计之初就假定故障会发生，并准备好：不丢已提交(WAL+检查点+重放)、自动回到该有的样子(对账)、及时发现并接管(session/lease)——让宕机/重启变成小事",
+                        "en": "At scale something is always breaking, so from the start it assumes failure and prepares: don't lose committed data (WAL+checkpoint+replay), auto-return to the intended shape (reconcile), detect & take over in time (session/lease) — making crashes/restarts trivial",
+                    },
+                    {"zh": "想方设法让故障永远不发生", "en": "Try every means to make failures never happen"},
+                    {"zh": "把故障记录下来，等人工排查修复", "en": "Log failures and wait for humans to investigate and fix"},
+                    {"zh": "为每一种具体故障写一个专门的处理器", "en": "Write a dedicated handler for each specific failure"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "韧性不是“祈祷不出故障”，而是“把故障当正常输入”，提前把不丢/对账/接管三层能力建进系统。这正是电网式的设计哲学",
+                    "en": "Resilience isn't 'pray never to fail' but 'treat failure as normal input', building the three layers (don't-lose / reconcile / take-over) in advance. That's the grid-like design philosophy",
+                },
+            },
+            {
+                "q": {
+                    "zh": "为什么 Milvus 的“恢复”就是“再读一遍”，这有什么好处？",
+                    "en": "Why is Milvus's 'recovery' just 'read it again', and why is that good?",
+                },
+                "opts": [
+                    {
+                        "zh": "因为真相是一条可靠、可重放的日志，恢复=从检查点继续重放，是个确定性、可重复的动作，结果必与崩溃前一致；远胜于“想办法把丢的数据找回来”那种开放式补偿",
+                        "en": "Because the truth is a reliable, replayable log, recovery = resume replaying from the checkpoint, a deterministic repeatable action whose result is necessarily identical to before the crash; far better than open-ended 'figure out how to retrieve lost data' compensation",
+                    },
+                    {"zh": "恢复要从挂掉节点的本地盘把数据拷出来", "en": "Recovery copies data off the dead node's local disk"},
+                    {"zh": "每次恢复都需要人工介入", "en": "Recovery needs manual intervention each time"},
+                    {"zh": "恢复每次跑出来的结果可能不一样", "en": "Recovery may produce a different result each run"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "把“恢复”从玄学变成流水线，是“日志即数据”在容错维度的馈赠。确定性重放(同一段日志同一结果)让崩溃只是“从记号处再读一遍”，不丢、不需灵光一现",
+                    "en": "Turning recovery from dark art into assembly line is 'log as data's gift on fault tolerance. Deterministic replay (same log, same result) makes a crash merely 'read again from the mark' — lossless, no flash of insight needed",
+                },
+            },
+            {
+                "q": {
+                    "zh": "什么是“对账(reconcile)”？为什么“状态驱动”胜过“事件驱动”，又靠什么保证 DDL 不半生效？",
+                    "en": "What is 'reconcile', why does 'state-driven' beat 'event-driven', and what keeps DDL from being half-applied?",
+                },
+                "opts": [
+                    {
+                        "zh": "协调者持续比对“声明的目标”与“观测的实际”、自动纠偏(index inspector 重派、balancer 重分配)，任务可重入；状态驱动只看“差多少”，无论故障序列多离奇都能收敛，无需枚举每种故障；Broadcaster 让 DDL 原子，杜绝半生效",
+                        "en": "Coordinators continuously compare 'declared target' vs 'observed actual' and auto-correct (index inspector re-dispatches, balancer reassigns), with idempotent tasks; state-driven only looks at 'how far off', converging regardless of the failure sequence, no need to enumerate failures; the Broadcaster makes DDL atomic, abolishing half-applied state",
+                    },
+                    {"zh": "对账就是为每种故障触发一个专门处理器", "en": "Reconcile triggers a dedicated handler per failure type"},
+                    {"zh": "对账必须先枚举所有可能的故障", "en": "Reconcile must first enumerate every possible failure"},
+                    {"zh": "DDL 半生效也没关系，能正常工作", "en": "A half-applied DDL is fine and works normally"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "“声明目标+持续对账+幂等任务”是云原生自愈的通用范式(K8s 同源)：不问过程、只看目标，故就健壮。半生效的 DDL 会让集群对“集合是否存在”认知分裂，比丢数据更可怕，故必须原子",
+                    "en": "'Declare target + continuous reconcile + idempotent tasks' is the universal cloud-native self-healing paradigm (same root as K8s): ask not the process, only the goal, hence robust. A half-applied DDL splits the cluster on 'does the collection exist', scarier than losing data, so it must be atomic",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "这是全书最后一课，也是第十二部分“设计专题”的收束。请做一次总回顾：(1) 把六条设计主线串起来——日志即数据、时间戳一致性、存算分离、分而治之、两种语言、故障自愈——说清“故障自愈”是怎么<strong>建立在</strong>前几条之上的(例如它如何复用“日志即数据”和“存算分离”)。(2) 本课说这六条主线背后是“同一种工程智慧”。试用你自己的话把这条智慧总结成一两句话。(3) 学完整本书，请挑一个你最有“啊哈”感的设计，说说它改变了你对“分布式系统该怎么设计”的哪一个固有认知。",
+                "en": "This is the guide's final lesson and the close of Part 12 'design themes'. Do a grand review: (1) string the six throughlines together — log as data, timestamp consistency, storage-compute separation, divide-and-conquer, two languages, failure self-healing — and explain how 'failure self-healing' <strong>builds on</strong> the earlier ones (e.g. how it reuses 'log as data' and 'storage-compute separation'). (2) The lesson says one 'engineering wisdom' lies behind all six. Put that wisdom in your own words, in a sentence or two. (3) Having finished the whole guide, pick the design that gave you the biggest 'aha', and say which fixed belief about 'how distributed systems should be designed' it changed for you.",
+            },
+        ],
+    },
 }
 
 

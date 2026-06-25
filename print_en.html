@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 55 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 56 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
@@ -383,6 +383,7 @@ details[open] > summary { list-style: none; }
   <li>Storage–compute separation: why nodes can be stateless</li>
   <li>Scaling to billions: the art of divide-and-conquer</li>
   <li>Two languages, one system: the C++ kernel / Go orchestration split</li>
+  <li>Failure as the default: how the system heals itself</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -10500,6 +10501,193 @@ interfaces</strong>. Grasp this and Milvus stops being a pile of parts and becom
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
     <li>This lesson says 'a language is a tool, not a faith; let every tier use the handiest tool'. Consider: (1) the C++ kernel 'serves both the query and index-build paths' — what's the benefit of implementing the critical algorithms only once? Is that the same wisdom as tucking volatile algorithms into Knowhere while leaving the stable skeleton in Go? (2) Why is 'boundary design performance's hidden battlefield'? Explain via cgo's 'coarse-grained/zero-copy': what really decides speed is often not an algorithm but how the boundary is designed. (3) Stringing Lessons 51–55 together (log / timestamp / storage-compute / divide-and-conquer / two languages), which more abstract engineering principle do they jointly point to?</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Failure as the default: how the system heals itself</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+The final lesson. The previous five throughlines — log, timestamp, storage-compute separation, divide-and-conquer, two languages — were all about
+"<strong>how to be fast and correct when things are normal</strong>". But a distributed system's real test is never in the normal case; it's
+<strong>when something fails</strong>. This lesson, which also closes the guide, is Milvus's last throughline, the one that best shows its
+resilience: <strong>failure is the default, and the system must heal itself</strong>.</p>
+
+<div class="card analogy"><div class="tag">⚡ An analogy</div>
+<p>Picture a city's power grid: from the start it <strong>assumes "some substation will always fail"</strong>, so the moment power drops somewhere,
+current <strong>automatically reroutes around the fault</strong>, residents barely noticing. It doesn't "pray to never fail" but "<strong>treats
+failure as part of normal operation</strong>", building self-healing into its bones in advance. Toward node crashes, network jitter, and process
+deaths, Milvus takes exactly this grid-like attitude — <strong>failure is not an exception but the default</strong>.</p></div>
+
+<h2>The goal: why "assume failure"</h2>
+<p>For a program on one machine, a crash is a rare event; but once you have dozens or hundreds of nodes, "<strong>at any moment something is
+breaking</strong>" is all but certain — disks fail, networks jitter, processes get OOM-killed, machines get restarted. A system written on the
+optimistic assumption that "all is well" can lose data or hang on any single failure. Milvus does the opposite: <strong>it assumes failure will
+happen from the start</strong>, and prepares three things for it — <strong>a crash loses no committed data, a fault auto-returns to the intended
+shape, a death is detected and taken over in time</strong>. Treating "failure" as a normal input that must be handled, not an accident, is the
+premise of a large system running stably for the long haul.</p>
+
+<p>A counter-example shows how fragile "optimistic assumptions" are: imagine a system keeping the critical info "which node holds which segment"
+in memory but not persisting it. All's well in normal times, but the moment a coordinator process restarts, that info vanishes into thin air — it
+no longer knows where data is or who should do what, and the whole cluster seizes up. Such "<strong>only runs on the happy path</strong>" designs
+may get away with it at small scale, but show their true colors the moment scale grows and a failure hits. Milvus persists critical state into etcd
+and data into object storage and the WAL precisely to turn inevitable events like "restart" and "crash" into trivialities.</p>
+
+<div class="card macro"><div class="tag">🗺️ The big picture</div>
+<p>Split "self-healing" into three capabilities: ① <strong>don't lose</strong> — via WAL + checkpoint + replay, committed writes can always be
+recovered; ② <strong>reconcile</strong> — via coordinators continuously comparing "<strong>the intended shape</strong>" with "<strong>the actual
+shape</strong>", correcting any divergence (rebuild indexes, reassign segments); ③ <strong>detect and take over</strong> — via etcd's session/lease
+to find who's alive and who's dead, then hand the work to someone else. These three tie together every fault-tolerance mechanism the earlier
+lessons taught.</p></div>
+
+<div class="flow">
+  <div class="node"><div class="nt">node dies</div><div class="nd">process crash / machine down</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">lease expires</div><div class="nd">etcd session lapses, detected</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">reassign</div><div class="nd">coordinator hands its segments/tasks to others</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">reload + replay</div><div class="nd">a new node recovers from object storage / log</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">service restored</div><div class="nd">not a byte lost</div></div>
+</div>
+
+<h2>First line of defense: the committed is never lost</h2>
+<p>Self-healing's floor is <strong>losing no data</strong>. This layer rests entirely on Lesson 51's "log as data": a write counts as success once
+in the WAL, and the WAL is reliably stored and replayable. So any node crash, recovery degenerates into the same action — <strong>resume replaying
+the log from the checkpoint</strong> (Lessons 16, 31): a node records how far it consumed, its successor resumes reading from there, the missing
+part fills back in, and the world before and after the crash is identical. Further, <strong>cross-cluster replication</strong> keeps an equally
+replayable copy off-site (Lesson 33), so even a disaster like "the whole datacenter is gone" can be carried by the backup cluster. <strong>Because
+the truth is a reliable log, "recovery" is forever just "read it again", never "figure out how to retrieve lost data"</strong>.</p>
+
+<p>Contrast the two mindsets of "recovery" and the difference is stark. In a system without a reliable log, "what do we do about lost data" is an
+open-ended hard problem — you must devise all kinds of compensation, reconciliation, manual intervention, and may still not patch it whole. In
+Milvus, "recovery" is a <strong>deterministic, repeatable</strong> action: replay the same stretch of log from the checkpoint and the result is
+necessarily identical to before the crash, needing no flash of insight nor ops staff up at midnight firefighting. <strong>Turning "recovery" from a
+dark art into an assembly line</strong> is the greatest gift of "log as data" on the fault-tolerance axis.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>normal consumption</h4><p>the node advances along the log, periodically recording a checkpoint (how far it consumed).</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>crash</h4><p>the process dies; un-flushed in-memory state is gone — but the log remains.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>replay from the checkpoint</h4><p>the successor resumes reading the log from the last checkpoint, recomputing what was lost at the crash.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>catch up</h4><p>replaying to the log's tail, state is identical to before the crash; service resumes.</p></div></div>
+</div>
+
+<h2>Second line of defense: auto-return to the intended shape</h2>
+<p>Not losing isn't enough — failure often makes a cluster <strong>diverge</strong> from its intended state: some segment's index isn't built, some
+node hasn't loaded the segments it should. Milvus's answer is <strong>reconcile</strong>: coordinators continuously compare "<strong>the declared
+target state</strong>" with "<strong>the observed actual state</strong>" and auto-correct any divergence. For instance, DataCoord's index inspector
+periodically sweeps and, finding a sealed segment still lacking an index, <strong>re-dispatches the build task</strong> — so a worker crashing
+mid-build is fine; the next sweep reschedules it (Lesson 21). Or QueryCoord's balancer, finding a node dead and its segments unloaded,
+<strong>reassigns those segments</strong> to living nodes, which reload them from object storage (Lessons 13, 53). This "<strong>declare a target +
+continuous reconcile + idempotent tasks</strong>" pattern is the universal paradigm of cloud-native self-healing: you needn't write a dedicated
+recovery routine for each failure, only let the system <strong>keep pulling reality back toward the ideal</strong>.</p>
+
+<p>This "reconcile" mindset deserves its own savor. The traditional approach is "<strong>event-driven</strong>": whatever failure happens triggers
+the corresponding handling logic — but failure combinations are endlessly varied, you can never write them all, and missing one is a potential
+blind spot. "Reconcile" is "<strong>state-driven</strong>": it doesn't care "what happened", only "how far now diverges from the intended shape",
+then erases the gap. Whatever bizarre failure sequence occurred in between, as long as the system keeps reconciling, it eventually converges to the
+correct state. <strong>This "don't ask the process, only the goal" self-healing is far more robust than writing dedicated remedies for each failure,
+and is the shared soul of cloud-native systems like Kubernetes.</strong></p>
+
+<p>For "reconcile" to hold, there's an implicit requirement: each recovery action must be <strong>idempotent</strong>. A re-dispatched index-build
+task, a reassigned segment load — even if a further failure makes them execute again, must not scramble state: doing it twice equals doing it once.
+Because every step is idempotent, the system dares to "not be sure whether last time finished, so just do it again", and the reconcile loop can
+safely run round after round. <strong>Idempotency + reconcile is the key to self-healing converging steadily rather than fixing itself into ever
+more chaos.</strong></p>
+
+<h2>Third line of defense: detect in time, take over safely</h2>
+<p>Reconcile's premise is <strong>knowing who's alive and who's dead</strong>. That rides on etcd's <strong>session and lease</strong>: each node, on
+coming online, registers a leased session and renews it periodically; once it crashes and can't renew, the lease expires and etcd lets all watchers
+know "<strong>this node is gone</strong>" (Lesson 14), whereupon reconcile and reassignment kick in. And in the "take over" step hides a subtle but
+crucial guarantee: <strong>structural changes must be atomic</strong>. If a create-collection takes effect on only half the shards, the cluster splits
+on "does this collection even exist", far scarier than losing a few rows. So Milvus uses the <strong>Broadcaster</strong> to make DDL an
+"all-or-nothing" atomic broadcast (Lesson 32), abolishing the "half-applied" dirty state. Finally, even <strong>upgrades</strong> fall under
+"failure kept controllable": the index engine negotiates a version "deferring to the weakest node", guaranteeing that during a rolling upgrade every
+node can load newly-built indexes and service isn't interrupted (Lesson 23).</p>
+
+<p>String the three lines of defense together for one complete failover and it's clear: a QueryNode suddenly dies → its etcd lease can't renew and
+expires, so "it's gone" is perceived by all watchers (<strong>detect</strong>) → QueryCoord finds its segments now unloaded, diverged from the
+target state, and reassigns them to living nodes (<strong>reconcile</strong>) → the new node reloads the segments from object storage, replaying the
+latest data from the log if needed (<strong>don't lose</strong>) → within seconds service recovers, users barely noticing, not a byte lost.
+<strong>The three interlocking lines of defense dissolve what could have been a disastrous outage into a silent act of self-repair.</strong></p>
+
+<div class="cols">
+  <div class="col"><h4>❌ Pray never to fail</h4><p>Code on the "all is well" assumption, treating failure as an accident. Result: any single crash / jitter may lose data or hang, more fragile the larger you scale.</p></div>
+  <div class="col"><h4>✅ Assume failure is the default</h4><p>Treat a crash as normal input: WAL backstops loss, reconcile auto-corrects, leases detect and take over. A failure is just "read again + reassign".</p></div>
+</div>
+
+<h2>Closing the guide: six throughlines, one wisdom</h2>
+<p>And with that, the whole guide is done. Looking back, Milvus was long since not a pile of parts but a web woven from six design throughlines:
+<strong>log as data</strong> makes writes fast and degenerates recovery into replay; <strong>the timestamp</strong> makes query-while-write both fresh
+and correct; <strong>storage-compute separation</strong> makes nodes stateless and elastic; <strong>divide-and-conquer</strong> lets billions of
+vectors still be searched in milliseconds; <strong>two languages</strong> win both performance and dev velocity; <strong>failure self-healing</strong>
+lets all of it stand firm in the real world's storms. And behind these six is one and the same engineering wisdom: <strong>split a complex system
+into parts with clear boundaries and distinct duties, connect them with the thinnest, most reliable interfaces possible (one log, one timestamp,
+one storage tier, one bridge), then assume every part may fail and let the whole heal itself.</strong> Grasp this web and what you've understood is
+not just Milvus, but a whole way of thinking about building large-scale distributed systems. May it be remembered often on the engineering road
+ahead.</p>
+
+<p>If this guide has done its job, then the next time you face any large-scale system, what you see will no longer be a heap of unfamiliar jargon
+but a set of design choices you can interrogate: where does its truth live? How does it order, how does it tolerate faults? What did it decouple
+from what? And with how thin an interface did it connect them? <strong>Read any system with these questions and you hold the key to turning
+complexity into clarity.</strong> Thank you for reading this far — the journey ends here, but your own engineering road is only just unfolding.</p>
+
+<div class="card key"><div class="tag">📌 Key points</div>
+<ul>
+  <li><strong>Failure is the default</strong>: at scale "something is always breaking", so a system written on optimistic assumptions is inevitably fragile — assume failure from the start.</li>
+  <li><strong>Don't lose</strong>: WAL + checkpoint + replay, the committed is never lost; recovery = read again from the checkpoint; cross-cluster replication adds off-site insurance.</li>
+  <li><strong>Reconcile</strong>: coordinators continuously compare target vs actual and auto-correct (re-dispatch indexes, reassign segments), backstopped by idempotent tasks.</li>
+  <li><strong>Detect & atomicity</strong>: session/lease detect liveness, the Broadcaster makes DDL atomic (no half-applied state), index version negotiation keeps rolling upgrades uninterrupted.</li>
+  <li><strong>Tradeoff & closing</strong>: the cost is reconcile/checkpoint overhead and "eventual, not instant" recovery; the reward is durability, self-healing, no downtime — and the shared engineering wisdom of all six throughlines.</li>
+</ul></div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. What does 'assume failure is the default' mean, and which three things does Milvus prepare for it?</div>
+  <ol class="opts">
+    <li>At scale something is always breaking, so from the start it assumes failure and prepares: don't lose committed data (WAL+checkpoint+replay), auto-return to the intended shape (reconcile), detect & take over in time (session/lease) — making crashes/restarts trivial</li>
+    <li>Try every means to make failures never happen</li>
+    <li>Log failures and wait for humans to investigate and fix</li>
+    <li>Write a dedicated handler for each specific failure</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: A</strong>. Resilience isn't 'pray never to fail' but 'treat failure as normal input', building the three layers (don't-lose / reconcile / take-over) in advance. That's the grid-like design philosophy</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Why is Milvus's 'recovery' just 'read it again', and why is that good?</div>
+  <ol class="opts">
+    <li>Recovery copies data off the dead node's local disk</li>
+    <li>Because the truth is a reliable, replayable log, recovery = resume replaying from the checkpoint, a deterministic repeatable action whose result is necessarily identical to before the crash; far better than open-ended 'figure out how to retrieve lost data' compensation</li>
+    <li>Recovery may produce a different result each run</li>
+    <li>Recovery needs manual intervention each time</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. Turning recovery from dark art into assembly line is 'log as data's gift on fault tolerance. Deterministic replay (same log, same result) makes a crash merely 'read again from the mark' — lossless, no flash of insight needed</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. What is 'reconcile', why does 'state-driven' beat 'event-driven', and what keeps DDL from being half-applied?</div>
+  <ol class="opts">
+    <li>Reconcile must first enumerate every possible failure</li>
+    <li>Reconcile triggers a dedicated handler per failure type</li>
+    <li>A half-applied DDL is fine and works normally</li>
+    <li>Coordinators continuously compare 'declared target' vs 'observed actual' and auto-correct (index inspector re-dispatches, balancer reassigns), with idempotent tasks; state-driven only looks at 'how far off', converging regardless of the failure sequence, no need to enumerate failures; the Broadcaster makes DDL atomic, abolishing half-applied state</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. 'Declare target + continuous reconcile + idempotent tasks' is the universal cloud-native self-healing paradigm (same root as K8s): ask not the process, only the goal, hence robust. A half-applied DDL splits the cluster on 'does the collection exist', scarier than losing data, so it must be atomic</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This is the guide's final lesson and the close of Part 12 'design themes'. Do a grand review: (1) string the six throughlines together — log as data, timestamp consistency, storage-compute separation, divide-and-conquer, two languages, failure self-healing — and explain how 'failure self-healing' <strong>builds on</strong> the earlier ones (e.g. how it reuses 'log as data' and 'storage-compute separation'). (2) The lesson says one 'engineering wisdom' lies behind all six. Put that wisdom in your own words, in a sentence or two. (3) Having finished the whole guide, pick the design that gave you the biggest 'aha', and say which fixed belief about 'how distributed systems should be designed' it changed for you.</li>
   </ul>
 </div>
 </div>

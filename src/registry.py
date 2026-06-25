@@ -75,4 +75,5 @@ CONTENT = {
     "53-design-storage-compute-separation.html": part12.LESSON_53,
     "54-design-scale-to-billions.html": part12.LESSON_54,
     "55-design-two-languages.html": part12.LESSON_55,
+    "56-design-failure-as-default.html": part12.LESSON_56,
 }
