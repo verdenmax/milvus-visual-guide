@@ -2302,6 +2302,67 @@ QUIZZES = {
             },
         ],
     },
+    "35-mmap-and-chunks.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "Milvus 把一个段按“列（字段）”而不是按“行”来组织内存，主要好处是什么？",
+                    "en": "Milvus organizes a segment's memory by 'column (field)' rather than by 'row'. What's the main benefit?",
+                },
+                "opts": [
+                    {"zh": "一次检索只读用到的几列、数据连续、可用 SIMD 并行；按行存则要跳读并把同行无关字段拽进缓存，浪费带宽", "en": "A search reads only the few columns it needs, contiguously, with SIMD parallelism; row storage forces stride-reads that drag unrelated same-row fields into cache, wasting bandwidth"},
+                    {"zh": "列存能让磁盘占用更小", "en": "Column storage makes disk usage smaller"},
+                    {"zh": "列存让每条记录的写入更快", "en": "Column storage makes writing each record faster"},
+                    {"zh": "列存不需要任何索引", "en": "Column storage needs no index at all"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "向量检索的特点是“对少数列做大量同质运算”（算距离、比阈值）。列存把同一字段的值连续摆放，查询只碰需要的列、顺序扫、缓存命中高，还能一条 SIMD 指令同时算 8/16 个浮点。按行存则要在内存里跳着读，每步顺带把同行几十个用不上的字段拉进缓存，白白浪费带宽——这正是分析/检索类系统普遍选列存的原因。",
+                    "en": "Vector search does 'heavy homogeneous ops on a few columns' (distance, thresholds). Column storage lays a field's values contiguously, so a query touches only needed columns, scans sequentially with high cache hits, and computes 8/16 floats per SIMD instruction. Row storage strides through memory, dragging dozens of unused same-row fields into cache each step — wasted bandwidth. That's why analytics/search systems converge on columnar.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "为什么 Milvus 把一列再切成多个定长“块（chunk）”，而不是用一整块连续内存装下整列？",
+                    "en": "Why does Milvus cut a column into many fixed-size 'chunks' instead of one contiguous block for the whole column?",
+                },
+                "opts": [
+                    {"zh": "大块连续内存难分配，且 growing 段不断追加；分块后写满一块再要一块、老块不动，内存也能按块分配/换入换出", "en": "Large contiguous allocations are hard, and growing segments keep appending; with chunks you fill one then request another, old blocks stay put, and memory is allocated/swapped per block"},
+                    {"zh": "因为分块能让数据自动加密", "en": "Because chunking auto-encrypts the data"},
+                    {"zh": "因为一列最多只能放一个 chunk", "en": "Because a column may hold at most one chunk"},
+                    {"zh": "因为分块后就不再需要 mmap", "en": "Because chunking removes the need for mmap"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "一列可能有上百万行，硬塞进一整块连续内存有两难：大块连续内存在碎片下可能根本分不出来；growing 段还在不断追加，每来一批就整体重分配、搬移，代价极高。分块把列切成定长小块：追加只需再要一块、老块原地不动；内存分配、释放、换入换出都以块为单位，粒度刚好；遍历就是一块接一块扫，块内连续、SIMD 友好。由 ChunkedColumnInterface 抽象、ChunkedColumn 等实现。",
+                    "en": "A column may have millions of rows. One contiguous block has two problems: under fragmentation such a slab may not exist; and a growing segment keeps appending, so reallocating/copying the whole thing per batch is hugely costly. Chunking cuts the column into fixed-size blocks: append just asks for another, old blocks stay put; alloc/free/swap happen per block at just-right granularity; scanning walks block by block, each contiguous and SIMD-friendly. Abstracted by ChunkedColumnInterface, implemented by ChunkedColumn etc.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "用 mmap 把 binlog 映射进内存，相比直接 read() 整份读进堆，关键优势是什么？",
+                    "en": "mmap-ing binlog into memory vs read()-ing it wholesale into heap — what's the key advantage?",
+                },
+                "opts": [
+                    {"zh": "数据按需缺页调入、冷页由 OS 换出，于是一个节点能加载总量超过物理内存的段；代价是冷访问的磁盘延迟", "en": "Data faults in on demand and cold pages are evicted by the OS, so a node can load segments totaling more than physical RAM; the cost is cold-access disk latency"},
+                    {"zh": "mmap 能让数据永远不丢、无需磁盘", "en": "mmap makes data never lost and needs no disk"},
+                    {"zh": "mmap 把所有数据一次性全压进物理内存，所以更快", "en": "mmap crams all data into physical RAM at once, so it's faster"},
+                    {"zh": "mmap 让 Milvus 不再需要 binlog 文件", "en": "mmap removes the need for binlog files"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "read() 把文件整份拷进堆，能加载的数据被物理内存卡死。mmap 则把文件映射进虚拟地址空间：访问到某页才缺页、由 OS 读进页缓存，热页常驻、冷页在内存吃紧时被 OS 换出。于是冷数据躺在磁盘不占内存，节点能装下远超 RAM 的数据，且换页逻辑全由内核自动处理、Milvus 一行都不用写。代价是冷页首次访问要等一次磁盘 I/O。是否对某字段启用由 EnableMmap 配置。",
+                    "en": "read() copies the file wholesale into heap, capping loadable data at physical RAM. mmap maps the file into virtual address space: a page faults in only when touched, the OS reads it into page cache, hot pages stay resident, cold pages get evicted under pressure. So cold data rests on disk taking no RAM, a node holds far more than RAM, and the kernel handles all paging — Milvus writes none. The cost: a cold page's first access waits one disk I/O. Per-field toggle via EnableMmap.",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课说 mmap 是“用一点点延迟换巨大容量”，并把“什么数据在内存、什么在磁盘”外包给了操作系统。请结合第 18 课（binlog 落盘）和第 34 课（中央厨房）谈谈：(1) 一个内存只有 64GB 的 QueryNode，为什么能服务总量上百 GB 的段？热/冷数据各落在哪里？(2) mmap 模式下为什么常有“预热”现象（首次查冷段偏慢、之后变快）？(3) 如果你的业务要求每一次查询都低延迟、无抖动，你会倾向 mmap 还是纯内存加载？为什么？这与第 30 课“新鲜度/一致性 vs 性能”的取舍有何相通之处？",
+                "en": "This lesson calls mmap 'a little latency for huge capacity', outsourcing 'what's in RAM vs on disk' to the OS. Tie it to Lesson 18 (binlog on disk) and Lesson 34 (central kitchen): (1) Why can a QueryNode with only 64GB RAM serve segments totaling hundreds of GB? Where do hot/cold data live? (2) Why is there often a 'warm-up' effect under mmap (first query on a cold segment is slow, then fast)? (3) If your workload demands low, jitter-free latency on every query, would you prefer mmap or pure in-memory loading, and why? How does this echo Lesson 30's 'freshness/consistency vs performance' trade-off?",
+            },
+        ],
+    },
 }
 
 

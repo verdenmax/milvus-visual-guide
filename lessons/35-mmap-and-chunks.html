@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>35 · mmap 与列式分块 / mmap &amp; chunked columns - Milvus 图解教程</title>
+<meta name="description" content="第八部分 · C++ 内核｜mmap 与列式分块 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="35 · mmap 与列式分块 / mmap &amp; chunked columns - Milvus 图解教程">
+<meta property="og:description" content="第八部分 · C++ 内核｜mmap 与列式分块 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="35 · mmap 与列式分块 / mmap &amp; chunked columns - Milvus 图解教程">
+<meta name="twitter:description" content="第八部分 · C++ 内核｜mmap 与列式分块 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.timeline .tl-row { display: flex; align-items: flex-start; gap: .6rem; padding: .12rem 0; }
+.timeline .tl-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: .45rem; }
+.timeline .tl-t { font-family: ui-monospace, monospace; font-weight: 700; color: var(--accent-ink); min-width: 2.4rem; font-size: .82rem; flex-shrink: 0; margin-top: .18rem; }
+.timeline .tl-c { font-size: .9rem; color: var(--muted); }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第八部分 · C++ 内核</span><span class="lang-en">Part 8 · C++ core internals</span></span>
+    <span class="pill">35 / 35</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:100%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第八部分 · C++ 内核</span><span class="lang-en">Part 8 · C++ core internals</span></div>
+    <h1><span class="lang-zh">mmap 与列式分块</span><span class="lang-en">mmap &amp; chunked columns</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+上一课我们拿到了 C++ 内核的整张地图。这一课把镜头推近，钻进其中一块地基——<strong>mmap 子模块</strong>（<span class="inline">internal/core/src/mmap</span>）。它回答一个最朴素却最关键的问题：一个 sealed 段的数据，<strong>在内存里到底长什么样</strong>？答案藏在两个词里——<strong>列式</strong>（按字段组织）与<strong>分块</strong>（chunked）；再加上一招 <strong>mmap</strong>，让一台机器能装下比物理内存还大的数据。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 类比</div>
+  把一个段想成一座<strong>图书馆</strong>。<strong>按行存</strong>像把每位读者的借阅记录订成一本厚册子——想统计"所有人借过的某一类书"，你得翻遍每本册子里那一栏。<strong>按列存</strong>则像按"书名""作者""日期"分别建卡片柜：要查作者，直接拉开"作者"那一柜，<strong>一抽到底、不碰别的</strong>。
+  而 <strong>mmap</strong> 就像图书馆的规矩：书<strong>平时都待在书架上</strong>（磁盘），你只把<strong>正在读的那几页</strong>搬到书桌（内存）；管理员（操作系统）随时按需取书、桌子满了就把久不看的放回架上。于是<strong>书架能放的书，远多于书桌能摊开的书</strong>——这正是"数据大于内存"的秘密。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观视角</div>
+  一句话：<strong>Milvus 把一个段按字段切成"列"，每列再切成若干"块"(chunk)，由 <span class="mono">ChunkedColumn</span> 家族表示；数据可选择用 <span class="mono">mmap</span> 映射进虚拟内存，靠操作系统的页缓存按需调入，从而支撑超过物理内存的数据量</strong>。列式让检索只碰需要的字段，分块让内存可逐块管理，mmap 让冷数据留在磁盘、热数据留在缓存。
+</div>
+
+<h2>为什么按列存，而不是按行存</h2>
+<p>要理解段的内存布局，先得想清楚一件事：一次向量搜索，<strong>到底要读哪些数据</strong>？答案是——<strong>一个向量字段</strong>（拿来算距离）加上<strong>少数几个标量字段</strong>（拿来做过滤，比如 <span class="mono">age &gt; 30</span>）。一个段可能有几十个字段，但单次查询往往只关心其中两三个。这就决定了"<strong>按列存</strong>"的天然优势：把同一字段的所有值<strong>连续地</strong>摆在一起，查询时只把用到的那几列读进来，<strong>其余字段一个字节都不碰</strong>。</p>
+<p>反过来看"<strong>按行存</strong>"：一条记录的所有字段挨在一起，一行接一行。这对"读整条记录"很友好，却对向量检索很不友好——为了取出某一列的全部取值，你得在内存里<strong>跳着读</strong>，每跳一步还顺带把同行里用不上的几十个字段也拽进了 CPU 缓存，白白浪费带宽。而向量检索恰恰是"<strong>对某一列做成千上万次同样的运算</strong>"的典型场景：算距离、比阈值、压缩解压……</p>
+<p>列式布局把这件事做到了极致：同一列的数据类型相同、紧挨排列，于是可以<strong>一次加载一大片、用 SIMD 指令并行算</strong>（一条指令同时处理 8 个、16 个浮点数），CPU 缓存命中率也高得多。这就是为什么几乎所有面向分析与检索的系统——从列式数据库到向量库——都不约而同地选择列存。Milvus 的段，正是把每个字段独立成一"列"，交给 <span class="inline">internal/core/src/mmap</span> 下的 <span class="mono">ChunkedColumn</span> 家族来承载。下面这张表把两种布局摆在一起看，差别一目了然。</p>
+
+<p>不妨用一个具体数字感受差距。设想一个段有 100 万行、每行 50 个字段，而一次过滤只需读 1 个标量列。按行存时，为了扫这一列，CPU 要在内存里以"每行一大步"的方式跳 100 万次，每步还把同行另外 49 个字段的数据一并拉进缓存行——真正有用的不到 <strong>1/50</strong>，其余全是被白白搬运又立刻丢弃的"过路数据"。按列存时，这一列的 100 万个值<strong>紧挨成一条</strong>，CPU 顺序扫过、缓存行里装的<strong>全是有用数据</strong>，还能让向量化指令一次吞下一大把。两种布局读的是同样的逻辑数据，物理上的代价却可能差出<strong>一个数量级</strong>。这也是为什么"列式"不是锦上添花的小优化，而是向量检索系统的<strong>地基性选择</strong>——它从根上决定了热路径能跑多快。</p>
+
+<table class="t">
+  <tr><th>维度</th><th>按行存（row-oriented）</th><th>按列存（column-oriented，Milvus 段）</th></tr>
+  <tr><td>组织方式</td><td>一条记录的所有字段挨在一起，逐行排列</td><td>同一字段的所有取值挨在一起，逐列排列</td></tr>
+  <tr><td>取某一列全部值</td><td>跳着读，顺带拽进无关字段（污染缓存）</td><td>连续读一整片，只碰这一列</td></tr>
+  <tr><td>向量检索/过滤</td><td>不友好：同一运算要在分散内存上重复</td><td>友好：一大片连续数据 + SIMD 并行</td></tr>
+  <tr><td>适合的场景</td><td>OLTP：读写整条记录</td><td>OLAP/向量检索：对少数列做大量同质运算</td></tr>
+  <tr><td>Milvus 中的体现</td><td>—</td><td>每个字段一列，由 <span class="mono">ChunkedColumnInterface</span> 表示</td></tr>
+</table>
+
+<h2>一列是怎么切成块的：chunked column</h2>
+<p>列存解决了"按字段组织"，但还有个现实问题：一个段可能有几十万、上百万行，<strong>一列的数据会很大</strong>。如果硬要把一整列塞进<strong>一块连续内存</strong>，会带来两个麻烦：一是大块连续内存难分配（内存碎片下可能根本找不到这么大一片）；二是 growing 段还在<strong>不断追加</strong>新数据，每来一批就重新分配、整体搬移，代价高得离谱。Milvus 的解法是<strong>分块（chunk）</strong>：把一列切成若干<strong>定长的小块</strong>，一列 = 一串 chunk。</p>
+<p>这套抽象的顶层是 <span class="inline">internal/core/src/mmap/ChunkedColumnInterface.h</span> 里的 <span class="mono">ChunkedColumnInterface</span>——一个抽象基类，定义了"一列该提供哪些能力"：<span class="mono">NumChunks()</span>（我有几块）、<span class="mono">NumRows()</span>（一共几行）、按块取数据、按行号定位到"第几块的第几个"等等。具体实现是 <span class="inline">ChunkedColumn.h</span> 里的一个<strong>类族</strong>，按字段类型分工：定长数据（如 int64、float 向量）用 <span class="mono">ChunkedColumn</span>；变长数据（如 varchar、JSON）用 <span class="mono">ChunkedVariableColumn</span>；数组、向量数组则有 <span class="mono">ChunkedArrayColumn</span>、<span class="mono">ChunkedVectorArrayColumn</span>。它们都继承自 <span class="mono">ChunkedColumnBase</span>，共享"分块"的骨架，只在"一个值怎么编码"上各有不同。</p>
+<p>每个块里装的就是 <span class="inline">ChunkData.h</span> 定义的 <span class="mono">FixedLengthChunk</span>（定长）或 <span class="mono">VariableLengthChunk</span>（变长）。分块带来的好处很实在：<strong>growing 段追加</strong>时，写满一块就再要一块，老块原地不动、无需搬移；<strong>内存管理</strong>按块进行，分配、释放、甚至换入换出都以块为单位，粒度刚刚好；上层算子遍历一列时，就是"<strong>一块接一块地扫</strong>"，每块内部又是连续内存、对 SIMD 友好。所以你可以把一列想成一列<strong>抽屉柜</strong>：柜子（列）逻辑上是一个整体，但物理上由一格格抽屉（chunk）拼成，要哪行就算出它在第几格、第几个位置。下面这张分层图把"列 → 块 → 块内数据"的关系画出来。</p>
+
+<p>这里还有一个常被忽略却很关键的细节：<strong>定长与变长的处理方式完全不同</strong>。对于定长字段（比如一个 128 维的 float 向量，每行恒占 512 字节），定位第 k 行简单到只是一次乘法——块内偏移 = k × 单行字节数，<strong>直接算出地址、一步取到</strong>。但对于变长字段（比如长短不一的 varchar），就没法"乘一下"得到地址，因为每行长度都不一样。<span class="mono">ChunkedVariableColumn</span> 的做法是<strong>另存一张偏移表</strong>：先记下每个值在数据区里的起止位置，取第 k 个值时<strong>先查偏移表、再按偏移去数据区取那一段</strong>。这就是为什么变长列要单独一个类——它多了"<strong>偏移索引</strong>"这层间接。理解了这点，你就明白 <span class="mono">ChunkedColumn</span> 家族为什么按字段类型分了这么多子类：<strong>不是为了好看，而是因为"一个值怎么编码、怎么定位"这件事，定长和变长、标量和数组本就该用不同策略</strong>。把这层差异交给类族各自处理，上层算子就能用统一的 <span class="mono">ChunkedColumnInterface</span> 接口、不必关心底下究竟是哪种编码——这正是抽象基类的价值所在。</p>
+
+<div class="layers">
+  <div class="layer l-main"><div class="lh"><span class="badge">列</span><span class="name">ChunkedColumnInterface（一个字段在段内的全部取值）</span></div><div class="ld">提供 NumChunks()/NumRows()/按行定位；按类型分 ChunkedColumn(定长) / ChunkedVariableColumn(变长) 等</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">块</span><span class="name">chunk × N（定长小块，一列切成一串）</span></div><div class="ld">growing 追加=写满一块再要一块；内存按块分配/换入换出；块内连续、SIMD 友好</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">块内数据</span><span class="name">FixedLengthChunk / VariableLengthChunk（ChunkData.h）</span></div><div class="ld">定长直接定址；变长另存偏移表，先查偏移再取值</div></div>
+</div>
+
+<h2>mmap：让数据大于内存</h2>
+<p>现在到了最精彩的一招。段的原始数据，最终是以 <strong>binlog 文件</strong>的形式落在磁盘上的（第 18 课）。当 QueryNode 加载一个段时，有两种把这些列数据放进内存的方式。第一种是老老实实 <span class="mono">read()</span>：把文件内容<strong>整份拷进堆内存</strong>。简单直接，但有个硬上限——<strong>一台机器能加载的数据，被物理内存卡死了</strong>。内存 64GB，就装不下 100GB 的段。</p>
+<p>第二种就是 <strong>mmap</strong>：不拷贝，而是把 binlog 文件<strong>映射</strong>进进程的<strong>虚拟地址空间</strong>。映射完成后，这段数据看起来就像一片普通内存，C++ 代码照常按地址访问；但<strong>真正的数据并不立刻进物理内存</strong>。只有当代码第一次访问到某一页时，CPU 触发一次<strong>缺页中断</strong>，操作系统才把那一页从磁盘读进<strong>页缓存</strong>（page cache）。访问过的热页留在缓存里，下次直接命中；久不访问的冷页，在内存吃紧时被操作系统<strong>悄悄换出</strong>。</p>
+<p>这一下就打破了"数据必须 ≤ 内存"的枷锁：一个节点可以加载<strong>总量远超物理内存</strong>的段——冷数据安静地躺在磁盘上不占内存，只有真正被查到的热数据才占用页缓存，换入换出全由操作系统这位"老管家"自动打理，Milvus 自己<strong>一行换页逻辑都不用写</strong>。代价当然有：访问冷页要等一次磁盘 I/O（缺页的延迟），所以 mmap 适合<strong>冷热分明、内存放不下全部</strong>的场景，是一种"用一点点延迟换巨大容量"的划算交易。要不要对某个字段启用 mmap，是<strong>可配置</strong>的——cgo 入口 <span class="inline">internal/core/src/segcore/load_field_data_c.h</span> 的 <span class="mono">EnableMmap(...)</span> 就是 Go 侧在加载字段数据时拨动的那个开关。下面用一条流程把"带 mmap 加载并访问一列"走一遍。</p>
+
+<p>值得停下来体会一下这套设计的"<strong>四两拨千斤</strong>"：mmap 之所以优雅，是因为它把"<strong>什么数据该在内存、什么该在磁盘</strong>"这个极难的决策，整个<strong>外包给了操作系统</strong>。操作系统几十年来在页缓存、预读、换出算法上的积累，比任何应用自己写一套缓存都更成熟、更省心。Milvus 只需说一句"把这个文件映射进来"，剩下的冷热判断、换入换出、内存压力下的取舍，全由内核按全局视角自动完成。这也解释了一个实践要点：mmap 模式下，<strong>第一次查询某个冷段往往偏慢</strong>（要把页从磁盘缺页调进来），而<strong>反复查询的热段则几乎和纯内存一样快</strong>（页都在缓存里）——这就是所谓的"<strong>预热</strong>"现象。对运维而言，这意味着可以用<strong>较小的内存</strong>扛住<strong>大得多的数据集</strong>，代价是接受冷数据首次访问的延迟抖动；要不要这笔交易，取决于数据的冷热分布与延迟要求。回到第 34 课说的"中央厨房"：mmap 就像厨房不必把所有食材都堆在操作台上，而是大部分放冷库（磁盘）、要用时才取到台面（页缓存）——台面虽小，能做的菜却不受台面大小的限制。</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>加载字段（EnableMmap）</h4><p>Go 经 cgo 调 <span class="mono">load_field_data_c.h</span>，对该字段开启 mmap，而非整份读进堆。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>映射 binlog 文件</h4><p>把磁盘上的列数据 <span class="mono">mmap</span> 进虚拟地址空间——此刻并不占物理内存。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>按需缺页调入</h4><p>算子访问到某 chunk 的某一页时触发缺页，OS 把该页读入<strong>页缓存</strong>。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>冷页自动换出</h4><p>内存吃紧时，久未访问的冷页被 OS 换出；热页常驻。数据总量可远超内存。</p></div></div>
+</div>
+
+<h2>谁来分配这些内存：MmapChunkManager</h2>
+<p>最后补一块拼图：这些 mmap 出来的内存块，<strong>谁在统一调度</strong>？答案是 <span class="inline">internal/core/src/storage/MmapChunkManager.h</span> 里的 <span class="mono">MmapChunkManager</span>。它像一位"<strong>仓库总管</strong>"，向上层提供 <span class="mono">Allocate(...)</span> 申请一块 mmap 背书的内存来安放 chunk；底下由 <span class="mono">MmapBlocksHandler</span> 按需切出<strong>定长小块</strong>（<span class="mono">AllocateFixSizeBlock()</span>）或<strong>大块</strong>（<span class="mono">AllocateLargeBlock(size)</span>），并用一个 <span class="mono">BlockType</span> 区分两类用途。</p>
+<p>把它独立成一个"总管"，好处是<strong>集中管控</strong>：所有走 mmap 的内存都从这一个口子出，方便统一限额、统计用量、按块回收，避免到处各自 mmap 导致难以追踪。再往上一点还有一层<strong>缓存层</strong>（cachinglayer）与 <span class="mono">PinWrapper</span> 的设计：当某个 chunk 正被一次计算使用时，会被"<strong>钉住</strong>"（pin）在缓存里，保证它不会在算到一半时被换出；算完再松开，让它重新成为可被换出的普通冷页。这一钉一松，正是"<strong>既要省内存、又要保证正在用的数据不丢</strong>"的精细平衡。把这些串起来，你就看清了一个段的数据在内存里的全貌：<strong>按列组织、逐块切分、可选 mmap、由 MmapChunkManager 统一分配、用缓存与 pin 守护热数据</strong>。下一课（第 36 课）我们就让 expr/exec 引擎在这些列式分块上真正跑起来——看一次查询是怎么"算"出来的。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>列式</strong>：段按字段切成列，检索只碰需要的几列、连续读、SIMD 友好；对照按行存的"跳读 + 缓存污染"。</li>
+    <li><strong>分块</strong>：一列 = 一串定长 chunk，由 <span class="mono">ChunkedColumnInterface</span> 抽象、<span class="mono">ChunkedColumn</span>/<span class="mono">ChunkedVariableColumn</span> 等实现；利于 growing 追加与按块内存管理。</li>
+    <li><strong>mmap</strong>：把 binlog 映射进虚拟内存、按需缺页、冷页换出，让一个节点装下<strong>大于物理内存</strong>的数据；代价是冷访问的磁盘延迟，按字段经 <span class="mono">EnableMmap</span> 配置。</li>
+    <li><strong>统一分配</strong>：<span class="mono">MmapChunkManager</span> 集中分配 mmap 内存块；cachinglayer 的 <span class="mono">PinWrapper</span> 在计算期间钉住热 chunk 防止被换出。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. Milvus 把一个段按“列（字段）”而不是按“行”来组织内存，主要好处是什么？</div>
+  <ol class="opts">
+    <li>列存让每条记录的写入更快</li>
+    <li>列存不需要任何索引</li>
+    <li>列存能让磁盘占用更小</li>
+    <li>一次检索只读用到的几列、数据连续、可用 SIMD 并行；按行存则要跳读并把同行无关字段拽进缓存，浪费带宽</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。向量检索的特点是“对少数列做大量同质运算”（算距离、比阈值）。列存把同一字段的值连续摆放，查询只碰需要的列、顺序扫、缓存命中高，还能一条 SIMD 指令同时算 8/16 个浮点。按行存则要在内存里跳着读，每步顺带把同行几十个用不上的字段拉进缓存，白白浪费带宽——这正是分析/检索类系统普遍选列存的原因。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. 为什么 Milvus 把一列再切成多个定长“块（chunk）”，而不是用一整块连续内存装下整列？</div>
+  <ol class="opts">
+    <li>因为一列最多只能放一个 chunk</li>
+    <li>因为分块能让数据自动加密</li>
+    <li>因为分块后就不再需要 mmap</li>
+    <li>大块连续内存难分配，且 growing 段不断追加；分块后写满一块再要一块、老块不动，内存也能按块分配/换入换出</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。一列可能有上百万行，硬塞进一整块连续内存有两难：大块连续内存在碎片下可能根本分不出来；growing 段还在不断追加，每来一批就整体重分配、搬移，代价极高。分块把列切成定长小块：追加只需再要一块、老块原地不动；内存分配、释放、换入换出都以块为单位，粒度刚好；遍历就是一块接一块扫，块内连续、SIMD 友好。由 ChunkedColumnInterface 抽象、ChunkedColumn 等实现。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 用 mmap 把 binlog 映射进内存，相比直接 read() 整份读进堆，关键优势是什么？</div>
+  <ol class="opts">
+    <li>mmap 让 Milvus 不再需要 binlog 文件</li>
+    <li>mmap 能让数据永远不丢、无需磁盘</li>
+    <li>mmap 把所有数据一次性全压进物理内存，所以更快</li>
+    <li>数据按需缺页调入、冷页由 OS 换出，于是一个节点能加载总量超过物理内存的段；代价是冷访问的磁盘延迟</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。read() 把文件整份拷进堆，能加载的数据被物理内存卡死。mmap 则把文件映射进虚拟地址空间：访问到某页才缺页、由 OS 读进页缓存，热页常驻、冷页在内存吃紧时被 OS 换出。于是冷数据躺在磁盘不占内存，节点能装下远超 RAM 的数据，且换页逻辑全由内核自动处理、Milvus 一行都不用写。代价是冷页首次访问要等一次磁盘 I/O。是否对某字段启用由 EnableMmap 配置。</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>本课说 mmap 是“用一点点延迟换巨大容量”，并把“什么数据在内存、什么在磁盘”外包给了操作系统。请结合第 18 课（binlog 落盘）和第 34 课（中央厨房）谈谈：(1) 一个内存只有 64GB 的 QueryNode，为什么能服务总量上百 GB 的段？热/冷数据各落在哪里？(2) mmap 模式下为什么常有“预热”现象（首次查冷段偏慢、之后变快）？(3) 如果你的业务要求每一次查询都低延迟、无抖动，你会倾向 mmap 还是纯内存加载？为什么？这与第 30 课“新鲜度/一致性 vs 性能”的取舍有何相通之处？</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Last lesson handed us the whole map of the C++ core. Now we zoom into one piece of the foundation — the <strong>mmap submodule</strong> (<span class="inline">internal/core/src/mmap</span>). It answers a plain but crucial question: what does a sealed segment's data <strong>actually look like in memory</strong>? The answer lives in two words — <strong>columnar</strong> (organized by field) and <strong>chunked</strong> — plus one trick, <strong>mmap</strong>, that lets one machine hold more data than physical RAM.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Picture a segment as a <strong>library</strong>. <strong>Row storage</strong> is like binding each reader's borrowing record into a thick booklet — to tally "everyone who borrowed a certain genre" you must flip through every booklet's one column. <strong>Column storage</strong> instead files cards by "title", "author", "date": to query authors you pull open the "author" drawer and <strong>scan it end to end, touching nothing else</strong>.
+  And <strong>mmap</strong> is the library's rule: books <strong>stay on the shelves</strong> (disk); you only carry <strong>the few pages you're reading</strong> to your desk (RAM); the librarian (the OS) fetches on demand and reshelves what's long unused when the desk fills up. So <strong>the shelves hold far more than the desk can spread out</strong> — exactly the secret of "data larger than memory".
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>Milvus cuts a segment by field into "columns", cuts each column into fixed-size "chunks", represented by the <span class="mono">ChunkedColumn</span> family; data can be <span class="mono">mmap</span>'d into virtual memory and paged in on demand by the OS page cache, supporting more data than physical RAM</strong>. Columnar means a search touches only the fields it needs; chunking means memory is managed block by block; mmap keeps cold data on disk and hot data in cache.
+</div>
+
+<h2>Why columnar, not row-oriented</h2>
+<p>To understand a segment's memory layout, first ask: what does one vector search actually read? The answer — <strong>one vector field</strong> (to compute distance) plus <strong>a few scalar fields</strong> (to filter, e.g. <span class="mono">age &gt; 30</span>). A segment may have dozens of fields, but a single query usually cares about two or three. That dictates the natural advantage of <strong>column storage</strong>: lay all values of one field <strong>contiguously</strong> together, read only the columns you use, and <strong>never touch a byte of the rest</strong>.</p>
+<p>Contrast <strong>row storage</strong>: a record's fields sit together, row after row. Great for "read a whole record", but bad for vector search — to pull out one column's values you must <strong>stride through memory</strong>, and each step drags dozens of unused same-row fields into the CPU cache, wasting bandwidth. Yet vector search is the textbook case of "<strong>do the same operation thousands of times over one column</strong>": compute distance, compare thresholds, (de)compress…</p>
+<p>Columnar layout takes this to the limit: a column's values share one type and sit adjacent, so you can <strong>load a big slab at once and compute with SIMD</strong> (one instruction over 8 or 16 floats), with far better cache hit rates. That's why nearly every analytics- and search-oriented system — from columnar databases to vector stores — converges on column storage. A Milvus segment makes each field its own "column", carried by the <span class="mono">ChunkedColumn</span> family under <span class="inline">internal/core/src/mmap</span>. The table below puts the two layouts side by side.</p>
+
+<table class="t">
+  <tr><th>Dimension</th><th>Row-oriented</th><th>Column-oriented (Milvus segment)</th></tr>
+  <tr><td>Organization</td><td>all fields of one record together, row by row</td><td>all values of one field together, column by column</td></tr>
+  <tr><td>Read one column</td><td>stride-read, dragging in unrelated fields (cache pollution)</td><td>read one contiguous slab, touch only this column</td></tr>
+  <tr><td>Vector search/filter</td><td>unfriendly: same op repeated over scattered memory</td><td>friendly: one big slab + SIMD parallelism</td></tr>
+  <tr><td>Best fit</td><td>OLTP: read/write whole records</td><td>OLAP/vector search: heavy homogeneous ops on few columns</td></tr>
+  <tr><td>In Milvus</td><td>—</td><td>each field a column via <span class="mono">ChunkedColumnInterface</span></td></tr>
+</table>
+
+<h2>How a column is cut into chunks</h2>
+<p>Columnar solves "organize by field", but a practical problem remains: a segment may have hundreds of thousands or millions of rows, so <strong>one column's data is large</strong>. Forcing a whole column into <strong>one contiguous block</strong> brings two troubles: large contiguous allocations are hard (fragmentation may mean no such slab exists); and a growing segment keeps <strong>appending</strong>, so reallocating and copying the whole thing per batch is absurdly costly. Milvus's fix is <strong>chunking</strong>: cut a column into several <strong>fixed-size small blocks</strong>; a column = a list of chunks.</p>
+<p>The top of this abstraction is <span class="mono">ChunkedColumnInterface</span> in <span class="inline">internal/core/src/mmap/ChunkedColumnInterface.h</span> — an abstract base defining "what a column must offer": <span class="mono">NumChunks()</span> (how many blocks), <span class="mono">NumRows()</span> (how many rows), fetch-by-chunk, locate a row to "which chunk, which offset", and so on. The concrete implementations form a <strong>class family</strong> in <span class="inline">ChunkedColumn.h</span>, split by field type: fixed-width data (int64, float vectors) use <span class="mono">ChunkedColumn</span>; variable-length data (varchar, JSON) use <span class="mono">ChunkedVariableColumn</span>; arrays and vector-arrays have <span class="mono">ChunkedArrayColumn</span> and <span class="mono">ChunkedVectorArrayColumn</span>. All inherit <span class="mono">ChunkedColumnBase</span>, sharing the "chunking" skeleton and differing only in "how one value is encoded".</p>
+<p>Each block holds a <span class="mono">FixedLengthChunk</span> (fixed) or <span class="mono">VariableLengthChunk</span> (variable) defined in <span class="inline">ChunkData.h</span>. The payoff is concrete: on <strong>growing-segment append</strong>, fill one block then ask for another — old blocks stay put, no copying; <strong>memory management</strong> is per block, so allocation, freeing, even swap-in/out happen at just-right granularity; and an operator scanning a column simply "<strong>walks block after block</strong>", each block being contiguous and SIMD-friendly. Think of a column as a <strong>chest of drawers</strong>: logically one unit (the column), physically assembled from drawers (chunks); for any row you compute which drawer and which slot. The layered diagram shows "column → chunk → in-chunk data".</p>
+
+<div class="layers">
+  <div class="layer l-main"><div class="lh"><span class="badge">column</span><span class="name">ChunkedColumnInterface (all values of one field in the segment)</span></div><div class="ld">offers NumChunks()/NumRows()/locate-by-row; by type: ChunkedColumn(fixed) / ChunkedVariableColumn(variable)</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">chunk</span><span class="name">chunk × N (fixed-size blocks; a column cut into a list)</span></div><div class="ld">growing append = fill one, ask another; memory per-block alloc/swap; in-block contiguous, SIMD-friendly</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">in-chunk</span><span class="name">FixedLengthChunk / VariableLengthChunk (ChunkData.h)</span></div><div class="ld">fixed = direct addressing; variable = an offset table, look up offset then fetch</div></div>
+</div>
+
+<h2>mmap: data larger than memory</h2>
+<p>Now the best trick. A segment's raw data ultimately lands on disk as <strong>binlog files</strong> (Lesson 18). When a QueryNode loads a segment, there are two ways to bring these columns into memory. The first is a plain <span class="mono">read()</span>: copy the file contents <strong>wholesale into heap</strong>. Simple and direct, but with a hard ceiling — <strong>the data a machine can load is capped by physical RAM</strong>. With 64GB you can't hold a 100GB segment.</p>
+<p>The second is <strong>mmap</strong>: don't copy; <strong>map</strong> the binlog file into the process's <strong>virtual address space</strong>. Once mapped, the data looks like ordinary memory and C++ accesses it by address as usual — but <strong>the real data isn't in physical RAM yet</strong>. Only when code first touches a page does the CPU raise a <strong>page fault</strong>, and the OS reads that page from disk into the <strong>page cache</strong>. Hot pages already touched stay cached and hit next time; cold pages long untouched get <strong>quietly evicted</strong> when memory is tight.</p>
+<p>This breaks the "data must be ≤ RAM" shackle: a node can load segments whose <strong>total far exceeds physical RAM</strong> — cold data rests on disk taking no memory, only the hot data actually queried occupies page cache, and all swap-in/out is handled automatically by the OS, that seasoned housekeeper, with Milvus writing <strong>not one line of paging logic</strong>. The cost, of course: touching a cold page waits one disk I/O (page-fault latency), so mmap suits <strong>clearly hot/cold, doesn't-fit-in-RAM</strong> workloads — a shrewd trade of "a little latency for huge capacity". Whether to mmap a given field is <strong>configurable</strong> — the cgo entry <span class="mono">EnableMmap(...)</span> in <span class="inline">internal/core/src/segcore/load_field_data_c.h</span> is the switch the Go side flips when loading field data. The flow below walks "load a column with mmap and access it".</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Load field (EnableMmap)</h4><p>Go calls <span class="mono">load_field_data_c.h</span> via cgo, enabling mmap for the field rather than reading it wholesale into heap.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Map the binlog file</h4><p><span class="mono">mmap</span> the on-disk column data into virtual address space — occupying no physical RAM yet.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Fault in on demand</h4><p>When an operator touches a page of some chunk, a page fault makes the OS read that page into the <strong>page cache</strong>.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Evict cold pages</h4><p>Under memory pressure the OS evicts long-unused cold pages; hot pages stay resident. Total data can far exceed RAM.</p></div></div>
+</div>
+
+<h2>Who allocates this memory: MmapChunkManager</h2>
+<p>One last piece: who centrally schedules these mmap'd blocks? It's <span class="mono">MmapChunkManager</span> in <span class="inline">internal/core/src/storage/MmapChunkManager.h</span>. Like a <strong>warehouse master</strong>, it offers <span class="mono">Allocate(...)</span> to request an mmap-backed block to place a chunk; underneath, <span class="mono">MmapBlocksHandler</span> carves out <strong>fixed-size blocks</strong> (<span class="mono">AllocateFixSizeBlock()</span>) or <strong>large blocks</strong> (<span class="mono">AllocateLargeBlock(size)</span>), distinguishing the two via a <span class="mono">BlockType</span>.</p>
+<p>Making it a single "master" buys <strong>central control</strong>: all mmap memory exits through one door, easing global quotas, usage accounting, and per-block reclamation, avoiding scattered mmaps that are hard to track. One layer up sits a <strong>caching layer</strong> (cachinglayer) with a <span class="mono">PinWrapper</span> design: while a chunk is in use by a computation it is <strong>pinned</strong> in cache so it can't be evicted mid-calculation; once done it's released back to being an ordinary, evictable cold page. This pin-and-release is the fine balance of "<strong>save memory, yet never lose the data being used</strong>". Tie it together and you see a segment's full memory picture: <strong>organized by column, sliced into chunks, optionally mmap'd, allocated centrally by MmapChunkManager, with hot data guarded by the cache and pinning</strong>. Next (Lesson 36) we let the expr/exec engine actually run over these columnar chunks — seeing how a query is "computed".</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Columnar</strong>: a segment is cut by field into columns; search touches only the needed columns, reads contiguously, SIMD-friendly — versus row storage's "stride-read + cache pollution".</li>
+    <li><strong>Chunked</strong>: a column = a list of fixed-size chunks, abstracted by <span class="mono">ChunkedColumnInterface</span> and implemented by <span class="mono">ChunkedColumn</span>/<span class="mono">ChunkedVariableColumn</span> etc.; eases growing append and per-block memory management.</li>
+    <li><strong>mmap</strong>: map binlog into virtual memory, fault in on demand, evict cold pages — letting a node hold data <strong>larger than physical RAM</strong>; the cost is cold-access disk latency, configured per field via <span class="mono">EnableMmap</span>.</li>
+    <li><strong>Central allocation</strong>: <span class="mono">MmapChunkManager</span> allocates mmap blocks centrally; the cachinglayer's <span class="mono">PinWrapper</span> pins hot chunks during computation to prevent eviction.</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Milvus organizes a segment's memory by 'column (field)' rather than by 'row'. What's the main benefit?</div>
+  <ol class="opts">
+    <li>Column storage makes writing each record faster</li>
+    <li>Column storage needs no index at all</li>
+    <li>Column storage makes disk usage smaller</li>
+    <li>A search reads only the few columns it needs, contiguously, with SIMD parallelism; row storage forces stride-reads that drag unrelated same-row fields into cache, wasting bandwidth</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. Vector search does 'heavy homogeneous ops on a few columns' (distance, thresholds). Column storage lays a field's values contiguously, so a query touches only needed columns, scans sequentially with high cache hits, and computes 8/16 floats per SIMD instruction. Row storage strides through memory, dragging dozens of unused same-row fields into cache each step — wasted bandwidth. That's why analytics/search systems converge on columnar.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Why does Milvus cut a column into many fixed-size 'chunks' instead of one contiguous block for the whole column?</div>
+  <ol class="opts">
+    <li>Because a column may hold at most one chunk</li>
+    <li>Because chunking auto-encrypts the data</li>
+    <li>Because chunking removes the need for mmap</li>
+    <li>Large contiguous allocations are hard, and growing segments keep appending; with chunks you fill one then request another, old blocks stay put, and memory is allocated/swapped per block</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. A column may have millions of rows. One contiguous block has two problems: under fragmentation such a slab may not exist; and a growing segment keeps appending, so reallocating/copying the whole thing per batch is hugely costly. Chunking cuts the column into fixed-size blocks: append just asks for another, old blocks stay put; alloc/free/swap happen per block at just-right granularity; scanning walks block by block, each contiguous and SIMD-friendly. Abstracted by ChunkedColumnInterface, implemented by ChunkedColumn etc.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. mmap-ing binlog into memory vs read()-ing it wholesale into heap — what's the key advantage?</div>
+  <ol class="opts">
+    <li>mmap removes the need for binlog files</li>
+    <li>mmap makes data never lost and needs no disk</li>
+    <li>mmap crams all data into physical RAM at once, so it's faster</li>
+    <li>Data faults in on demand and cold pages are evicted by the OS, so a node can load segments totaling more than physical RAM; the cost is cold-access disk latency</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. read() copies the file wholesale into heap, capping loadable data at physical RAM. mmap maps the file into virtual address space: a page faults in only when touched, the OS reads it into page cache, hot pages stay resident, cold pages get evicted under pressure. So cold data rests on disk taking no RAM, a node holds far more than RAM, and the kernel handles all paging — Milvus writes none. The cost: a cold page's first access waits one disk I/O. Per-field toggle via EnableMmap.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson calls mmap 'a little latency for huge capacity', outsourcing 'what's in RAM vs on disk' to the OS. Tie it to Lesson 18 (binlog on disk) and Lesson 34 (central kitchen): (1) Why can a QueryNode with only 64GB RAM serve segments totaling hundreds of GB? Where do hot/cold data live? (2) Why is there often a 'warm-up' effect under mmap (first query on a cold segment is slow, then fast)? (3) If your workload demands low, jitter-free latency on every query, would you prefer mmap or pure in-memory loading, and why? How does this echo Lesson 30's 'freshness/consistency vs performance' trade-off?</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="34-core-layout.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">core 布局</span><span class="lang-en">The C++ core layout</span></div></a><a class="next" href="../index.html"><div class="dir"><span class="lang-zh">完成 →</span><span class="lang-en">Done →</span></div><div class="ttl"><span class="lang-zh">返回目录</span><span class="lang-en">Back to index</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>

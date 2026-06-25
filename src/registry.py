@@ -50,4 +50,5 @@ CONTENT = {
     "32-ddl-dcl-via-log.html": part7.LESSON_32,
     "33-replication-and-cdc.html": part7.LESSON_33,
     "34-core-layout.html": part8.LESSON_34,
+    "35-mmap-and-chunks.html": part8.LESSON_35,
 }

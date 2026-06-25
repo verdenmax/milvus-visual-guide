@@ -115,6 +115,8 @@ PAGES = [
      "第七部分 · 流式系统", "Part 7 · Streaming system"),
     ("34-core-layout.html", "core 布局", "The C++ core layout",
      "第八部分 · C++ 内核", "Part 8 · C++ core internals"),
+    ("35-mmap-and-chunks.html", "mmap 与列式分块", "mmap & chunked columns",
+     "第八部分 · C++ 内核", "Part 8 · C++ core internals"),
 ]
 
 
@@ -624,6 +626,8 @@ SUBTITLES = {
                                     "replicate the log not state; star topology; Primary→Replicator→Secondary; DR/cross-region/migration"),
     "34-core-layout.html": ("internal/core/src 子模块地图 · 控制面 Go / 计算面 C++ · cgo(*_c.h) 桥 · 查询与建索引两条路径",
                             "internal/core/src submodule map; Go control plane / C++ compute core; cgo(*_c.h) bridge; query & index-build paths"),
+    "35-mmap-and-chunks.html": ("列式存储 · chunked column(ChunkedColumnInterface) · mmap 让数据大于内存 · MmapChunkManager 统一分配",
+                                "columnar storage; chunked column (ChunkedColumnInterface); mmap for data larger than RAM; MmapChunkManager central allocation"),
 }
 
 

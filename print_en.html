@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 34 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 35 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
@@ -362,6 +362,7 @@ details[open] > summary { list-style: none; }
   <li>DDL/DCL through the log</li>
   <li>Replication & CDC</li>
   <li>The C++ core layout</li>
+  <li>mmap & chunked columns</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -7345,6 +7346,124 @@ fast by the recipe</strong> (vectorized execution), and Lesson 37's GPU is <stro
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
     <li>This lesson frames Milvus as 'Go control plane + cgo bridge + C++ compute plane'. In your own words: (1) how does one in-segment search go from Go through cgo into segcore and back (recall the chain Go wrapper → cross cgo → C++ compute → result returned)? (2) Why must cgo calls be 'coarse-grained, zero-copy' — packing a whole search into one call and passing pointers — and what does that mean for performance? Tie it to Lesson 29: why does batching (large nq) amortize the fixed cost of crossing the bridge?</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>mmap & chunked columns</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Last lesson handed us the whole map of the C++ core. Now we zoom into one piece of the foundation — the <strong>mmap submodule</strong> (<span class="inline">internal/core/src/mmap</span>). It answers a plain but crucial question: what does a sealed segment's data <strong>actually look like in memory</strong>? The answer lives in two words — <strong>columnar</strong> (organized by field) and <strong>chunked</strong> — plus one trick, <strong>mmap</strong>, that lets one machine hold more data than physical RAM.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Picture a segment as a <strong>library</strong>. <strong>Row storage</strong> is like binding each reader's borrowing record into a thick booklet — to tally "everyone who borrowed a certain genre" you must flip through every booklet's one column. <strong>Column storage</strong> instead files cards by "title", "author", "date": to query authors you pull open the "author" drawer and <strong>scan it end to end, touching nothing else</strong>.
+  And <strong>mmap</strong> is the library's rule: books <strong>stay on the shelves</strong> (disk); you only carry <strong>the few pages you're reading</strong> to your desk (RAM); the librarian (the OS) fetches on demand and reshelves what's long unused when the desk fills up. So <strong>the shelves hold far more than the desk can spread out</strong> — exactly the secret of "data larger than memory".
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>Milvus cuts a segment by field into "columns", cuts each column into fixed-size "chunks", represented by the <span class="mono">ChunkedColumn</span> family; data can be <span class="mono">mmap</span>'d into virtual memory and paged in on demand by the OS page cache, supporting more data than physical RAM</strong>. Columnar means a search touches only the fields it needs; chunking means memory is managed block by block; mmap keeps cold data on disk and hot data in cache.
+</div>
+
+<h2>Why columnar, not row-oriented</h2>
+<p>To understand a segment's memory layout, first ask: what does one vector search actually read? The answer — <strong>one vector field</strong> (to compute distance) plus <strong>a few scalar fields</strong> (to filter, e.g. <span class="mono">age &gt; 30</span>). A segment may have dozens of fields, but a single query usually cares about two or three. That dictates the natural advantage of <strong>column storage</strong>: lay all values of one field <strong>contiguously</strong> together, read only the columns you use, and <strong>never touch a byte of the rest</strong>.</p>
+<p>Contrast <strong>row storage</strong>: a record's fields sit together, row after row. Great for "read a whole record", but bad for vector search — to pull out one column's values you must <strong>stride through memory</strong>, and each step drags dozens of unused same-row fields into the CPU cache, wasting bandwidth. Yet vector search is the textbook case of "<strong>do the same operation thousands of times over one column</strong>": compute distance, compare thresholds, (de)compress…</p>
+<p>Columnar layout takes this to the limit: a column's values share one type and sit adjacent, so you can <strong>load a big slab at once and compute with SIMD</strong> (one instruction over 8 or 16 floats), with far better cache hit rates. That's why nearly every analytics- and search-oriented system — from columnar databases to vector stores — converges on column storage. A Milvus segment makes each field its own "column", carried by the <span class="mono">ChunkedColumn</span> family under <span class="inline">internal/core/src/mmap</span>. The table below puts the two layouts side by side.</p>
+
+<table class="t">
+  <tr><th>Dimension</th><th>Row-oriented</th><th>Column-oriented (Milvus segment)</th></tr>
+  <tr><td>Organization</td><td>all fields of one record together, row by row</td><td>all values of one field together, column by column</td></tr>
+  <tr><td>Read one column</td><td>stride-read, dragging in unrelated fields (cache pollution)</td><td>read one contiguous slab, touch only this column</td></tr>
+  <tr><td>Vector search/filter</td><td>unfriendly: same op repeated over scattered memory</td><td>friendly: one big slab + SIMD parallelism</td></tr>
+  <tr><td>Best fit</td><td>OLTP: read/write whole records</td><td>OLAP/vector search: heavy homogeneous ops on few columns</td></tr>
+  <tr><td>In Milvus</td><td>—</td><td>each field a column via <span class="mono">ChunkedColumnInterface</span></td></tr>
+</table>
+
+<h2>How a column is cut into chunks</h2>
+<p>Columnar solves "organize by field", but a practical problem remains: a segment may have hundreds of thousands or millions of rows, so <strong>one column's data is large</strong>. Forcing a whole column into <strong>one contiguous block</strong> brings two troubles: large contiguous allocations are hard (fragmentation may mean no such slab exists); and a growing segment keeps <strong>appending</strong>, so reallocating and copying the whole thing per batch is absurdly costly. Milvus's fix is <strong>chunking</strong>: cut a column into several <strong>fixed-size small blocks</strong>; a column = a list of chunks.</p>
+<p>The top of this abstraction is <span class="mono">ChunkedColumnInterface</span> in <span class="inline">internal/core/src/mmap/ChunkedColumnInterface.h</span> — an abstract base defining "what a column must offer": <span class="mono">NumChunks()</span> (how many blocks), <span class="mono">NumRows()</span> (how many rows), fetch-by-chunk, locate a row to "which chunk, which offset", and so on. The concrete implementations form a <strong>class family</strong> in <span class="inline">ChunkedColumn.h</span>, split by field type: fixed-width data (int64, float vectors) use <span class="mono">ChunkedColumn</span>; variable-length data (varchar, JSON) use <span class="mono">ChunkedVariableColumn</span>; arrays and vector-arrays have <span class="mono">ChunkedArrayColumn</span> and <span class="mono">ChunkedVectorArrayColumn</span>. All inherit <span class="mono">ChunkedColumnBase</span>, sharing the "chunking" skeleton and differing only in "how one value is encoded".</p>
+<p>Each block holds a <span class="mono">FixedLengthChunk</span> (fixed) or <span class="mono">VariableLengthChunk</span> (variable) defined in <span class="inline">ChunkData.h</span>. The payoff is concrete: on <strong>growing-segment append</strong>, fill one block then ask for another — old blocks stay put, no copying; <strong>memory management</strong> is per block, so allocation, freeing, even swap-in/out happen at just-right granularity; and an operator scanning a column simply "<strong>walks block after block</strong>", each block being contiguous and SIMD-friendly. Think of a column as a <strong>chest of drawers</strong>: logically one unit (the column), physically assembled from drawers (chunks); for any row you compute which drawer and which slot. The layered diagram shows "column → chunk → in-chunk data".</p>
+
+<div class="layers">
+  <div class="layer l-main"><div class="lh"><span class="badge">column</span><span class="name">ChunkedColumnInterface (all values of one field in the segment)</span></div><div class="ld">offers NumChunks()/NumRows()/locate-by-row; by type: ChunkedColumn(fixed) / ChunkedVariableColumn(variable)</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">chunk</span><span class="name">chunk × N (fixed-size blocks; a column cut into a list)</span></div><div class="ld">growing append = fill one, ask another; memory per-block alloc/swap; in-block contiguous, SIMD-friendly</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">in-chunk</span><span class="name">FixedLengthChunk / VariableLengthChunk (ChunkData.h)</span></div><div class="ld">fixed = direct addressing; variable = an offset table, look up offset then fetch</div></div>
+</div>
+
+<h2>mmap: data larger than memory</h2>
+<p>Now the best trick. A segment's raw data ultimately lands on disk as <strong>binlog files</strong> (Lesson 18). When a QueryNode loads a segment, there are two ways to bring these columns into memory. The first is a plain <span class="mono">read()</span>: copy the file contents <strong>wholesale into heap</strong>. Simple and direct, but with a hard ceiling — <strong>the data a machine can load is capped by physical RAM</strong>. With 64GB you can't hold a 100GB segment.</p>
+<p>The second is <strong>mmap</strong>: don't copy; <strong>map</strong> the binlog file into the process's <strong>virtual address space</strong>. Once mapped, the data looks like ordinary memory and C++ accesses it by address as usual — but <strong>the real data isn't in physical RAM yet</strong>. Only when code first touches a page does the CPU raise a <strong>page fault</strong>, and the OS reads that page from disk into the <strong>page cache</strong>. Hot pages already touched stay cached and hit next time; cold pages long untouched get <strong>quietly evicted</strong> when memory is tight.</p>
+<p>This breaks the "data must be ≤ RAM" shackle: a node can load segments whose <strong>total far exceeds physical RAM</strong> — cold data rests on disk taking no memory, only the hot data actually queried occupies page cache, and all swap-in/out is handled automatically by the OS, that seasoned housekeeper, with Milvus writing <strong>not one line of paging logic</strong>. The cost, of course: touching a cold page waits one disk I/O (page-fault latency), so mmap suits <strong>clearly hot/cold, doesn't-fit-in-RAM</strong> workloads — a shrewd trade of "a little latency for huge capacity". Whether to mmap a given field is <strong>configurable</strong> — the cgo entry <span class="mono">EnableMmap(...)</span> in <span class="inline">internal/core/src/segcore/load_field_data_c.h</span> is the switch the Go side flips when loading field data. The flow below walks "load a column with mmap and access it".</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Load field (EnableMmap)</h4><p>Go calls <span class="mono">load_field_data_c.h</span> via cgo, enabling mmap for the field rather than reading it wholesale into heap.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Map the binlog file</h4><p><span class="mono">mmap</span> the on-disk column data into virtual address space — occupying no physical RAM yet.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Fault in on demand</h4><p>When an operator touches a page of some chunk, a page fault makes the OS read that page into the <strong>page cache</strong>.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Evict cold pages</h4><p>Under memory pressure the OS evicts long-unused cold pages; hot pages stay resident. Total data can far exceed RAM.</p></div></div>
+</div>
+
+<h2>Who allocates this memory: MmapChunkManager</h2>
+<p>One last piece: who centrally schedules these mmap'd blocks? It's <span class="mono">MmapChunkManager</span> in <span class="inline">internal/core/src/storage/MmapChunkManager.h</span>. Like a <strong>warehouse master</strong>, it offers <span class="mono">Allocate(...)</span> to request an mmap-backed block to place a chunk; underneath, <span class="mono">MmapBlocksHandler</span> carves out <strong>fixed-size blocks</strong> (<span class="mono">AllocateFixSizeBlock()</span>) or <strong>large blocks</strong> (<span class="mono">AllocateLargeBlock(size)</span>), distinguishing the two via a <span class="mono">BlockType</span>.</p>
+<p>Making it a single "master" buys <strong>central control</strong>: all mmap memory exits through one door, easing global quotas, usage accounting, and per-block reclamation, avoiding scattered mmaps that are hard to track. One layer up sits a <strong>caching layer</strong> (cachinglayer) with a <span class="mono">PinWrapper</span> design: while a chunk is in use by a computation it is <strong>pinned</strong> in cache so it can't be evicted mid-calculation; once done it's released back to being an ordinary, evictable cold page. This pin-and-release is the fine balance of "<strong>save memory, yet never lose the data being used</strong>". Tie it together and you see a segment's full memory picture: <strong>organized by column, sliced into chunks, optionally mmap'd, allocated centrally by MmapChunkManager, with hot data guarded by the cache and pinning</strong>. Next (Lesson 36) we let the expr/exec engine actually run over these columnar chunks — seeing how a query is "computed".</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Columnar</strong>: a segment is cut by field into columns; search touches only the needed columns, reads contiguously, SIMD-friendly — versus row storage's "stride-read + cache pollution".</li>
+    <li><strong>Chunked</strong>: a column = a list of fixed-size chunks, abstracted by <span class="mono">ChunkedColumnInterface</span> and implemented by <span class="mono">ChunkedColumn</span>/<span class="mono">ChunkedVariableColumn</span> etc.; eases growing append and per-block memory management.</li>
+    <li><strong>mmap</strong>: map binlog into virtual memory, fault in on demand, evict cold pages — letting a node hold data <strong>larger than physical RAM</strong>; the cost is cold-access disk latency, configured per field via <span class="mono">EnableMmap</span>.</li>
+    <li><strong>Central allocation</strong>: <span class="mono">MmapChunkManager</span> allocates mmap blocks centrally; the cachinglayer's <span class="mono">PinWrapper</span> pins hot chunks during computation to prevent eviction.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Milvus organizes a segment's memory by 'column (field)' rather than by 'row'. What's the main benefit?</div>
+  <ol class="opts">
+    <li>Column storage makes writing each record faster</li>
+    <li>Column storage needs no index at all</li>
+    <li>Column storage makes disk usage smaller</li>
+    <li>A search reads only the few columns it needs, contiguously, with SIMD parallelism; row storage forces stride-reads that drag unrelated same-row fields into cache, wasting bandwidth</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. Vector search does 'heavy homogeneous ops on a few columns' (distance, thresholds). Column storage lays a field's values contiguously, so a query touches only needed columns, scans sequentially with high cache hits, and computes 8/16 floats per SIMD instruction. Row storage strides through memory, dragging dozens of unused same-row fields into cache each step — wasted bandwidth. That's why analytics/search systems converge on columnar.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Why does Milvus cut a column into many fixed-size 'chunks' instead of one contiguous block for the whole column?</div>
+  <ol class="opts">
+    <li>Because a column may hold at most one chunk</li>
+    <li>Because chunking auto-encrypts the data</li>
+    <li>Because chunking removes the need for mmap</li>
+    <li>Large contiguous allocations are hard, and growing segments keep appending; with chunks you fill one then request another, old blocks stay put, and memory is allocated/swapped per block</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. A column may have millions of rows. One contiguous block has two problems: under fragmentation such a slab may not exist; and a growing segment keeps appending, so reallocating/copying the whole thing per batch is hugely costly. Chunking cuts the column into fixed-size blocks: append just asks for another, old blocks stay put; alloc/free/swap happen per block at just-right granularity; scanning walks block by block, each contiguous and SIMD-friendly. Abstracted by ChunkedColumnInterface, implemented by ChunkedColumn etc.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. mmap-ing binlog into memory vs read()-ing it wholesale into heap — what's the key advantage?</div>
+  <ol class="opts">
+    <li>mmap removes the need for binlog files</li>
+    <li>mmap makes data never lost and needs no disk</li>
+    <li>mmap crams all data into physical RAM at once, so it's faster</li>
+    <li>Data faults in on demand and cold pages are evicted by the OS, so a node can load segments totaling more than physical RAM; the cost is cold-access disk latency</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. read() copies the file wholesale into heap, capping loadable data at physical RAM. mmap maps the file into virtual address space: a page faults in only when touched, the OS reads it into page cache, hot pages stay resident, cold pages get evicted under pressure. So cold data rests on disk taking no RAM, a node holds far more than RAM, and the kernel handles all paging — Milvus writes none. The cost: a cold page's first access waits one disk I/O. Per-field toggle via EnableMmap.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson calls mmap 'a little latency for huge capacity', outsourcing 'what's in RAM vs on disk' to the OS. Tie it to Lesson 18 (binlog on disk) and Lesson 34 (central kitchen): (1) Why can a QueryNode with only 64GB RAM serve segments totaling hundreds of GB? Where do hot/cold data live? (2) Why is there often a 'warm-up' effect under mmap (first query on a cold segment is slow, then fast)? (3) If your workload demands low, jitter-free latency on every query, would you prefer mmap or pure in-memory loading, and why? How does this echo Lesson 30's 'freshness/consistency vs performance' trade-off?</li>
   </ul>
 </div>
 </div>
