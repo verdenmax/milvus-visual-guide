@@ -308,6 +308,14 @@ html[data-lang="zh"] .lang-en { display: none !important; }
   padding: 0 .5rem; text-align: center; white-space: nowrap; }
 .trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
 @media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+/* --- hand-drawn figure (inline SVG illustrations) --- */
+.fig { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1rem .85rem; box-shadow: var(--shadow); text-align: center; }
+.fig svg { max-width: 100%; height: auto; display: block; margin: 0 auto;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif; }
+.fig svg text { fill: var(--ink); }
+.fig .figcap { margin: .72rem auto 0; font-size: .8rem; color: var(--muted); line-height: 1.55; max-width: 46rem; }
+.fig .figcap b { color: var(--accent-ink); font-weight: 700; }
 
 
 body { max-width: 820px; margin: 0 auto; padding: 1.6rem; background: #fff; }
@@ -9560,6 +9568,38 @@ is doing one thing around this trunk — either <strong>writing into the log</st
 materialize something</strong> (DataNode, QueryNode, the replicator). Grasp this trunk and you grasp why Milvus's write path,
 streaming system, and replication all look the way they do.</p></div>
 
+<div class="fig">
+<svg viewBox="0 0 600 258" role="img" aria-label="an append-only log with multiple read positions">
+  <text x="40" y="28" font-size="13" style="fill:var(--muted)">WAL · append-only log</text>
+  <text x="516" y="28" text-anchor="end" font-size="12.5" font-weight="700" style="fill:var(--accent-ink)">Proxy appends →</text>
+  <rect x="40" y="42" width="76" height="46" rx="7" style="fill:var(--accent-soft);stroke:var(--accent)"/>
+  <text x="78" y="71" text-anchor="middle" font-size="13.5" class="mono" style="fill:var(--accent-ink)">TT100</text>
+  <rect x="120" y="42" width="76" height="46" rx="7" style="fill:var(--accent-soft);stroke:var(--accent)"/>
+  <text x="158" y="71" text-anchor="middle" font-size="13.5" class="mono" style="fill:var(--accent-ink)">101</text>
+  <rect x="200" y="42" width="76" height="46" rx="7" style="fill:var(--accent-soft);stroke:var(--accent)"/>
+  <text x="238" y="71" text-anchor="middle" font-size="13.5" class="mono" style="fill:var(--accent-ink)">102</text>
+  <rect x="280" y="42" width="76" height="46" rx="7" style="fill:var(--accent-soft);stroke:var(--accent)"/>
+  <text x="318" y="71" text-anchor="middle" font-size="13.5" class="mono" style="fill:var(--accent-ink)">103</text>
+  <rect x="360" y="42" width="76" height="46" rx="7" style="fill:var(--accent-soft);stroke:var(--accent)"/>
+  <text x="398" y="71" text-anchor="middle" font-size="13.5" class="mono" style="fill:var(--accent-ink)">104</text>
+  <rect x="440" y="42" width="76" height="46" rx="7" style="fill:var(--accent);stroke:var(--accent)"/>
+  <text x="478" y="71" text-anchor="middle" font-size="13.5" class="mono" style="fill:#fff">105</text>
+  <path d="M478,88 L478,140" style="fill:none;stroke:var(--teal);stroke-dasharray:3 3"/>
+  <path d="M398,88 L398,184" style="fill:none;stroke:var(--accent);stroke-dasharray:3 3"/>
+  <path d="M238,88 L238,228" style="fill:none;stroke:var(--amber);stroke-dasharray:3 3"/>
+  <line x1="40" y1="140" x2="560" y2="140" style="stroke:var(--line)"/>
+  <circle cx="478" cy="140" r="6" style="fill:var(--teal)"/>
+  <text x="466" y="145" text-anchor="end" font-size="13"><tspan font-weight="700" style="fill:var(--teal)">DataNode</tspan> · flushed to 105</text>
+  <line x1="40" y1="184" x2="560" y2="184" style="stroke:var(--line)"/>
+  <circle cx="398" cy="184" r="6" style="fill:var(--accent)"/>
+  <text x="386" y="189" text-anchor="end" font-size="13"><tspan font-weight="700" style="fill:var(--accent-ink)">QueryNode</tspan> · read to 104 (tsafe)</text>
+  <line x1="40" y1="228" x2="560" y2="228" style="stroke:var(--line)"/>
+  <circle cx="238" cy="228" r="6" style="fill:var(--amber)"/>
+  <text x="226" y="233" text-anchor="end" font-size="13"><tspan font-weight="700" style="fill:var(--amber)">replica</tspan> · replayed to 102</text>
+</svg>
+<div class="figcap"><b>One log, many replayers</b>: the same append-only WAL — DataNode / QueryNode / the replica each track a checkpoint and consume at their own pace, none calling another directly.</div>
+</div>
+
 <div class="flow">
   <div class="node hl"><div class="nt">Proxy</div><div class="nd">append write</div></div>
   <div class="arrow">→</div>
@@ -9812,6 +9852,33 @@ confusing.</p>
   <div class="cells"><span class="lab">row C</span><span class="cell">insert@120</span><span class="sep">→</span><span class="cell dim">invisible (120 &gt; 100)</span></div>
 </div>
 
+<div class="fig">
+<svg viewBox="0 0 600 232" role="img" aria-label="MVCC: Tg=100 decides each row's visibility">
+  <rect x="56" y="40" width="221" height="150" rx="6" style="fill:var(--accent-soft);opacity:.45"/>
+  <text x="62" y="55" font-size="11.5" style="fill:var(--accent-ink)">snapshot ≤ Tg</text>
+  <line x1="277" y1="36" x2="277" y2="190" style="stroke:var(--accent);stroke-width:1.5;stroke-dasharray:4 3"/>
+  <text x="277" y="28" text-anchor="middle" font-size="12.5" font-weight="700" style="fill:var(--accent-ink)">Tg=100</text>
+  <line x1="50" y1="190" x2="560" y2="190" style="stroke:var(--line)"/>
+  <text x="556" y="208" text-anchor="end" font-size="11.5" style="fill:var(--faint)">timestamp ts →</text>
+  <text x="32" y="84" font-size="13" font-weight="700">A</text>
+  <circle cx="140" cy="80" r="7" style="fill:var(--accent)"/>
+  <text x="140" y="101" text-anchor="middle" font-size="11" style="fill:var(--muted)">insert@80</text>
+  <text x="470" y="84" font-size="12.5" font-weight="700" style="fill:var(--teal)">visible ✓</text>
+  <text x="32" y="128" font-size="13" font-weight="700">B</text>
+  <circle cx="140" cy="124" r="7" style="fill:var(--accent);opacity:.38"/>
+  <text x="243" y="129" text-anchor="middle" font-size="15" font-weight="700" style="fill:var(--red)">✗</text>
+  <text x="243" y="146" text-anchor="middle" font-size="11" style="fill:var(--muted)">delete@95</text>
+  <text x="470" y="125" font-size="12.5" font-weight="700" style="fill:var(--faint)">invisible</text>
+  <text x="470" y="140" font-size="10.5" style="fill:var(--faint)">tombstone ≤ Tg</text>
+  <text x="32" y="172" font-size="13" font-weight="700">C</text>
+  <circle cx="415" cy="168" r="7" style="fill:var(--muted);opacity:.5"/>
+  <text x="415" y="189" text-anchor="middle" font-size="11" style="fill:var(--muted)">insert@120</text>
+  <text x="470" y="169" font-size="12.5" font-weight="700" style="fill:var(--faint)">invisible</text>
+  <text x="470" y="184" font-size="10.5" style="fill:var(--faint)">120 &gt; Tg</text>
+</svg>
+<div class="figcap"><b>The snapshot one read at Tg=100 sees</b>: A (insert@80) is visible; B is deleted by the @95 tombstone (≤Tg) so invisible; C (insert@120) is past Tg, not yet visible. Visibility is just <b>one timestamp comparison</b> — no locks.</div>
+</div>
+
 <h2>Step 3: wait for the data, then filter by timestamp</h2>
 <p>Tg is set — how do we guarantee "the writes up to Tg have actually reached the QueryNode"? Via <strong>tsafe</strong> (the served watermark):
 each QueryNode tracks "to which TimeTick I have consumed and applied the WAL", and each chunk of log it consumes pushes tsafe forward (Lessons 26,
@@ -10039,6 +10106,32 @@ node and the relevant parties perceive and act on it instantly. So a scheduling 
 takes effect within seconds. Combine "big data in object storage, critical state in watchable etcd" and Milvus can both hold massive data and
 react quickly to cluster change.</p>
 
+<div class="fig">
+<svg viewBox="0 0 600 268" role="img" aria-label="storage-compute separation: stateless nodes reload from object storage">
+  <rect x="40" y="20" width="520" height="38" rx="9" style="fill:var(--panel-2);stroke:var(--line)"/>
+  <text x="300" y="44" text-anchor="middle" font-size="13" font-weight="700">control plane · etcd (metadata / assignment / liveness)</text>
+  <rect x="56" y="100" width="150" height="52" rx="9" style="fill:var(--panel);stroke:var(--accent)"/>
+  <text x="131" y="122" text-anchor="middle" font-size="12.5" font-weight="700" style="fill:var(--accent-ink)">QueryNode A</text>
+  <text x="131" y="140" text-anchor="middle" font-size="11" style="fill:var(--muted)">holds seg5,6</text>
+  <rect x="225" y="100" width="150" height="52" rx="9" style="fill:var(--red-soft);stroke:var(--red);stroke-dasharray:4 3"/>
+  <text x="300" y="122" text-anchor="middle" font-size="12.5" font-weight="700" style="fill:var(--red)">QueryNode B ✗ dead</text>
+  <text x="300" y="140" text-anchor="middle" font-size="11" style="fill:var(--muted)">had held seg7</text>
+  <rect x="394" y="100" width="150" height="52" rx="9" style="fill:var(--teal-soft);stroke:var(--teal)"/>
+  <text x="469" y="122" text-anchor="middle" font-size="12.5" font-weight="700" style="fill:var(--teal)">QueryNode C (new)</text>
+  <text x="469" y="140" text-anchor="middle" font-size="11" style="fill:var(--muted)">loads seg7</text>
+  <rect x="40" y="208" width="520" height="46" rx="9" style="fill:var(--accent-soft);stroke:var(--accent)"/>
+  <text x="300" y="236" text-anchor="middle" font-size="12.5" font-weight="700" style="fill:var(--accent-ink)">object storage · binlog + indexes (seg5　seg6　seg7　…)</text>
+  <path d="M469,58 L469,93" style="fill:none;stroke:var(--accent);stroke-dasharray:4 3"/>
+  <path d="M465,90 L473,90 L469,98 Z" style="fill:var(--accent)"/>
+  <text x="478" y="80" font-size="10.5" style="fill:var(--accent-ink)">assign seg7 → C</text>
+  <path d="M469,208 L469,159" style="fill:none;stroke:var(--teal)"/>
+  <path d="M465,162 L473,162 L469,154 Z" style="fill:var(--teal)"/>
+  <text x="478" y="188" font-size="10.5" style="fill:var(--teal)">C reloads it</text>
+  <path d="M375,126 L392,126" style="fill:none;stroke:var(--faint);stroke-dasharray:2 2"/>
+</svg>
+<div class="figcap"><b>Failover of stateless nodes</b>: when B dies, the control plane (QueryCoord) reassigns its seg7 to the new node C, which reloads it straight from object storage — <b>recovery in seconds, not a byte lost</b>.</div>
+</div>
+
 <div class="cols">
   <div class="col"><h4>❌ Compute + storage on local disk</h4><p>Data sits on the node's local disk; scaling means <strong>cloning whole machines</strong>; a node dies and data is lost or slowly recovered. State "lives on" the machine, making the node an untouchable safe.</p></div>
   <div class="col"><h4>✅ Stateless nodes + shared storage</h4><p>Bytes in object storage, state in etcd, nodes only process. Compute and storage <strong>scale independently</strong>; a failure just swaps a node and reloads from storage — recovery in seconds.</p></div>
@@ -10207,6 +10300,39 @@ is" — the total's pressure was long since absorbed by divide-and-conquer and p
     <div class="stn"><h5>shard</h5><div class="cellrow"><span class="vc hot">shard topK</span></div><div class="tlab">delegator merges this shard</div></div>
     <div class="stn"><h5>Proxy</h5><div class="cellrow"><span class="vc hot">global topK</span></div><div class="tlab">cross-shard merge</div></div>
   </div>
+</div>
+
+<div class="fig">
+<svg viewBox="0 0 600 268" role="img" aria-label="scatter-gather: segment topKs converge into a global topK">
+  <g style="stroke:var(--accent);opacity:.45;fill:none">
+    <path d="M65,214 L110,170"/><path d="M155,214 L110,170"/>
+    <path d="M245,214 L290,170"/><path d="M335,214 L290,170"/>
+    <path d="M425,214 L470,170"/><path d="M515,214 L470,170"/>
+    <path d="M110,132 L290,86"/><path d="M290,132 L290,86"/><path d="M470,132 L290,86"/>
+  </g>
+  <rect x="205" y="48" width="170" height="38" rx="9" style="fill:var(--accent);stroke:var(--accent)"/>
+  <text x="290" y="72" text-anchor="middle" font-size="13" font-weight="700" style="fill:#fff">Proxy · global topK</text>
+  <rect x="55" y="132" width="110" height="38" rx="8" style="fill:var(--accent-soft);stroke:var(--accent)"/>
+  <text x="110" y="156" text-anchor="middle" font-size="11.5" style="fill:var(--accent-ink)">shard topK</text>
+  <rect x="235" y="132" width="110" height="38" rx="8" style="fill:var(--accent-soft);stroke:var(--accent)"/>
+  <text x="290" y="156" text-anchor="middle" font-size="11.5" style="fill:var(--accent-ink)">shard topK</text>
+  <rect x="415" y="132" width="110" height="38" rx="8" style="fill:var(--accent-soft);stroke:var(--accent)"/>
+  <text x="470" y="156" text-anchor="middle" font-size="11.5" style="fill:var(--accent-ink)">shard topK</text>
+  <rect x="30" y="214" width="70" height="34" rx="7" style="fill:var(--panel-2);stroke:var(--line)"/>
+  <text x="65" y="235" text-anchor="middle" font-size="11" style="fill:var(--muted)">seg topK</text>
+  <rect x="120" y="214" width="70" height="34" rx="7" style="fill:var(--panel-2);stroke:var(--line)"/>
+  <text x="155" y="235" text-anchor="middle" font-size="11" style="fill:var(--muted)">seg topK</text>
+  <rect x="210" y="214" width="70" height="34" rx="7" style="fill:var(--panel-2);stroke:var(--line)"/>
+  <text x="245" y="235" text-anchor="middle" font-size="11" style="fill:var(--muted)">seg topK</text>
+  <rect x="300" y="214" width="70" height="34" rx="7" style="fill:var(--panel-2);stroke:var(--line)"/>
+  <text x="335" y="235" text-anchor="middle" font-size="11" style="fill:var(--muted)">seg topK</text>
+  <rect x="390" y="214" width="70" height="34" rx="7" style="fill:var(--panel-2);stroke:var(--line)"/>
+  <text x="425" y="235" text-anchor="middle" font-size="11" style="fill:var(--muted)">seg topK</text>
+  <rect x="480" y="214" width="70" height="34" rx="7" style="fill:var(--panel-2);stroke:var(--line)"/>
+  <text x="515" y="235" text-anchor="middle" font-size="11" style="fill:var(--muted)">seg topK</text>
+  <text x="360" y="112" font-size="10.5" style="fill:var(--faint)">only K per level ↑</text>
+</svg>
+<div class="figcap"><b>The converging shape of scatter-gather</b>: each segment computes a <b>segment topK</b>, the delegator merges a <b>shard topK</b>, and the Proxy merges the <b>global topK</b>. Each layer passes up only K candidates — a billion vectors below, yet <b>only K-scale crosses the network</b>.</div>
 </div>
 
 <h2>Make each small block fast too: index & filter pushdown</h2>
@@ -10431,6 +10557,43 @@ access stably (an mmap region, or a dedicated buffer). Grasp this constraint and
 and "results", are always dotted with unassuming handles, buffers, and status codes — they are the glue that lets the two runtimes cooperate
 safely.</p>
 
+<div class="fig">
+<svg viewBox="0 0 600 224" role="img" aria-label="cgo boundary: one call per row vs one batched call">
+  <rect x="18" y="40" width="270" height="170" rx="10" style="fill:none;stroke:var(--line)"/>
+  <text x="153" y="61" text-anchor="middle" font-size="12.5" font-weight="700" style="fill:var(--red)">❌ one call per row</text>
+  <text x="32" y="98" font-size="11" style="fill:var(--muted)">Go</text>
+  <text x="32" y="190" font-size="11" style="fill:var(--muted)">C++ · segcore</text>
+  <line x1="28" y1="138" x2="278" y2="138" style="stroke:var(--muted);stroke-dasharray:4 3"/>
+  <text x="272" y="133" text-anchor="end" font-size="10" style="fill:var(--faint)">cgo boundary</text>
+  <g style="stroke:var(--amber);fill:none">
+    <path d="M70,104 L70,172"/><path d="M105,104 L105,172"/><path d="M140,104 L140,172"/>
+    <path d="M175,104 L175,172"/><path d="M210,104 L210,172"/><path d="M245,104 L245,172"/>
+  </g>
+  <g style="fill:var(--amber)">
+    <path d="M66,168 L74,168 L70,176 Z"/><path d="M101,168 L109,168 L105,176 Z"/><path d="M136,168 L144,168 L140,176 Z"/>
+    <path d="M171,168 L179,168 L175,176 Z"/><path d="M206,168 L214,168 L210,176 Z"/><path d="M241,168 L249,168 L245,176 Z"/>
+  </g>
+  <g style="fill:var(--red)">
+    <circle cx="70" cy="138" r="3"/><circle cx="105" cy="138" r="3"/><circle cx="140" cy="138" r="3"/>
+    <circle cx="175" cy="138" r="3"/><circle cx="210" cy="138" r="3"/><circle cx="245" cy="138" r="3"/>
+  </g>
+  <text x="153" y="204" text-anchor="middle" font-size="10.5" style="fill:var(--muted)">N rows → N crossings, fixed cost ×N</text>
+  <rect x="312" y="40" width="270" height="170" rx="10" style="fill:none;stroke:var(--teal)"/>
+  <text x="447" y="61" text-anchor="middle" font-size="12.5" font-weight="700" style="fill:var(--teal)">✅ one batched call · zero-copy</text>
+  <text x="326" y="98" font-size="11" style="fill:var(--muted)">Go</text>
+  <text x="326" y="190" font-size="11" style="fill:var(--muted)">C++ · segcore</text>
+  <line x1="322" y1="138" x2="572" y2="138" style="stroke:var(--muted);stroke-dasharray:4 3"/>
+  <text x="566" y="133" text-anchor="end" font-size="10" style="fill:var(--faint)">cgo boundary</text>
+  <rect x="412" y="100" width="70" height="38" rx="8" style="fill:var(--teal-soft);stroke:var(--teal)"/>
+  <text x="447" y="124" text-anchor="middle" font-size="11.5" style="fill:var(--teal)">one batch (nq)</text>
+  <path d="M447,138 L447,171" style="stroke:var(--teal);stroke-width:11;fill:none"/>
+  <path d="M433,169 L461,169 L447,182 Z" style="fill:var(--teal)"/>
+  <circle cx="447" cy="138" r="3.5" style="fill:var(--red)"/>
+  <text x="447" y="204" text-anchor="middle" font-size="10.5" style="fill:var(--muted)">N rows → 1 crossing, cost amortized</text>
+</svg>
+<div class="figcap"><b>cgo is a boundary with a fixed per-call cost</b>. Left: one call per row → N crossings, cost ×N (red dots = the fixed cost each time); right: pack a whole segment's search into <b>one coarse-grained, zero-copy</b> call → one crossing, the cost amortized. <b>The bigger the batch, the better.</b></div>
+</div>
+
 <h2>The payoff and the tradeoff</h2>
 <p>Two languages, one system, costs you mainly two things. First, <strong>the bridge's overhead and constraints</strong>: cgo calls have a fixed
 cost and a split memory model, forcing you to design interfaces as "coarse-grained, zero-copy, batched" — a continuous design discipline, and a
@@ -10603,6 +10766,31 @@ task, a reassigned segment load — even if a further failure makes them execute
 Because every step is idempotent, the system dares to "not be sure whether last time finished, so just do it again", and the reconcile loop can
 safely run round after round. <strong>Idempotency + reconcile is the key to self-healing converging steadily rather than fixing itself into ever
 more chaos.</strong></p>
+
+<div class="fig">
+<svg viewBox="0 0 580 222" role="img" aria-label="reconcile: compare target vs actual, fix the gap">
+  <text x="150" y="22" text-anchor="middle" font-size="12" font-weight="700" style="fill:var(--muted)">declared (target)</text>
+  <text x="430" y="22" text-anchor="middle" font-size="12" font-weight="700" style="fill:var(--muted)">observed (actual)</text>
+  <rect x="30" y="32" width="240" height="112" rx="10" style="fill:var(--panel-2);stroke:var(--line)"/>
+  <rect x="310" y="32" width="240" height="112" rx="10" style="fill:var(--panel-2);stroke:var(--line)"/>
+  <text x="58" y="64" font-size="12.5" class="mono">seg5 → A</text>
+  <text x="58" y="94" font-size="12.5" class="mono">seg6 → A</text>
+  <text x="58" y="124" font-size="12.5" class="mono">seg7 → B</text>
+  <text x="338" y="64" font-size="12.5" class="mono">seg5 → A ✓</text>
+  <text x="338" y="94" font-size="12.5" class="mono">seg6 → A ✓</text>
+  <rect x="324" y="108" width="212" height="26" rx="6" style="fill:var(--red-soft);stroke:var(--red)"/>
+  <text x="338" y="125" font-size="12.5" class="mono" style="fill:var(--red)">seg7 → ✗　B dead</text>
+  <text x="290" y="92" text-anchor="middle" font-size="20" font-weight="700" style="fill:var(--amber)">≠</text>
+  <rect x="30" y="164" width="520" height="42" rx="10" style="fill:var(--teal-soft);stroke:var(--teal)"/>
+  <text x="290" y="190" text-anchor="middle" font-size="12" font-weight="700" style="fill:var(--teal)">reconcile: seg7 diverged → reassign to C, reload from object storage</text>
+  <path d="M430,134 L430,162" style="fill:none;stroke:var(--amber)"/>
+  <path d="M426,158 L434,158 L430,164 Z" style="fill:var(--amber)"/>
+  <path d="M472,164 L472,138" style="fill:none;stroke:var(--teal)"/>
+  <path d="M468,142 L476,142 L472,134 Z" style="fill:var(--teal)"/>
+  <text x="486" y="153" font-size="9.5" style="fill:var(--teal)">fix</text>
+</svg>
+<div class="figcap"><b>State-driven self-healing</b>: coordinators continuously compare the "target" (every segment should be loaded) with the "actual" (B died, seg7 unloaded); on any ≠, reconcile fixes it — reassign seg7 to C, reload from object storage. <b>It never asks what failure happened in between; as long as it keeps reconciling, it converges to the correct state.</b></div>
+</div>
 
 <h2>Third line of defense: detect in time, take over safely</h2>
 <p>Reconcile's premise is <strong>knowing who's alive and who's dead</strong>. That rides on etcd's <strong>session and lease</strong>: each node, on

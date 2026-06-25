@@ -318,6 +318,14 @@ html[data-lang="zh"] .lang-en { display: none !important; }
   padding: 0 .5rem; text-align: center; white-space: nowrap; }
 .trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
 @media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+/* --- hand-drawn figure (inline SVG illustrations) --- */
+.fig { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1rem .85rem; box-shadow: var(--shadow); text-align: center; }
+.fig svg { max-width: 100%; height: auto; display: block; margin: 0 auto;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif; }
+.fig svg text { fill: var(--ink); }
+.fig .figcap { margin: .72rem auto 0; font-size: .8rem; color: var(--muted); line-height: 1.55; max-width: 46rem; }
+.fig .figcap b { color: var(--accent-ink); font-weight: 700; }
 </style>
 </head><body>
 <div class="topbar">
@@ -423,6 +431,43 @@ Go 在这里如鱼得水——goroutine 让高并发代码写起来简单，gRPC
 C++ 手里的指针就悬空了。所以 cgo 边界上传数据，要么拷贝一份过去（小数据可以，大数据太贵），要么用 C++ 这边分配、双方都能稳定访问的内存
 （比如 mmap 区、或专门的缓冲区）。理解了这层约束，你就明白为什么 Milvus 的内核接口里，除了"查询参数"和"结果"，还总夹着一些不起眼的句柄、缓冲区和状态码——
 它们正是让两套运行时安全协作的黏合剂。</p>
+
+<div class="fig">
+<svg viewBox="0 0 600 224" role="img" aria-label="cgo 边界：每行一调 vs 整批一调">
+  <rect x="18" y="40" width="270" height="170" rx="10" style="fill:none;stroke:var(--line)"/>
+  <text x="153" y="61" text-anchor="middle" font-size="12.5" font-weight="700" style="fill:var(--red)">❌ 每行一调</text>
+  <text x="32" y="98" font-size="11" style="fill:var(--muted)">Go</text>
+  <text x="32" y="190" font-size="11" style="fill:var(--muted)">C++ · segcore</text>
+  <line x1="28" y1="138" x2="278" y2="138" style="stroke:var(--muted);stroke-dasharray:4 3"/>
+  <text x="272" y="133" text-anchor="end" font-size="10" style="fill:var(--faint)">cgo 边界</text>
+  <g style="stroke:var(--amber);fill:none">
+    <path d="M70,104 L70,172"/><path d="M105,104 L105,172"/><path d="M140,104 L140,172"/>
+    <path d="M175,104 L175,172"/><path d="M210,104 L210,172"/><path d="M245,104 L245,172"/>
+  </g>
+  <g style="fill:var(--amber)">
+    <path d="M66,168 L74,168 L70,176 Z"/><path d="M101,168 L109,168 L105,176 Z"/><path d="M136,168 L144,168 L140,176 Z"/>
+    <path d="M171,168 L179,168 L175,176 Z"/><path d="M206,168 L214,168 L210,176 Z"/><path d="M241,168 L249,168 L245,176 Z"/>
+  </g>
+  <g style="fill:var(--red)">
+    <circle cx="70" cy="138" r="3"/><circle cx="105" cy="138" r="3"/><circle cx="140" cy="138" r="3"/>
+    <circle cx="175" cy="138" r="3"/><circle cx="210" cy="138" r="3"/><circle cx="245" cy="138" r="3"/>
+  </g>
+  <text x="153" y="204" text-anchor="middle" font-size="10.5" style="fill:var(--muted)">N 行 → N 次过桥，固定开销 ×N</text>
+  <rect x="312" y="40" width="270" height="170" rx="10" style="fill:none;stroke:var(--teal)"/>
+  <text x="447" y="61" text-anchor="middle" font-size="12.5" font-weight="700" style="fill:var(--teal)">✅ 整批一调 · 零拷贝</text>
+  <text x="326" y="98" font-size="11" style="fill:var(--muted)">Go</text>
+  <text x="326" y="190" font-size="11" style="fill:var(--muted)">C++ · segcore</text>
+  <line x1="322" y1="138" x2="572" y2="138" style="stroke:var(--muted);stroke-dasharray:4 3"/>
+  <text x="566" y="133" text-anchor="end" font-size="10" style="fill:var(--faint)">cgo 边界</text>
+  <rect x="412" y="100" width="70" height="38" rx="8" style="fill:var(--teal-soft);stroke:var(--teal)"/>
+  <text x="447" y="124" text-anchor="middle" font-size="11.5" style="fill:var(--teal)">一整批 nq</text>
+  <path d="M447,138 L447,171" style="stroke:var(--teal);stroke-width:11;fill:none"/>
+  <path d="M433,169 L461,169 L447,182 Z" style="fill:var(--teal)"/>
+  <circle cx="447" cy="138" r="3.5" style="fill:var(--red)"/>
+  <text x="447" y="204" text-anchor="middle" font-size="10.5" style="fill:var(--muted)">N 行 → 1 次过桥，开销摊薄</text>
+</svg>
+<div class="figcap"><b>cgo 是有固定开销的边界</b>。左：每行一次调用 → 过桥 N 次、开销 ×N（红点＝每次的固定成本）；右：把整段检索打包成<b>一次粗粒度、零拷贝</b>的调用 → 只过桥一次，开销被摊薄。<b>批越大越划算</b>。</div>
+</div>
 
 <h2>代价与取舍</h2>
 <p>两种语言一套系统，代价主要有两块。其一，<strong>那座桥的开销与约束</strong>：cgo 调用有固定成本、内存模型割裂，逼着你把接口设计成"粗粒度、零拷贝、批量"——
@@ -612,6 +657,43 @@ across the cgo boundary either copies it over (fine for small data, too expensiv
 access stably (an mmap region, or a dedicated buffer). Grasp this constraint and you see why Milvus's kernel interfaces, besides "query params"
 and "results", are always dotted with unassuming handles, buffers, and status codes — they are the glue that lets the two runtimes cooperate
 safely.</p>
+
+<div class="fig">
+<svg viewBox="0 0 600 224" role="img" aria-label="cgo boundary: one call per row vs one batched call">
+  <rect x="18" y="40" width="270" height="170" rx="10" style="fill:none;stroke:var(--line)"/>
+  <text x="153" y="61" text-anchor="middle" font-size="12.5" font-weight="700" style="fill:var(--red)">❌ one call per row</text>
+  <text x="32" y="98" font-size="11" style="fill:var(--muted)">Go</text>
+  <text x="32" y="190" font-size="11" style="fill:var(--muted)">C++ · segcore</text>
+  <line x1="28" y1="138" x2="278" y2="138" style="stroke:var(--muted);stroke-dasharray:4 3"/>
+  <text x="272" y="133" text-anchor="end" font-size="10" style="fill:var(--faint)">cgo boundary</text>
+  <g style="stroke:var(--amber);fill:none">
+    <path d="M70,104 L70,172"/><path d="M105,104 L105,172"/><path d="M140,104 L140,172"/>
+    <path d="M175,104 L175,172"/><path d="M210,104 L210,172"/><path d="M245,104 L245,172"/>
+  </g>
+  <g style="fill:var(--amber)">
+    <path d="M66,168 L74,168 L70,176 Z"/><path d="M101,168 L109,168 L105,176 Z"/><path d="M136,168 L144,168 L140,176 Z"/>
+    <path d="M171,168 L179,168 L175,176 Z"/><path d="M206,168 L214,168 L210,176 Z"/><path d="M241,168 L249,168 L245,176 Z"/>
+  </g>
+  <g style="fill:var(--red)">
+    <circle cx="70" cy="138" r="3"/><circle cx="105" cy="138" r="3"/><circle cx="140" cy="138" r="3"/>
+    <circle cx="175" cy="138" r="3"/><circle cx="210" cy="138" r="3"/><circle cx="245" cy="138" r="3"/>
+  </g>
+  <text x="153" y="204" text-anchor="middle" font-size="10.5" style="fill:var(--muted)">N rows → N crossings, fixed cost ×N</text>
+  <rect x="312" y="40" width="270" height="170" rx="10" style="fill:none;stroke:var(--teal)"/>
+  <text x="447" y="61" text-anchor="middle" font-size="12.5" font-weight="700" style="fill:var(--teal)">✅ one batched call · zero-copy</text>
+  <text x="326" y="98" font-size="11" style="fill:var(--muted)">Go</text>
+  <text x="326" y="190" font-size="11" style="fill:var(--muted)">C++ · segcore</text>
+  <line x1="322" y1="138" x2="572" y2="138" style="stroke:var(--muted);stroke-dasharray:4 3"/>
+  <text x="566" y="133" text-anchor="end" font-size="10" style="fill:var(--faint)">cgo boundary</text>
+  <rect x="412" y="100" width="70" height="38" rx="8" style="fill:var(--teal-soft);stroke:var(--teal)"/>
+  <text x="447" y="124" text-anchor="middle" font-size="11.5" style="fill:var(--teal)">one batch (nq)</text>
+  <path d="M447,138 L447,171" style="stroke:var(--teal);stroke-width:11;fill:none"/>
+  <path d="M433,169 L461,169 L447,182 Z" style="fill:var(--teal)"/>
+  <circle cx="447" cy="138" r="3.5" style="fill:var(--red)"/>
+  <text x="447" y="204" text-anchor="middle" font-size="10.5" style="fill:var(--muted)">N rows → 1 crossing, cost amortized</text>
+</svg>
+<div class="figcap"><b>cgo is a boundary with a fixed per-call cost</b>. Left: one call per row → N crossings, cost ×N (red dots = the fixed cost each time); right: pack a whole segment's search into <b>one coarse-grained, zero-copy</b> call → one crossing, the cost amortized. <b>The bigger the batch, the better.</b></div>
+</div>
 
 <h2>The payoff and the tradeoff</h2>
 <p>Two languages, one system, costs you mainly two things. First, <strong>the bridge's overhead and constraints</strong>: cgo calls have a fixed

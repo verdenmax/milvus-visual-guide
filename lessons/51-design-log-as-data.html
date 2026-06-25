@@ -318,6 +318,14 @@ html[data-lang="zh"] .lang-en { display: none !important; }
   padding: 0 .5rem; text-align: center; white-space: nowrap; }
 .trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
 @media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+/* --- hand-drawn figure (inline SVG illustrations) --- */
+.fig { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1rem .85rem; box-shadow: var(--shadow); text-align: center; }
+.fig svg { max-width: 100%; height: auto; display: block; margin: 0 auto;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif; }
+.fig svg text { fill: var(--ink); }
+.fig .figcap { margin: .72rem auto 0; font-size: .8rem; color: var(--muted); line-height: 1.55; max-width: 46rem; }
+.fig .figcap b { color: var(--accent-ink); font-weight: 700; }
 </style>
 </head><body>
 <div class="topbar">
@@ -364,6 +372,38 @@ Milvus 把"日志"当主角、段当真相的快照，写入只是<strong>无锁
 <p>把整套系统想成"<strong>一条主干 + 若干派生</strong>"：WAL 是主干（唯一事实），段/binlog、索引、备集群都是<strong>挂在主干上的派生视图</strong>。
 前面学过的每个模块，其实都在围着这条主干做一件事——要么<strong>往日志里写</strong>（Proxy），要么<strong>从日志里读出来物化</strong>
 （DataNode、QueryNode、复制器）。看懂了这条主干，你就看懂了 Milvus 的写入路径、流式系统、复制为什么都长成那样。</p></div>
+
+<div class="fig">
+<svg viewBox="0 0 600 258" role="img" aria-label="只追加的日志与多个读取位置">
+  <text x="40" y="28" font-size="13" style="fill:var(--muted)">WAL · 只追加的日志</text>
+  <text x="516" y="28" text-anchor="end" font-size="12.5" font-weight="700" style="fill:var(--accent-ink)">Proxy 追加 →</text>
+  <rect x="40" y="42" width="76" height="46" rx="7" style="fill:var(--accent-soft);stroke:var(--accent)"/>
+  <text x="78" y="71" text-anchor="middle" font-size="13.5" class="mono" style="fill:var(--accent-ink)">TT100</text>
+  <rect x="120" y="42" width="76" height="46" rx="7" style="fill:var(--accent-soft);stroke:var(--accent)"/>
+  <text x="158" y="71" text-anchor="middle" font-size="13.5" class="mono" style="fill:var(--accent-ink)">101</text>
+  <rect x="200" y="42" width="76" height="46" rx="7" style="fill:var(--accent-soft);stroke:var(--accent)"/>
+  <text x="238" y="71" text-anchor="middle" font-size="13.5" class="mono" style="fill:var(--accent-ink)">102</text>
+  <rect x="280" y="42" width="76" height="46" rx="7" style="fill:var(--accent-soft);stroke:var(--accent)"/>
+  <text x="318" y="71" text-anchor="middle" font-size="13.5" class="mono" style="fill:var(--accent-ink)">103</text>
+  <rect x="360" y="42" width="76" height="46" rx="7" style="fill:var(--accent-soft);stroke:var(--accent)"/>
+  <text x="398" y="71" text-anchor="middle" font-size="13.5" class="mono" style="fill:var(--accent-ink)">104</text>
+  <rect x="440" y="42" width="76" height="46" rx="7" style="fill:var(--accent);stroke:var(--accent)"/>
+  <text x="478" y="71" text-anchor="middle" font-size="13.5" class="mono" style="fill:#fff">105</text>
+  <path d="M478,88 L478,140" style="fill:none;stroke:var(--teal);stroke-dasharray:3 3"/>
+  <path d="M398,88 L398,184" style="fill:none;stroke:var(--accent);stroke-dasharray:3 3"/>
+  <path d="M238,88 L238,228" style="fill:none;stroke:var(--amber);stroke-dasharray:3 3"/>
+  <line x1="40" y1="140" x2="560" y2="140" style="stroke:var(--line)"/>
+  <circle cx="478" cy="140" r="6" style="fill:var(--teal)"/>
+  <text x="466" y="145" text-anchor="end" font-size="13"><tspan font-weight="700" style="fill:var(--teal)">DataNode</tspan> · 落盘到 105</text>
+  <line x1="40" y1="184" x2="560" y2="184" style="stroke:var(--line)"/>
+  <circle cx="398" cy="184" r="6" style="fill:var(--accent)"/>
+  <text x="386" y="189" text-anchor="end" font-size="13"><tspan font-weight="700" style="fill:var(--accent-ink)">QueryNode</tspan> · 读到 104（tsafe）</text>
+  <line x1="40" y1="228" x2="560" y2="228" style="stroke:var(--line)"/>
+  <circle cx="238" cy="228" r="6" style="fill:var(--amber)"/>
+  <text x="226" y="233" text-anchor="end" font-size="13"><tspan font-weight="700" style="fill:var(--amber)">备集群</tspan> · 重放到 102</text>
+</svg>
+<div class="figcap"><b>一条日志，多方按需重放</b>：同一条只追加的 WAL，DataNode／QueryNode／备集群各自记着 checkpoint、按自己的进度消费——谁也不直接调用谁。</div>
+</div>
 
 <div class="flow">
   <div class="node hl"><div class="nt">Proxy</div><div class="nd">追加写入</div></div>
@@ -542,6 +582,38 @@ segments/binlogs, indexes, and the replica cluster are all <strong>derived views
 is doing one thing around this trunk — either <strong>writing into the log</strong> (the Proxy) or <strong>reading from it to
 materialize something</strong> (DataNode, QueryNode, the replicator). Grasp this trunk and you grasp why Milvus's write path,
 streaming system, and replication all look the way they do.</p></div>
+
+<div class="fig">
+<svg viewBox="0 0 600 258" role="img" aria-label="an append-only log with multiple read positions">
+  <text x="40" y="28" font-size="13" style="fill:var(--muted)">WAL · append-only log</text>
+  <text x="516" y="28" text-anchor="end" font-size="12.5" font-weight="700" style="fill:var(--accent-ink)">Proxy appends →</text>
+  <rect x="40" y="42" width="76" height="46" rx="7" style="fill:var(--accent-soft);stroke:var(--accent)"/>
+  <text x="78" y="71" text-anchor="middle" font-size="13.5" class="mono" style="fill:var(--accent-ink)">TT100</text>
+  <rect x="120" y="42" width="76" height="46" rx="7" style="fill:var(--accent-soft);stroke:var(--accent)"/>
+  <text x="158" y="71" text-anchor="middle" font-size="13.5" class="mono" style="fill:var(--accent-ink)">101</text>
+  <rect x="200" y="42" width="76" height="46" rx="7" style="fill:var(--accent-soft);stroke:var(--accent)"/>
+  <text x="238" y="71" text-anchor="middle" font-size="13.5" class="mono" style="fill:var(--accent-ink)">102</text>
+  <rect x="280" y="42" width="76" height="46" rx="7" style="fill:var(--accent-soft);stroke:var(--accent)"/>
+  <text x="318" y="71" text-anchor="middle" font-size="13.5" class="mono" style="fill:var(--accent-ink)">103</text>
+  <rect x="360" y="42" width="76" height="46" rx="7" style="fill:var(--accent-soft);stroke:var(--accent)"/>
+  <text x="398" y="71" text-anchor="middle" font-size="13.5" class="mono" style="fill:var(--accent-ink)">104</text>
+  <rect x="440" y="42" width="76" height="46" rx="7" style="fill:var(--accent);stroke:var(--accent)"/>
+  <text x="478" y="71" text-anchor="middle" font-size="13.5" class="mono" style="fill:#fff">105</text>
+  <path d="M478,88 L478,140" style="fill:none;stroke:var(--teal);stroke-dasharray:3 3"/>
+  <path d="M398,88 L398,184" style="fill:none;stroke:var(--accent);stroke-dasharray:3 3"/>
+  <path d="M238,88 L238,228" style="fill:none;stroke:var(--amber);stroke-dasharray:3 3"/>
+  <line x1="40" y1="140" x2="560" y2="140" style="stroke:var(--line)"/>
+  <circle cx="478" cy="140" r="6" style="fill:var(--teal)"/>
+  <text x="466" y="145" text-anchor="end" font-size="13"><tspan font-weight="700" style="fill:var(--teal)">DataNode</tspan> · flushed to 105</text>
+  <line x1="40" y1="184" x2="560" y2="184" style="stroke:var(--line)"/>
+  <circle cx="398" cy="184" r="6" style="fill:var(--accent)"/>
+  <text x="386" y="189" text-anchor="end" font-size="13"><tspan font-weight="700" style="fill:var(--accent-ink)">QueryNode</tspan> · read to 104 (tsafe)</text>
+  <line x1="40" y1="228" x2="560" y2="228" style="stroke:var(--line)"/>
+  <circle cx="238" cy="228" r="6" style="fill:var(--amber)"/>
+  <text x="226" y="233" text-anchor="end" font-size="13"><tspan font-weight="700" style="fill:var(--amber)">replica</tspan> · replayed to 102</text>
+</svg>
+<div class="figcap"><b>One log, many replayers</b>: the same append-only WAL — DataNode / QueryNode / the replica each track a checkpoint and consume at their own pace, none calling another directly.</div>
+</div>
 
 <div class="flow">
   <div class="node hl"><div class="nt">Proxy</div><div class="nd">append write</div></div>
