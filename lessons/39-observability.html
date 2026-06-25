@@ -367,6 +367,14 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 <p>先看三根支柱里你最常打交道的——日志。Milvus 有一条<strong>铁律</strong>：日志只能用 <span class="mono">pkg/mlog</span>，不准用标准库 <span class="mono">log</span>、不准直接 <span class="mono">fmt.Println</span>、也不准裸用 zap。为什么管得这么严？因为 <span class="mono">mlog</span> 替你扛起了分布式日志最难的几件事，而它的设计处处是讲究。</p>
 <p>第一个讲究：<strong>每条日志都必须带 ctx</strong>。你写的是 <span class="mono">mlog.Info(ctx, "消息", mlog.String("字段", 值))</span>——第一个参数永远是上下文。为什么强制？因为 ctx 里可以<strong>挂上一路累积的"身份信息"</strong>。第二个讲究：<strong>结构化字段</strong>。不是把变量拼进一句话（<span class="mono">"user " + id + " failed"</span>），而是用 <span class="mono">mlog.String</span>、<span class="mono">mlog.Int64</span> 这样的<strong>带类型的键值对</strong>。结构化日志的好处是<strong>机器可查</strong>：日志收集系统能按"字段 = 值"精确过滤，而不是在文本里瞎搜。第三个、也是最妙的讲究：<strong>字段能跨节点传播</strong>。用 <span class="mono">mlog.WithFields(ctx, ...)</span> 把字段挂到 ctx 上，子上下文会自动继承；更进一步，给字段加上 <span class="mono">mlog.OptPropagated()</span>（比如集合名、集合 ID），再配合 gRPC 拦截器（<span class="mono">mlog.UnaryServerInterceptor</span> / <span class="mono">UnaryClientInterceptor</span>），这些字段就能<strong>随着 RPC 调用一起"飞"到下游节点</strong>。于是 Proxy 上给一个请求打的标记，会原样出现在它触发的 QueryNode、DataNode 日志里——你<strong>用一个 ID 就能把散落在全集群的相关日志一网打尽</strong>。这正是分布式排错时最珍贵的能力。下面对比一下"拼字符串"与"结构化 + 可传播"的差别。</p>
 
+<div class="flow">
+  <div class="node hl"><div class="nt">Proxy</div><div class="nd">打标记 req_id=abc + OptPropagated 字段</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">QueryNode</div><div class="nd">拦截器自动继承 → 日志带 req_id=abc</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">DataNode</div><div class="nd">同样继承 → 日志带 req_id=abc</div></div>
+</div>
+
 <p>多说一句这条"<strong>每条日志必带 ctx</strong>"的铁律为什么值得严格执行。在单机程序里，日志带不带上下文，差别也许不大——反正都在一个进程里，前后翻翻就能对上。但 Milvus 是<strong>分布式</strong>的：一个请求的"故事"被<strong>拆散在好几个进程、好几台机器</strong>上书写。如果每个节点都只顾埋头记自己那一段、彼此没有共同的"线索 ID"，那这些日志就像<strong>一地散落、没有页码的稿纸</strong>——信息都在，却永远拼不回一个完整故事。ctx 的作用，就是给每一页稿纸<strong>盖上同一个编号</strong>。正因为这个编号能随 ctx 一路传递、还能经拦截器跨节点传播，事后你才能拿着它，把十几台机器上属于同一个请求的日志<strong>一键归拢</strong>。所以这条铁律绝不是"代码规范洁癖"，而是<strong>分布式系统能否被排查</strong>的生死线——少传一个 ctx，可能就意味着某段关键日志从此"<strong>失联</strong>"、再也归不进它该属于的那个故事。把这一点刻进肌肉记忆，是每个 Milvus 贡献者的必修课。</p>
 
 <div class="cols">
@@ -477,6 +485,14 @@ Last lesson, a request came in through the API. But once it runs through Milvus'
 <h2>Logs: mlog — ctx mandatory, structured, propagatable across nodes</h2>
 <p>First the pillar you deal with most — logs. Milvus has an <strong>iron rule</strong>: logging may only use <span class="mono">pkg/mlog</span> — not the standard <span class="mono">log</span>, not bare <span class="mono">fmt.Println</span>, not raw zap. Why so strict? Because <span class="mono">mlog</span> shoulders the hardest parts of distributed logging for you, and its design is thoughtful throughout.</p>
 <p>First touch: <strong>every log must carry ctx</strong>. You write <span class="mono">mlog.Info(ctx, "message", mlog.String("field", value))</span> — the first argument is always the context. Why mandatory? Because ctx can <strong>carry "identity" accumulated along the way</strong>. Second touch: <strong>structured fields</strong>. Not splicing variables into a sentence (<span class="mono">"user " + id + " failed"</span>) but typed key-value pairs like <span class="mono">mlog.String</span>, <span class="mono">mlog.Int64</span>. Structured logs are <strong>machine-queryable</strong>: a log system can filter precisely by "field = value" instead of grepping text. Third and most elegant: <strong>fields can propagate across nodes</strong>. Attach fields to ctx with <span class="mono">mlog.WithFields(ctx, ...)</span> and child contexts inherit them; further, mark a field with <span class="mono">mlog.OptPropagated()</span> (e.g. collection name, collection ID) and, via gRPC interceptors (<span class="mono">mlog.UnaryServerInterceptor</span> / <span class="mono">UnaryClientInterceptor</span>), those fields <strong>"fly" with the RPC to downstream nodes</strong>. So a marker stamped on a request at the Proxy reappears verbatim in the QueryNode and DataNode logs it triggers — <strong>one ID nets every related log across the whole cluster</strong>. That's the most precious ability when debugging distributed systems. The two styles compared:</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">Proxy</div><div class="nd">stamp req_id=abc + OptPropagated fields</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">QueryNode</div><div class="nd">interceptor inherits → logs carry req_id=abc</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">DataNode</div><div class="nd">inherits too → logs carry req_id=abc</div></div>
+</div>
 
 <div class="cols">
   <div class="col"><h4>❌ String-spliced logs</h4><p><span class="mono">log.Printf("user %d search failed", id)</span>. Info buried in text; each node logs its own, unmatchable; filtering by user means regex guessing; cross a node and the trail breaks.</p></div>

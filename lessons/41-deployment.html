@@ -390,6 +390,12 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 
 <h2>运维三件套合一：配置、可观测、平滑升级</h2>
 <p>把第 9 部分串起来，你会发现这几课讲的其实是<strong>同一件事的不同侧面</strong>——怎么让 Milvus 在生产里<strong>跑得稳、看得见、调得动、换得平</strong>。<strong>调得动</strong>，靠第 40 课的配置系统：用 etcd 下发、热更新限流与日志级别，不重启就能应对流量变化。<strong>看得见</strong>，靠第 39 课的可观测性：日志、指标、链路追踪三管齐下，出问题能从全集群里追出那一个请求。<strong>换得平</strong>，靠第 37 课提过的<strong>索引引擎版本协调</strong>（取所有节点的最小版本）以及 Operator 的<strong>滚动升级</strong>：一个节点一个节点地换，新老共存而不中断服务。</p>
+<div class="layers">
+  <div class="layer l-main"><div class="lh"><span class="badge">计算层</span><span class="name">Milvus 角色（集群模式各自独立伸缩）</span></div><div class="ld">Proxy / 协调器 / QueryNode（读） / streaming·DataNode（写）</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">依赖层</span><span class="name">三根外部支柱</span></div><div class="ld">etcd（一致性/元数据） · 对象存储（数据持久化） · MQ（有序日志 = WAL 后端）</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">部署载体</span><span class="name">从一个进程到一个集群</span></div><div class="ld">内嵌单机 / docker-compose / k8s Pod（Helm · Operator）</div></div>
+</div>
+
 <p>这就是把一套分布式向量数据库<strong>真正运营起来</strong>的全貌：<strong>部署</strong>决定它长在什么形态上、<strong>依赖</strong>替它扛住最难的分布式问题（一致性交给 etcd、持久化交给对象存储、有序日志交给 MQ）、<strong>独立伸缩</strong>让你把算力精准投到瓶颈处、<strong>配置与可观测</strong>让你在不停机的前提下看清并调整它。回望整个第 9 部分——从 API 契约、到可观测、到配置、到部署——我们其实走完了"<strong>一个用户/运维者会真正接触到的整张外圈</strong>"。至此，你不仅懂 Milvus 内部怎么运转，也懂了怎么把它用起来、管起来。下一部分（第 10 部分），我们走向最后一程：<strong>实践与贡献</strong>——怎么编译运行、怎么测试、有哪些代码约定，以及如何给 Milvus 提交你的第一个 PR。</p>
 
 <div class="card key">
@@ -499,6 +505,12 @@ Lesson 8 told you what Milvus <strong>depends on</strong> (etcd, object storage,
 
 <h2>Ops trio as one: config, observability, smooth upgrades</h2>
 <p>Tie Part 9 together and you'll see these lessons are <strong>different facets of one thing</strong> — how to make Milvus, in production, <strong>run stable, be seen, be tunable, upgrade smoothly</strong>. <strong>Tunable</strong>, via Lesson 40's config system: push via etcd, hot-reload rate limits and log levels, adapting to traffic without restart. <strong>Seen</strong>, via Lesson 39's observability: logs, metrics, traces three-pronged, tracing that one request out of the whole cluster when something breaks. <strong>Smooth upgrades</strong>, via Lesson 37's <strong>index-engine version coordination</strong> (take the minimum version across nodes) plus the Operator's <strong>rolling upgrade</strong>: replace node by node, old and new coexisting without interrupting service.</p>
+<div class="layers">
+  <div class="layer l-main"><div class="lh"><span class="badge">compute</span><span class="name">Milvus roles (scale independently in cluster mode)</span></div><div class="ld">Proxy / coordinators / QueryNode (reads) / streaming·DataNode (writes)</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">dependencies</span><span class="name">three external pillars</span></div><div class="ld">etcd (consistency/metadata) · object storage (durability) · MQ (ordered log = WAL backend)</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">deploy host</span><span class="name">from one process to a cluster</span></div><div class="ld">embedded single-node / docker-compose / k8s Pods (Helm · Operator)</div></div>
+</div>
+
 <p>This is the full picture of truly <strong>operating</strong> a distributed vector database: <strong>deployment</strong> decides what shape it grows into, <strong>dependencies</strong> shoulder the hardest distributed problems for it (consistency to etcd, durability to object storage, ordered logging to the MQ), <strong>independent scaling</strong> lets you pour compute precisely at the bottleneck, and <strong>config + observability</strong> let you see and adjust it without downtime. Looking back over all of Part 9 — from the API contract, to observability, to config, to deployment — we've actually walked "<strong>the entire outer ring a user/operator really touches</strong>". By now you not only understand how Milvus works inside, but how to use and run it. Next (Part 10), the final leg: <strong>practice and contributing</strong> — how to build and run, how to test, what code conventions exist, and how to submit your first PR to Milvus.</p>
 
 <div class="card key">

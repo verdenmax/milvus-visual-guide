@@ -372,6 +372,16 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 <p>再看下层——值到底从哪儿取。<span class="mono">config</span> 包（<span class="inline">pkg/config</span>）定义了多种<strong>数据源（Source）</strong>，每种来源各有<strong>优先级</strong>。最基础的是 <strong>FileSource</strong>：读 <span class="inline">configs/milvus.yaml</span>，这是<strong>人类可读的默认配置文件</strong>，也是所有旋钮"<strong>对外展示的清单</strong>"——你想知道有哪些配置、默认是多少，看它就对了。其上是 <strong>EnvSource</strong>：环境变量，方便在容器/CI 里<strong>临时覆盖</strong>，无需改文件。最高的是 <strong>EtcdSource</strong>：把配置放进 etcd，可<strong>集群级、运行时</strong>统一下发与修改。</p>
 <p>多来源就要定<strong>谁说了算</strong>。<span class="mono">config.Manager</span>（<span class="inline">pkg/config/manager.go</span>）负责把各来源<strong>合并</strong>，规则是按优先级：源码里 <span class="mono">HighPriority=1</span>、<span class="mono">NormalPriority=11</span>、<span class="mono">LowPriority=21</span>，并注明"<strong>值越小、优先级越高</strong>"。直观理解就是"<strong>越贴身、越动态的来源越优先</strong>"：etcd（运行时下发）压过环境变量、环境变量压过文件默认。这套"<strong>分层覆盖</strong>"模式你一定不陌生——它和绝大多数成熟配置系统一个套路：<strong>给一套合理默认，再允许逐层精确覆盖</strong>，既开箱即用，又能在每个环境精准调校。下面把三种来源摆在一起。</p>
 
+<div class="flow">
+  <div class="node"><div class="nt">milvus.yaml</div><div class="nd">文件默认(低)</div></div>
+  <div class="arrow">＜</div>
+  <div class="node"><div class="nt">环境变量</div><div class="nd">部署覆盖(中)</div></div>
+  <div class="arrow">＜</div>
+  <div class="node hl"><div class="nt">etcd</div><div class="nd">运行时下发(高)</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">config.Manager</div><div class="nd">按优先级合并 → ParamItem.GetAsInt()</div></div>
+</div>
+
 <p>为什么"<strong>越贴身、越动态的来源优先级越高</strong>"这条规则是合理的？因为它恰好匹配了人们调整配置的<strong>真实意图</strong>。文件默认是"<strong>大多数情况下的合理选择</strong>"，最普适、也最该被特殊情况覆盖；环境变量是"<strong>这一次部署的特定需要</strong>"，比通用默认更贴合当下；而 etcd 里的运行时配置是"<strong>此刻、由运维明确下发的决定</strong>"，往往是为了应对正在发生的状况（比如临时收紧限流以扛住流量峰值）——它<strong>最贴身、最该说了算</strong>。把优先级设计成"动态压过静态、具体压过通用"，本质是让系统<strong>尊重"更晚、更具体、更有针对性"的那个决定</strong>。这也提醒你一个排查配置问题的要诀：当某个配置"<strong>改了文件却不生效</strong>"，十有八九是被一个<strong>更高优先级的来源</strong>（环境变量或 etcd）悄悄覆盖了——顺着优先级链从高往低查，往往一抓一个准。</p>
 
 <table class="t">
@@ -486,6 +496,16 @@ A distributed system like Milvus hides <strong>hundreds of knobs</strong>: timeo
 <h2>Where config comes from: layered sources and priority</h2>
 <p>Now the lower layer — where values actually come from. The <span class="mono">config</span> package (<span class="inline">pkg/config</span>) defines several <strong>sources</strong>, each with a <strong>priority</strong>. The most basic is <strong>FileSource</strong>: reading <span class="inline">configs/milvus.yaml</span>, the <strong>human-readable default config file</strong> and the "<strong>catalog of every knob</strong>" — to learn which configs exist and their defaults, look here. Above it is <strong>EnvSource</strong>: environment variables, handy for <strong>temporary overrides</strong> in containers/CI without editing files. Highest is <strong>EtcdSource</strong>: config in etcd, for <strong>cluster-wide, runtime</strong> distribution and modification.</p>
 <p>Multiple sources require deciding <strong>who wins</strong>. <span class="mono">config.Manager</span> (<span class="inline">pkg/config/manager.go</span>) <strong>merges</strong> the sources by priority: the source defines <span class="mono">HighPriority=1</span>, <span class="mono">NormalPriority=11</span>, <span class="mono">LowPriority=21</span>, noting "<strong>lesser value = higher priority</strong>". Intuitively, "<strong>the more personal and dynamic source wins</strong>": etcd (runtime) beats env vars, env vars beat file defaults. This "<strong>layered override</strong>" pattern is surely familiar — the same play as most mature config systems: <strong>give sensible defaults, then allow precise layered overrides</strong>, both out-of-the-box and tunable per environment. The three sources side by side:</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">milvus.yaml</div><div class="nd">file default (low)</div></div>
+  <div class="arrow">＜</div>
+  <div class="node"><div class="nt">env vars</div><div class="nd">deploy override (mid)</div></div>
+  <div class="arrow">＜</div>
+  <div class="node hl"><div class="nt">etcd</div><div class="nd">runtime push (high)</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">config.Manager</div><div class="nd">merge by priority → ParamItem.GetAsInt()</div></div>
+</div>
 
 <table class="t">
   <tr><th>Source</th><th>Where from</th><th>Typical use</th><th>Priority</th></tr>

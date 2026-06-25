@@ -173,6 +173,14 @@ LESSON_39 = {
 <p>先看三根支柱里你最常打交道的——日志。Milvus 有一条<strong>铁律</strong>：日志只能用 <span class="mono">pkg/mlog</span>，不准用标准库 <span class="mono">log</span>、不准直接 <span class="mono">fmt.Println</span>、也不准裸用 zap。为什么管得这么严？因为 <span class="mono">mlog</span> 替你扛起了分布式日志最难的几件事，而它的设计处处是讲究。</p>
 <p>第一个讲究：<strong>每条日志都必须带 ctx</strong>。你写的是 <span class="mono">mlog.Info(ctx, "消息", mlog.String("字段", 值))</span>——第一个参数永远是上下文。为什么强制？因为 ctx 里可以<strong>挂上一路累积的"身份信息"</strong>。第二个讲究：<strong>结构化字段</strong>。不是把变量拼进一句话（<span class="mono">"user " + id + " failed"</span>），而是用 <span class="mono">mlog.String</span>、<span class="mono">mlog.Int64</span> 这样的<strong>带类型的键值对</strong>。结构化日志的好处是<strong>机器可查</strong>：日志收集系统能按"字段 = 值"精确过滤，而不是在文本里瞎搜。第三个、也是最妙的讲究：<strong>字段能跨节点传播</strong>。用 <span class="mono">mlog.WithFields(ctx, ...)</span> 把字段挂到 ctx 上，子上下文会自动继承；更进一步，给字段加上 <span class="mono">mlog.OptPropagated()</span>（比如集合名、集合 ID），再配合 gRPC 拦截器（<span class="mono">mlog.UnaryServerInterceptor</span> / <span class="mono">UnaryClientInterceptor</span>），这些字段就能<strong>随着 RPC 调用一起"飞"到下游节点</strong>。于是 Proxy 上给一个请求打的标记，会原样出现在它触发的 QueryNode、DataNode 日志里——你<strong>用一个 ID 就能把散落在全集群的相关日志一网打尽</strong>。这正是分布式排错时最珍贵的能力。下面对比一下"拼字符串"与"结构化 + 可传播"的差别。</p>
 
+<div class="flow">
+  <div class="node hl"><div class="nt">Proxy</div><div class="nd">打标记 req_id=abc + OptPropagated 字段</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">QueryNode</div><div class="nd">拦截器自动继承 → 日志带 req_id=abc</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">DataNode</div><div class="nd">同样继承 → 日志带 req_id=abc</div></div>
+</div>
+
 <p>多说一句这条"<strong>每条日志必带 ctx</strong>"的铁律为什么值得严格执行。在单机程序里，日志带不带上下文，差别也许不大——反正都在一个进程里，前后翻翻就能对上。但 Milvus 是<strong>分布式</strong>的：一个请求的"故事"被<strong>拆散在好几个进程、好几台机器</strong>上书写。如果每个节点都只顾埋头记自己那一段、彼此没有共同的"线索 ID"，那这些日志就像<strong>一地散落、没有页码的稿纸</strong>——信息都在，却永远拼不回一个完整故事。ctx 的作用，就是给每一页稿纸<strong>盖上同一个编号</strong>。正因为这个编号能随 ctx 一路传递、还能经拦截器跨节点传播，事后你才能拿着它，把十几台机器上属于同一个请求的日志<strong>一键归拢</strong>。所以这条铁律绝不是"代码规范洁癖"，而是<strong>分布式系统能否被排查</strong>的生死线——少传一个 ctx，可能就意味着某段关键日志从此"<strong>失联</strong>"、再也归不进它该属于的那个故事。把这一点刻进肌肉记忆，是每个 Milvus 贡献者的必修课。</p>
 
 <div class="cols">
@@ -236,6 +244,14 @@ Last lesson, a request came in through the API. But once it runs through Milvus'
 <h2>Logs: mlog — ctx mandatory, structured, propagatable across nodes</h2>
 <p>First the pillar you deal with most — logs. Milvus has an <strong>iron rule</strong>: logging may only use <span class="mono">pkg/mlog</span> — not the standard <span class="mono">log</span>, not bare <span class="mono">fmt.Println</span>, not raw zap. Why so strict? Because <span class="mono">mlog</span> shoulders the hardest parts of distributed logging for you, and its design is thoughtful throughout.</p>
 <p>First touch: <strong>every log must carry ctx</strong>. You write <span class="mono">mlog.Info(ctx, "message", mlog.String("field", value))</span> — the first argument is always the context. Why mandatory? Because ctx can <strong>carry "identity" accumulated along the way</strong>. Second touch: <strong>structured fields</strong>. Not splicing variables into a sentence (<span class="mono">"user " + id + " failed"</span>) but typed key-value pairs like <span class="mono">mlog.String</span>, <span class="mono">mlog.Int64</span>. Structured logs are <strong>machine-queryable</strong>: a log system can filter precisely by "field = value" instead of grepping text. Third and most elegant: <strong>fields can propagate across nodes</strong>. Attach fields to ctx with <span class="mono">mlog.WithFields(ctx, ...)</span> and child contexts inherit them; further, mark a field with <span class="mono">mlog.OptPropagated()</span> (e.g. collection name, collection ID) and, via gRPC interceptors (<span class="mono">mlog.UnaryServerInterceptor</span> / <span class="mono">UnaryClientInterceptor</span>), those fields <strong>"fly" with the RPC to downstream nodes</strong>. So a marker stamped on a request at the Proxy reappears verbatim in the QueryNode and DataNode logs it triggers — <strong>one ID nets every related log across the whole cluster</strong>. That's the most precious ability when debugging distributed systems. The two styles compared:</p>
+
+<div class="flow">
+  <div class="node hl"><div class="nt">Proxy</div><div class="nd">stamp req_id=abc + OptPropagated fields</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">QueryNode</div><div class="nd">interceptor inherits → logs carry req_id=abc</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">DataNode</div><div class="nd">inherits too → logs carry req_id=abc</div></div>
+</div>
 
 <div class="cols">
   <div class="col"><h4>❌ String-spliced logs</h4><p><span class="mono">log.Printf("user %d search failed", id)</span>. Info buried in text; each node logs its own, unmatchable; filtering by user means regex guessing; cross a node and the trail breaks.</p></div>
@@ -307,6 +323,16 @@ LESSON_40 = {
 <p>再看下层——值到底从哪儿取。<span class="mono">config</span> 包（<span class="inline">pkg/config</span>）定义了多种<strong>数据源（Source）</strong>，每种来源各有<strong>优先级</strong>。最基础的是 <strong>FileSource</strong>：读 <span class="inline">configs/milvus.yaml</span>，这是<strong>人类可读的默认配置文件</strong>，也是所有旋钮"<strong>对外展示的清单</strong>"——你想知道有哪些配置、默认是多少，看它就对了。其上是 <strong>EnvSource</strong>：环境变量，方便在容器/CI 里<strong>临时覆盖</strong>，无需改文件。最高的是 <strong>EtcdSource</strong>：把配置放进 etcd，可<strong>集群级、运行时</strong>统一下发与修改。</p>
 <p>多来源就要定<strong>谁说了算</strong>。<span class="mono">config.Manager</span>（<span class="inline">pkg/config/manager.go</span>）负责把各来源<strong>合并</strong>，规则是按优先级：源码里 <span class="mono">HighPriority=1</span>、<span class="mono">NormalPriority=11</span>、<span class="mono">LowPriority=21</span>，并注明"<strong>值越小、优先级越高</strong>"。直观理解就是"<strong>越贴身、越动态的来源越优先</strong>"：etcd（运行时下发）压过环境变量、环境变量压过文件默认。这套"<strong>分层覆盖</strong>"模式你一定不陌生——它和绝大多数成熟配置系统一个套路：<strong>给一套合理默认，再允许逐层精确覆盖</strong>，既开箱即用，又能在每个环境精准调校。下面把三种来源摆在一起。</p>
 
+<div class="flow">
+  <div class="node"><div class="nt">milvus.yaml</div><div class="nd">文件默认(低)</div></div>
+  <div class="arrow">＜</div>
+  <div class="node"><div class="nt">环境变量</div><div class="nd">部署覆盖(中)</div></div>
+  <div class="arrow">＜</div>
+  <div class="node hl"><div class="nt">etcd</div><div class="nd">运行时下发(高)</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">config.Manager</div><div class="nd">按优先级合并 → ParamItem.GetAsInt()</div></div>
+</div>
+
 <p>为什么"<strong>越贴身、越动态的来源优先级越高</strong>"这条规则是合理的？因为它恰好匹配了人们调整配置的<strong>真实意图</strong>。文件默认是"<strong>大多数情况下的合理选择</strong>"，最普适、也最该被特殊情况覆盖；环境变量是"<strong>这一次部署的特定需要</strong>"，比通用默认更贴合当下；而 etcd 里的运行时配置是"<strong>此刻、由运维明确下发的决定</strong>"，往往是为了应对正在发生的状况（比如临时收紧限流以扛住流量峰值）——它<strong>最贴身、最该说了算</strong>。把优先级设计成"动态压过静态、具体压过通用"，本质是让系统<strong>尊重"更晚、更具体、更有针对性"的那个决定</strong>。这也提醒你一个排查配置问题的要诀：当某个配置"<strong>改了文件却不生效</strong>"，十有八九是被一个<strong>更高优先级的来源</strong>（环境变量或 etcd）悄悄覆盖了——顺着优先级链从高往低查，往往一抓一个准。</p>
 
 <table class="t">
@@ -374,6 +400,16 @@ A distributed system like Milvus hides <strong>hundreds of knobs</strong>: timeo
 <h2>Where config comes from: layered sources and priority</h2>
 <p>Now the lower layer — where values actually come from. The <span class="mono">config</span> package (<span class="inline">pkg/config</span>) defines several <strong>sources</strong>, each with a <strong>priority</strong>. The most basic is <strong>FileSource</strong>: reading <span class="inline">configs/milvus.yaml</span>, the <strong>human-readable default config file</strong> and the "<strong>catalog of every knob</strong>" — to learn which configs exist and their defaults, look here. Above it is <strong>EnvSource</strong>: environment variables, handy for <strong>temporary overrides</strong> in containers/CI without editing files. Highest is <strong>EtcdSource</strong>: config in etcd, for <strong>cluster-wide, runtime</strong> distribution and modification.</p>
 <p>Multiple sources require deciding <strong>who wins</strong>. <span class="mono">config.Manager</span> (<span class="inline">pkg/config/manager.go</span>) <strong>merges</strong> the sources by priority: the source defines <span class="mono">HighPriority=1</span>, <span class="mono">NormalPriority=11</span>, <span class="mono">LowPriority=21</span>, noting "<strong>lesser value = higher priority</strong>". Intuitively, "<strong>the more personal and dynamic source wins</strong>": etcd (runtime) beats env vars, env vars beat file defaults. This "<strong>layered override</strong>" pattern is surely familiar — the same play as most mature config systems: <strong>give sensible defaults, then allow precise layered overrides</strong>, both out-of-the-box and tunable per environment. The three sources side by side:</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">milvus.yaml</div><div class="nd">file default (low)</div></div>
+  <div class="arrow">＜</div>
+  <div class="node"><div class="nt">env vars</div><div class="nd">deploy override (mid)</div></div>
+  <div class="arrow">＜</div>
+  <div class="node hl"><div class="nt">etcd</div><div class="nd">runtime push (high)</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">config.Manager</div><div class="nd">merge by priority → ParamItem.GetAsInt()</div></div>
+</div>
 
 <table class="t">
   <tr><th>Source</th><th>Where from</th><th>Typical use</th><th>Priority</th></tr>
@@ -462,6 +498,12 @@ LESSON_41 = {
 
 <h2>运维三件套合一：配置、可观测、平滑升级</h2>
 <p>把第 9 部分串起来，你会发现这几课讲的其实是<strong>同一件事的不同侧面</strong>——怎么让 Milvus 在生产里<strong>跑得稳、看得见、调得动、换得平</strong>。<strong>调得动</strong>，靠第 40 课的配置系统：用 etcd 下发、热更新限流与日志级别，不重启就能应对流量变化。<strong>看得见</strong>，靠第 39 课的可观测性：日志、指标、链路追踪三管齐下，出问题能从全集群里追出那一个请求。<strong>换得平</strong>，靠第 37 课提过的<strong>索引引擎版本协调</strong>（取所有节点的最小版本）以及 Operator 的<strong>滚动升级</strong>：一个节点一个节点地换，新老共存而不中断服务。</p>
+<div class="layers">
+  <div class="layer l-main"><div class="lh"><span class="badge">计算层</span><span class="name">Milvus 角色（集群模式各自独立伸缩）</span></div><div class="ld">Proxy / 协调器 / QueryNode（读） / streaming·DataNode（写）</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">依赖层</span><span class="name">三根外部支柱</span></div><div class="ld">etcd（一致性/元数据） · 对象存储（数据持久化） · MQ（有序日志 = WAL 后端）</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">部署载体</span><span class="name">从一个进程到一个集群</span></div><div class="ld">内嵌单机 / docker-compose / k8s Pod（Helm · Operator）</div></div>
+</div>
+
 <p>这就是把一套分布式向量数据库<strong>真正运营起来</strong>的全貌：<strong>部署</strong>决定它长在什么形态上、<strong>依赖</strong>替它扛住最难的分布式问题（一致性交给 etcd、持久化交给对象存储、有序日志交给 MQ）、<strong>独立伸缩</strong>让你把算力精准投到瓶颈处、<strong>配置与可观测</strong>让你在不停机的前提下看清并调整它。回望整个第 9 部分——从 API 契约、到可观测、到配置、到部署——我们其实走完了"<strong>一个用户/运维者会真正接触到的整张外圈</strong>"。至此，你不仅懂 Milvus 内部怎么运转，也懂了怎么把它用起来、管起来。下一部分（第 10 部分），我们走向最后一程：<strong>实践与贡献</strong>——怎么编译运行、怎么测试、有哪些代码约定，以及如何给 Milvus 提交你的第一个 PR。</p>
 
 <div class="card key">
@@ -524,6 +566,12 @@ Lesson 8 told you what Milvus <strong>depends on</strong> (etcd, object storage,
 
 <h2>Ops trio as one: config, observability, smooth upgrades</h2>
 <p>Tie Part 9 together and you'll see these lessons are <strong>different facets of one thing</strong> — how to make Milvus, in production, <strong>run stable, be seen, be tunable, upgrade smoothly</strong>. <strong>Tunable</strong>, via Lesson 40's config system: push via etcd, hot-reload rate limits and log levels, adapting to traffic without restart. <strong>Seen</strong>, via Lesson 39's observability: logs, metrics, traces three-pronged, tracing that one request out of the whole cluster when something breaks. <strong>Smooth upgrades</strong>, via Lesson 37's <strong>index-engine version coordination</strong> (take the minimum version across nodes) plus the Operator's <strong>rolling upgrade</strong>: replace node by node, old and new coexisting without interrupting service.</p>
+<div class="layers">
+  <div class="layer l-main"><div class="lh"><span class="badge">compute</span><span class="name">Milvus roles (scale independently in cluster mode)</span></div><div class="ld">Proxy / coordinators / QueryNode (reads) / streaming·DataNode (writes)</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">dependencies</span><span class="name">three external pillars</span></div><div class="ld">etcd (consistency/metadata) · object storage (durability) · MQ (ordered log = WAL backend)</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">deploy host</span><span class="name">from one process to a cluster</span></div><div class="ld">embedded single-node / docker-compose / k8s Pods (Helm · Operator)</div></div>
+</div>
+
 <p>This is the full picture of truly <strong>operating</strong> a distributed vector database: <strong>deployment</strong> decides what shape it grows into, <strong>dependencies</strong> shoulder the hardest distributed problems for it (consistency to etcd, durability to object storage, ordered logging to the MQ), <strong>independent scaling</strong> lets you pour compute precisely at the bottleneck, and <strong>config + observability</strong> let you see and adjust it without downtime. Looking back over all of Part 9 — from the API contract, to observability, to config, to deployment — we've actually walked "<strong>the entire outer ring a user/operator really touches</strong>". By now you not only understand how Milvus works inside, but how to use and run it. Next (Part 10), the final leg: <strong>practice and contributing</strong> — how to build and run, how to test, what code conventions exist, and how to submit your first PR to Milvus.</p>
 
 <div class="card key">
