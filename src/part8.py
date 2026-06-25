@@ -512,3 +512,140 @@ Lesson 28 followed one query as it turned a filter string into an expression tre
 </div>
 """,
 }
+
+LESSON_37 = {
+    "zh": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+第 36 课，我们把 CPU 榨到了极致——用向量化、SIMD，让一条指令同时算一批数据。但当数据量与吞吐再上一个台阶，CPU 那"几十个核"也会喂不饱。这时该请出真正的并行猛兽——<strong>GPU</strong>：一张卡上<strong>成千上万个核</strong>，专为"对海量数据做同一种简单运算"而生，而这恰恰就是向量检索的本质。这一课看 Milvus 怎么把 GPU 用起来：它<strong>暴露哪些 GPU 索引</strong>、真正的算法<strong>住在哪里</strong>、为什么 GPU 是<strong>编译期的选择</strong>，以及异构集群里怎么协调索引版本。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 类比</div>
+  把 CPU 想成厨房里<strong>几位身手全能的大厨</strong>：聪明、灵活、什么复杂菜都能做，但人数有限。GPU 则像<strong>一支上千人的切配大军</strong>：每个人只会一招最简单的活（比如"把洋葱切成丁"），但<strong>上千人同时挥刀</strong>。
+  要做一桌花样繁多、步骤各异的宴席（复杂控制逻辑），还得靠几位大厨；可要"<strong>把十万颗洋葱用同一种方式切丁</strong>"（对海量向量算同一种距离），切配大军<strong>一拥而上、瞬间干完</strong>。向量检索正是后者——<strong>同一个距离公式，在百万条向量上重复百万遍</strong>。这种"<strong>大批量、同质、可并行</strong>"的活，就是 GPU 的主场。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观视角</div>
+  一句话：<strong>Milvus 暴露一组 GPU 索引类型（GPU_CAGRA / GPU_IVF_FLAT / GPU_IVF_PQ / GPU_BRUTE_FORCE），参数校验在 <span class="mono">internal/util/indexparamcheck</span>，真正的 GPU 算法实现在 Knowhere（CAGRA 源自 NVIDIA 的 RAFT/cuVS 图索引）；GPU 支持是编译期开关（<span class="mono">make milvus-gpu</span> / <span class="mono">MILVUS_GPU_VERSION</span>），运行时用显存池管理（<span class="mono">gpu.initMemSize/maxMemSize</span>）</strong>。Milvus 负责集成、路由、调度，不在 core 里自己手写 CUDA。
+</div>
+
+<h2>为什么向量检索特别适合 GPU</h2>
+<p>要理解 GPU 的价值，先想清楚 CPU 和 GPU 的"性格差异"。CPU 是<strong>少而精</strong>：几个到几十个强大的核，每个核都有复杂的分支预测、乱序执行、大缓存，擅长跑<strong>逻辑复杂、分支多变</strong>的串行任务。GPU 反过来是<strong>多而简</strong>：成千上万个相对简单的核，没那么聪明，但胜在<strong>数量碾压</strong>，特别擅长"<strong>同一段运算、同时套在海量数据上</strong>"（业界叫 SIMT：单指令、多线程）。</p>
+<p>向量检索的内核运算，简直是为 GPU 量身定做的。算一次相似度，本质就是两个向量的<strong>点积或欧氏距离</strong>——一串乘加。而一次搜索要把查询向量和<strong>成千上万条候选</strong>逐一算距离：同一个公式，重复成千上万遍，彼此<strong>互不依赖</strong>。这种"<strong>大批量、同质、天然可并行</strong>"的负载，正是 GPU 上千核最饿、最能吃下的那口饭。当数据规模大到一定程度、或要求的吞吐（QPS）足够高时，GPU 相对 CPU 往往能带来<strong>数量级</strong>的提升。第 36 课的 CPU 向量化（SIMD：一条指令算 8/16 个浮点）已经是"并行"的一种；GPU 只是把这种并行<strong>推到极致</strong>——从"一次几十个"跳到"一次成千上万个"。下面把两者的性格摆在一起看。</p>
+
+<p>不过要诚实地说一句：<strong>GPU 不是一键加速的银弹</strong>，它有自己的"门票"和"水土"。第一道坎是<strong>数据搬运</strong>：向量要先从主机内存拷进显存，算完再把结果拷回来——这趟"<strong>过海关</strong>"本身有开销。如果一次只搜一两条向量，搬运的时间可能比省下的计算时间还多，GPU 反而<strong>不划算</strong>；只有当一次能喂给它<strong>足够大的一批</strong>活（大数据集、或高并发把许多查询攒成大批），上千核被填满，搬运开销被摊薄，GPU 的威力才真正释放。这与第 29 课"<strong>批量搜更划算</strong>"、第 36 课"<strong>批的粒度</strong>"是同一条道理在硬件层的回响。第二道坎是<strong>显存上限</strong>：一张卡的显存（往往几十 GB）通常远小于主机内存，装不下的部分要么压缩（用 PQ）、要么分批、要么干脆放不下。第三道坎是<strong>成本与运维</strong>：GPU 卡贵、功耗高，还要专门的驱动与构建。所以现实里的选择往往是"<strong>看菜下饭</strong>"：中小规模、延迟敏感、查询稀疏的场景，CPU 版部署简单、延迟稳定，反而更合适；唯有<strong>海量数据 + 高吞吐</strong>这种把 GPU 喂得饱饱的场景，才值得为它的"门票"买单。把这层权衡想清楚，你才不会被"GPU 一定更快"这种口号带偏。</p>
+
+<div class="cols">
+  <div class="col"><h4>CPU（少而精）</h4><p>几十个强核，复杂分支预测、大缓存，擅长<strong>逻辑复杂的串行任务</strong>与中小规模检索。向量化(SIMD)已能一条指令算一批。<strong>通用、好部署、延迟稳定</strong>。</p></div>
+  <div class="col"><h4>GPU（多而简）</h4><p>成千上万个简单核，擅长<strong>大批量同质并行</strong>（SIMT）。海量向量距离计算、超高吞吐场景能快出<strong>数量级</strong>。代价是<strong>硬件成本、显存上限、主机↔显存数据搬运</strong>。</p></div>
+</div>
+
+<h2>Milvus 提供哪些 GPU 索引（以及它们住在哪）</h2>
+<p>这里有个<strong>必须讲清的边界</strong>，初学时极易搞混：<strong>GPU 索引的"算法"并不在 Milvus 的 C++ core 里，而在 Knowhere（及其依赖的 NVIDIA RAFT/cuVS）里</strong>。Milvus 自己<strong>不手写 CUDA 核函数</strong>；它做的是"<strong>暴露与集成</strong>"——对外提供几种 GPU 索引<strong>类型名</strong>，对内把请求<strong>路由</strong>给 Knowhere 去真正调用 GPU。落到代码上，你能在 <span class="inline">internal/util/indexparamcheck</span> 里看到这些类型对应的<strong>参数校验器</strong>：<span class="mono">GPU_CAGRA</span>（cagra_checker）、<span class="mono">GPU_IVF_FLAT</span>、<span class="mono">GPU_IVF_PQ</span>（raft_ivf_* checker）、<span class="mono">GPU_BRUTE_FORCE</span>（raft_brute_force_checker）。这些校验器的职责是"<strong>看用户给这种 GPU 索引传的参数对不对</strong>"，而非实现算法本身。</p>
+<p>这其中最值得一提的是 <span class="mono">GPU_CAGRA</span>。CAGRA 是 NVIDIA 在 <strong>RAFT/cuVS</strong> 里实现的一种<strong>面向 GPU 的图索引</strong>——你可以把它理解成"<strong>专为 GPU 重新设计的 HNSW</strong>"（回忆第 5 课的图索引）：同样靠"在邻居图上贪心走近邻"来检索，但图的构建与遍历都被改造得适配 GPU 的大规模并行。其余几种里，<span class="mono">GPU_IVF_FLAT</span> / <span class="mono">GPU_IVF_PQ</span> 是把第 5 课的 IVF（倒排+聚类）搬上 GPU，<span class="mono">GPU_BRUTE_FORCE</span> 则是"<strong>暴力全算</strong>"——不建索引、直接用 GPU 的蛮力把所有距离算一遍，在数据不算太大、又要<strong>最高召回</strong>时反而简单高效。下面这张表帮你把它们归归类。记住那条红线：<strong>类型名与参数校验在 Milvus，算法实现在 Knowhere/RAFT</strong>，别把 CUDA 的功劳记到 milvus core 头上。</p>
+
+<p>一个常见的疑惑是："既然 GPU 这么快，为什么还保留暴力全算这种最'笨'的方法？"答案恰恰点出了 GPU 的精髓：当核多到一定程度，"<strong>笨办法</strong>"也能很快。CPU 上没人敢对百万向量逐一算距离（太慢），所以才要 HNSW、IVF 这些精巧索引来<strong>少算一些</strong>；但在 GPU 上，上千核一拥而上，"<strong>全算一遍</strong>"在中小数据上可能比"建索引再查"还快，而且<strong>召回率是 100%</strong>（没有近似带来的漏检）。这就是为什么 <span class="mono">GPU_BRUTE_FORCE</span> 不仅没被淘汰，反而常被当作<strong>精度基准</strong>——用它的结果来衡量其他近似索引"漏掉了多少"。可见<strong>硬件能力会反过来改变算法选择</strong>：CPU 时代"必须用索引"的直觉，到 GPU 时代未必还成立。这种"<strong>换了硬件、连算法直觉都要重估</strong>"的现象，正是理解 GPU 加速时最有意思的一课。</p>
+
+<p>为什么 Milvus 要这样"<strong>只暴露、不自造</strong>"？这其实是个很聪明的分工。GPU 上的高性能向量算法（尤其是 CAGRA 这种图索引）极其难写——要榨干显卡，得深谙 CUDA、内存合并访问、warp 调度等一整套黑魔法，而 NVIDIA 自己的 <strong>RAFT/cuVS</strong> 团队正是这方面最权威的人。Milvus 把这块<strong>交给专业的人</strong>，自己专注于"<strong>把这些能力接进一个分布式向量库</strong>"该操心的事：索引怎么调度构建、怎么在节点间分发、参数怎么校验、版本怎么协调。这种"<strong>站在巨人肩膀上</strong>"的姿态，和第 22 课里 Milvus 把 CPU 侧索引也托付给 <strong>Knowhere</strong> 是一脉相承的——<strong>Knowhere 是 Milvus 统一的"索引引擎中台"</strong>，无论 CPU 还是 GPU 索引，Milvus 上层都通过它这道统一的门来调用，而不必关心底下究竟是 HNSW、IVF 还是 CAGRA。于是你能看到一个清爽的分层：<strong>用户选索引类型 → Milvus 校验参数并调度 → Knowhere 选择具体算法（CPU 或 GPU）→ 真正的核函数在 Knowhere/RAFT 里跑</strong>。理解了这条链，你就不会再纠结"GPU 索引到底是谁写的"——Milvus 写的是"<strong>怎么用好它</strong>"，不是"<strong>它本身</strong>"。</p>
+
+<table class="t">
+  <tr><th>GPU 索引类型</th><th>本质（对应 CPU 侧概念）</th><th>适用场景</th></tr>
+  <tr><td class="mono">GPU_CAGRA</td><td>面向 GPU 的图索引（类比 GPU 版 HNSW，源自 RAFT/cuVS）</td><td>大规模、高吞吐、要兼顾召回与速度</td></tr>
+  <tr><td class="mono">GPU_IVF_FLAT</td><td>GPU 上的 IVF（倒排+聚类，不压缩）</td><td>中大规模，召回优先</td></tr>
+  <tr><td class="mono">GPU_IVF_PQ</td><td>GPU 上的 IVF + PQ 压缩</td><td>超大规模，显存吃紧、可接受少量精度损失</td></tr>
+  <tr><td class="mono">GPU_BRUTE_FORCE</td><td>GPU 暴力全算（不建索引）</td><td>数据不大但要最高召回 / 作基准</td></tr>
+</table>
+
+<h2>GPU 是编译期的选择，不是运行时开关</h2>
+<p>一个很关键、也很容易踩坑的工程事实：<strong>Milvus 的 GPU 支持是"编译期"决定的，不是装好之后点一下就能开的运行时按钮</strong>。从构建脚本就能看出来：<span class="inline">scripts/core_build.sh</span> 里 <span class="mono">GPU_VERSION</span> <strong>默认是 OFF</strong>，要靠 <span class="mono">-DMILVUS_GPU_VERSION=ON</span> 打开；<span class="inline">Makefile</span> 里也专门有 <span class="mono">make milvus-gpu</span> / <span class="mono">build-cpp-gpu</span> 这套<strong>独立的 GPU 构建目标</strong>。换句话说，你得<strong>专门编译一个 GPU 版本</strong>的 Milvus、部署到带 GPU 的机器上，才能用上那些 GPU 索引；普通的 CPU 版镜像里，这些能力根本没被编进去。</p>
+<p>为什么这么设计？因为 GPU 代码要链接 CUDA、RAFT 这一整套<strong>庞大的 GPU 工具链</strong>，体积和依赖都很重；让绝大多数只用 CPU 的用户也背上这套包袱并不划算。于是 Milvus 把 GPU 做成一个<strong>独立的构建变体</strong>：要的人专门构建，不要的人零负担。运行起来后，GPU 这种<strong>稀缺资源</strong>还需要精打细算——显存远比内存金贵。Milvus 为此用了一个<strong>显存池</strong>：在 <span class="inline">configs/milvus.yaml</span> 里由 <span class="mono">gpu.initMemSize</span> / <span class="mono">gpu.maxMemSize</span> 配置，启动时<strong>预先占下一块显存反复复用</strong>，避免频繁向 GPU 申请/释放（那是出了名的慢）。这和第 34 课讲的"<strong>把过桥次数压到最少</strong>"是同一种省法：<strong>对昂贵资源，要批量、复用，别零敲碎打</strong>。下面用一条流程，把"从构建到服务"这条 GPU 路径走一遍。</p>
+
+<p>这里也顺带点破一个初学者常有的误会：以为"开了 GPU，整个 Milvus 就都跑在显卡上了"。其实不然——<strong>GPU 只接管它最擅长的那一段：向量索引的构建与检索</strong>。前面七部分讲的那一整套——Proxy 收请求、协调器调度、WAL 写日志、流式消费、段的管理——<strong>统统还在 CPU 上跑</strong>，一点没变。GPU 在这里更像一个被精准调用的"<strong>加速协处理器</strong>"：上层 Go 把"在这个段上搜 topK"这件最重的计算活儿，经由 Knowhere 派到 GPU 上飞快算完，再把结果接回 CPU 侧的正常流程。所以你完全可以把第 8 部分的内核之旅理解成"<strong>给 Milvus 这台机器换一颗更猛的计算心脏</strong>"，而机器的其余骨架（调度、存储、通信）原封不动。看清这一点，GPU 就从一个唬人的大词，变回它本来的样子——<strong>一个用在刀刃上的、可选的计算加速档位</strong>。</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>编译 GPU 版</h4><p><span class="mono">make milvus-gpu</span>（<span class="mono">MILVUS_GPU_VERSION=ON</span>），链接 CUDA/RAFT，产出带 GPU 能力的镜像。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>部署到 GPU 机器</h4><p>把 GPU 版部署到带显卡的节点；启动时按 <span class="mono">gpu.initMemSize</span> 预占显存池。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>建 GPU 索引</h4><p>对字段指定 <span class="mono">GPU_CAGRA</span> 等类型；参数经 indexparamcheck 校验，交 Knowhere 在 GPU 上建。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>GPU 上检索</h4><p>查询时把距离计算交给 GPU 上千核并行算，吞吐大幅提升；结果回到上层。</p></div></div>
+</div>
+
+<h2>异构集群里的索引版本协调</h2>
+<p>最后看一个容易被忽略、却很能体现"分布式思维"的细节。一个集群里可能<strong>同时有 CPU 节点和 GPU 节点</strong>，不同节点支持的<strong>索引引擎版本</strong>未必一致。那么 DataCoord 在安排"建什么索引"时，怎么保证建出来的索引<strong>每个 QueryNode 都加载得动</strong>？答案藏在 <span class="inline">internal/datacoord/index_engine_version_manager.go</span> 的 <span class="mono">IndexEngineVersionManager</span> 里。</p>
+<p>它的机制很优雅：每个 QueryNode 启动时，向集群<strong>登记自己支持的索引版本区间</strong> <span class="mono">[MinimalIndexVersion, CurrentIndexVersion]</span>。DataCoord 要决定"当前能用的索引引擎版本"时，取的是<strong>所有 QueryNode 当前版本的最小值</strong>（<span class="mono">GetCurrentIndexEngineVersion()</span> = MIN of all QNs' current）。这一手"<strong>取最小</strong>"，保证了建出来的索引<strong>不会比任何一个 QueryNode 能力还新</strong>——于是无论它最后被分配到哪个节点（CPU 的还是 GPU 的）去加载，都<strong>一定吃得下</strong>。这是分布式系统里非常典型的"<strong>向下兼容、就低不就高</strong>"的协调智慧：宁可保守一点，也绝不让某个节点因为"看不懂新版索引"而加载失败。把它和前面 GPU 的内容连起来你就明白：异构（CPU/GPU 混部）带来的不只是"谁更快"的问题，还有"<strong>怎么让快慢不一的节点和谐共处</strong>"的协调问题——而 Milvus 用一个版本管理器，把它悄悄化解了。至此，第 8 部分（C++ 内核）画上句号：从 core 地图(34)、到数据布局(35)、到执行引擎(36)、再到 GPU 加速(37)，我们看清了 Milvus"快"的底层来源。下一部分(第 9 部分)，我们回到上层，看 API、工具与运维。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>为何用 GPU</strong>：向量检索=对海量向量重复同一个距离公式，是"大批量、同质、可并行"的负载，正中 GPU 上千核(SIMT)下怀；大规模/高吞吐时常快出数量级。</li>
+    <li><strong>类型在 Milvus、算法在 Knowhere</strong>：Milvus 暴露 <span class="mono">GPU_CAGRA</span>/<span class="mono">GPU_IVF_FLAT</span>/<span class="mono">GPU_IVF_PQ</span>/<span class="mono">GPU_BRUTE_FORCE</span>，参数校验在 <span class="mono">indexparamcheck</span>；真正算法在 Knowhere（CAGRA 源自 NVIDIA RAFT/cuVS）。</li>
+    <li><strong>编译期开关</strong>：GPU 是独立构建变体（<span class="mono">make milvus-gpu</span> / <span class="mono">MILVUS_GPU_VERSION</span>），非运行时按钮；用显存池（<span class="mono">gpu.initMemSize/maxMemSize</span>）复用稀缺显存。</li>
+    <li><strong>异构协调</strong>：<span class="mono">IndexEngineVersionManager</span> 取所有 QueryNode 当前版本的最小值，保证建出的索引在 CPU/GPU 混部集群里人人加载得动（就低不就高）。</li>
+  </ul>
+</div>
+""",
+    "en": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+In Lesson 36 we squeezed the CPU dry — vectorization and SIMD let one instruction compute a batch. But when data volume and throughput climb another notch, even the CPU's "dozens of cores" can't keep up. Enter the true parallel beast — the <strong>GPU</strong>: <strong>thousands of cores</strong> on one card, built for "one simple operation over massive data at once", which is exactly the essence of vector search. This lesson shows how Milvus uses GPUs: which <strong>GPU indexes it exposes</strong>, where the algorithms <strong>actually live</strong>, why GPU is a <strong>compile-time choice</strong>, and how index versions are coordinated in a heterogeneous cluster.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of the CPU as <strong>a few all-round master chefs</strong>: clever, flexible, able to cook any complex dish — but few in number. The GPU is like <strong>an army of a thousand prep cooks</strong>: each knows only one simple move (say "dice an onion"), but <strong>a thousand wield the knife at once</strong>.
+  For a banquet of varied, multi-step dishes (complex control logic) you still need the masters; but to "<strong>dice a hundred thousand onions the same way</strong>" (compute the same distance over masses of vectors), the prep army <strong>swarms in and finishes in a blink</strong>. Vector search is the latter — <strong>the same distance formula repeated a million times over a million vectors</strong>. That "<strong>bulk, homogeneous, parallelizable</strong>" work is the GPU's home game.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>Milvus exposes a set of GPU index types (GPU_CAGRA / GPU_IVF_FLAT / GPU_IVF_PQ / GPU_BRUTE_FORCE), with param checks in <span class="mono">internal/util/indexparamcheck</span>, while the actual GPU algorithms live in Knowhere (CAGRA comes from NVIDIA's RAFT/cuVS graph index); GPU support is a compile-time switch (<span class="mono">make milvus-gpu</span> / <span class="mono">MILVUS_GPU_VERSION</span>), with a runtime VRAM pool (<span class="mono">gpu.initMemSize/maxMemSize</span>)</strong>. Milvus integrates, routes, schedules — it doesn't hand-write CUDA in the core.
+</div>
+
+<h2>Why vector search suits the GPU so well</h2>
+<p>To grasp the GPU's value, first the "personality difference" between CPU and GPU. The CPU is <strong>few but powerful</strong>: a handful to dozens of strong cores, each with complex branch prediction, out-of-order execution, big caches — great at <strong>logic-heavy, branchy</strong> serial tasks. The GPU is the opposite, <strong>many but simple</strong>: thousands of relatively simple cores, not as clever but winning by <strong>sheer count</strong>, superb at "<strong>the same computation applied to massive data at once</strong>" (the industry calls it SIMT: single instruction, multiple threads).</p>
+<p>Vector search's core operation is tailor-made for the GPU. One similarity is essentially a <strong>dot product or Euclidean distance</strong> between two vectors — a string of multiply-adds. And one search computes the distance from the query to <strong>thousands of candidates</strong> one by one: the same formula, repeated thousands of times, each <strong>independent</strong>. That "<strong>bulk, homogeneous, naturally parallel</strong>" load is exactly the meal the GPU's thousands of cores are hungriest for. Once the dataset is large enough or the required throughput (QPS) high enough, the GPU often beats the CPU by an <strong>order of magnitude</strong>. Lesson 36's CPU vectorization (SIMD: one instruction over 8/16 floats) is already a kind of parallelism; the GPU just <strong>pushes it to the extreme</strong> — from "dozens at once" to "thousands at once". The two personalities side by side:</p>
+
+<p>An honest caveat, though: <strong>the GPU is no one-click silver bullet</strong> — it has its own "admission ticket" and "climate". The first hurdle is <strong>data transfer</strong>: vectors must first be copied from host RAM into VRAM, and results copied back — that "<strong>customs run</strong>" has overhead. Searching just one or two vectors at a time, the transfer may cost more than the compute it saves, making the GPU <strong>not worth it</strong>; only when you feed it a <strong>big enough batch</strong> (a large dataset, or high concurrency batching many queries) do its thousands of cores fill up, the transfer amortizes, and its power is unleashed. This echoes Lesson 29's "<strong>batching is cheaper</strong>" and Lesson 36's "<strong>batch granularity</strong>" at the hardware layer. The second hurdle is the <strong>VRAM ceiling</strong>: a card's VRAM (often tens of GB) is usually far smaller than host RAM, so the overflow must be compressed (PQ), batched, or simply won't fit. The third is <strong>cost and ops</strong>: GPU cards are expensive, power-hungry, and need dedicated drivers and builds. So real-world choices are "<strong>cook to the dish</strong>": for small/medium scale, latency-sensitive, sparse-query workloads, the CPU build is simpler to deploy with stable latency and often fits better; only <strong>massive data + high throughput</strong>, which keeps the GPU well fed, justifies paying its "ticket". Think this trade-off through and you won't be misled by the slogan "GPU is always faster".</p>
+
+<div class="cols">
+  <div class="col"><h4>CPU (few but powerful)</h4><p>Dozens of strong cores, complex branch prediction, big caches; great at <strong>logic-heavy serial tasks</strong> and small/medium search. SIMD already computes a batch per instruction. <strong>General, easy to deploy, stable latency.</strong></p></div>
+  <div class="col"><h4>GPU (many but simple)</h4><p>Thousands of simple cores, great at <strong>bulk homogeneous parallelism</strong> (SIMT). For massive distance math and ultra-high throughput it can be <strong>orders of magnitude</strong> faster. Costs: <strong>hardware, VRAM limits, host↔device data transfer.</strong></p></div>
+</div>
+
+<h2>Which GPU indexes Milvus offers (and where they live)</h2>
+<p>Here's a <strong>boundary you must get straight</strong>, easily confused early on: <strong>the GPU indexes' "algorithms" are not in Milvus's C++ core, but in Knowhere (and its NVIDIA RAFT/cuVS dependency)</strong>. Milvus <strong>does not hand-write CUDA kernels</strong>; it does "<strong>exposure and integration</strong>" — offering a few GPU index <strong>type names</strong> outward and <strong>routing</strong> requests inward to Knowhere to actually drive the GPU. In code, you can see the <strong>param checkers</strong> for these types under <span class="inline">internal/util/indexparamcheck</span>: <span class="mono">GPU_CAGRA</span> (cagra_checker), <span class="mono">GPU_IVF_FLAT</span>, <span class="mono">GPU_IVF_PQ</span> (raft_ivf_* checker), <span class="mono">GPU_BRUTE_FORCE</span> (raft_brute_force_checker). These checkers verify "<strong>whether the params a user gives this GPU index are valid</strong>", not the algorithm itself.</p>
+<p>The most notable is <span class="mono">GPU_CAGRA</span>. CAGRA is a <strong>GPU-oriented graph index</strong> implemented by NVIDIA in <strong>RAFT/cuVS</strong> — think of it as "<strong>HNSW redesigned for the GPU</strong>" (recall Lesson 5's graph indexes): same "greedily walk toward neighbors on a proximity graph", but graph construction and traversal reworked for the GPU's massive parallelism. Among the rest, <span class="mono">GPU_IVF_FLAT</span> / <span class="mono">GPU_IVF_PQ</span> bring Lesson 5's IVF (inverted lists + clustering) onto the GPU, and <span class="mono">GPU_BRUTE_FORCE</span> is "<strong>compute everything by force</strong>" — no index, just GPU brawn over all distances, which is simple and effective for not-too-large data demanding <strong>top recall</strong>. The table sorts them. Remember the red line: <strong>type names and param checks are in Milvus; algorithms are in Knowhere/RAFT</strong> — don't credit CUDA's work to the Milvus core.</p>
+
+<table class="t">
+  <tr><th>GPU index type</th><th>Essence (CPU-side analog)</th><th>Best for</th></tr>
+  <tr><td class="mono">GPU_CAGRA</td><td>GPU-oriented graph index (a GPU "HNSW", from RAFT/cuVS)</td><td>large scale, high throughput, balancing recall &amp; speed</td></tr>
+  <tr><td class="mono">GPU_IVF_FLAT</td><td>IVF on the GPU (inverted lists + clustering, uncompressed)</td><td>medium/large scale, recall-first</td></tr>
+  <tr><td class="mono">GPU_IVF_PQ</td><td>IVF + PQ compression on the GPU</td><td>very large scale, tight VRAM, tolerant of slight precision loss</td></tr>
+  <tr><td class="mono">GPU_BRUTE_FORCE</td><td>GPU brute force (no index)</td><td>not-too-large data needing top recall / as a baseline</td></tr>
+</table>
+
+<h2>GPU is a compile-time choice, not a runtime switch</h2>
+<p>A crucial, easily-tripped engineering fact: <strong>Milvus's GPU support is decided at "compile time", not a runtime button you click after install</strong>. The build scripts make it plain: in <span class="inline">scripts/core_build.sh</span> the <span class="mono">GPU_VERSION</span> <strong>defaults to OFF</strong>, turned on by <span class="mono">-DMILVUS_GPU_VERSION=ON</span>; the <span class="inline">Makefile</span> has dedicated <span class="mono">make milvus-gpu</span> / <span class="mono">build-cpp-gpu</span> <strong>separate GPU build targets</strong>. In other words, you must <strong>compile a GPU build</strong> of Milvus and deploy it on GPU machines to use those GPU indexes; an ordinary CPU image simply doesn't have these capabilities compiled in.</p>
+<p>Why design it so? Because GPU code links the whole <strong>heavy CUDA/RAFT toolchain</strong>, large in size and dependencies; making the vast CPU-only majority carry that burden isn't worth it. So Milvus makes GPU a <strong>separate build variant</strong>: those who want it build it, those who don't pay nothing. At runtime, the GPU's <strong>scarce resource</strong> — VRAM, far pricier than RAM — must be spent carefully. Milvus uses a <strong>VRAM pool</strong>: configured by <span class="mono">gpu.initMemSize</span> / <span class="mono">gpu.maxMemSize</span> in <span class="inline">configs/milvus.yaml</span>, it <strong>reserves a chunk of VRAM up front and reuses it</strong>, avoiding frequent GPU alloc/free (notoriously slow). This is the same thrift as Lesson 34's "<strong>minimize bridge crossings</strong>": <strong>for expensive resources, batch and reuse; don't nickel-and-dime</strong>. The flow below walks the GPU path "from build to serving".</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Compile a GPU build</h4><p><span class="mono">make milvus-gpu</span> (<span class="mono">MILVUS_GPU_VERSION=ON</span>), linking CUDA/RAFT, producing a GPU-capable image.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Deploy on GPU machines</h4><p>deploy the GPU build on GPU nodes; on startup reserve the VRAM pool per <span class="mono">gpu.initMemSize</span>.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Build a GPU index</h4><p>give a field a type like <span class="mono">GPU_CAGRA</span>; params pass indexparamcheck, Knowhere builds it on the GPU.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Search on the GPU</h4><p>at query time distance math runs across thousands of GPU cores; throughput soars; results return upward.</p></div></div>
+</div>
+
+<h2>Coordinating index versions in a heterogeneous cluster</h2>
+<p>Finally a detail easily overlooked yet revealing of "distributed thinking". A cluster may have <strong>CPU nodes and GPU nodes at once</strong>, and the <strong>index engine versions</strong> they support may differ. So when DataCoord plans "what index to build", how does it guarantee the built index <strong>can be loaded by every QueryNode</strong>? The answer hides in <span class="mono">IndexEngineVersionManager</span> in <span class="inline">internal/datacoord/index_engine_version_manager.go</span>.</p>
+<p>Its mechanism is elegant: each QueryNode, on startup, <strong>registers the index version range it supports</strong>, <span class="mono">[MinimalIndexVersion, CurrentIndexVersion]</span>. When DataCoord decides "the currently usable index engine version", it takes the <strong>minimum of all QueryNodes' current versions</strong> (<span class="mono">GetCurrentIndexEngineVersion()</span> = MIN of all QNs' current). This "<strong>take the minimum</strong>" ensures the built index is <strong>never newer than any QueryNode's capability</strong> — so wherever it's later assigned (a CPU node or a GPU node) to load, it <strong>will surely be digestible</strong>. This is the classic "<strong>backward-compatible, level down not up</strong>" coordination wisdom of distributed systems: better conservative than let some node fail to load because it "can't read the new index version". Connect it back to the GPU material and you see: heterogeneity (mixed CPU/GPU) brings not just "who's faster" but the coordination problem of "<strong>how to make nodes of differing capability coexist peacefully</strong>" — which Milvus quietly resolves with a single version manager. With that, Part 8 (the C++ core) closes: from the core map (34), to data layout (35), to the execution engine (36), to GPU acceleration (37), we've seen where Milvus's "fast" truly comes from. Next (Part 9) we return upward to APIs, tools, and operations.</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Why GPU</strong>: vector search = the same distance formula repeated over masses of vectors — a "bulk, homogeneous, parallel" load, perfect for the GPU's thousands of cores (SIMT); orders of magnitude faster at scale/high throughput.</li>
+    <li><strong>Types in Milvus, algorithms in Knowhere</strong>: Milvus exposes <span class="mono">GPU_CAGRA</span>/<span class="mono">GPU_IVF_FLAT</span>/<span class="mono">GPU_IVF_PQ</span>/<span class="mono">GPU_BRUTE_FORCE</span>, param checks in <span class="mono">indexparamcheck</span>; the real algorithms live in Knowhere (CAGRA from NVIDIA RAFT/cuVS).</li>
+    <li><strong>Compile-time switch</strong>: GPU is a separate build variant (<span class="mono">make milvus-gpu</span> / <span class="mono">MILVUS_GPU_VERSION</span>), not a runtime button; a VRAM pool (<span class="mono">gpu.initMemSize/maxMemSize</span>) reuses scarce VRAM.</li>
+    <li><strong>Heterogeneous coordination</strong>: <span class="mono">IndexEngineVersionManager</span> takes the MIN of all QueryNodes' current versions so built indexes load everywhere in a mixed CPU/GPU cluster (level down, not up).</li>
+  </ul>
+</div>
+""",
+}

@@ -119,6 +119,8 @@ PAGES = [
      "第八部分 · C++ 内核", "Part 8 · C++ core internals"),
     ("36-expr-and-exec.html", "表达式与向量化执行", "Expressions & vectorized execution",
      "第八部分 · C++ 内核", "Part 8 · C++ core internals"),
+    ("37-gpu-acceleration.html", "GPU 加速", "GPU acceleration",
+     "第八部分 · C++ 内核", "Part 8 · C++ core internals"),
 ]
 
 
@@ -632,6 +634,8 @@ SUBTITLES = {
                                 "columnar storage; chunked column (ChunkedColumnInterface); mmap for data larger than RAM; MmapChunkManager central allocation"),
     "36-expr-and-exec.html": ("逻辑 ITypeExpr → 物理 Expr::Eval(向量化) · Task/Driver/Operator 流水线 · FilterBitsNode/VectorSearchNode · 算子可组合",
                               "logical ITypeExpr → physical Expr::Eval (vectorized); Task/Driver/Operator pipeline; FilterBitsNode/VectorSearchNode; composable operators"),
+    "37-gpu-acceleration.html": ("GPU 索引(GPU_CAGRA/IVF/BRUTE) 类型在 Milvus、算法在 Knowhere/RAFT · 编译期 milvus-gpu · 显存池 · IndexEngineVersionManager 取最小版本",
+                                 "GPU indexes (GPU_CAGRA/IVF/BRUTE): types in Milvus, algorithms in Knowhere/RAFT; compile-time milvus-gpu; VRAM pool; IndexEngineVersionManager takes the MIN version"),
 }
 
 

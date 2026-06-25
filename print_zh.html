@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus 图解学习指南 - 打印版</h1>
-<p style="color:var(--muted)">全 36 课 - 逐课分页。用浏览器 Ctrl/Cmd+P 即可导出 PDF。</p>
+<p style="color:var(--muted)">全 37 课 - 逐课分页。用浏览器 Ctrl/Cmd+P 即可导出 PDF。</p>
 <div class="print-toc"><h2>目录</h2>
 <ol>
   <li>Milvus 是什么</li>
@@ -364,6 +364,7 @@ details[open] > summary { list-style: none; }
   <li>core 布局</li>
   <li>mmap 与列式分块</li>
   <li>表达式与向量化执行</li>
+  <li>GPU 加速</li>
 </ol></div>
 <section class="lesson-print">
 <h1>Milvus 是什么</h1>
@@ -7497,6 +7498,127 @@ Go 这边则有对应的封装（如第 2、27 课的 <span class="mono">LocalSe
   <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
   <ul>
     <li>本课说这条 expr/exec 流水线，正是 segcore 在第 27 课那次 cgo 调用“里面”真正干的活。请把第 35、36 课串起来，完整描述一次“带标量过滤的向量搜索”在 C++ 内核里的旅程：(1) Go 怎么经 cgo 进来；(2) FilterBitsNode 如何在 mmap 的列式分块上向量化求值、产出 bitset；(3) VectorSearchNode 如何只在通过过滤的候选上检索；(4) 结果如何回到 Go。再思考：把“逐行执行”改成“逐批向量化”，为什么常带来数量级的加速？批的大小该如何权衡（联系第 35 课的 chunk 粒度）？</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>GPU 加速</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+第 36 课，我们把 CPU 榨到了极致——用向量化、SIMD，让一条指令同时算一批数据。但当数据量与吞吐再上一个台阶，CPU 那"几十个核"也会喂不饱。这时该请出真正的并行猛兽——<strong>GPU</strong>：一张卡上<strong>成千上万个核</strong>，专为"对海量数据做同一种简单运算"而生，而这恰恰就是向量检索的本质。这一课看 Milvus 怎么把 GPU 用起来：它<strong>暴露哪些 GPU 索引</strong>、真正的算法<strong>住在哪里</strong>、为什么 GPU 是<strong>编译期的选择</strong>，以及异构集群里怎么协调索引版本。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 类比</div>
+  把 CPU 想成厨房里<strong>几位身手全能的大厨</strong>：聪明、灵活、什么复杂菜都能做，但人数有限。GPU 则像<strong>一支上千人的切配大军</strong>：每个人只会一招最简单的活（比如"把洋葱切成丁"），但<strong>上千人同时挥刀</strong>。
+  要做一桌花样繁多、步骤各异的宴席（复杂控制逻辑），还得靠几位大厨；可要"<strong>把十万颗洋葱用同一种方式切丁</strong>"（对海量向量算同一种距离），切配大军<strong>一拥而上、瞬间干完</strong>。向量检索正是后者——<strong>同一个距离公式，在百万条向量上重复百万遍</strong>。这种"<strong>大批量、同质、可并行</strong>"的活，就是 GPU 的主场。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观视角</div>
+  一句话：<strong>Milvus 暴露一组 GPU 索引类型（GPU_CAGRA / GPU_IVF_FLAT / GPU_IVF_PQ / GPU_BRUTE_FORCE），参数校验在 <span class="mono">internal/util/indexparamcheck</span>，真正的 GPU 算法实现在 Knowhere（CAGRA 源自 NVIDIA 的 RAFT/cuVS 图索引）；GPU 支持是编译期开关（<span class="mono">make milvus-gpu</span> / <span class="mono">MILVUS_GPU_VERSION</span>），运行时用显存池管理（<span class="mono">gpu.initMemSize/maxMemSize</span>）</strong>。Milvus 负责集成、路由、调度，不在 core 里自己手写 CUDA。
+</div>
+
+<h2>为什么向量检索特别适合 GPU</h2>
+<p>要理解 GPU 的价值，先想清楚 CPU 和 GPU 的"性格差异"。CPU 是<strong>少而精</strong>：几个到几十个强大的核，每个核都有复杂的分支预测、乱序执行、大缓存，擅长跑<strong>逻辑复杂、分支多变</strong>的串行任务。GPU 反过来是<strong>多而简</strong>：成千上万个相对简单的核，没那么聪明，但胜在<strong>数量碾压</strong>，特别擅长"<strong>同一段运算、同时套在海量数据上</strong>"（业界叫 SIMT：单指令、多线程）。</p>
+<p>向量检索的内核运算，简直是为 GPU 量身定做的。算一次相似度，本质就是两个向量的<strong>点积或欧氏距离</strong>——一串乘加。而一次搜索要把查询向量和<strong>成千上万条候选</strong>逐一算距离：同一个公式，重复成千上万遍，彼此<strong>互不依赖</strong>。这种"<strong>大批量、同质、天然可并行</strong>"的负载，正是 GPU 上千核最饿、最能吃下的那口饭。当数据规模大到一定程度、或要求的吞吐（QPS）足够高时，GPU 相对 CPU 往往能带来<strong>数量级</strong>的提升。第 36 课的 CPU 向量化（SIMD：一条指令算 8/16 个浮点）已经是"并行"的一种；GPU 只是把这种并行<strong>推到极致</strong>——从"一次几十个"跳到"一次成千上万个"。下面把两者的性格摆在一起看。</p>
+
+<p>不过要诚实地说一句：<strong>GPU 不是一键加速的银弹</strong>，它有自己的"门票"和"水土"。第一道坎是<strong>数据搬运</strong>：向量要先从主机内存拷进显存，算完再把结果拷回来——这趟"<strong>过海关</strong>"本身有开销。如果一次只搜一两条向量，搬运的时间可能比省下的计算时间还多，GPU 反而<strong>不划算</strong>；只有当一次能喂给它<strong>足够大的一批</strong>活（大数据集、或高并发把许多查询攒成大批），上千核被填满，搬运开销被摊薄，GPU 的威力才真正释放。这与第 29 课"<strong>批量搜更划算</strong>"、第 36 课"<strong>批的粒度</strong>"是同一条道理在硬件层的回响。第二道坎是<strong>显存上限</strong>：一张卡的显存（往往几十 GB）通常远小于主机内存，装不下的部分要么压缩（用 PQ）、要么分批、要么干脆放不下。第三道坎是<strong>成本与运维</strong>：GPU 卡贵、功耗高，还要专门的驱动与构建。所以现实里的选择往往是"<strong>看菜下饭</strong>"：中小规模、延迟敏感、查询稀疏的场景，CPU 版部署简单、延迟稳定，反而更合适；唯有<strong>海量数据 + 高吞吐</strong>这种把 GPU 喂得饱饱的场景，才值得为它的"门票"买单。把这层权衡想清楚，你才不会被"GPU 一定更快"这种口号带偏。</p>
+
+<div class="cols">
+  <div class="col"><h4>CPU（少而精）</h4><p>几十个强核，复杂分支预测、大缓存，擅长<strong>逻辑复杂的串行任务</strong>与中小规模检索。向量化(SIMD)已能一条指令算一批。<strong>通用、好部署、延迟稳定</strong>。</p></div>
+  <div class="col"><h4>GPU（多而简）</h4><p>成千上万个简单核，擅长<strong>大批量同质并行</strong>（SIMT）。海量向量距离计算、超高吞吐场景能快出<strong>数量级</strong>。代价是<strong>硬件成本、显存上限、主机↔显存数据搬运</strong>。</p></div>
+</div>
+
+<h2>Milvus 提供哪些 GPU 索引（以及它们住在哪）</h2>
+<p>这里有个<strong>必须讲清的边界</strong>，初学时极易搞混：<strong>GPU 索引的"算法"并不在 Milvus 的 C++ core 里，而在 Knowhere（及其依赖的 NVIDIA RAFT/cuVS）里</strong>。Milvus 自己<strong>不手写 CUDA 核函数</strong>；它做的是"<strong>暴露与集成</strong>"——对外提供几种 GPU 索引<strong>类型名</strong>，对内把请求<strong>路由</strong>给 Knowhere 去真正调用 GPU。落到代码上，你能在 <span class="inline">internal/util/indexparamcheck</span> 里看到这些类型对应的<strong>参数校验器</strong>：<span class="mono">GPU_CAGRA</span>（cagra_checker）、<span class="mono">GPU_IVF_FLAT</span>、<span class="mono">GPU_IVF_PQ</span>（raft_ivf_* checker）、<span class="mono">GPU_BRUTE_FORCE</span>（raft_brute_force_checker）。这些校验器的职责是"<strong>看用户给这种 GPU 索引传的参数对不对</strong>"，而非实现算法本身。</p>
+<p>这其中最值得一提的是 <span class="mono">GPU_CAGRA</span>。CAGRA 是 NVIDIA 在 <strong>RAFT/cuVS</strong> 里实现的一种<strong>面向 GPU 的图索引</strong>——你可以把它理解成"<strong>专为 GPU 重新设计的 HNSW</strong>"（回忆第 5 课的图索引）：同样靠"在邻居图上贪心走近邻"来检索，但图的构建与遍历都被改造得适配 GPU 的大规模并行。其余几种里，<span class="mono">GPU_IVF_FLAT</span> / <span class="mono">GPU_IVF_PQ</span> 是把第 5 课的 IVF（倒排+聚类）搬上 GPU，<span class="mono">GPU_BRUTE_FORCE</span> 则是"<strong>暴力全算</strong>"——不建索引、直接用 GPU 的蛮力把所有距离算一遍，在数据不算太大、又要<strong>最高召回</strong>时反而简单高效。下面这张表帮你把它们归归类。记住那条红线：<strong>类型名与参数校验在 Milvus，算法实现在 Knowhere/RAFT</strong>，别把 CUDA 的功劳记到 milvus core 头上。</p>
+
+<p>一个常见的疑惑是："既然 GPU 这么快，为什么还保留暴力全算这种最'笨'的方法？"答案恰恰点出了 GPU 的精髓：当核多到一定程度，"<strong>笨办法</strong>"也能很快。CPU 上没人敢对百万向量逐一算距离（太慢），所以才要 HNSW、IVF 这些精巧索引来<strong>少算一些</strong>；但在 GPU 上，上千核一拥而上，"<strong>全算一遍</strong>"在中小数据上可能比"建索引再查"还快，而且<strong>召回率是 100%</strong>（没有近似带来的漏检）。这就是为什么 <span class="mono">GPU_BRUTE_FORCE</span> 不仅没被淘汰，反而常被当作<strong>精度基准</strong>——用它的结果来衡量其他近似索引"漏掉了多少"。可见<strong>硬件能力会反过来改变算法选择</strong>：CPU 时代"必须用索引"的直觉，到 GPU 时代未必还成立。这种"<strong>换了硬件、连算法直觉都要重估</strong>"的现象，正是理解 GPU 加速时最有意思的一课。</p>
+
+<p>为什么 Milvus 要这样"<strong>只暴露、不自造</strong>"？这其实是个很聪明的分工。GPU 上的高性能向量算法（尤其是 CAGRA 这种图索引）极其难写——要榨干显卡，得深谙 CUDA、内存合并访问、warp 调度等一整套黑魔法，而 NVIDIA 自己的 <strong>RAFT/cuVS</strong> 团队正是这方面最权威的人。Milvus 把这块<strong>交给专业的人</strong>，自己专注于"<strong>把这些能力接进一个分布式向量库</strong>"该操心的事：索引怎么调度构建、怎么在节点间分发、参数怎么校验、版本怎么协调。这种"<strong>站在巨人肩膀上</strong>"的姿态，和第 22 课里 Milvus 把 CPU 侧索引也托付给 <strong>Knowhere</strong> 是一脉相承的——<strong>Knowhere 是 Milvus 统一的"索引引擎中台"</strong>，无论 CPU 还是 GPU 索引，Milvus 上层都通过它这道统一的门来调用，而不必关心底下究竟是 HNSW、IVF 还是 CAGRA。于是你能看到一个清爽的分层：<strong>用户选索引类型 → Milvus 校验参数并调度 → Knowhere 选择具体算法（CPU 或 GPU）→ 真正的核函数在 Knowhere/RAFT 里跑</strong>。理解了这条链，你就不会再纠结"GPU 索引到底是谁写的"——Milvus 写的是"<strong>怎么用好它</strong>"，不是"<strong>它本身</strong>"。</p>
+
+<table class="t">
+  <tr><th>GPU 索引类型</th><th>本质（对应 CPU 侧概念）</th><th>适用场景</th></tr>
+  <tr><td class="mono">GPU_CAGRA</td><td>面向 GPU 的图索引（类比 GPU 版 HNSW，源自 RAFT/cuVS）</td><td>大规模、高吞吐、要兼顾召回与速度</td></tr>
+  <tr><td class="mono">GPU_IVF_FLAT</td><td>GPU 上的 IVF（倒排+聚类，不压缩）</td><td>中大规模，召回优先</td></tr>
+  <tr><td class="mono">GPU_IVF_PQ</td><td>GPU 上的 IVF + PQ 压缩</td><td>超大规模，显存吃紧、可接受少量精度损失</td></tr>
+  <tr><td class="mono">GPU_BRUTE_FORCE</td><td>GPU 暴力全算（不建索引）</td><td>数据不大但要最高召回 / 作基准</td></tr>
+</table>
+
+<h2>GPU 是编译期的选择，不是运行时开关</h2>
+<p>一个很关键、也很容易踩坑的工程事实：<strong>Milvus 的 GPU 支持是"编译期"决定的，不是装好之后点一下就能开的运行时按钮</strong>。从构建脚本就能看出来：<span class="inline">scripts/core_build.sh</span> 里 <span class="mono">GPU_VERSION</span> <strong>默认是 OFF</strong>，要靠 <span class="mono">-DMILVUS_GPU_VERSION=ON</span> 打开；<span class="inline">Makefile</span> 里也专门有 <span class="mono">make milvus-gpu</span> / <span class="mono">build-cpp-gpu</span> 这套<strong>独立的 GPU 构建目标</strong>。换句话说，你得<strong>专门编译一个 GPU 版本</strong>的 Milvus、部署到带 GPU 的机器上，才能用上那些 GPU 索引；普通的 CPU 版镜像里，这些能力根本没被编进去。</p>
+<p>为什么这么设计？因为 GPU 代码要链接 CUDA、RAFT 这一整套<strong>庞大的 GPU 工具链</strong>，体积和依赖都很重；让绝大多数只用 CPU 的用户也背上这套包袱并不划算。于是 Milvus 把 GPU 做成一个<strong>独立的构建变体</strong>：要的人专门构建，不要的人零负担。运行起来后，GPU 这种<strong>稀缺资源</strong>还需要精打细算——显存远比内存金贵。Milvus 为此用了一个<strong>显存池</strong>：在 <span class="inline">configs/milvus.yaml</span> 里由 <span class="mono">gpu.initMemSize</span> / <span class="mono">gpu.maxMemSize</span> 配置，启动时<strong>预先占下一块显存反复复用</strong>，避免频繁向 GPU 申请/释放（那是出了名的慢）。这和第 34 课讲的"<strong>把过桥次数压到最少</strong>"是同一种省法：<strong>对昂贵资源，要批量、复用，别零敲碎打</strong>。下面用一条流程，把"从构建到服务"这条 GPU 路径走一遍。</p>
+
+<p>这里也顺带点破一个初学者常有的误会：以为"开了 GPU，整个 Milvus 就都跑在显卡上了"。其实不然——<strong>GPU 只接管它最擅长的那一段：向量索引的构建与检索</strong>。前面七部分讲的那一整套——Proxy 收请求、协调器调度、WAL 写日志、流式消费、段的管理——<strong>统统还在 CPU 上跑</strong>，一点没变。GPU 在这里更像一个被精准调用的"<strong>加速协处理器</strong>"：上层 Go 把"在这个段上搜 topK"这件最重的计算活儿，经由 Knowhere 派到 GPU 上飞快算完，再把结果接回 CPU 侧的正常流程。所以你完全可以把第 8 部分的内核之旅理解成"<strong>给 Milvus 这台机器换一颗更猛的计算心脏</strong>"，而机器的其余骨架（调度、存储、通信）原封不动。看清这一点，GPU 就从一个唬人的大词，变回它本来的样子——<strong>一个用在刀刃上的、可选的计算加速档位</strong>。</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>编译 GPU 版</h4><p><span class="mono">make milvus-gpu</span>（<span class="mono">MILVUS_GPU_VERSION=ON</span>），链接 CUDA/RAFT，产出带 GPU 能力的镜像。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>部署到 GPU 机器</h4><p>把 GPU 版部署到带显卡的节点；启动时按 <span class="mono">gpu.initMemSize</span> 预占显存池。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>建 GPU 索引</h4><p>对字段指定 <span class="mono">GPU_CAGRA</span> 等类型；参数经 indexparamcheck 校验，交 Knowhere 在 GPU 上建。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>GPU 上检索</h4><p>查询时把距离计算交给 GPU 上千核并行算，吞吐大幅提升；结果回到上层。</p></div></div>
+</div>
+
+<h2>异构集群里的索引版本协调</h2>
+<p>最后看一个容易被忽略、却很能体现"分布式思维"的细节。一个集群里可能<strong>同时有 CPU 节点和 GPU 节点</strong>，不同节点支持的<strong>索引引擎版本</strong>未必一致。那么 DataCoord 在安排"建什么索引"时，怎么保证建出来的索引<strong>每个 QueryNode 都加载得动</strong>？答案藏在 <span class="inline">internal/datacoord/index_engine_version_manager.go</span> 的 <span class="mono">IndexEngineVersionManager</span> 里。</p>
+<p>它的机制很优雅：每个 QueryNode 启动时，向集群<strong>登记自己支持的索引版本区间</strong> <span class="mono">[MinimalIndexVersion, CurrentIndexVersion]</span>。DataCoord 要决定"当前能用的索引引擎版本"时，取的是<strong>所有 QueryNode 当前版本的最小值</strong>（<span class="mono">GetCurrentIndexEngineVersion()</span> = MIN of all QNs' current）。这一手"<strong>取最小</strong>"，保证了建出来的索引<strong>不会比任何一个 QueryNode 能力还新</strong>——于是无论它最后被分配到哪个节点（CPU 的还是 GPU 的）去加载，都<strong>一定吃得下</strong>。这是分布式系统里非常典型的"<strong>向下兼容、就低不就高</strong>"的协调智慧：宁可保守一点，也绝不让某个节点因为"看不懂新版索引"而加载失败。把它和前面 GPU 的内容连起来你就明白：异构（CPU/GPU 混部）带来的不只是"谁更快"的问题，还有"<strong>怎么让快慢不一的节点和谐共处</strong>"的协调问题——而 Milvus 用一个版本管理器，把它悄悄化解了。至此，第 8 部分（C++ 内核）画上句号：从 core 地图(34)、到数据布局(35)、到执行引擎(36)、再到 GPU 加速(37)，我们看清了 Milvus"快"的底层来源。下一部分(第 9 部分)，我们回到上层，看 API、工具与运维。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>为何用 GPU</strong>：向量检索=对海量向量重复同一个距离公式，是"大批量、同质、可并行"的负载，正中 GPU 上千核(SIMT)下怀；大规模/高吞吐时常快出数量级。</li>
+    <li><strong>类型在 Milvus、算法在 Knowhere</strong>：Milvus 暴露 <span class="mono">GPU_CAGRA</span>/<span class="mono">GPU_IVF_FLAT</span>/<span class="mono">GPU_IVF_PQ</span>/<span class="mono">GPU_BRUTE_FORCE</span>，参数校验在 <span class="mono">indexparamcheck</span>；真正算法在 Knowhere（CAGRA 源自 NVIDIA RAFT/cuVS）。</li>
+    <li><strong>编译期开关</strong>：GPU 是独立构建变体（<span class="mono">make milvus-gpu</span> / <span class="mono">MILVUS_GPU_VERSION</span>），非运行时按钮；用显存池（<span class="mono">gpu.initMemSize/maxMemSize</span>）复用稀缺显存。</li>
+    <li><strong>异构协调</strong>：<span class="mono">IndexEngineVersionManager</span> 取所有 QueryNode 当前版本的最小值，保证建出的索引在 CPU/GPU 混部集群里人人加载得动（就低不就高）。</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. 为什么向量检索特别适合用 GPU 加速？</div>
+  <ol class="opts">
+    <li>因为向量检索逻辑分支极多、串行依赖很强</li>
+    <li>检索=对海量向量重复同一个距离公式、彼此独立，是“大批量、同质、可并行”的负载，正中 GPU 上千核(SIMT)下怀</li>
+    <li>因为 GPU 的单核比 CPU 单核聪明得多、分支预测更强</li>
+    <li>因为 GPU 不需要把数据从内存搬进显存</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。CPU 少而精(几十个强核、擅长复杂串行)，GPU 多而简(上千个简单核、擅长同一运算套在海量数据上，即 SIMT)。一次搜索要把查询向量与成千上万候选逐一算距离——同一公式重复无数遍、互不依赖，正是 GPU 最饿的那口饭。规模/吞吐够大时常快出数量级。注意 GPU 单核并不更聪明，且需要主机↔显存搬运，所以小批量未必划算。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. 关于 Milvus 里 GPU 索引（如 GPU_CAGRA）的“算法实现住在哪”，哪个说法正确？</div>
+  <ol class="opts">
+    <li>Milvus 没有任何 GPU 索引类型</li>
+    <li>GPU 索引完全由 Go 层实现，不涉及 C++/CUDA</li>
+    <li>GPU_CAGRA 的 CUDA 核函数就写在 Milvus 的 internal/core 里</li>
+    <li>Milvus 只暴露类型名并在 indexparamcheck 校验参数、负责路由；真正的 GPU 算法在 Knowhere（CAGRA 源自 NVIDIA RAFT/cuVS），Milvus 不在 core 手写 CUDA</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。这是本课强调的边界纪律：Milvus 暴露 GPU_CAGRA/GPU_IVF_FLAT/GPU_IVF_PQ/GPU_BRUTE_FORCE 这些类型，参数校验器在 internal/util/indexparamcheck（cagra_checker、raft_ivf_*、raft_brute_force_checker），但算法本身在 Knowhere 及其依赖的 NVIDIA RAFT/cuVS 里——CAGRA 是面向 GPU 的图索引（可类比 GPU 版 HNSW）。Milvus 负责暴露、校验、调度、路由，把写 CUDA 的专业活交给专业的人。别把 CUDA 的功劳记到 milvus core 头上。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. 下面关于 Milvus GPU 支持的“工程现实”，哪个说法正确？</div>
+  <ol class="opts">
+    <li>GPU 版不需要任何额外的 CUDA/RAFT 依赖</li>
+    <li>GPU 版会让 Proxy、协调器、WAL 等也全部跑在显卡上</li>
+    <li>任何 CPU 版 Milvus 装好后，改一个配置就能在运行时切到 GPU</li>
+    <li>GPU 是编译期的独立构建(make milvus-gpu / MILVUS_GPU_VERSION)，要专门编译并部署到 GPU 机器；运行时用显存池(gpu.initMemSize/maxMemSize)复用稀缺显存</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。core_build.sh 里 GPU_VERSION 默认 OFF，靠 -DMILVUS_GPU_VERSION=ON 打开；Makefile 有独立的 make milvus-gpu/build-cpp-gpu。因为要链接庞大的 CUDA/RAFT 工具链，Milvus 把 GPU 做成独立构建变体：要的人专门编译部署，不要的人零负担——不是运行时按钮。GPU 只接管索引的构建与检索这段最重的计算，其余(Proxy/协调器/WAL/段管理)仍在 CPU。显存稀缺，故用显存池预占复用、避免频繁 alloc/free。</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>本课说“硬件能力会反过来改变算法选择”——CPU 上不敢用的暴力全算，在 GPU 上(GPU_BRUTE_FORCE)反而简单、召回 100%、还能当精度基准。请结合第 5 课(ANN 索引)与第 29 课(批量更划算)谈谈：(1) 为什么 CPU 时代“必须用近似索引”的直觉，到 GPU 时代未必成立？(2) 既然 GPU 常快出数量级，为什么 Milvus 还把它做成可选的独立构建、而非默认开启？请从主机↔显存搬运、显存上限、成本/运维、以及“小批量未必划算”几个角度，谈谈什么样的业务才真正值得上 GPU。</li>
   </ul>
 </div>
 </div>

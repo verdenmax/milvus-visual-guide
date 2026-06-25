@@ -2424,6 +2424,67 @@ QUIZZES = {
             },
         ],
     },
+    "37-gpu-acceleration.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "为什么向量检索特别适合用 GPU 加速？",
+                    "en": "Why is vector search especially well-suited to GPU acceleration?",
+                },
+                "opts": [
+                    {"zh": "检索=对海量向量重复同一个距离公式、彼此独立，是“大批量、同质、可并行”的负载，正中 GPU 上千核(SIMT)下怀", "en": "Search = the same distance formula repeated over masses of vectors, each independent — a 'bulk, homogeneous, parallel' load that perfectly fits the GPU's thousands of cores (SIMT)"},
+                    {"zh": "因为 GPU 的单核比 CPU 单核聪明得多、分支预测更强", "en": "Because a GPU core is far smarter than a CPU core, with better branch prediction"},
+                    {"zh": "因为 GPU 不需要把数据从内存搬进显存", "en": "Because GPUs don't need to move data from RAM into VRAM"},
+                    {"zh": "因为向量检索逻辑分支极多、串行依赖很强", "en": "Because vector search has many branches and strong serial dependencies"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "CPU 少而精(几十个强核、擅长复杂串行)，GPU 多而简(上千个简单核、擅长同一运算套在海量数据上，即 SIMT)。一次搜索要把查询向量与成千上万候选逐一算距离——同一公式重复无数遍、互不依赖，正是 GPU 最饿的那口饭。规模/吞吐够大时常快出数量级。注意 GPU 单核并不更聪明，且需要主机↔显存搬运，所以小批量未必划算。",
+                    "en": "CPU = few but powerful (dozens of strong cores, good at complex serial work); GPU = many but simple (thousands of simple cores good at one op over massive data, i.e. SIMT). One search computes the distance from the query to thousands of candidates — the same formula repeated, independent — the GPU's hungriest meal. At scale/throughput it's often orders of magnitude faster. Note a GPU core isn't smarter, and host↔VRAM transfer means small batches may not pay off.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "关于 Milvus 里 GPU 索引（如 GPU_CAGRA）的“算法实现住在哪”，哪个说法正确？",
+                    "en": "About where GPU indexes (e.g. GPU_CAGRA) in Milvus are actually implemented, which is correct?",
+                },
+                "opts": [
+                    {"zh": "Milvus 只暴露类型名并在 indexparamcheck 校验参数、负责路由；真正的 GPU 算法在 Knowhere（CAGRA 源自 NVIDIA RAFT/cuVS），Milvus 不在 core 手写 CUDA", "en": "Milvus only exposes the type names, validates params in indexparamcheck, and routes; the real GPU algorithms live in Knowhere (CAGRA from NVIDIA RAFT/cuVS) — Milvus doesn't hand-write CUDA in its core"},
+                    {"zh": "GPU_CAGRA 的 CUDA 核函数就写在 Milvus 的 internal/core 里", "en": "GPU_CAGRA's CUDA kernels are written right in Milvus's internal/core"},
+                    {"zh": "GPU 索引完全由 Go 层实现，不涉及 C++/CUDA", "en": "GPU indexes are implemented entirely in Go, with no C++/CUDA"},
+                    {"zh": "Milvus 没有任何 GPU 索引类型", "en": "Milvus has no GPU index types at all"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "这是本课强调的边界纪律：Milvus 暴露 GPU_CAGRA/GPU_IVF_FLAT/GPU_IVF_PQ/GPU_BRUTE_FORCE 这些类型，参数校验器在 internal/util/indexparamcheck（cagra_checker、raft_ivf_*、raft_brute_force_checker），但算法本身在 Knowhere 及其依赖的 NVIDIA RAFT/cuVS 里——CAGRA 是面向 GPU 的图索引（可类比 GPU 版 HNSW）。Milvus 负责暴露、校验、调度、路由，把写 CUDA 的专业活交给专业的人。别把 CUDA 的功劳记到 milvus core 头上。",
+                    "en": "This is the lesson's boundary discipline: Milvus exposes GPU_CAGRA/GPU_IVF_FLAT/GPU_IVF_PQ/GPU_BRUTE_FORCE, with param checkers in internal/util/indexparamcheck (cagra_checker, raft_ivf_*, raft_brute_force_checker), but the algorithms live in Knowhere and its NVIDIA RAFT/cuVS dependency — CAGRA is a GPU-oriented graph index (a GPU 'HNSW'). Milvus exposes, validates, schedules, routes, leaving the CUDA to the experts. Don't credit CUDA to the Milvus core.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "下面关于 Milvus GPU 支持的“工程现实”，哪个说法正确？",
+                    "en": "Which statement about the 'engineering reality' of Milvus GPU support is correct?",
+                },
+                "opts": [
+                    {"zh": "GPU 是编译期的独立构建(make milvus-gpu / MILVUS_GPU_VERSION)，要专门编译并部署到 GPU 机器；运行时用显存池(gpu.initMemSize/maxMemSize)复用稀缺显存", "en": "GPU is a compile-time separate build (make milvus-gpu / MILVUS_GPU_VERSION), specially built and deployed on GPU machines; at runtime a VRAM pool (gpu.initMemSize/maxMemSize) reuses scarce VRAM"},
+                    {"zh": "任何 CPU 版 Milvus 装好后，改一个配置就能在运行时切到 GPU", "en": "Any CPU Milvus can switch to GPU at runtime by changing one config after install"},
+                    {"zh": "GPU 版会让 Proxy、协调器、WAL 等也全部跑在显卡上", "en": "The GPU build also runs Proxy, coordinators, WAL, etc. all on the GPU"},
+                    {"zh": "GPU 版不需要任何额外的 CUDA/RAFT 依赖", "en": "The GPU build needs no extra CUDA/RAFT dependencies"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "core_build.sh 里 GPU_VERSION 默认 OFF，靠 -DMILVUS_GPU_VERSION=ON 打开；Makefile 有独立的 make milvus-gpu/build-cpp-gpu。因为要链接庞大的 CUDA/RAFT 工具链，Milvus 把 GPU 做成独立构建变体：要的人专门编译部署，不要的人零负担——不是运行时按钮。GPU 只接管索引的构建与检索这段最重的计算，其余(Proxy/协调器/WAL/段管理)仍在 CPU。显存稀缺，故用显存池预占复用、避免频繁 alloc/free。",
+                    "en": "In core_build.sh GPU_VERSION defaults OFF, enabled by -DMILVUS_GPU_VERSION=ON; the Makefile has separate make milvus-gpu/build-cpp-gpu. Because it links the heavy CUDA/RAFT toolchain, Milvus makes GPU a separate build variant: build/deploy it if you want it, zero burden otherwise — not a runtime button. The GPU only takes over the heavy index build/search; the rest (Proxy/coordinators/WAL/segment mgmt) stays on CPU. VRAM is scarce, so a pool reserves and reuses it, avoiding frequent alloc/free.",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课说“硬件能力会反过来改变算法选择”——CPU 上不敢用的暴力全算，在 GPU 上(GPU_BRUTE_FORCE)反而简单、召回 100%、还能当精度基准。请结合第 5 课(ANN 索引)与第 29 课(批量更划算)谈谈：(1) 为什么 CPU 时代“必须用近似索引”的直觉，到 GPU 时代未必成立？(2) 既然 GPU 常快出数量级，为什么 Milvus 还把它做成可选的独立构建、而非默认开启？请从主机↔显存搬运、显存上限、成本/运维、以及“小批量未必划算”几个角度，谈谈什么样的业务才真正值得上 GPU。",
+                "en": "This lesson says 'hardware reshapes algorithm choice' — brute force, unthinkable on CPU, is simple on GPU (GPU_BRUTE_FORCE), with 100% recall and useful as a baseline. Tie to Lesson 5 (ANN indexes) and Lesson 29 (batching pays): (1) Why might the CPU-era intuition 'you must use an approximate index' not hold on the GPU? (2) Given the GPU is often orders of magnitude faster, why does Milvus still make it an optional separate build rather than on by default? Considering host↔VRAM transfer, VRAM ceilings, cost/ops, and 'small batches may not pay', discuss what kind of workload truly justifies going GPU.",
+            },
+        ],
+    },
 }
 
 
