@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>49 · 配额、限流与背压 / Quota, rate-limiting &amp; backpressure - Milvus 图解教程</title>
+<meta name="description" content="第十一部分 · 进阶专题（选读）｜配额、限流与背压 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="49 · 配额、限流与背压 / Quota, rate-limiting &amp; backpressure - Milvus 图解教程">
+<meta property="og:description" content="第十一部分 · 进阶专题（选读）｜配额、限流与背压 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="49 · 配额、限流与背压 / Quota, rate-limiting &amp; backpressure - Milvus 图解教程">
+<meta name="twitter:description" content="第十一部分 · 进阶专题（选读）｜配额、限流与背压 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.timeline .tl-row { display: flex; align-items: flex-start; gap: .6rem; padding: .12rem 0; }
+.timeline .tl-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: .45rem; }
+.timeline .tl-t { font-family: ui-monospace, monospace; font-weight: 700; color: var(--accent-ink); min-width: 2.4rem; font-size: .82rem; flex-shrink: 0; margin-top: .18rem; }
+.timeline .tl-c { font-size: .9rem; color: var(--muted); }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第十一部分 · 进阶专题（选读）</span><span class="lang-en">Part 11 · Advanced topics (optional)</span></span>
+    <span class="pill">49 / 49</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:100%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第十一部分 · 进阶专题（选读）</span><span class="lang-en">Part 11 · Advanced topics (optional)</span></div>
+    <h1><span class="lang-zh">配额、限流与背压</span><span class="lang-en">Quota, rate-limiting &amp; backpressure</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+任何系统的产能都<strong>有上限</strong>。如果写入快到 flush 来不及落盘，内存会被 growing 段撑爆；如果查询多到耗尽资源，节点会被拖垮；如果数据涨到磁盘写满，整个集群可能<strong>雪崩</strong>。一个成熟的数据库必须能<strong>自我保护</strong>——这就是<strong>配额、限流与背压（backpressure）</strong>。这一课看 Milvus 怎么用 <strong>QuotaCenter</strong>（中央调速器）盯住实时指标、算出限速、再由 <strong>Proxy</strong> 在入口处落地，必要时<strong>主动拒绝</strong>请求，把集群从过载中救回来。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 类比</div>
+  把系统想成一家<strong>餐厅</strong>。后厨（各节点）的产能有限：同时在做的菜太多就会手忙脚乱、出餐崩盘。<strong>领位员</strong>（Proxy 入口）于是按后厨的忙碌程度<strong>控制放客进店的速度</strong>——不让人潮一下子涌进来压垮厨房。而<strong>经理</strong>（QuotaCenter）站在全局视角，<strong>实时盯着后厨的各项指标</strong>（灶台占用、备料余量、上菜延迟），算出"现在每分钟最多放几桌"，再告诉门口的领位员照此执行。
+  当后厨实在要爆了，经理会下一道<strong>更狠的命令</strong>："<strong>今日满座、暂停接待</strong>"——宁可把新客挡在门外（让他们待会儿再来），也不能让已经在吃的客人一起遭殃。<strong>限速是温和的刹车，拒绝是紧急的刹车</strong>——两档配合，才能让餐厅在高峰里不崩。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观视角</div>
+  一句话：<strong>QuotaCenter(<span class="inline">rootcoord/quota_center.go</span>)周期性从各节点<span class="mono">collectMetrics</span>(内存水位、磁盘、TT 延迟…)→<span class="mono">calculateRates</span> 算出各类操作(DML/DQL/DDL…)的限速→下发给所有 Proxy；Proxy 的 <span class="mono">RateLimitInterceptor</span> 在每个请求前检查，超限就回 <span class="mono">ErrServiceRateLimit</span>(可重试)；过载到硬上限时 <span class="mono">forceDenyWriting/Reading</span> 把速率压到 0、整类拒绝</strong>。中央决策、边缘落地。
+</div>
+
+<h2>为什么要自我保护：背压的本质</h2>
+<p>先想清楚一个朴素的道理：<strong>一个系统消化请求的速度是有限的，但发请求的客户端不会自觉</strong>。如果放任客户端无限快地写、无限多地查，迟早会撞上某个<strong>硬资源的天花板</strong>：内存被未落盘的 growing 段撑满、磁盘被 binlog 写爆、CPU 被查询占满。撞上之后会发生什么？<strong>不是优雅地变慢，而是崩溃</strong>——节点 OOM 被杀、请求大面积超时、甚至引发<strong>雪崩式的连锁失败</strong>（一个节点挂了，负载转移到别的节点，把它们也压垮）。</p>
+<p>所以成熟系统都信奉一条铁律：<strong>与其被冲垮，不如主动减速</strong>。这就是<strong>背压（backpressure）</strong>——当下游处理不过来时，<strong>反过来给上游施加压力、让它慢下来</strong>。就像水管下游堵了，压力会沿着管子往回传，让上游的水龙头不得不关小。对数据库而言，背压意味着：<strong>当系统逼近极限时，主动拒绝或拖慢一部分新请求</strong>，把有限的资源留给"已经在处理的活"，<strong>用牺牲一点点可用性，换取整体的不崩溃</strong>。这是一种典型的工程取舍：<strong>宁可对少数请求说"不"，也不让所有请求一起死</strong>。理解了这个"<strong>主动减速以自保</strong>"的核心，你就抓住了配额限流这套机制的灵魂——它不是为了刁难用户，而是系统的<strong>安全阀</strong>。</p>
+
+<p>顺便厘清三个常被混用的词，它们其实是一条链上的三环：<strong>配额（quota）</strong>是"<strong>额度</strong>"——规定某类操作每秒最多多少（可在 <span class="inline">configs/milvus.yaml</span> 的 <span class="mono">quotaAndLimits</span> 里配，第 40 课）；<strong>限流（rate limiting）</strong>是"<strong>按额度放行</strong>"的动作——在入口处数着额度决定放不放；<strong>背压（backpressure）</strong>是更宏观的"<strong>反向施压</strong>"理念——下游忙不过来时，让上游自觉慢下来。三者的关系是：<strong>背压是目的，限流是手段，配额是手段里的具体数值</strong>。Milvus 把"配额该是多少"交给 QuotaCenter 根据实时指标<strong>动态算</strong>（而不是写死一个静态值），正是为了让这道安全阀能<strong>随系统冷暖自动松紧</strong>——闲时放宽、忙时收紧。理清这三个词，你读任何系统的限流文档都不会再犯迷糊。</p>
+
+<p>这里值得多想一层：<strong>为什么"主动拒绝"反而是负责任的表现？</strong>很多人直觉上觉得"数据库就该来者不拒、有多少吃多少"，可那恰恰是脆弱系统的死法。设想一个不设防的系统：写入洪峰一来，它照单全收，内存一路涨到爆，然后<strong>整个节点 OOM 被杀</strong>——此刻<strong>所有请求</strong>（包括那些本来好好的）全部失败，已经写进内存还没落盘的数据可能也丢了。对比一个有背压的系统：同样的洪峰来临，它在内存到警戒线时就开始<strong>限速</strong>、到硬上限时<strong>拒绝新写入</strong>，于是内存稳在安全区，<strong>已经在处理的请求全部成功</strong>，被拒的请求收到的是一个"<strong>待会再来</strong>"的可重试信号、退避后大多也能成功。两相对比，高下立判：<strong>"优雅地拒绝一部分"远胜于"失控地全盘崩溃"</strong>。这就是为什么所有严肃的分布式系统——数据库、消息队列、网关——都把限流背压当成<strong>必备的基础设施</strong>，而不是可有可无的装饰。一个会"<strong>说不</strong>"的系统，才是一个<strong>靠得住</strong>的系统。</p>
+
+<h2>QuotaCenter：中央调速器</h2>
+<p>谁来决定"现在该不该减速、减多少"？是 RootCoord 上的 <strong>QuotaCenter</strong>（<span class="inline">internal/rootcoord/quota_center.go</span>）。它跑着一个<strong>周期性的循环</strong>，每一轮做三件事：<strong>收集 → 计算 → 下发</strong>。第一步 <span class="mono">collectMetrics()</span>：从全集群各节点<strong>汇总实时指标</strong>——内存水位多高、磁盘用了多少、TimeTick 延迟（写入消费追不追得上）、各类队列多深。第二步 <span class="mono">calculateRates()</span>：根据这些指标，<strong>算出此刻各类操作的允许速率</strong>——写入（DML）、查询（DQL）、DDL、建索引、flush、compaction 等，每一类都有自己的配额。第三步：把算好的限速<strong>下发给所有 Proxy</strong>。</p>
+<p>为什么把这件事放在 RootCoord、做成一个中央组件？因为<strong>限速决策需要全局视角</strong>。单个 Proxy 只看得到流经自己的请求，根本不知道"整个集群的内存还剩多少""别的 Proxy 一共放进来多少写入"。只有一个能<strong>俯瞰全集群指标</strong>的中央大脑，才能做出"现在全局该限到多少"的正确决策——这正是<strong>控制面</strong>（第 9 课）该干的事：QuotaCenter 是决策者，Proxy 是执行者。这也再次呼应了全书的主线：<strong>把"需要全局信息才能做的决策"收敛到中央，把"按决策行动"分散到边缘</strong>。下面这张图就是 QuotaCenter 的反馈闭环。</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">各节点指标</div><div class="nd">内存水位 / 磁盘 / TT 延迟 / 队列深</div></div>
+  <div class="arrow">collectMetrics</div>
+  <div class="node hl"><div class="nt">QuotaCenter（RootCoord）</div><div class="nd">calculateRates：算各类操作限速</div></div>
+  <div class="arrow">下发</div>
+  <div class="node"><div class="nt">所有 Proxy</div><div class="nd">拿到最新限速</div></div>
+  <div class="arrow">enforce</div>
+  <div class="node"><div class="nt">放行 / 拒绝</div><div class="nd">超限回 ErrServiceRateLimit</div></div>
+</div>
+
+<h2>两档刹车：限速与强制拒绝</h2>
+<p>QuotaCenter 的"减速"不是一刀切，而是<strong>两档力度</strong>，对应过载的不同严重程度。第一档是<strong>限速（throttle / cool-off）</strong>：当指标<strong>接近</strong>警戒线（比如内存到了 80%），就把对应操作的速率<strong>逐步调低</strong>，让请求"<strong>排着队慢慢来</strong>"，给系统喘息和消化的时间。这是温和的刹车——请求还能进，只是变慢。</p>
+<p>第二档是<strong>强制拒绝（force-deny）</strong>：当指标<strong>撞穿</strong>硬上限（比如内存/磁盘水位过高、或 TT 延迟大到危险），QuotaCenter 会调用 <span class="mono">forceDenyWriting</span>（把 DML 速率直接压到 <strong>0</strong>、拒绝所有写入）或 <span class="mono">forceDenyReading</span>（把 DQL 压到 0、拒绝所有读）。这是紧急刹车——<strong>整类操作被暂时挡在门外</strong>，直到水位降回安全线。为什么要有这么"狠"的一档？因为到了硬上限，<strong>再放进来就是 OOM/写满磁盘的崩溃</strong>，与其全军覆没，不如<strong>果断拒绝新请求、保住已有的</strong>。值得注意的是，<strong>写和读是分开管的</strong>：内存/磁盘压力大时往往先 deny 写（写才是占资源的大头），读可能还能继续。下面把两档刹车摆清。</p>
+
+<p>这"两档刹车"的设计，藏着一个很重要的<strong>分级响应</strong>思想，值得点透。如果只有"<strong>拒绝</strong>"一档会怎样？那系统就成了"<strong>要么全放、要么全关</strong>"的开关——在临界点附近<strong>剧烈抖动</strong>：刚一拒绝、压力降了又全放，放完又爆、又全拒……用户体验是"<strong>时好时坏、忽快忽停</strong>"。反过来，如果只有"<strong>限速</strong>"一档、没有硬性拒绝，那遇到极端洪峰时，温和的限速可能<strong>压不住</strong>，系统还是会被缓慢地推向崩溃。<strong>两档配合，才能既平滑又托底</strong>：平时用限速<strong>柔和地</strong>把压力维持在安全区（像汽车轻点刹车控速），只有在真要撞墙的瞬间才动用强制拒绝这记<strong>急刹</strong>。这种"<strong>渐进施压 + 极端兜底</strong>"的分级策略，在工程上随处可见——从网络拥塞控制（慢启动→拥塞避免→快速重传）到操作系统的内存回收（轻度回收→OOM kill）。Milvus 的配额限流，正是这套成熟智慧在向量数据库上的落地。看懂了"<strong>为什么要两档、而不是一档</strong>"，你对系统稳定性设计的理解就深了一层：<strong>好的自我保护，不是一道生硬的墙，而是一条有弹性的、能随压力平滑收紧的缰绳</strong>。</p>
+
+<div class="cols">
+  <div class="col"><h4>限速 throttle（温和）</h4><p>指标<strong>接近</strong>警戒线时，逐步<strong>调低速率</strong>、让请求排队慢行。请求仍能进、只是变慢，给系统喘息空间。</p></div>
+  <div class="col"><h4>强制拒绝 force-deny（紧急）</h4><p>指标<strong>撞穿</strong>硬上限时，<span class="mono">forceDenyWriting/Reading</span> 把该类速率压到 <strong>0</strong>、整类拒绝，直到水位回落。宁拒新、保已有。</p></div>
+</div>
+
+<h2>在 Proxy 落地：RateLimitInterceptor</h2>
+<p>限速由 QuotaCenter 决策，但<strong>真正"拦人"发生在 Proxy 入口</strong>。Proxy 上有一个 <span class="mono">RateLimitInterceptor</span>（<span class="inline">internal/proxy/rate_limit_interceptor.go</span>）——它是一个 gRPC 拦截器（回忆第 38 课，Proxy 用拦截器做横切关注点），<strong>每个请求进来都先过它这一关</strong>：根据请求类型（写/读/DDL…）查一下当前的限速额度，<strong>额度够就放行、不够就当场拒绝</strong>，返回一个 <span class="mono">ErrServiceRateLimit</span> 错误。</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>请求到达 Proxy</h4><p>一次写/读/DDL 请求进来，先撞上 <span class="mono">RateLimitInterceptor</span>。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>查当前额度</h4><p>按请求类型查 QuotaCenter 最近下发的限速：还有额度吗？</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>够 → 放行</h4><p>额度充足，请求正常进入后续处理（校验、入队、扇出…）。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>不够 → 拒绝</h4><p>超限，当场回 <span class="mono">ErrServiceRateLimit</span>(可重试)；客户端退避、稍后重试。</p></div></div>
+</div>
+<p>这里有个和第 44 课呼应的精妙之处：<span class="mono">ErrServiceRateLimit</span> 是一个 <strong>可重试（System 类）</strong>的错误——它不是在说"你这请求本身错了"（那是 Input 错误、重试也没用），而是在说"<strong>我现在忙、你待会儿再来</strong>"。所以拿到这个错误的客户端（SDK）<strong>应当退避一下、稍后重试</strong>，而不是直接报错给用户。这正是背压<strong>温柔的一面</strong>：它把"系统过载"这件事，转化成一个<strong>客户端能理解、能自动应对</strong>的信号，让整个调用链<strong>协同地慢下来</strong>，而不是硬碰硬地崩掉。把这一课收一收：<strong>QuotaCenter（中央，看全局、定限速、过载时 force-deny）+ RateLimitInterceptor（边缘，每请求落地、超限回可重试错误）</strong>，一中央一边缘，共同构成了 Milvus 的<strong>自我保护安全阀</strong>。它用到的每块拼图你都见过——控制面决策（第 9 课）、拦截器（第 38 课）、可重试错误（第 44 课）、配额配置（第 40 课）、指标监控（第 39 课）——这一课把它们拧成了"<strong>系统怎么在过载中活下来</strong>"的一台完整机器。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>为何自保(背压)</strong>：产能有限、客户端不自觉，撞上硬资源天花板会崩溃甚至雪崩；与其被冲垮，不如主动减速——牺牲一点可用性换整体不崩。</li>
+    <li><strong>QuotaCenter(中央调速器)</strong>：RootCoord 上周期循环 <span class="mono">collectMetrics</span>(内存/磁盘/TT 延迟)→<span class="mono">calculateRates</span>(各类操作限速)→下发各 Proxy；限速决策需全局视角，是控制面的活。</li>
+    <li><strong>两档刹车</strong>：<strong>限速</strong>(接近警戒线→逐步调低、排队慢行) 与 <strong>强制拒绝</strong>(撞硬上限→<span class="mono">forceDenyWriting/Reading</span> 压到 0、整类拒绝)；写读分开管。</li>
+    <li><strong>Proxy 落地</strong>：<span class="mono">RateLimitInterceptor</span> 每请求查额度、超限回 <span class="mono">ErrServiceRateLimit</span>(<strong>可重试</strong>，意为"忙、待会再来")；中央决策 + 边缘执行。复用控制面/拦截器/merr/配额/指标。</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. Milvus 为什么需要配额/限流/背压这套自我保护机制？</div>
+  <ol class="opts">
+    <li>为了减少磁盘占用</li>
+    <li>系统产能有限、客户端不自觉；放任无限写/查会撞硬资源天花板(内存/磁盘/CPU)而崩溃甚至雪崩。与其被冲垮，不如主动减速——牺牲一点可用性换整体不崩</li>
+    <li>纯粹为了限制用户、增加收费</li>
+    <li>为了让查询结果更准确</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。写入快到 flush 来不及→内存被 growing 段撑爆；查询太多→耗尽资源；磁盘写满→雪崩式连锁失败(一节点挂、负载转移压垮其他)。撞上硬上限往往不是优雅变慢而是崩溃(OOM 被杀、大面积超时)。背压的本质是：下游忙不过来时反向给上游施压让它慢下来，把有限资源留给在途的活，用牺牲一点可用性换整体不崩。它是系统的安全阀，不是刁难用户。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. QuotaCenter 在这套机制里扮演什么角色，为什么放在 RootCoord？</div>
+  <ol class="opts">
+    <li>它负责执行向量检索</li>
+    <li>它只是个静态配置文件</li>
+    <li>它是中央调速器：周期性 collectMetrics(内存/磁盘/TT 延迟)→calculateRates(算各类操作限速)→下发各 Proxy。限速决策需全局视角，是控制面的活</li>
+    <li>它在每个 QueryNode 上各自独立决定限速</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：C</strong>。QuotaCenter(rootcoord/quota_center.go)跑周期循环：collectMetrics 从全集群汇总实时指标(内存水位、磁盘、TimeTick 延迟、队列深)，calculateRates 据此算出此刻各类操作(DML/DQL/DDL/index/flush/compaction)的允许速率，再下发所有 Proxy。放在 RootCoord 是因为限速决策需要全局视角——单个 Proxy 只看得到流经自己的请求，不知全集群内存还剩多少。这正是控制面(第9课)的职责：中央决策、边缘执行。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. “两档刹车”和 Proxy 侧的落地，下面哪个说法正确？</div>
+  <ol class="opts">
+    <li>限速由 Proxy 自己决定、不依赖 QuotaCenter</li>
+    <li>ErrServiceRateLimit 是不可重试的输入错误，客户端应直接报错</li>
+    <li>只有一档：要么全放、要么全关</li>
+    <li>限速(接近警戒线→逐步调低、排队慢行)与强制拒绝(撞硬上限→forceDenyWriting/Reading 压到 0、整类拒绝)；Proxy 的 RateLimitInterceptor 每请求查额度、超限回可重试的 ErrServiceRateLimit</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：D</strong>。两档分级响应：限速(throttle/cool-off)在指标接近警戒线时逐步调低速率、让请求排队慢行(温和刹车，请求仍能进只是变慢)；强制拒绝在撞穿硬上限时用 forceDenyWriting/forceDenyReading 把该类速率压到 0、整类拒绝(急刹，宁拒新保已有)，写读分开管。落地在 Proxy：RateLimitInterceptor(gRPC 拦截器)每请求按类型查额度，超限当场回 ErrServiceRateLimit——它是可重试(System类，第44课)，意为“忙、待会再来”，客户端应退避重试而非报错给用户。中央决策+边缘执行。</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>本课说好的自我保护“不是一道生硬的墙，而是一条能随压力平滑收紧的缰绳”。请：(1) 用自己的话讲 QuotaCenter 的“收集→计算→下发”闭环，并说明为什么限速决策必须放在能看全局的中央(联系第 9 课控制面)。(2) 解释为什么要“两档刹车”——只有限速或只有拒绝各会有什么问题？(3) ErrServiceRateLimit 被设计成“可重试(System)”而非“不可重试(Input)”，这对客户端行为意味着什么？这与第 44 课 merr 的 Input/System 之分如何呼应？</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Every system has a <strong>capacity ceiling</strong>. If writes outrun flushing, memory fills with growing segments and bursts; if queries exhaust resources, nodes are dragged down; if data fills the disk, the whole cluster can <strong>avalanche</strong>. A mature database must <strong>protect itself</strong> — that's <strong>quota, rate-limiting, and backpressure</strong>. This lesson shows how Milvus uses <strong>QuotaCenter</strong> (the central governor) to watch live metrics, compute rate limits, and have the <strong>Proxy</strong> enforce them at the entrance, <strong>actively rejecting</strong> requests when needed to rescue the cluster from overload.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of the system as a <strong>restaurant</strong>. The kitchen (the nodes) has finite capacity: too many dishes at once and it flails, plating collapses. So the <strong>host</strong> (the Proxy entrance) <strong>controls the rate of letting guests in</strong> based on how busy the kitchen is — not letting a crowd flood in and overwhelm it. The <strong>manager</strong> (QuotaCenter), with a global view, <strong>watches the kitchen's live metrics</strong> (burner occupancy, prep stock, plating delay), computes "how many tables per minute we can seat now", and tells the host to follow it.
+  When the kitchen is truly about to blow, the manager issues a <strong>harsher order</strong>: "<strong>fully booked, stop seating</strong>" — better to hold new guests at the door (come back later) than let the diners already inside suffer too. <strong>Throttling is a gentle brake; rejection is the emergency brake</strong> — together they keep the restaurant from collapsing at the peak.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>QuotaCenter (<span class="inline">rootcoord/quota_center.go</span>) periodically <span class="mono">collectMetrics</span> from nodes (memory water level, disk, TT lag…) → <span class="mono">calculateRates</span> for each operation type (DML/DQL/DDL…) → pushes them to all Proxies; the Proxy's <span class="mono">RateLimitInterceptor</span> checks before each request and returns <span class="mono">ErrServiceRateLimit</span> (retriable) when over; under hard-limit overload, <span class="mono">forceDenyWriting/Reading</span> drives rates to 0, rejecting a whole class</strong>. Decide centrally, enforce at the edge.
+</div>
+
+<h2>Why self-protect: the essence of backpressure</h2>
+<p>First a plain truth: <strong>a system's rate of digesting requests is finite, but clients won't restrain themselves</strong>. Let clients write infinitely fast and query infinitely much, and sooner or later you hit some <strong>hard resource ceiling</strong>: memory filled by unflushed growing segments, disk burst by binlogs, CPU saturated by queries. And then? <strong>Not a graceful slowdown but a crash</strong> — nodes OOM-killed, requests timing out en masse, even <strong>avalanche-style cascading failure</strong> (one node dies, its load shifts to others and crushes them too).</p>
+<p>So mature systems hold an iron rule: <strong>better to slow down on purpose than be swept away</strong>. That's <strong>backpressure</strong> — when downstream can't keep up, <strong>push back on upstream to make it slow down</strong>. Like a clog downstream in a pipe: pressure travels back up the pipe, forcing the upstream tap to close partway. For a database, backpressure means: <strong>as the system nears its limit, actively reject or slow some new requests</strong>, reserving scarce resources for "work already in flight" — <strong>trading a little availability for not crashing overall</strong>. A classic engineering trade-off: <strong>better to say "no" to a few requests than let all of them die together</strong>. Grasp this core of "<strong>slow down on purpose to survive</strong>" and you've got the soul of quota/rate-limiting — it's not to vex users but the system's <strong>safety valve</strong>.</p>
+
+<h2>QuotaCenter: the central governor</h2>
+<p>Who decides "should we slow down now, and by how much"? It's <strong>QuotaCenter</strong> on RootCoord (<span class="inline">internal/rootcoord/quota_center.go</span>). It runs a <strong>periodic loop</strong>, each round doing three things: <strong>collect → compute → distribute</strong>. First, <span class="mono">collectMetrics()</span>: <strong>aggregate live metrics</strong> from all nodes — memory water level, disk usage, TimeTick lag (whether consumption keeps up with writes), queue depths. Second, <span class="mono">calculateRates()</span>: from these metrics, <strong>compute the allowed rate for each operation type right now</strong> — writes (DML), queries (DQL), DDL, index building, flush, compaction — each with its own quota. Third, <strong>push the computed limits to all Proxies</strong>.</p>
+<p>Why put this on RootCoord, as a central component? Because <strong>rate-limit decisions need a global view</strong>. A single Proxy sees only the requests flowing through it; it has no idea "how much memory the whole cluster has left" or "how much write the other Proxies admitted in total". Only a central brain that can <strong>survey cluster-wide metrics</strong> can correctly decide "what the global limit should be now" — exactly the <strong>control plane</strong>'s job (Lesson 9): QuotaCenter decides, Proxies execute. This again echoes the guide's throughline: <strong>converge "decisions needing global info" to the center, spread "acting on decisions" to the edge</strong>. The diagram below is QuotaCenter's feedback loop.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">node metrics</div><div class="nd">memory level / disk / TT lag / queue depth</div></div>
+  <div class="arrow">collectMetrics</div>
+  <div class="node hl"><div class="nt">QuotaCenter (RootCoord)</div><div class="nd">calculateRates: per-op-type limits</div></div>
+  <div class="arrow">push</div>
+  <div class="node"><div class="nt">all Proxies</div><div class="nd">receive the latest limits</div></div>
+  <div class="arrow">enforce</div>
+  <div class="node"><div class="nt">allow / reject</div><div class="nd">over-limit → ErrServiceRateLimit</div></div>
+</div>
+
+<h2>Two brakes: throttle and force-deny</h2>
+<p>QuotaCenter's "slowing down" isn't all-or-nothing but <strong>two levels of force</strong>, matching overload severity. First, <strong>throttle (cool-off)</strong>: when a metric <strong>approaches</strong> a warning line (say memory at 80%), gradually <strong>lower the rate</strong> for the matching operation, making requests "<strong>queue and go slowly</strong>", giving the system room to breathe and digest. A gentle brake — requests still get in, just slower.</p>
+<p>Second, <strong>force-deny</strong>: when a metric <strong>breaches</strong> a hard limit (memory/disk water level too high, or TT lag dangerously large), QuotaCenter calls <span class="mono">forceDenyWriting</span> (drive DML rate straight to <strong>0</strong>, reject all writes) or <span class="mono">forceDenyReading</span> (DQL to 0, reject all reads). An emergency brake — <strong>a whole operation class is temporarily held at the door</strong> until the water level recedes to safety. Why such a "harsh" level? Because at the hard limit, <strong>admitting more means an OOM/disk-full crash</strong>; rather than total wipeout, <strong>decisively reject new requests to save the existing ones</strong>. Notably, <strong>writes and reads are managed separately</strong>: under memory/disk pressure, writes (the big resource hog) are often denied first, while reads may still go. The two brakes side by side:</p>
+
+<div class="cols">
+  <div class="col"><h4>Throttle (gentle)</h4><p>as a metric <strong>approaches</strong> the warning line, gradually <strong>lower the rate</strong> so requests queue and go slowly. Requests still get in, just slower — room to breathe.</p></div>
+  <div class="col"><h4>Force-deny (emergency)</h4><p>as a metric <strong>breaches</strong> a hard limit, <span class="mono">forceDenyWriting/Reading</span> drives that rate to <strong>0</strong>, rejecting the whole class until levels recede. Reject the new, save the existing.</p></div>
+</div>
+
+<h2>Enforced at the Proxy: RateLimitInterceptor</h2>
+<p>Limits are decided by QuotaCenter, but the actual "stopping people" happens at the <strong>Proxy entrance</strong>. The Proxy has a <span class="mono">RateLimitInterceptor</span> (<span class="inline">internal/proxy/rate_limit_interceptor.go</span>) — a gRPC interceptor (recall Lesson 38, the Proxy uses interceptors for cross-cutting concerns) that <strong>every request passes first</strong>: it checks the current rate quota for the request type (write/read/DDL…), <strong>admitting if there's quota, rejecting on the spot if not</strong>, returning an <span class="mono">ErrServiceRateLimit</span> error.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Request reaches the Proxy</h4><p>a write/read/DDL request arrives and first hits the <span class="mono">RateLimitInterceptor</span>.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Check current quota</h4><p>by request type, check the latest limit QuotaCenter pushed: is there quota left?</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Enough → admit</h4><p>quota available, the request proceeds to normal handling (validate, enqueue, fan out…).</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Not enough → reject</h4><p>over limit, return <span class="mono">ErrServiceRateLimit</span> (retriable) on the spot; the client backs off and retries.</p></div></div>
+</div>
+<p>Here's a subtlety echoing Lesson 44: <span class="mono">ErrServiceRateLimit</span> is a <strong>retriable (System-class)</strong> error — it doesn't say "your request itself is wrong" (that's an Input error, where retry won't help) but "<strong>I'm busy now, come back shortly</strong>". So a client (SDK) receiving it <strong>should back off and retry later</strong>, not surface an error to the user. This is backpressure's <strong>gentle face</strong>: it turns "the system is overloaded" into a signal the <strong>client can understand and auto-handle</strong>, letting the whole call chain <strong>slow down in concert</strong> instead of colliding and crashing. To wrap up: <strong>QuotaCenter (central — global view, sets limits, force-deny on overload) + RateLimitInterceptor (edge — per-request enforcement, returns a retriable error when over)</strong>, one central and one edge, together form Milvus's <strong>self-protection safety valve</strong>. Every piece it uses you've seen — control-plane decisions (Lesson 9), interceptors (Lesson 38), retriable errors (Lesson 44), quota config (Lesson 40), metric monitoring (Lesson 39) — and this lesson twists them into one complete machine for "<strong>how a system survives overload</strong>".</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Why self-protect (backpressure)</strong>: finite capacity, unrestrained clients; hitting a hard resource ceiling causes crashes, even avalanches; better to slow down on purpose — trade a little availability for not crashing.</li>
+    <li><strong>QuotaCenter (central governor)</strong>: a RootCoord loop of <span class="mono">collectMetrics</span> (memory/disk/TT lag) → <span class="mono">calculateRates</span> (per-op-type limits) → push to Proxies; rate decisions need a global view — control-plane work.</li>
+    <li><strong>Two brakes</strong>: <strong>throttle</strong> (near the warning line → gradually lower, queue and go slow) and <strong>force-deny</strong> (breach a hard limit → <span class="mono">forceDenyWriting/Reading</span> to 0, reject the whole class); writes and reads managed separately.</li>
+    <li><strong>Enforced at the Proxy</strong>: <span class="mono">RateLimitInterceptor</span> checks quota per request and returns <span class="mono">ErrServiceRateLimit</span> (<strong>retriable</strong>, meaning "busy, come back later"); central decision + edge enforcement. Reuses control plane/interceptor/merr/quota/metrics.</li>
+  </ul>
+</div>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Why does Milvus need this quota/rate-limiting/backpressure self-protection?</div>
+  <ol class="opts">
+    <li>To reduce disk usage</li>
+    <li>Capacity is finite and clients won't restrain themselves; unbounded writes/queries hit hard ceilings (memory/disk/CPU) causing crashes or avalanches. Better to slow down on purpose — trade a little availability for not crashing</li>
+    <li>Purely to restrict users and charge more</li>
+    <li>To make query results more accurate</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. Writes outrunning flush → memory bursts with growing segments; too many queries → resources exhausted; disk full → avalanche-style cascading failure (one node dies, load shifts and crushes others). Hitting a hard ceiling is usually not a graceful slowdown but a crash (OOM-kill, mass timeouts). Backpressure pushes back on upstream when downstream can't keep up, reserving scarce resources for in-flight work — trading a little availability for not crashing. It's a safety valve, not user-vexing.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. What's QuotaCenter's role, and why is it on RootCoord?</div>
+  <ol class="opts">
+    <li>It executes vector search</li>
+    <li>It's just a static config file</li>
+    <li>It's the central governor: periodically collectMetrics (memory/disk/TT lag)→calculateRates (per-op-type limits)→push to Proxies. Rate decisions need a global view — control-plane work</li>
+    <li>It decides limits independently on each QueryNode</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. QuotaCenter (rootcoord/quota_center.go) runs a periodic loop: collectMetrics aggregates cluster-wide live metrics (memory level, disk, TimeTick lag, queue depth), calculateRates computes the allowed rate for each op type (DML/DQL/DDL/index/flush/compaction) now, then pushes to all Proxies. It's on RootCoord because rate decisions need a global view — a single Proxy only sees its own traffic, not the whole cluster's remaining memory. That's the control plane's job (L9): decide centrally, enforce at the edge.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. About the 'two brakes' and Proxy-side enforcement, which is correct?</div>
+  <ol class="opts">
+    <li>Throttling is decided by the Proxy alone, independent of QuotaCenter</li>
+    <li>ErrServiceRateLimit is a non-retriable input error; the client should just error out</li>
+    <li>Only one level: all-pass or all-stop</li>
+    <li>Throttle (near the warning line → gradually lower, queue slowly) and force-deny (breach a hard limit → forceDenyWriting/Reading to 0, reject the whole class); the Proxy's RateLimitInterceptor checks per request and returns the retriable ErrServiceRateLimit when over</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. Two graded levels: throttle (cool-off) gradually lowers the rate as a metric approaches the warning line, queueing requests (gentle — they still get in, just slower); force-deny, on breaching a hard limit, uses forceDenyWriting/forceDenyReading to drive that rate to 0, rejecting the whole class (emergency — reject the new, save the existing), writes/reads managed separately. Enforced at the Proxy: RateLimitInterceptor (a gRPC interceptor) checks quota per request by type and returns ErrServiceRateLimit when over — it's retriable (System-class, L44), meaning 'busy, come back later'; the client should back off and retry, not error to the user. Central decision + edge enforcement.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson says good self-protection is 'not a rigid wall but a rein that tightens smoothly with pressure'. Please: (1) describe QuotaCenter's 'collect→compute→push' loop in your own words, and why rate decisions must sit at a center with a global view (tie to Lesson 9's control plane). (2) Explain why 'two brakes' are needed — what goes wrong with only throttle, or only deny? (3) ErrServiceRateLimit is designed as 'retriable (System)' not 'non-retriable (Input)' — what does that mean for client behavior, and how does it echo Lesson 44's merr Input/System split?</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="48-hybrid-search-rerank.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">混合检索与重排</span><span class="lang-en">Hybrid search &amp; reranking</span></div></a><a class="next" href="../index.html"><div class="dir"><span class="lang-zh">完成 →</span><span class="lang-en">Done →</span></div><div class="ttl"><span class="lang-zh">返回目录</span><span class="lang-en">Back to index</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>

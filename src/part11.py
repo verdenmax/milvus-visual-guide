@@ -299,3 +299,140 @@ The searches so far were mostly "<strong>one query vector, find neighbors in one
 </div>
 """,
 }
+
+LESSON_49 = {
+    "zh": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+任何系统的产能都<strong>有上限</strong>。如果写入快到 flush 来不及落盘，内存会被 growing 段撑爆；如果查询多到耗尽资源，节点会被拖垮；如果数据涨到磁盘写满，整个集群可能<strong>雪崩</strong>。一个成熟的数据库必须能<strong>自我保护</strong>——这就是<strong>配额、限流与背压（backpressure）</strong>。这一课看 Milvus 怎么用 <strong>QuotaCenter</strong>（中央调速器）盯住实时指标、算出限速、再由 <strong>Proxy</strong> 在入口处落地，必要时<strong>主动拒绝</strong>请求，把集群从过载中救回来。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 类比</div>
+  把系统想成一家<strong>餐厅</strong>。后厨（各节点）的产能有限：同时在做的菜太多就会手忙脚乱、出餐崩盘。<strong>领位员</strong>（Proxy 入口）于是按后厨的忙碌程度<strong>控制放客进店的速度</strong>——不让人潮一下子涌进来压垮厨房。而<strong>经理</strong>（QuotaCenter）站在全局视角，<strong>实时盯着后厨的各项指标</strong>（灶台占用、备料余量、上菜延迟），算出"现在每分钟最多放几桌"，再告诉门口的领位员照此执行。
+  当后厨实在要爆了，经理会下一道<strong>更狠的命令</strong>："<strong>今日满座、暂停接待</strong>"——宁可把新客挡在门外（让他们待会儿再来），也不能让已经在吃的客人一起遭殃。<strong>限速是温和的刹车，拒绝是紧急的刹车</strong>——两档配合，才能让餐厅在高峰里不崩。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观视角</div>
+  一句话：<strong>QuotaCenter(<span class="inline">rootcoord/quota_center.go</span>)周期性从各节点<span class="mono">collectMetrics</span>(内存水位、磁盘、TT 延迟…)→<span class="mono">calculateRates</span> 算出各类操作(DML/DQL/DDL…)的限速→下发给所有 Proxy；Proxy 的 <span class="mono">RateLimitInterceptor</span> 在每个请求前检查，超限就回 <span class="mono">ErrServiceRateLimit</span>(可重试)；过载到硬上限时 <span class="mono">forceDenyWriting/Reading</span> 把速率压到 0、整类拒绝</strong>。中央决策、边缘落地。
+</div>
+
+<h2>为什么要自我保护：背压的本质</h2>
+<p>先想清楚一个朴素的道理：<strong>一个系统消化请求的速度是有限的，但发请求的客户端不会自觉</strong>。如果放任客户端无限快地写、无限多地查，迟早会撞上某个<strong>硬资源的天花板</strong>：内存被未落盘的 growing 段撑满、磁盘被 binlog 写爆、CPU 被查询占满。撞上之后会发生什么？<strong>不是优雅地变慢，而是崩溃</strong>——节点 OOM 被杀、请求大面积超时、甚至引发<strong>雪崩式的连锁失败</strong>（一个节点挂了，负载转移到别的节点，把它们也压垮）。</p>
+<p>所以成熟系统都信奉一条铁律：<strong>与其被冲垮，不如主动减速</strong>。这就是<strong>背压（backpressure）</strong>——当下游处理不过来时，<strong>反过来给上游施加压力、让它慢下来</strong>。就像水管下游堵了，压力会沿着管子往回传，让上游的水龙头不得不关小。对数据库而言，背压意味着：<strong>当系统逼近极限时，主动拒绝或拖慢一部分新请求</strong>，把有限的资源留给"已经在处理的活"，<strong>用牺牲一点点可用性，换取整体的不崩溃</strong>。这是一种典型的工程取舍：<strong>宁可对少数请求说"不"，也不让所有请求一起死</strong>。理解了这个"<strong>主动减速以自保</strong>"的核心，你就抓住了配额限流这套机制的灵魂——它不是为了刁难用户，而是系统的<strong>安全阀</strong>。</p>
+
+<p>顺便厘清三个常被混用的词，它们其实是一条链上的三环：<strong>配额（quota）</strong>是"<strong>额度</strong>"——规定某类操作每秒最多多少（可在 <span class="inline">configs/milvus.yaml</span> 的 <span class="mono">quotaAndLimits</span> 里配，第 40 课）；<strong>限流（rate limiting）</strong>是"<strong>按额度放行</strong>"的动作——在入口处数着额度决定放不放；<strong>背压（backpressure）</strong>是更宏观的"<strong>反向施压</strong>"理念——下游忙不过来时，让上游自觉慢下来。三者的关系是：<strong>背压是目的，限流是手段，配额是手段里的具体数值</strong>。Milvus 把"配额该是多少"交给 QuotaCenter 根据实时指标<strong>动态算</strong>（而不是写死一个静态值），正是为了让这道安全阀能<strong>随系统冷暖自动松紧</strong>——闲时放宽、忙时收紧。理清这三个词，你读任何系统的限流文档都不会再犯迷糊。</p>
+
+<p>这里值得多想一层：<strong>为什么"主动拒绝"反而是负责任的表现？</strong>很多人直觉上觉得"数据库就该来者不拒、有多少吃多少"，可那恰恰是脆弱系统的死法。设想一个不设防的系统：写入洪峰一来，它照单全收，内存一路涨到爆，然后<strong>整个节点 OOM 被杀</strong>——此刻<strong>所有请求</strong>（包括那些本来好好的）全部失败，已经写进内存还没落盘的数据可能也丢了。对比一个有背压的系统：同样的洪峰来临，它在内存到警戒线时就开始<strong>限速</strong>、到硬上限时<strong>拒绝新写入</strong>，于是内存稳在安全区，<strong>已经在处理的请求全部成功</strong>，被拒的请求收到的是一个"<strong>待会再来</strong>"的可重试信号、退避后大多也能成功。两相对比，高下立判：<strong>"优雅地拒绝一部分"远胜于"失控地全盘崩溃"</strong>。这就是为什么所有严肃的分布式系统——数据库、消息队列、网关——都把限流背压当成<strong>必备的基础设施</strong>，而不是可有可无的装饰。一个会"<strong>说不</strong>"的系统，才是一个<strong>靠得住</strong>的系统。</p>
+
+<h2>QuotaCenter：中央调速器</h2>
+<p>谁来决定"现在该不该减速、减多少"？是 RootCoord 上的 <strong>QuotaCenter</strong>（<span class="inline">internal/rootcoord/quota_center.go</span>）。它跑着一个<strong>周期性的循环</strong>，每一轮做三件事：<strong>收集 → 计算 → 下发</strong>。第一步 <span class="mono">collectMetrics()</span>：从全集群各节点<strong>汇总实时指标</strong>——内存水位多高、磁盘用了多少、TimeTick 延迟（写入消费追不追得上）、各类队列多深。第二步 <span class="mono">calculateRates()</span>：根据这些指标，<strong>算出此刻各类操作的允许速率</strong>——写入（DML）、查询（DQL）、DDL、建索引、flush、compaction 等，每一类都有自己的配额。第三步：把算好的限速<strong>下发给所有 Proxy</strong>。</p>
+<p>为什么把这件事放在 RootCoord、做成一个中央组件？因为<strong>限速决策需要全局视角</strong>。单个 Proxy 只看得到流经自己的请求，根本不知道"整个集群的内存还剩多少""别的 Proxy 一共放进来多少写入"。只有一个能<strong>俯瞰全集群指标</strong>的中央大脑，才能做出"现在全局该限到多少"的正确决策——这正是<strong>控制面</strong>（第 9 课）该干的事：QuotaCenter 是决策者，Proxy 是执行者。这也再次呼应了全书的主线：<strong>把"需要全局信息才能做的决策"收敛到中央，把"按决策行动"分散到边缘</strong>。下面这张图就是 QuotaCenter 的反馈闭环。</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">各节点指标</div><div class="nd">内存水位 / 磁盘 / TT 延迟 / 队列深</div></div>
+  <div class="arrow">collectMetrics</div>
+  <div class="node hl"><div class="nt">QuotaCenter（RootCoord）</div><div class="nd">calculateRates：算各类操作限速</div></div>
+  <div class="arrow">下发</div>
+  <div class="node"><div class="nt">所有 Proxy</div><div class="nd">拿到最新限速</div></div>
+  <div class="arrow">enforce</div>
+  <div class="node"><div class="nt">放行 / 拒绝</div><div class="nd">超限回 ErrServiceRateLimit</div></div>
+</div>
+
+<h2>两档刹车：限速与强制拒绝</h2>
+<p>QuotaCenter 的"减速"不是一刀切，而是<strong>两档力度</strong>，对应过载的不同严重程度。第一档是<strong>限速（throttle / cool-off）</strong>：当指标<strong>接近</strong>警戒线（比如内存到了 80%），就把对应操作的速率<strong>逐步调低</strong>，让请求"<strong>排着队慢慢来</strong>"，给系统喘息和消化的时间。这是温和的刹车——请求还能进，只是变慢。</p>
+<p>第二档是<strong>强制拒绝（force-deny）</strong>：当指标<strong>撞穿</strong>硬上限（比如内存/磁盘水位过高、或 TT 延迟大到危险），QuotaCenter 会调用 <span class="mono">forceDenyWriting</span>（把 DML 速率直接压到 <strong>0</strong>、拒绝所有写入）或 <span class="mono">forceDenyReading</span>（把 DQL 压到 0、拒绝所有读）。这是紧急刹车——<strong>整类操作被暂时挡在门外</strong>，直到水位降回安全线。为什么要有这么"狠"的一档？因为到了硬上限，<strong>再放进来就是 OOM/写满磁盘的崩溃</strong>，与其全军覆没，不如<strong>果断拒绝新请求、保住已有的</strong>。值得注意的是，<strong>写和读是分开管的</strong>：内存/磁盘压力大时往往先 deny 写（写才是占资源的大头），读可能还能继续。下面把两档刹车摆清。</p>
+
+<p>这"两档刹车"的设计，藏着一个很重要的<strong>分级响应</strong>思想，值得点透。如果只有"<strong>拒绝</strong>"一档会怎样？那系统就成了"<strong>要么全放、要么全关</strong>"的开关——在临界点附近<strong>剧烈抖动</strong>：刚一拒绝、压力降了又全放，放完又爆、又全拒……用户体验是"<strong>时好时坏、忽快忽停</strong>"。反过来，如果只有"<strong>限速</strong>"一档、没有硬性拒绝，那遇到极端洪峰时，温和的限速可能<strong>压不住</strong>，系统还是会被缓慢地推向崩溃。<strong>两档配合，才能既平滑又托底</strong>：平时用限速<strong>柔和地</strong>把压力维持在安全区（像汽车轻点刹车控速），只有在真要撞墙的瞬间才动用强制拒绝这记<strong>急刹</strong>。这种"<strong>渐进施压 + 极端兜底</strong>"的分级策略，在工程上随处可见——从网络拥塞控制（慢启动→拥塞避免→快速重传）到操作系统的内存回收（轻度回收→OOM kill）。Milvus 的配额限流，正是这套成熟智慧在向量数据库上的落地。看懂了"<strong>为什么要两档、而不是一档</strong>"，你对系统稳定性设计的理解就深了一层：<strong>好的自我保护，不是一道生硬的墙，而是一条有弹性的、能随压力平滑收紧的缰绳</strong>。</p>
+
+<div class="cols">
+  <div class="col"><h4>限速 throttle（温和）</h4><p>指标<strong>接近</strong>警戒线时，逐步<strong>调低速率</strong>、让请求排队慢行。请求仍能进、只是变慢，给系统喘息空间。</p></div>
+  <div class="col"><h4>强制拒绝 force-deny（紧急）</h4><p>指标<strong>撞穿</strong>硬上限时，<span class="mono">forceDenyWriting/Reading</span> 把该类速率压到 <strong>0</strong>、整类拒绝，直到水位回落。宁拒新、保已有。</p></div>
+</div>
+
+<h2>在 Proxy 落地：RateLimitInterceptor</h2>
+<p>限速由 QuotaCenter 决策，但<strong>真正"拦人"发生在 Proxy 入口</strong>。Proxy 上有一个 <span class="mono">RateLimitInterceptor</span>（<span class="inline">internal/proxy/rate_limit_interceptor.go</span>）——它是一个 gRPC 拦截器（回忆第 38 课，Proxy 用拦截器做横切关注点），<strong>每个请求进来都先过它这一关</strong>：根据请求类型（写/读/DDL…）查一下当前的限速额度，<strong>额度够就放行、不够就当场拒绝</strong>，返回一个 <span class="mono">ErrServiceRateLimit</span> 错误。</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>请求到达 Proxy</h4><p>一次写/读/DDL 请求进来，先撞上 <span class="mono">RateLimitInterceptor</span>。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>查当前额度</h4><p>按请求类型查 QuotaCenter 最近下发的限速：还有额度吗？</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>够 → 放行</h4><p>额度充足，请求正常进入后续处理（校验、入队、扇出…）。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>不够 → 拒绝</h4><p>超限，当场回 <span class="mono">ErrServiceRateLimit</span>(可重试)；客户端退避、稍后重试。</p></div></div>
+</div>
+<p>这里有个和第 44 课呼应的精妙之处：<span class="mono">ErrServiceRateLimit</span> 是一个 <strong>可重试（System 类）</strong>的错误——它不是在说"你这请求本身错了"（那是 Input 错误、重试也没用），而是在说"<strong>我现在忙、你待会儿再来</strong>"。所以拿到这个错误的客户端（SDK）<strong>应当退避一下、稍后重试</strong>，而不是直接报错给用户。这正是背压<strong>温柔的一面</strong>：它把"系统过载"这件事，转化成一个<strong>客户端能理解、能自动应对</strong>的信号，让整个调用链<strong>协同地慢下来</strong>，而不是硬碰硬地崩掉。把这一课收一收：<strong>QuotaCenter（中央，看全局、定限速、过载时 force-deny）+ RateLimitInterceptor（边缘，每请求落地、超限回可重试错误）</strong>，一中央一边缘，共同构成了 Milvus 的<strong>自我保护安全阀</strong>。它用到的每块拼图你都见过——控制面决策（第 9 课）、拦截器（第 38 课）、可重试错误（第 44 课）、配额配置（第 40 课）、指标监控（第 39 课）——这一课把它们拧成了"<strong>系统怎么在过载中活下来</strong>"的一台完整机器。</p>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>为何自保(背压)</strong>：产能有限、客户端不自觉，撞上硬资源天花板会崩溃甚至雪崩；与其被冲垮，不如主动减速——牺牲一点可用性换整体不崩。</li>
+    <li><strong>QuotaCenter(中央调速器)</strong>：RootCoord 上周期循环 <span class="mono">collectMetrics</span>(内存/磁盘/TT 延迟)→<span class="mono">calculateRates</span>(各类操作限速)→下发各 Proxy；限速决策需全局视角，是控制面的活。</li>
+    <li><strong>两档刹车</strong>：<strong>限速</strong>(接近警戒线→逐步调低、排队慢行) 与 <strong>强制拒绝</strong>(撞硬上限→<span class="mono">forceDenyWriting/Reading</span> 压到 0、整类拒绝)；写读分开管。</li>
+    <li><strong>Proxy 落地</strong>：<span class="mono">RateLimitInterceptor</span> 每请求查额度、超限回 <span class="mono">ErrServiceRateLimit</span>(<strong>可重试</strong>，意为"忙、待会再来")；中央决策 + 边缘执行。复用控制面/拦截器/merr/配额/指标。</li>
+  </ul>
+</div>
+""",
+    "en": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Every system has a <strong>capacity ceiling</strong>. If writes outrun flushing, memory fills with growing segments and bursts; if queries exhaust resources, nodes are dragged down; if data fills the disk, the whole cluster can <strong>avalanche</strong>. A mature database must <strong>protect itself</strong> — that's <strong>quota, rate-limiting, and backpressure</strong>. This lesson shows how Milvus uses <strong>QuotaCenter</strong> (the central governor) to watch live metrics, compute rate limits, and have the <strong>Proxy</strong> enforce them at the entrance, <strong>actively rejecting</strong> requests when needed to rescue the cluster from overload.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of the system as a <strong>restaurant</strong>. The kitchen (the nodes) has finite capacity: too many dishes at once and it flails, plating collapses. So the <strong>host</strong> (the Proxy entrance) <strong>controls the rate of letting guests in</strong> based on how busy the kitchen is — not letting a crowd flood in and overwhelm it. The <strong>manager</strong> (QuotaCenter), with a global view, <strong>watches the kitchen's live metrics</strong> (burner occupancy, prep stock, plating delay), computes "how many tables per minute we can seat now", and tells the host to follow it.
+  When the kitchen is truly about to blow, the manager issues a <strong>harsher order</strong>: "<strong>fully booked, stop seating</strong>" — better to hold new guests at the door (come back later) than let the diners already inside suffer too. <strong>Throttling is a gentle brake; rejection is the emergency brake</strong> — together they keep the restaurant from collapsing at the peak.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>QuotaCenter (<span class="inline">rootcoord/quota_center.go</span>) periodically <span class="mono">collectMetrics</span> from nodes (memory water level, disk, TT lag…) → <span class="mono">calculateRates</span> for each operation type (DML/DQL/DDL…) → pushes them to all Proxies; the Proxy's <span class="mono">RateLimitInterceptor</span> checks before each request and returns <span class="mono">ErrServiceRateLimit</span> (retriable) when over; under hard-limit overload, <span class="mono">forceDenyWriting/Reading</span> drives rates to 0, rejecting a whole class</strong>. Decide centrally, enforce at the edge.
+</div>
+
+<h2>Why self-protect: the essence of backpressure</h2>
+<p>First a plain truth: <strong>a system's rate of digesting requests is finite, but clients won't restrain themselves</strong>. Let clients write infinitely fast and query infinitely much, and sooner or later you hit some <strong>hard resource ceiling</strong>: memory filled by unflushed growing segments, disk burst by binlogs, CPU saturated by queries. And then? <strong>Not a graceful slowdown but a crash</strong> — nodes OOM-killed, requests timing out en masse, even <strong>avalanche-style cascading failure</strong> (one node dies, its load shifts to others and crushes them too).</p>
+<p>So mature systems hold an iron rule: <strong>better to slow down on purpose than be swept away</strong>. That's <strong>backpressure</strong> — when downstream can't keep up, <strong>push back on upstream to make it slow down</strong>. Like a clog downstream in a pipe: pressure travels back up the pipe, forcing the upstream tap to close partway. For a database, backpressure means: <strong>as the system nears its limit, actively reject or slow some new requests</strong>, reserving scarce resources for "work already in flight" — <strong>trading a little availability for not crashing overall</strong>. A classic engineering trade-off: <strong>better to say "no" to a few requests than let all of them die together</strong>. Grasp this core of "<strong>slow down on purpose to survive</strong>" and you've got the soul of quota/rate-limiting — it's not to vex users but the system's <strong>safety valve</strong>.</p>
+
+<h2>QuotaCenter: the central governor</h2>
+<p>Who decides "should we slow down now, and by how much"? It's <strong>QuotaCenter</strong> on RootCoord (<span class="inline">internal/rootcoord/quota_center.go</span>). It runs a <strong>periodic loop</strong>, each round doing three things: <strong>collect → compute → distribute</strong>. First, <span class="mono">collectMetrics()</span>: <strong>aggregate live metrics</strong> from all nodes — memory water level, disk usage, TimeTick lag (whether consumption keeps up with writes), queue depths. Second, <span class="mono">calculateRates()</span>: from these metrics, <strong>compute the allowed rate for each operation type right now</strong> — writes (DML), queries (DQL), DDL, index building, flush, compaction — each with its own quota. Third, <strong>push the computed limits to all Proxies</strong>.</p>
+<p>Why put this on RootCoord, as a central component? Because <strong>rate-limit decisions need a global view</strong>. A single Proxy sees only the requests flowing through it; it has no idea "how much memory the whole cluster has left" or "how much write the other Proxies admitted in total". Only a central brain that can <strong>survey cluster-wide metrics</strong> can correctly decide "what the global limit should be now" — exactly the <strong>control plane</strong>'s job (Lesson 9): QuotaCenter decides, Proxies execute. This again echoes the guide's throughline: <strong>converge "decisions needing global info" to the center, spread "acting on decisions" to the edge</strong>. The diagram below is QuotaCenter's feedback loop.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">node metrics</div><div class="nd">memory level / disk / TT lag / queue depth</div></div>
+  <div class="arrow">collectMetrics</div>
+  <div class="node hl"><div class="nt">QuotaCenter (RootCoord)</div><div class="nd">calculateRates: per-op-type limits</div></div>
+  <div class="arrow">push</div>
+  <div class="node"><div class="nt">all Proxies</div><div class="nd">receive the latest limits</div></div>
+  <div class="arrow">enforce</div>
+  <div class="node"><div class="nt">allow / reject</div><div class="nd">over-limit → ErrServiceRateLimit</div></div>
+</div>
+
+<h2>Two brakes: throttle and force-deny</h2>
+<p>QuotaCenter's "slowing down" isn't all-or-nothing but <strong>two levels of force</strong>, matching overload severity. First, <strong>throttle (cool-off)</strong>: when a metric <strong>approaches</strong> a warning line (say memory at 80%), gradually <strong>lower the rate</strong> for the matching operation, making requests "<strong>queue and go slowly</strong>", giving the system room to breathe and digest. A gentle brake — requests still get in, just slower.</p>
+<p>Second, <strong>force-deny</strong>: when a metric <strong>breaches</strong> a hard limit (memory/disk water level too high, or TT lag dangerously large), QuotaCenter calls <span class="mono">forceDenyWriting</span> (drive DML rate straight to <strong>0</strong>, reject all writes) or <span class="mono">forceDenyReading</span> (DQL to 0, reject all reads). An emergency brake — <strong>a whole operation class is temporarily held at the door</strong> until the water level recedes to safety. Why such a "harsh" level? Because at the hard limit, <strong>admitting more means an OOM/disk-full crash</strong>; rather than total wipeout, <strong>decisively reject new requests to save the existing ones</strong>. Notably, <strong>writes and reads are managed separately</strong>: under memory/disk pressure, writes (the big resource hog) are often denied first, while reads may still go. The two brakes side by side:</p>
+
+<div class="cols">
+  <div class="col"><h4>Throttle (gentle)</h4><p>as a metric <strong>approaches</strong> the warning line, gradually <strong>lower the rate</strong> so requests queue and go slowly. Requests still get in, just slower — room to breathe.</p></div>
+  <div class="col"><h4>Force-deny (emergency)</h4><p>as a metric <strong>breaches</strong> a hard limit, <span class="mono">forceDenyWriting/Reading</span> drives that rate to <strong>0</strong>, rejecting the whole class until levels recede. Reject the new, save the existing.</p></div>
+</div>
+
+<h2>Enforced at the Proxy: RateLimitInterceptor</h2>
+<p>Limits are decided by QuotaCenter, but the actual "stopping people" happens at the <strong>Proxy entrance</strong>. The Proxy has a <span class="mono">RateLimitInterceptor</span> (<span class="inline">internal/proxy/rate_limit_interceptor.go</span>) — a gRPC interceptor (recall Lesson 38, the Proxy uses interceptors for cross-cutting concerns) that <strong>every request passes first</strong>: it checks the current rate quota for the request type (write/read/DDL…), <strong>admitting if there's quota, rejecting on the spot if not</strong>, returning an <span class="mono">ErrServiceRateLimit</span> error.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Request reaches the Proxy</h4><p>a write/read/DDL request arrives and first hits the <span class="mono">RateLimitInterceptor</span>.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Check current quota</h4><p>by request type, check the latest limit QuotaCenter pushed: is there quota left?</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Enough → admit</h4><p>quota available, the request proceeds to normal handling (validate, enqueue, fan out…).</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Not enough → reject</h4><p>over limit, return <span class="mono">ErrServiceRateLimit</span> (retriable) on the spot; the client backs off and retries.</p></div></div>
+</div>
+<p>Here's a subtlety echoing Lesson 44: <span class="mono">ErrServiceRateLimit</span> is a <strong>retriable (System-class)</strong> error — it doesn't say "your request itself is wrong" (that's an Input error, where retry won't help) but "<strong>I'm busy now, come back shortly</strong>". So a client (SDK) receiving it <strong>should back off and retry later</strong>, not surface an error to the user. This is backpressure's <strong>gentle face</strong>: it turns "the system is overloaded" into a signal the <strong>client can understand and auto-handle</strong>, letting the whole call chain <strong>slow down in concert</strong> instead of colliding and crashing. To wrap up: <strong>QuotaCenter (central — global view, sets limits, force-deny on overload) + RateLimitInterceptor (edge — per-request enforcement, returns a retriable error when over)</strong>, one central and one edge, together form Milvus's <strong>self-protection safety valve</strong>. Every piece it uses you've seen — control-plane decisions (Lesson 9), interceptors (Lesson 38), retriable errors (Lesson 44), quota config (Lesson 40), metric monitoring (Lesson 39) — and this lesson twists them into one complete machine for "<strong>how a system survives overload</strong>".</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Why self-protect (backpressure)</strong>: finite capacity, unrestrained clients; hitting a hard resource ceiling causes crashes, even avalanches; better to slow down on purpose — trade a little availability for not crashing.</li>
+    <li><strong>QuotaCenter (central governor)</strong>: a RootCoord loop of <span class="mono">collectMetrics</span> (memory/disk/TT lag) → <span class="mono">calculateRates</span> (per-op-type limits) → push to Proxies; rate decisions need a global view — control-plane work.</li>
+    <li><strong>Two brakes</strong>: <strong>throttle</strong> (near the warning line → gradually lower, queue and go slow) and <strong>force-deny</strong> (breach a hard limit → <span class="mono">forceDenyWriting/Reading</span> to 0, reject the whole class); writes and reads managed separately.</li>
+    <li><strong>Enforced at the Proxy</strong>: <span class="mono">RateLimitInterceptor</span> checks quota per request and returns <span class="mono">ErrServiceRateLimit</span> (<strong>retriable</strong>, meaning "busy, come back later"); central decision + edge enforcement. Reuses control plane/interceptor/merr/quota/metrics.</li>
+  </ul>
+</div>
+""",
+}

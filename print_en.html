@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 48 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 49 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
@@ -376,6 +376,7 @@ details[open] > summary { list-style: none; }
   <li>Glossary</li>
   <li>Bulk import: the second write path</li>
   <li>Hybrid search & reranking</li>
+  <li>Quota, rate-limiting & backpressure</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -9089,6 +9090,121 @@ The searches so far were mostly "<strong>one query vector, find neighbors in one
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
     <li>This lesson says hybrid search is 'score several ways → fuse into one list', fused mainly at the Proxy. Please: (1) design a hybrid search for a RAG scenario (user asks 'the 2023 return policy for XJ-200'): which vector fields, and why is pure-semantic or pure-keyword insufficient? (2) explain why RRF can fuse 'incomparable scores', and why each sub-search often fetches more candidates than the final topK. (3) why is fusion done at the Proxy rather than a QueryNode? How does this echo Lesson 29's 'the top tier of the three-level reduce is the Proxy'?</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Quota, rate-limiting & backpressure</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Every system has a <strong>capacity ceiling</strong>. If writes outrun flushing, memory fills with growing segments and bursts; if queries exhaust resources, nodes are dragged down; if data fills the disk, the whole cluster can <strong>avalanche</strong>. A mature database must <strong>protect itself</strong> — that's <strong>quota, rate-limiting, and backpressure</strong>. This lesson shows how Milvus uses <strong>QuotaCenter</strong> (the central governor) to watch live metrics, compute rate limits, and have the <strong>Proxy</strong> enforce them at the entrance, <strong>actively rejecting</strong> requests when needed to rescue the cluster from overload.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of the system as a <strong>restaurant</strong>. The kitchen (the nodes) has finite capacity: too many dishes at once and it flails, plating collapses. So the <strong>host</strong> (the Proxy entrance) <strong>controls the rate of letting guests in</strong> based on how busy the kitchen is — not letting a crowd flood in and overwhelm it. The <strong>manager</strong> (QuotaCenter), with a global view, <strong>watches the kitchen's live metrics</strong> (burner occupancy, prep stock, plating delay), computes "how many tables per minute we can seat now", and tells the host to follow it.
+  When the kitchen is truly about to blow, the manager issues a <strong>harsher order</strong>: "<strong>fully booked, stop seating</strong>" — better to hold new guests at the door (come back later) than let the diners already inside suffer too. <strong>Throttling is a gentle brake; rejection is the emergency brake</strong> — together they keep the restaurant from collapsing at the peak.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>QuotaCenter (<span class="inline">rootcoord/quota_center.go</span>) periodically <span class="mono">collectMetrics</span> from nodes (memory water level, disk, TT lag…) → <span class="mono">calculateRates</span> for each operation type (DML/DQL/DDL…) → pushes them to all Proxies; the Proxy's <span class="mono">RateLimitInterceptor</span> checks before each request and returns <span class="mono">ErrServiceRateLimit</span> (retriable) when over; under hard-limit overload, <span class="mono">forceDenyWriting/Reading</span> drives rates to 0, rejecting a whole class</strong>. Decide centrally, enforce at the edge.
+</div>
+
+<h2>Why self-protect: the essence of backpressure</h2>
+<p>First a plain truth: <strong>a system's rate of digesting requests is finite, but clients won't restrain themselves</strong>. Let clients write infinitely fast and query infinitely much, and sooner or later you hit some <strong>hard resource ceiling</strong>: memory filled by unflushed growing segments, disk burst by binlogs, CPU saturated by queries. And then? <strong>Not a graceful slowdown but a crash</strong> — nodes OOM-killed, requests timing out en masse, even <strong>avalanche-style cascading failure</strong> (one node dies, its load shifts to others and crushes them too).</p>
+<p>So mature systems hold an iron rule: <strong>better to slow down on purpose than be swept away</strong>. That's <strong>backpressure</strong> — when downstream can't keep up, <strong>push back on upstream to make it slow down</strong>. Like a clog downstream in a pipe: pressure travels back up the pipe, forcing the upstream tap to close partway. For a database, backpressure means: <strong>as the system nears its limit, actively reject or slow some new requests</strong>, reserving scarce resources for "work already in flight" — <strong>trading a little availability for not crashing overall</strong>. A classic engineering trade-off: <strong>better to say "no" to a few requests than let all of them die together</strong>. Grasp this core of "<strong>slow down on purpose to survive</strong>" and you've got the soul of quota/rate-limiting — it's not to vex users but the system's <strong>safety valve</strong>.</p>
+
+<h2>QuotaCenter: the central governor</h2>
+<p>Who decides "should we slow down now, and by how much"? It's <strong>QuotaCenter</strong> on RootCoord (<span class="inline">internal/rootcoord/quota_center.go</span>). It runs a <strong>periodic loop</strong>, each round doing three things: <strong>collect → compute → distribute</strong>. First, <span class="mono">collectMetrics()</span>: <strong>aggregate live metrics</strong> from all nodes — memory water level, disk usage, TimeTick lag (whether consumption keeps up with writes), queue depths. Second, <span class="mono">calculateRates()</span>: from these metrics, <strong>compute the allowed rate for each operation type right now</strong> — writes (DML), queries (DQL), DDL, index building, flush, compaction — each with its own quota. Third, <strong>push the computed limits to all Proxies</strong>.</p>
+<p>Why put this on RootCoord, as a central component? Because <strong>rate-limit decisions need a global view</strong>. A single Proxy sees only the requests flowing through it; it has no idea "how much memory the whole cluster has left" or "how much write the other Proxies admitted in total". Only a central brain that can <strong>survey cluster-wide metrics</strong> can correctly decide "what the global limit should be now" — exactly the <strong>control plane</strong>'s job (Lesson 9): QuotaCenter decides, Proxies execute. This again echoes the guide's throughline: <strong>converge "decisions needing global info" to the center, spread "acting on decisions" to the edge</strong>. The diagram below is QuotaCenter's feedback loop.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">node metrics</div><div class="nd">memory level / disk / TT lag / queue depth</div></div>
+  <div class="arrow">collectMetrics</div>
+  <div class="node hl"><div class="nt">QuotaCenter (RootCoord)</div><div class="nd">calculateRates: per-op-type limits</div></div>
+  <div class="arrow">push</div>
+  <div class="node"><div class="nt">all Proxies</div><div class="nd">receive the latest limits</div></div>
+  <div class="arrow">enforce</div>
+  <div class="node"><div class="nt">allow / reject</div><div class="nd">over-limit → ErrServiceRateLimit</div></div>
+</div>
+
+<h2>Two brakes: throttle and force-deny</h2>
+<p>QuotaCenter's "slowing down" isn't all-or-nothing but <strong>two levels of force</strong>, matching overload severity. First, <strong>throttle (cool-off)</strong>: when a metric <strong>approaches</strong> a warning line (say memory at 80%), gradually <strong>lower the rate</strong> for the matching operation, making requests "<strong>queue and go slowly</strong>", giving the system room to breathe and digest. A gentle brake — requests still get in, just slower.</p>
+<p>Second, <strong>force-deny</strong>: when a metric <strong>breaches</strong> a hard limit (memory/disk water level too high, or TT lag dangerously large), QuotaCenter calls <span class="mono">forceDenyWriting</span> (drive DML rate straight to <strong>0</strong>, reject all writes) or <span class="mono">forceDenyReading</span> (DQL to 0, reject all reads). An emergency brake — <strong>a whole operation class is temporarily held at the door</strong> until the water level recedes to safety. Why such a "harsh" level? Because at the hard limit, <strong>admitting more means an OOM/disk-full crash</strong>; rather than total wipeout, <strong>decisively reject new requests to save the existing ones</strong>. Notably, <strong>writes and reads are managed separately</strong>: under memory/disk pressure, writes (the big resource hog) are often denied first, while reads may still go. The two brakes side by side:</p>
+
+<div class="cols">
+  <div class="col"><h4>Throttle (gentle)</h4><p>as a metric <strong>approaches</strong> the warning line, gradually <strong>lower the rate</strong> so requests queue and go slowly. Requests still get in, just slower — room to breathe.</p></div>
+  <div class="col"><h4>Force-deny (emergency)</h4><p>as a metric <strong>breaches</strong> a hard limit, <span class="mono">forceDenyWriting/Reading</span> drives that rate to <strong>0</strong>, rejecting the whole class until levels recede. Reject the new, save the existing.</p></div>
+</div>
+
+<h2>Enforced at the Proxy: RateLimitInterceptor</h2>
+<p>Limits are decided by QuotaCenter, but the actual "stopping people" happens at the <strong>Proxy entrance</strong>. The Proxy has a <span class="mono">RateLimitInterceptor</span> (<span class="inline">internal/proxy/rate_limit_interceptor.go</span>) — a gRPC interceptor (recall Lesson 38, the Proxy uses interceptors for cross-cutting concerns) that <strong>every request passes first</strong>: it checks the current rate quota for the request type (write/read/DDL…), <strong>admitting if there's quota, rejecting on the spot if not</strong>, returning an <span class="mono">ErrServiceRateLimit</span> error.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Request reaches the Proxy</h4><p>a write/read/DDL request arrives and first hits the <span class="mono">RateLimitInterceptor</span>.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Check current quota</h4><p>by request type, check the latest limit QuotaCenter pushed: is there quota left?</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Enough → admit</h4><p>quota available, the request proceeds to normal handling (validate, enqueue, fan out…).</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Not enough → reject</h4><p>over limit, return <span class="mono">ErrServiceRateLimit</span> (retriable) on the spot; the client backs off and retries.</p></div></div>
+</div>
+<p>Here's a subtlety echoing Lesson 44: <span class="mono">ErrServiceRateLimit</span> is a <strong>retriable (System-class)</strong> error — it doesn't say "your request itself is wrong" (that's an Input error, where retry won't help) but "<strong>I'm busy now, come back shortly</strong>". So a client (SDK) receiving it <strong>should back off and retry later</strong>, not surface an error to the user. This is backpressure's <strong>gentle face</strong>: it turns "the system is overloaded" into a signal the <strong>client can understand and auto-handle</strong>, letting the whole call chain <strong>slow down in concert</strong> instead of colliding and crashing. To wrap up: <strong>QuotaCenter (central — global view, sets limits, force-deny on overload) + RateLimitInterceptor (edge — per-request enforcement, returns a retriable error when over)</strong>, one central and one edge, together form Milvus's <strong>self-protection safety valve</strong>. Every piece it uses you've seen — control-plane decisions (Lesson 9), interceptors (Lesson 38), retriable errors (Lesson 44), quota config (Lesson 40), metric monitoring (Lesson 39) — and this lesson twists them into one complete machine for "<strong>how a system survives overload</strong>".</p>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Why self-protect (backpressure)</strong>: finite capacity, unrestrained clients; hitting a hard resource ceiling causes crashes, even avalanches; better to slow down on purpose — trade a little availability for not crashing.</li>
+    <li><strong>QuotaCenter (central governor)</strong>: a RootCoord loop of <span class="mono">collectMetrics</span> (memory/disk/TT lag) → <span class="mono">calculateRates</span> (per-op-type limits) → push to Proxies; rate decisions need a global view — control-plane work.</li>
+    <li><strong>Two brakes</strong>: <strong>throttle</strong> (near the warning line → gradually lower, queue and go slow) and <strong>force-deny</strong> (breach a hard limit → <span class="mono">forceDenyWriting/Reading</span> to 0, reject the whole class); writes and reads managed separately.</li>
+    <li><strong>Enforced at the Proxy</strong>: <span class="mono">RateLimitInterceptor</span> checks quota per request and returns <span class="mono">ErrServiceRateLimit</span> (<strong>retriable</strong>, meaning "busy, come back later"); central decision + edge enforcement. Reuses control plane/interceptor/merr/quota/metrics.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Why does Milvus need this quota/rate-limiting/backpressure self-protection?</div>
+  <ol class="opts">
+    <li>To reduce disk usage</li>
+    <li>Capacity is finite and clients won't restrain themselves; unbounded writes/queries hit hard ceilings (memory/disk/CPU) causing crashes or avalanches. Better to slow down on purpose — trade a little availability for not crashing</li>
+    <li>Purely to restrict users and charge more</li>
+    <li>To make query results more accurate</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. Writes outrunning flush → memory bursts with growing segments; too many queries → resources exhausted; disk full → avalanche-style cascading failure (one node dies, load shifts and crushes others). Hitting a hard ceiling is usually not a graceful slowdown but a crash (OOM-kill, mass timeouts). Backpressure pushes back on upstream when downstream can't keep up, reserving scarce resources for in-flight work — trading a little availability for not crashing. It's a safety valve, not user-vexing.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. What's QuotaCenter's role, and why is it on RootCoord?</div>
+  <ol class="opts">
+    <li>It executes vector search</li>
+    <li>It's just a static config file</li>
+    <li>It's the central governor: periodically collectMetrics (memory/disk/TT lag)→calculateRates (per-op-type limits)→push to Proxies. Rate decisions need a global view — control-plane work</li>
+    <li>It decides limits independently on each QueryNode</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: C</strong>. QuotaCenter (rootcoord/quota_center.go) runs a periodic loop: collectMetrics aggregates cluster-wide live metrics (memory level, disk, TimeTick lag, queue depth), calculateRates computes the allowed rate for each op type (DML/DQL/DDL/index/flush/compaction) now, then pushes to all Proxies. It's on RootCoord because rate decisions need a global view — a single Proxy only sees its own traffic, not the whole cluster's remaining memory. That's the control plane's job (L9): decide centrally, enforce at the edge.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. About the 'two brakes' and Proxy-side enforcement, which is correct?</div>
+  <ol class="opts">
+    <li>Throttling is decided by the Proxy alone, independent of QuotaCenter</li>
+    <li>ErrServiceRateLimit is a non-retriable input error; the client should just error out</li>
+    <li>Only one level: all-pass or all-stop</li>
+    <li>Throttle (near the warning line → gradually lower, queue slowly) and force-deny (breach a hard limit → forceDenyWriting/Reading to 0, reject the whole class); the Proxy's RateLimitInterceptor checks per request and returns the retriable ErrServiceRateLimit when over</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. Two graded levels: throttle (cool-off) gradually lowers the rate as a metric approaches the warning line, queueing requests (gentle — they still get in, just slower); force-deny, on breaching a hard limit, uses forceDenyWriting/forceDenyReading to drive that rate to 0, rejecting the whole class (emergency — reject the new, save the existing), writes/reads managed separately. Enforced at the Proxy: RateLimitInterceptor (a gRPC interceptor) checks quota per request by type and returns ErrServiceRateLimit when over — it's retriable (System-class, L44), meaning 'busy, come back later'; the client should back off and retry, not error to the user. Central decision + edge enforcement.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>This lesson says good self-protection is 'not a rigid wall but a rein that tightens smoothly with pressure'. Please: (1) describe QuotaCenter's 'collect→compute→push' loop in your own words, and why rate decisions must sit at a center with a global view (tie to Lesson 9's control plane). (2) Explain why 'two brakes' are needed — what goes wrong with only throttle, or only deny? (3) ErrServiceRateLimit is designed as 'retriable (System)' not 'non-retriable (Input)' — what does that mean for client behavior, and how does it echo Lesson 44's merr Input/System split?</li>
   </ul>
 </div>
 </div>

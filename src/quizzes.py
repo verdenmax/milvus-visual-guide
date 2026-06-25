@@ -3095,6 +3095,67 @@ QUIZZES = {
             },
         ],
     },
+    "49-quota-and-rate-limiting.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "Milvus 为什么需要配额/限流/背压这套自我保护机制？",
+                    "en": "Why does Milvus need this quota/rate-limiting/backpressure self-protection?",
+                },
+                "opts": [
+                    {"zh": "系统产能有限、客户端不自觉；放任无限写/查会撞硬资源天花板(内存/磁盘/CPU)而崩溃甚至雪崩。与其被冲垮，不如主动减速——牺牲一点可用性换整体不崩", "en": "Capacity is finite and clients won't restrain themselves; unbounded writes/queries hit hard ceilings (memory/disk/CPU) causing crashes or avalanches. Better to slow down on purpose — trade a little availability for not crashing"},
+                    {"zh": "为了让查询结果更准确", "en": "To make query results more accurate"},
+                    {"zh": "为了减少磁盘占用", "en": "To reduce disk usage"},
+                    {"zh": "纯粹为了限制用户、增加收费", "en": "Purely to restrict users and charge more"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "写入快到 flush 来不及→内存被 growing 段撑爆；查询太多→耗尽资源；磁盘写满→雪崩式连锁失败(一节点挂、负载转移压垮其他)。撞上硬上限往往不是优雅变慢而是崩溃(OOM 被杀、大面积超时)。背压的本质是：下游忙不过来时反向给上游施压让它慢下来，把有限资源留给在途的活，用牺牲一点可用性换整体不崩。它是系统的安全阀，不是刁难用户。",
+                    "en": "Writes outrunning flush → memory bursts with growing segments; too many queries → resources exhausted; disk full → avalanche-style cascading failure (one node dies, load shifts and crushes others). Hitting a hard ceiling is usually not a graceful slowdown but a crash (OOM-kill, mass timeouts). Backpressure pushes back on upstream when downstream can't keep up, reserving scarce resources for in-flight work — trading a little availability for not crashing. It's a safety valve, not user-vexing.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "QuotaCenter 在这套机制里扮演什么角色，为什么放在 RootCoord？",
+                    "en": "What's QuotaCenter's role, and why is it on RootCoord?",
+                },
+                "opts": [
+                    {"zh": "它是中央调速器：周期性 collectMetrics(内存/磁盘/TT 延迟)→calculateRates(算各类操作限速)→下发各 Proxy。限速决策需全局视角，是控制面的活", "en": "It's the central governor: periodically collectMetrics (memory/disk/TT lag)→calculateRates (per-op-type limits)→push to Proxies. Rate decisions need a global view — control-plane work"},
+                    {"zh": "它在每个 QueryNode 上各自独立决定限速", "en": "It decides limits independently on each QueryNode"},
+                    {"zh": "它负责执行向量检索", "en": "It executes vector search"},
+                    {"zh": "它只是个静态配置文件", "en": "It's just a static config file"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "QuotaCenter(rootcoord/quota_center.go)跑周期循环：collectMetrics 从全集群汇总实时指标(内存水位、磁盘、TimeTick 延迟、队列深)，calculateRates 据此算出此刻各类操作(DML/DQL/DDL/index/flush/compaction)的允许速率，再下发所有 Proxy。放在 RootCoord 是因为限速决策需要全局视角——单个 Proxy 只看得到流经自己的请求，不知全集群内存还剩多少。这正是控制面(第9课)的职责：中央决策、边缘执行。",
+                    "en": "QuotaCenter (rootcoord/quota_center.go) runs a periodic loop: collectMetrics aggregates cluster-wide live metrics (memory level, disk, TimeTick lag, queue depth), calculateRates computes the allowed rate for each op type (DML/DQL/DDL/index/flush/compaction) now, then pushes to all Proxies. It's on RootCoord because rate decisions need a global view — a single Proxy only sees its own traffic, not the whole cluster's remaining memory. That's the control plane's job (L9): decide centrally, enforce at the edge.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "“两档刹车”和 Proxy 侧的落地，下面哪个说法正确？",
+                    "en": "About the 'two brakes' and Proxy-side enforcement, which is correct?",
+                },
+                "opts": [
+                    {"zh": "限速(接近警戒线→逐步调低、排队慢行)与强制拒绝(撞硬上限→forceDenyWriting/Reading 压到 0、整类拒绝)；Proxy 的 RateLimitInterceptor 每请求查额度、超限回可重试的 ErrServiceRateLimit", "en": "Throttle (near the warning line → gradually lower, queue slowly) and force-deny (breach a hard limit → forceDenyWriting/Reading to 0, reject the whole class); the Proxy's RateLimitInterceptor checks per request and returns the retriable ErrServiceRateLimit when over"},
+                    {"zh": "只有一档：要么全放、要么全关", "en": "Only one level: all-pass or all-stop"},
+                    {"zh": "ErrServiceRateLimit 是不可重试的输入错误，客户端应直接报错", "en": "ErrServiceRateLimit is a non-retriable input error; the client should just error out"},
+                    {"zh": "限速由 Proxy 自己决定、不依赖 QuotaCenter", "en": "Throttling is decided by the Proxy alone, independent of QuotaCenter"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "两档分级响应：限速(throttle/cool-off)在指标接近警戒线时逐步调低速率、让请求排队慢行(温和刹车，请求仍能进只是变慢)；强制拒绝在撞穿硬上限时用 forceDenyWriting/forceDenyReading 把该类速率压到 0、整类拒绝(急刹，宁拒新保已有)，写读分开管。落地在 Proxy：RateLimitInterceptor(gRPC 拦截器)每请求按类型查额度，超限当场回 ErrServiceRateLimit——它是可重试(System类，第44课)，意为“忙、待会再来”，客户端应退避重试而非报错给用户。中央决策+边缘执行。",
+                    "en": "Two graded levels: throttle (cool-off) gradually lowers the rate as a metric approaches the warning line, queueing requests (gentle — they still get in, just slower); force-deny, on breaching a hard limit, uses forceDenyWriting/forceDenyReading to drive that rate to 0, rejecting the whole class (emergency — reject the new, save the existing), writes/reads managed separately. Enforced at the Proxy: RateLimitInterceptor (a gRPC interceptor) checks quota per request by type and returns ErrServiceRateLimit when over — it's retriable (System-class, L44), meaning 'busy, come back later'; the client should back off and retry, not error to the user. Central decision + edge enforcement.",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "本课说好的自我保护“不是一道生硬的墙，而是一条能随压力平滑收紧的缰绳”。请：(1) 用自己的话讲 QuotaCenter 的“收集→计算→下发”闭环，并说明为什么限速决策必须放在能看全局的中央(联系第 9 课控制面)。(2) 解释为什么要“两档刹车”——只有限速或只有拒绝各会有什么问题？(3) ErrServiceRateLimit 被设计成“可重试(System)”而非“不可重试(Input)”，这对客户端行为意味着什么？这与第 44 课 merr 的 Input/System 之分如何呼应？",
+                "en": "This lesson says good self-protection is 'not a rigid wall but a rein that tightens smoothly with pressure'. Please: (1) describe QuotaCenter's 'collect→compute→push' loop in your own words, and why rate decisions must sit at a center with a global view (tie to Lesson 9's control plane). (2) Explain why 'two brakes' are needed — what goes wrong with only throttle, or only deny? (3) ErrServiceRateLimit is designed as 'retriable (System)' not 'non-retriable (Input)' — what does that mean for client behavior, and how does it echo Lesson 44's merr Input/System split?",
+            },
+        ],
+    },
 }
 
 

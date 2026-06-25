@@ -143,6 +143,8 @@ PAGES = [
      "第十一部分 · 进阶专题（选读）", "Part 11 · Advanced topics (optional)"),
     ("48-hybrid-search-rerank.html", "混合检索与重排", "Hybrid search & reranking",
      "第十一部分 · 进阶专题（选读）", "Part 11 · Advanced topics (optional)"),
+    ("49-quota-and-rate-limiting.html", "配额、限流与背压", "Quota, rate-limiting & backpressure",
+     "第十一部分 · 进阶专题（选读）", "Part 11 · Advanced topics (optional)"),
 ]
 
 
@@ -680,6 +682,8 @@ SUBTITLES = {
                             "the second write path bypassing WAL · ImportV2 → DataCoord multi-phase job (PreImport/Import/Sort/Index/commit) · DataNode reads json/csv/parquet straight into segments · divides labor with streaming"),
     "48-hybrid-search-rerank.html": ("多向量字段 · HybridSearch 带 N 个 SubReqs 并行子搜索 · 融合 ranker：RRF(按名次)/WeightedRanker(加权)/模型重排 · 主要在 Proxy 融合",
                                      "multiple vector fields · HybridSearch with N SubReqs run in parallel · fusion rankers: RRF (by rank)/WeightedRanker/model reranking · fused mainly at the Proxy"),
+    "49-quota-and-rate-limiting.html": ("自我保护(背压) · QuotaCenter(RootCoord)收指标→算限速→下发 Proxy · 两档刹车：限速 vs forceDeny · RateLimitInterceptor 回可重试 ErrServiceRateLimit",
+                                        "self-protection (backpressure) · QuotaCenter (RootCoord) collects metrics→computes limits→pushes to Proxies · two brakes: throttle vs forceDeny · RateLimitInterceptor returns retriable ErrServiceRateLimit"),
 }
 
 
