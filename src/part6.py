@@ -702,3 +702,281 @@ This is the <strong>deepest layer</strong> of the whole query path and the <stro
 </div>
 """,
 }
+
+
+LESSON_28 = {
+    "zh": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+上一课我们钻进 segcore，看清一个段内部怎么搜。但真实查询往往是<strong>"带条件的搜索"</strong>——既要<strong>向量相似</strong>，
+又要<strong>满足标量过滤</strong>（比如 <span class="inline">price &lt; 500 &amp;&amp; category == "shoes"</span>）。这一课看 Milvus 的
+C++ 内核怎么把过滤<strong>高效地</strong>跑起来：先把过滤条件编译成一棵<strong>表达式树</strong>，再用<strong>向量化执行引擎</strong>在
+列式分块上<strong>批量</strong>求值，先筛出合格行、剪掉其余，最后只在合格集合里做向量检索。这一步看不见、却决定了"<strong>带条件的相似检索</strong>"到底快不快、准不准。
+它由 C++ 内核里的两个目录撑起：<span class="mono">expr</span>（表达式）与 <span class="mono">exec</span>（执行），是 Milvus 把"数据库执行引擎"
+缝进"向量检索"的关键一环。
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 生活类比</div>
+  把它想成工厂的<strong>"质检 + 精装"</strong>流水线：先让质检员按规格（过滤条件）在传送带（列式分块）上飞快地挑出合格件，
+  做个<strong>合格清单</strong>（bitset）；只有清单上的件才送去最贵的<strong>精装工序</strong>（向量检索）。不合格的早早剔除，
+  就不必为它们付出后面最贵的成本——这正是"<strong>先过滤、再检索</strong>"省时的道理。质检员还有个聪明做法：如果货架上贴了<strong>标签目录</strong>（标量索引），
+他不用把每件都翻一遍，直接照目录就能挑出合格件；没有目录时，才老老实实一件件过。Milvus 的过滤也是如此——有索引走索引，没索引才全扫。
+而"质检"用的不是肉眼一件件看，而是<strong>一整批一起量</strong>（向量化）：把同一规格的尺子按在一排零件上一次量完，比逐个量快上几十倍。
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 宏观理解</div>
+  一句话：<strong>过滤字符串 → 逻辑表达式树（expr）→ 向量化执行引擎（exec）在分块上求值出一个 bitset → 用 bitset 剪枝向量检索</strong>。
+  "<strong>先过滤、再检索</strong>"（filter-then-search）是混合查询又快又准的关键；表达式与执行分属 <span class="mono">expr</span> 与
+  <span class="mono">exec</span> 两层，前者描述"算什么"，后者负责"怎么快速算"。这套机制让 Milvus 既能<strong>按相似度找</strong>，又能<strong>按条件筛</strong>，
+  而不必在二者之间二选一——这正是"向量数据库"区别于"纯向量检索库"的又一处底气。
+</div>
+
+<h2>从过滤字符串到表达式树</h2>
+<p>用户写下的布尔过滤（一个字符串）不会被原样执行。它先经语法解析，变成一棵<strong>逻辑表达式树</strong>——在 C++ 内核里就是
+<span class="inline">expr</span> 里的 <span class="mono">ITypeExpr</span> 体系。树的<strong>叶子</strong>是字段引用（列）与常量，<strong>内部节点</strong>
+是比较（<span class="mono">&lt;</span>/<span class="mono">==</span>）、逻辑（<span class="mono">AND</span>/<span class="mono">OR</span>/<span class="mono">NOT</span>）
+与算术运算。把条件变成树，引擎才能逐节点、按类型地高效求值，也方便做常量折叠、短路等优化。</p>
+
+<p>为什么非要先建一棵树，而不是"边读字符串边算"？因为<strong>解析只做一次、执行要做千万次</strong>。把过滤编译成结构化的树后，
+引擎可以对<strong>每一段、每一块数据反复复用同一棵树</strong>，省去重复解析的开销；还能在编译期做优化——比如把恒为真的子条件
+（<span class="inline">AlwaysTrueExpr</span>）直接短路、把常量提前算好、把范围比较合并。更重要的是，<strong>树的结构天然适配"按列、按块"的向量化执行</strong>：
+每个节点都知道自己要在哪一列上、用什么运算去批量求值。这是把"一句话过滤"变成"能在十亿行上飞快跑"的第一步。</p>
+
+<p>具体看一棵树怎么"走"：<span class="inline">price &lt; 500 &amp;&amp; category == "shoes"</span> 的根是一个 <strong>AND</strong> 逻辑节点，
+它有两个孩子——左边是 <strong>Compare(LT)</strong>（小于），其下挂着列引用 <span class="mono">price</span> 与常量 <span class="mono">500</span>；
+右边是 <strong>Compare(EQ)</strong>（等于），挂着 <span class="mono">category</span> 与 <span class="mono">"shoes"</span>。求值时引擎自底向上：
+先各自算出两个比较的结果（每个都是一列 bool），再让 AND 把两列<strong>按位与</strong>合并成最终掩码。<strong>类型在这里很关键</strong>——
+每个节点都带着自己的结果类型（数值、布尔、字符串…），引擎据此选对应的向量化算法；类型不匹配会在编译期就报错，而不是等到跑了一半才崩。
+正因为结构和类型都明确，同一棵树才能被安全地<strong>编译成机器友好的物理算子</strong>。</p>
+
+<p>把过滤建成树还有一层好处：<strong>优化都能在树上做</strong>。引擎可以把恒为真的子树（<span class="inline">AlwaysTrueExpr</span>）整段省掉、
+把常量表达式提前折叠成一个值、把"<span class="inline">a &gt; 3 AND a &lt; 8</span>"这种对同一列的两个比较合并成一次区间判断
+（这正是 <span class="inline">BinaryArithOpEvalRangeExpr</span> 这类算子的用武之地）。短路也在树上发生：AND 的左孩子若整块都为假，右孩子那一块就不必再算。
+这些优化看似琐碎，但当它们作用在<strong>每个段、每一块、每一次查询</strong>上时，省下的就是实打实的延迟与 CPU。</p>
+
+<div class="layers">
+  <div class="layer l-app"><div class="lh"><span class="badge">字符串</span><span class="name">price &lt; 500 &amp;&amp; category == "shoes"</span></div><div class="ld">用户写的过滤表达式（DSL）</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">解析</span><span class="name">parse</span></div><div class="ld">语法解析 + 绑定字段 / 类型检查</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">逻辑树</span><span class="name">ITypeExpr</span></div><div class="ld">AND( price&lt;500 , category=="shoes" )——叶子是列/常量，内部是运算</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">物理算子</span><span class="name">exec/expression</span></div><div class="ld">编译成可在分块上批量求值的物理算子</div></div>
+</div>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/core/src/expr/ITypeExpr.h</span><span class="ln">逻辑表达式树的基类（节选示意）</span></div>
+  <pre><span class="kw">class</span> ITypeExpr {                 <span class="cm">// 逻辑表达式节点的基类</span>
+    <span class="cm">// 一棵树：内部节点持有子表达式，叶子是列引用/常量</span>
+    <span class="kw">const</span> std::vector&lt;std::shared_ptr&lt;ITypeExpr&gt;&gt;&amp; inputs() <span class="kw">const</span>;
+    <span class="kw">virtual</span> DataType type() <span class="kw">const</span>;     <span class="cm">// 结果类型（bool / 数值…）</span>
+};
+<span class="cm">// 过滤 price &lt; 500 &amp;&amp; category == "shoes" 会被建成：</span>
+<span class="cm">//   LogicalBinary(AND, Compare(LT, col(price), 500),</span>
+<span class="cm">//                      Compare(EQ, col(category), "shoes"))</span></pre>
+</div>
+
+<h2>向量化执行引擎：一块一块地算</h2>
+<p>有了逻辑树，<strong>执行引擎</strong>（<span class="inline">exec</span>，含 <span class="mono">Task</span> / <span class="mono">Driver</span> /
+<span class="mono">QueryContext</span>）把它编译成<strong>物理算子</strong>（<span class="mono">exec/expression</span> 下的各种 Expr），
+然后在<strong>列式分块（chunk）</strong>上<strong>批量、向量化</strong>地求值——不是一行一行地算，而是<strong>一块一块</strong>地算，
+充分利用 CPU 的 SIMD。求值的产物是一个 <strong>bitset</strong>：每行对应 1 个 bit，标记它<strong>满足 / 不满足</strong>整个过滤条件。</p>
+
+<p><strong>"向量化 + 分块"为什么快？</strong>关键在于<strong>把按行的零散计算，变成按列的批量计算</strong>。传统的逐行求值，每处理一行都要走一遍
+表达式树、做一次虚函数调用、跳一次分支，CPU 的流水线和缓存全被打断；而向量化执行<strong>对一整块（chunk）里成百上千个同列的值
+做同一种运算</strong>，既能用上 <span class="mono">SIMD</span>（一条指令算多个数）、又对缓存友好（数据在内存里连续）、还几乎没有分支预测失败。
+<strong>分块（chunk）</strong>还顺带解决了内存问题：数据被切成固定大小的块，引擎一次只处理一块，内存占用可控，也方便对 mmap 的冷数据按需加载
+（第 35 课会专门讲列式分块与 mmap）。这套"列式 + 分块 + 向量化"的组合，正是现代分析型数据库执行引擎的标配。</p>
+
+<p>执行引擎内部是一套"<strong>拉取式</strong>"的算子流水线：<span class="mono">Driver</span> 不停地向最上层算子要"下一批结果"，
+这个请求层层向下传，最底层的扫描算子从 <span class="mono">QueryContext</span> 持有的列数据里取出一块，逐层向上求值、过滤，最后吐出一批结果——
+<strong>整条链路一次处理一块、按需流动</strong>，内存占用小、还能并行。当过滤是多个条件的组合时，引擎对每个条件各算一列 bool 掩码，
+再用 <strong>AND / OR</strong> 把它们合并：<span class="inline">A &amp;&amp; B</span> 是两张掩码按位与，<span class="inline">A || B</span> 是按位或。
+有了这套机制，<strong>任意复杂的布尔过滤</strong>都能被拆成"一堆按列的批量运算 + 几次位运算合并"，最终落到一张 bitset 上——
+既统一又高效。理解了这一点，你就明白为什么 Milvus 能在带着复杂过滤的同时，还把延迟压在毫秒级。</p>
+
+<p>顺带说一个常被忽略的点：<strong>bitset 不只是"过滤结果"，它还是整段计算的"省力开关"</strong>。一旦某一块（chunk）的 bitset 全为 0，
+说明这块里没有任何合格行，向量检索就能<strong>整块跳过</strong>，连距离都不用算；反之全为 1 时，引擎知道这块"无过滤"，可以走更快的全量路径。
+正是这种"<strong>按块的早停与特判</strong>"，让"先过滤"在过滤很强或很弱的两个极端都不吃亏。位运算本身极廉价（一条指令处理 64 行），
+所以即便过滤条件很复杂、要算很多列，合并掩码这步几乎不占时间——真正的大头永远是后面的向量距离计算，而那一步已经被 bitset 牢牢约束住了。</p>
+
+<p>把这一课放回整条查询链路：第 25 课 Proxy 收到搜索、定好保证时间戳并分发；第 26 课 delegator 把请求扇到段；第 27 课 segcore 在一个段里搜——
+而<strong>本课的 expr/exec，就是"在一个段里搜"时负责"过滤"的那一半</strong>：它先用表达式 + 向量化执行算出 bitset，再把 bitset 交给向量索引去找最近邻。
+下一课（第 29 课）我们看每个段、每个节点各自搜出的 topK，是怎么一层层<strong>归并</strong>成最终一份答案的。一句话承接：<strong>过滤缩小候选、检索找最近邻、归并合成结果</strong>，
+三步合起来才是一次完整的查询。</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>编译</h4><p>逻辑树 → 物理算子（每个比较/逻辑节点对应一个可向量化求值的 Expr）。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>按块求值</h4><p>对每个 <span class="mono">chunk</span>（列的一段）批量算谓词，SIMD 友好；不满足的行直接置 0。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>产出 bitset</h4><p>合并所有块的结果，得到整段的"合格行掩码"——一行 1 bit。</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>交给检索</h4><p>这张 bitset 作为<strong>过滤掩码</strong>送进向量检索，只在置 1 的行里找最近邻。</p></div></div>
+</div>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/core/src/exec/Task.h</span><span class="ln">向量化执行引擎的执行单元（节选示意）</span></div>
+  <pre><span class="kw">class</span> Task {                       <span class="cm">// 一次执行：驱动算子在分块上跑</span>
+    <span class="cm">// Driver 拉动算子，QueryContext 持有列数据 / 上下文</span>
+    RowVectorPtr Next();               <span class="cm">// 取下一批结果（向量化、按块）</span>
+};
+<span class="cm">// 物理算子在 exec/expression/ 下，例如：</span>
+<span class="cm">//   BinaryArithOpEvalRangeExpr（区间/算术比较）、AlwaysTrueExpr…</span></pre>
+</div>
+
+<h2>先过滤、再检索（filter-then-search）</h2>
+<p>拿到 bitset 后，向量检索<strong>只在"满足条件"的行里</strong>找最近邻。这就是 Milvus 的<strong>"先过滤、再检索"</strong>。
+为什么不反过来"先检索、再过滤"？因为若先取 topK、再用条件过滤，很可能<strong>topK 大部分被过滤掉、结果不足 K 条</strong>；
+而先过滤、把检索约束在合格集合里，就能<strong>稳稳取够 topK</strong>。代价是过滤本身要算，但靠向量化 + bitset，这一步极快。</p>
+
+<p>举个具体的数：一个段里有 100 万行商品，过滤 <span class="inline">price &lt; 500</span> 命中其中约 20%。先过滤，bitset 里只有约
+20 万个 1，向量检索就<strong>只在这 20 万行里</strong>找最近的 K 条——又快、又一定够 K 条。若反过来先做 ANN 取 100 条、再用价格过滤，
+很可能这 100 条里满足价格的不到 K 条，只能把 topK 调大重搜，来回试、还不保证。<strong>过滤越严（命中越少），"先过滤"的优势越大</strong>：
+检索的候选集越小，省下的最贵的向量计算就越多。这就是为什么混合查询里，Milvus 默认"先过滤、再检索"。</p>
+
+<p>当然也有更精细的玩法：当过滤极强（合格行很少）、又要在图索引（如 HNSW）上搜时，"先过滤"可能让图变得"<strong>太稀疏而走不通</strong>"——
+邻居大多被过滤掉、跳不到下一跳。这时引擎会用一些策略（如放宽搜索范围、或对极小候选集直接暴力算）来保证召回。
+但无论哪种策略，<strong>过滤约束检索</strong>这条主线不变：bitset 始终是那张"哪些行可以被返回"的通行证，区别只在"<strong>怎么在它的约束下把最近邻找全</strong>"。
+这也提醒我们：过滤的强弱会实打实影响检索策略与召回，<strong>建好标量索引、写好过滤条件</strong>，和选对向量索引一样重要。</p>
+
+<h2>标量索引：让"过滤"这一步更快</h2>
+<p>上面说的是<strong>没有标量索引</strong>时的通用路径——exec 引擎<strong>全列扫描</strong>地算 bitset。但还记得第 24 课的<strong>标量索引</strong>吗？
+当过滤字段建了倒排 / bitmap / 排序索引，引擎就不必逐块扫全列：它可以<strong>直接查索引</strong>，快速拿到"满足条件的行号集合"，再转成 bitset。
+于是 <span class="inline">category == "shoes"</span> 这种等值过滤、或 <span class="inline">price 在某区间</span> 这种范围过滤，命中行可以
+"<strong>查出来</strong>"而不是"<strong>扫出来</strong>"。<strong>有索引走索引、没索引走 exec 全扫</strong>——这正是 expr/exec 与标量索引协作的地方：
+表达式层决定"算什么条件"，执行层决定"用索引查还是全扫算"，最后都汇成同一张喂给向量检索的 bitset。</p>
+
+<p>很多人会问：这套引擎和传统 SQL 数据库的执行器像不像？<strong>骨架很像、目标不同</strong>。SQL 的执行器最终要返回"满足条件的行（投影出若干列）"，
+而 Milvus 这套 expr/exec 的<strong>主产物是一张给向量检索用的 bitset</strong>——过滤是<strong>为向量检索服务的前置剪枝</strong>，而不是查询的终点。
+所以你会看到熟悉的概念（表达式树、向量化、列式分块、谓词下推），但它们都被组织成"<strong>先把候选集缩小，再交给最贵的向量计算</strong>"这条主线。
+另一个差别是数据形态：Milvus 的"表"是<strong>一段段不可变的 segment</strong>，每段列式存储、可被 mmap，执行引擎就在这些段上并行地跑过滤与检索。
+把"经典数据库执行引擎"和"向量检索"缝在一起，正是 Milvus C++ 内核的精髓，也是它能做<strong>带复杂条件的相似检索</strong>的底气。</p>
+
+<div class="cols">
+  <div class="col"><h4>✅ 先过滤、再检索（Milvus）</h4><p>先用 expr/exec 算出 bitset，向量检索只看合格行。<strong>结果数有保证</strong>、避免无效计算。混合查询的默认姿势。</p></div>
+  <div class="col"><h4>⚠️ 先检索、再过滤</h4><p>先取 topK 再套条件，<strong>可能凑不够 K 条</strong>，要反复加大 topK 重试，既慢又不稳。仅在过滤极弱时才偶尔划算。</p></div>
+</div>
+
+<h2>分工一览：expr / exec / bitset</h2>
+<p>把这一课的三个主角并排放在一起，它们的边界就清晰了——一个描述条件、一个高效执行、一个承上启下连接过滤与检索：</p>
+<table class="t">
+  <tr><th>角色</th><th>是什么</th><th>负责</th><th>所在</th></tr>
+  <tr><td><strong>expr</strong></td><td class="mono">逻辑表达式树（ITypeExpr）</td><td>描述"过滤条件算什么"</td><td class="mono">core/src/expr</td></tr>
+  <tr><td><strong>exec</strong></td><td class="mono">向量化执行引擎 + 物理算子</td><td>在分块上"怎么快速算"</td><td class="mono">core/src/exec</td></tr>
+  <tr><td><strong>bitset</strong></td><td class="mono">每行 1 bit 的合格掩码</td><td>连接过滤与检索的"通行证"</td><td class="mono">求值产物</td></tr>
+</table>
+
+<div class="card key">
+  <div class="tag">📌 本课要点</div>
+  <ul>
+    <li><strong>表达式树（expr）</strong>：过滤字符串先编译成 <span class="mono">ITypeExpr</span> 逻辑树，叶子是列/常量、内部是比较/逻辑/算术节点。</li>
+    <li><strong>向量化执行（exec）</strong>：<span class="mono">Task/Driver/QueryContext</span> 把逻辑树变成物理算子，在<strong>列式分块</strong>上批量、SIMD 友好地求值，产出一个 <strong>bitset</strong>。</li>
+    <li><strong>filter-then-search</strong>：用 bitset 剪枝，向量检索只看合格行；先过滤能<strong>保证取够 topK</strong>，比"先检索再过滤"又快又稳。</li>
+    <li><strong>分层</strong>：expr 说"算什么"、exec 说"怎么快速算"——这正是数据库执行引擎的经典分工。</li>
+    <li><strong>承上启下</strong>：过滤（本课）缩小候选、检索（第 27 课）找最近邻、归并（第 29 课）合成结果，三步合起来才是一次完整查询；有标量索引时过滤还能"查"而非"扫"，更快。</li>
+  </ul>
+</div>
+""",
+    "en": r"""
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Last lesson we went inside segcore to see how a single segment is searched. But real queries are usually
+<strong>"filtered search"</strong> — both <strong>vector similarity</strong> AND a <strong>scalar filter</strong>
+(e.g. <span class="inline">price &lt; 500 &amp;&amp; category == "shoes"</span>). This lesson shows how Milvus's C++
+core runs that filter <strong>efficiently</strong>: it compiles the filter into an <strong>expression tree</strong>, then a
+<strong>vectorized execution engine</strong> evaluates it over columnar <strong>chunks</strong> to pick the qualifying rows,
+and only then does the vector search run over that qualifying set.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of a factory's <strong>"QC + finishing"</strong> line: an inspector quickly checks items on the conveyor
+  (columnar chunks) against the spec (the filter) and produces a <strong>pass-list</strong> (a bitset); only the listed items
+  go on to the expensive <strong>finishing step</strong> (vector search). Rejecting early means you never pay the most expensive
+  cost for items that don't qualify — that is exactly why "<strong>filter first, then search</strong>" saves time.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>filter string → logical expression tree (expr) → the vectorized execution engine (exec) evaluates it over
+  chunks into a bitset → the bitset prunes the vector search</strong>. "<strong>Filter-then-search</strong>" is what makes hybrid
+  queries fast and correct; expression and execution live in two layers — <span class="mono">expr</span> ("what to compute") and
+  <span class="mono">exec</span> ("how to compute it fast").
+</div>
+
+<h2>From a filter string to an expression tree</h2>
+<p>The boolean filter you write (a string) is not executed verbatim. It is parsed into a <strong>logical expression tree</strong> —
+in the C++ core, the <span class="mono">ITypeExpr</span> hierarchy under <span class="inline">expr</span>. The <strong>leaves</strong>
+are column references and constants; the <strong>internal nodes</strong> are comparisons (<span class="mono">&lt;</span>/<span class="mono">==</span>),
+logic (<span class="mono">AND</span>/<span class="mono">OR</span>/<span class="mono">NOT</span>) and arithmetic. Turning the condition into a
+tree lets the engine evaluate it node-by-node by type, and enables optimizations like constant folding and short-circuiting.</p>
+
+<div class="layers">
+  <div class="layer l-app"><div class="lh"><span class="badge">string</span><span class="name">price &lt; 500 &amp;&amp; category == "shoes"</span></div><div class="ld">the user's filter expression (DSL)</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">parse</span><span class="name">parse</span></div><div class="ld">parse + bind fields / type-check</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">logical tree</span><span class="name">ITypeExpr</span></div><div class="ld">AND( price&lt;500 , category=="shoes" ) — leaves are cols/consts, internal nodes are ops</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">physical ops</span><span class="name">exec/expression</span></div><div class="ld">compiled to physical operators that evaluate over chunks</div></div>
+</div>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/core/src/expr/ITypeExpr.h</span><span class="ln">base class of the logical expression tree (illustrative)</span></div>
+  <pre><span class="kw">class</span> ITypeExpr {                 <span class="cm">// base class of a logical expression node</span>
+    <span class="cm">// a tree: internal nodes hold child expressions, leaves are col refs/consts</span>
+    <span class="kw">const</span> std::vector&lt;std::shared_ptr&lt;ITypeExpr&gt;&gt;&amp; inputs() <span class="kw">const</span>;
+    <span class="kw">virtual</span> DataType type() <span class="kw">const</span>;     <span class="cm">// result type (bool / numeric…)</span>
+};
+<span class="cm">// the filter price &lt; 500 &amp;&amp; category == "shoes" becomes:</span>
+<span class="cm">//   LogicalBinary(AND, Compare(LT, col(price), 500),</span>
+<span class="cm">//                      Compare(EQ, col(category), "shoes"))</span></pre>
+</div>
+
+<h2>The vectorized execution engine: compute chunk by chunk</h2>
+<p>Given the logical tree, the <strong>execution engine</strong> (<span class="inline">exec</span>, with <span class="mono">Task</span> /
+<span class="mono">Driver</span> / <span class="mono">QueryContext</span>) compiles it into <strong>physical operators</strong> (the various Expr
+under <span class="mono">exec/expression</span>), then evaluates them over columnar <strong>chunks</strong> in a <strong>batched, vectorized</strong>
+way — not row by row but <strong>chunk by chunk</strong>, SIMD-friendly. The output is a <strong>bitset</strong>: one bit per row marking whether
+it <strong>passes / fails</strong> the whole filter.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Compile</h4><p>logical tree → physical operators (each comparison/logic node becomes a vectorizable Expr).</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Evaluate by chunk</h4><p>for each <span class="mono">chunk</span> (a slice of a column), batch-evaluate the predicate, SIMD-friendly; failing rows set to 0.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Produce a bitset</h4><p>merge all chunks' results into the segment's "qualifying-row mask" — one bit per row.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Hand to search</h4><p>that bitset becomes the <strong>filter mask</strong> for the vector search, which only looks at the 1-bits.</p></div></div>
+</div>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/core/src/exec/Task.h</span><span class="ln">the vectorized execution unit (illustrative)</span></div>
+  <pre><span class="kw">class</span> Task {                       <span class="cm">// one execution: drive operators over chunks</span>
+    <span class="cm">// Driver pulls operators; QueryContext holds column data / context</span>
+    RowVectorPtr Next();               <span class="cm">// pull the next batch of results (vectorized, by chunk)</span>
+};
+<span class="cm">// physical operators live under exec/expression/, e.g.:</span>
+<span class="cm">//   BinaryArithOpEvalRangeExpr (range/arith compare), AlwaysTrueExpr…</span></pre>
+</div>
+
+<h2>Filter-then-search</h2>
+<p>With the bitset in hand, the vector search looks <strong>only at the qualifying rows</strong> for nearest neighbors. That is Milvus's
+<strong>"filter-then-search"</strong>. Why not the reverse, "search-then-filter"? Because if you take topK first and then apply the
+condition, <strong>most of the topK may be filtered out, leaving fewer than K results</strong>; filtering first, and constraining the
+search to the qualifying set, <strong>reliably yields a full topK</strong>. The cost is the filter computation itself — but with
+vectorization + a bitset, that step is very fast.</p>
+
+<div class="cols">
+  <div class="col"><h4>✅ Filter-then-search (Milvus)</h4><p>compute a bitset via expr/exec first; the vector search only sees qualifying rows. <strong>Result count is guaranteed</strong>, no wasted compute. The default for hybrid queries.</p></div>
+  <div class="col"><h4>⚠️ Search-then-filter</h4><p>take topK then apply the condition — <strong>may fall short of K</strong>, forcing repeated retries with a larger topK; slow and unstable. Only occasionally worth it when the filter is very weak.</p></div>
+</div>
+
+<h2>Division of labor: expr / exec / bitset</h2>
+<table class="t">
+  <tr><th>Role</th><th>What</th><th>Responsible for</th><th>Where</th></tr>
+  <tr><td><strong>expr</strong></td><td class="mono">logical expression tree (ITypeExpr)</td><td>describes "what the filter computes"</td><td class="mono">core/src/expr</td></tr>
+  <tr><td><strong>exec</strong></td><td class="mono">vectorized engine + physical ops</td><td>"how to compute it fast" over chunks</td><td class="mono">core/src/exec</td></tr>
+  <tr><td><strong>bitset</strong></td><td class="mono">one-bit-per-row qualifying mask</td><td>the "pass" linking filter to search</td><td class="mono">the evaluation output</td></tr>
+</table>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Expression tree (expr)</strong>: the filter string compiles to an <span class="mono">ITypeExpr</span> logical tree — leaves are cols/consts, internal nodes are comparison/logic/arithmetic.</li>
+    <li><strong>Vectorized execution (exec)</strong>: <span class="mono">Task/Driver/QueryContext</span> turn the logical tree into physical operators, evaluated batched + SIMD-friendly over <strong>columnar chunks</strong>, producing a <strong>bitset</strong>.</li>
+    <li><strong>Filter-then-search</strong>: the bitset prunes the search; filtering first <strong>guarantees a full topK</strong> and is faster/steadier than "search-then-filter".</li>
+    <li><strong>Layering</strong>: expr says "what to compute", exec says "how to compute it fast" — the classic database execution-engine split.</li>
+  </ul>
+</div>
+""",
+}

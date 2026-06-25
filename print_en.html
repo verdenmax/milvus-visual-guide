@@ -325,7 +325,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 27 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 28 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
@@ -355,6 +355,7 @@ details[open] > summary { list-style: none; }
   <li>Search via Proxy</li>
   <li>QueryNode &amp; the delegator</li>
   <li>Segcore (C++)</li>
+  <li>The execution engine</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -6182,6 +6183,163 @@ This is the <strong>deepest layer</strong> of the whole query path and the <stro
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
     <li>This lesson stressed that segcore silently does MVCC inside a segment: combining the delete bitmap and the guarantee-ts time filter so only the 'should-be-seen' version is visible. Consider: why perform this visibility judgment 'inside the segment, closest to the data' rather than filtering uniformly at the Proxy or delegator? What does this mean for correctness and for performance? (Tie in Lesson 20 deletes and Lesson 30 consistency.)</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>The execution engine</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+Last lesson we went inside segcore to see how a single segment is searched. But real queries are usually
+<strong>"filtered search"</strong> — both <strong>vector similarity</strong> AND a <strong>scalar filter</strong>
+(e.g. <span class="inline">price &lt; 500 &amp;&amp; category == "shoes"</span>). This lesson shows how Milvus's C++
+core runs that filter <strong>efficiently</strong>: it compiles the filter into an <strong>expression tree</strong>, then a
+<strong>vectorized execution engine</strong> evaluates it over columnar <strong>chunks</strong> to pick the qualifying rows,
+and only then does the vector search run over that qualifying set.
+</p>
+
+<div class="card analogy">
+  <div class="tag">🔌 Analogy</div>
+  Think of a factory's <strong>"QC + finishing"</strong> line: an inspector quickly checks items on the conveyor
+  (columnar chunks) against the spec (the filter) and produces a <strong>pass-list</strong> (a bitset); only the listed items
+  go on to the expensive <strong>finishing step</strong> (vector search). Rejecting early means you never pay the most expensive
+  cost for items that don't qualify — that is exactly why "<strong>filter first, then search</strong>" saves time.
+</div>
+
+<div class="card macro">
+  <div class="tag">🌍 Big picture</div>
+  In one line: <strong>filter string → logical expression tree (expr) → the vectorized execution engine (exec) evaluates it over
+  chunks into a bitset → the bitset prunes the vector search</strong>. "<strong>Filter-then-search</strong>" is what makes hybrid
+  queries fast and correct; expression and execution live in two layers — <span class="mono">expr</span> ("what to compute") and
+  <span class="mono">exec</span> ("how to compute it fast").
+</div>
+
+<h2>From a filter string to an expression tree</h2>
+<p>The boolean filter you write (a string) is not executed verbatim. It is parsed into a <strong>logical expression tree</strong> —
+in the C++ core, the <span class="mono">ITypeExpr</span> hierarchy under <span class="inline">expr</span>. The <strong>leaves</strong>
+are column references and constants; the <strong>internal nodes</strong> are comparisons (<span class="mono">&lt;</span>/<span class="mono">==</span>),
+logic (<span class="mono">AND</span>/<span class="mono">OR</span>/<span class="mono">NOT</span>) and arithmetic. Turning the condition into a
+tree lets the engine evaluate it node-by-node by type, and enables optimizations like constant folding and short-circuiting.</p>
+
+<div class="layers">
+  <div class="layer l-app"><div class="lh"><span class="badge">string</span><span class="name">price &lt; 500 &amp;&amp; category == "shoes"</span></div><div class="ld">the user's filter expression (DSL)</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">parse</span><span class="name">parse</span></div><div class="ld">parse + bind fields / type-check</div></div>
+  <div class="layer l-main"><div class="lh"><span class="badge">logical tree</span><span class="name">ITypeExpr</span></div><div class="ld">AND( price&lt;500 , category=="shoes" ) — leaves are cols/consts, internal nodes are ops</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">physical ops</span><span class="name">exec/expression</span></div><div class="ld">compiled to physical operators that evaluate over chunks</div></div>
+</div>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/core/src/expr/ITypeExpr.h</span><span class="ln">base class of the logical expression tree (illustrative)</span></div>
+  <pre><span class="kw">class</span> ITypeExpr {                 <span class="cm">// base class of a logical expression node</span>
+    <span class="cm">// a tree: internal nodes hold child expressions, leaves are col refs/consts</span>
+    <span class="kw">const</span> std::vector&lt;std::shared_ptr&lt;ITypeExpr&gt;&gt;&amp; inputs() <span class="kw">const</span>;
+    <span class="kw">virtual</span> DataType type() <span class="kw">const</span>;     <span class="cm">// result type (bool / numeric…)</span>
+};
+<span class="cm">// the filter price &lt; 500 &amp;&amp; category == "shoes" becomes:</span>
+<span class="cm">//   LogicalBinary(AND, Compare(LT, col(price), 500),</span>
+<span class="cm">//                      Compare(EQ, col(category), "shoes"))</span></pre>
+</div>
+
+<h2>The vectorized execution engine: compute chunk by chunk</h2>
+<p>Given the logical tree, the <strong>execution engine</strong> (<span class="inline">exec</span>, with <span class="mono">Task</span> /
+<span class="mono">Driver</span> / <span class="mono">QueryContext</span>) compiles it into <strong>physical operators</strong> (the various Expr
+under <span class="mono">exec/expression</span>), then evaluates them over columnar <strong>chunks</strong> in a <strong>batched, vectorized</strong>
+way — not row by row but <strong>chunk by chunk</strong>, SIMD-friendly. The output is a <strong>bitset</strong>: one bit per row marking whether
+it <strong>passes / fails</strong> the whole filter.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>Compile</h4><p>logical tree → physical operators (each comparison/logic node becomes a vectorizable Expr).</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>Evaluate by chunk</h4><p>for each <span class="mono">chunk</span> (a slice of a column), batch-evaluate the predicate, SIMD-friendly; failing rows set to 0.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>Produce a bitset</h4><p>merge all chunks' results into the segment's "qualifying-row mask" — one bit per row.</p></div></div>
+  <div class="step"><div class="num">4</div><div class="sc"><h4>Hand to search</h4><p>that bitset becomes the <strong>filter mask</strong> for the vector search, which only looks at the 1-bits.</p></div></div>
+</div>
+
+<div class="codefile">
+  <div class="cf-head"><span class="dot"></span><span class="path">internal/core/src/exec/Task.h</span><span class="ln">the vectorized execution unit (illustrative)</span></div>
+  <pre><span class="kw">class</span> Task {                       <span class="cm">// one execution: drive operators over chunks</span>
+    <span class="cm">// Driver pulls operators; QueryContext holds column data / context</span>
+    RowVectorPtr Next();               <span class="cm">// pull the next batch of results (vectorized, by chunk)</span>
+};
+<span class="cm">// physical operators live under exec/expression/, e.g.:</span>
+<span class="cm">//   BinaryArithOpEvalRangeExpr (range/arith compare), AlwaysTrueExpr…</span></pre>
+</div>
+
+<h2>Filter-then-search</h2>
+<p>With the bitset in hand, the vector search looks <strong>only at the qualifying rows</strong> for nearest neighbors. That is Milvus's
+<strong>"filter-then-search"</strong>. Why not the reverse, "search-then-filter"? Because if you take topK first and then apply the
+condition, <strong>most of the topK may be filtered out, leaving fewer than K results</strong>; filtering first, and constraining the
+search to the qualifying set, <strong>reliably yields a full topK</strong>. The cost is the filter computation itself — but with
+vectorization + a bitset, that step is very fast.</p>
+
+<div class="cols">
+  <div class="col"><h4>✅ Filter-then-search (Milvus)</h4><p>compute a bitset via expr/exec first; the vector search only sees qualifying rows. <strong>Result count is guaranteed</strong>, no wasted compute. The default for hybrid queries.</p></div>
+  <div class="col"><h4>⚠️ Search-then-filter</h4><p>take topK then apply the condition — <strong>may fall short of K</strong>, forcing repeated retries with a larger topK; slow and unstable. Only occasionally worth it when the filter is very weak.</p></div>
+</div>
+
+<h2>Division of labor: expr / exec / bitset</h2>
+<table class="t">
+  <tr><th>Role</th><th>What</th><th>Responsible for</th><th>Where</th></tr>
+  <tr><td><strong>expr</strong></td><td class="mono">logical expression tree (ITypeExpr)</td><td>describes "what the filter computes"</td><td class="mono">core/src/expr</td></tr>
+  <tr><td><strong>exec</strong></td><td class="mono">vectorized engine + physical ops</td><td>"how to compute it fast" over chunks</td><td class="mono">core/src/exec</td></tr>
+  <tr><td><strong>bitset</strong></td><td class="mono">one-bit-per-row qualifying mask</td><td>the "pass" linking filter to search</td><td class="mono">the evaluation output</td></tr>
+</table>
+
+<div class="card key">
+  <div class="tag">📌 Key points</div>
+  <ul>
+    <li><strong>Expression tree (expr)</strong>: the filter string compiles to an <span class="mono">ITypeExpr</span> logical tree — leaves are cols/consts, internal nodes are comparison/logic/arithmetic.</li>
+    <li><strong>Vectorized execution (exec)</strong>: <span class="mono">Task/Driver/QueryContext</span> turn the logical tree into physical operators, evaluated batched + SIMD-friendly over <strong>columnar chunks</strong>, producing a <strong>bitset</strong>.</li>
+    <li><strong>Filter-then-search</strong>: the bitset prunes the search; filtering first <strong>guarantees a full topK</strong> and is faster/steadier than "search-then-filter".</li>
+    <li><strong>Layering</strong>: expr says "what to compute", exec says "how to compute it fast" — the classic database execution-engine split.</li>
+  </ul>
+</div>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. In a Milvus hybrid query, after the execution engine (exec) evaluates the scalar filter, what does it hand to the vector search?</div>
+  <ol class="opts">
+    <li>A freshly built index tree</li>
+    <li>A re-sorted copy of the raw vectors</li>
+    <li>A SQL result set</li>
+    <li>A bitset: one bit per row marking pass/fail, used as the pruning mask for vector search</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. exec evaluates the filter in a vectorized way over columnar chunks, producing a bitset (qualifying-row mask). The vector search only looks at the 1-bits — that is bitset pruning.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. Why does Milvus default to 'filter-then-search' rather than 'search-then-filter'?</div>
+  <ol class="opts">
+    <li>Because filtering is slower than vector search, so do it first</li>
+    <li>Because searching first corrupts the index</li>
+    <li>They are equivalent; it's just convention</li>
+    <li>Filtering first reliably yields a full topK within the qualifying set; searching first then filtering may drop most of topK, leaving fewer than K</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. Take topK first then filter and you may end up with fewer than K matches, forcing repeated retries with a larger topK — slow and unstable. Filtering first constrains the search to the qualifying set, guaranteeing the count and saving the most expensive vector compute.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">3. Why compile the filter string into an expression tree and evaluate it 'by chunk' with a vectorized engine, instead of interpreting it row by row?</div>
+  <ol class="opts">
+    <li>The tree is just cosmetic, no performance impact</li>
+    <li>To save disk space</li>
+    <li>To sort results alphabetically</li>
+    <li>Parse once (reusable + optimizable); batched per-column/chunk evaluation uses SIMD, is cache-friendly with almost no branch mispredictions — far faster than row-by-row</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: D</strong>. A tree lets the same filter be reused across segments/chunks and enables constant-folding/short-circuit/range-merge optimizations; columnar chunks + vectorization turn scattered row-wise work into batched column-wise work that exploits SIMD and cache — the basis of a fast modern analytical engine.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>Imagine a very selective query (only 0.1% of rows qualify) that also needs similarity search on a graph index like HNSW. 'Filter first' can make the navigable graph too sparse to hop through, hurting recall. Consider: what strategies can the engine use to balance the filter constraint with recall? (Hints: widen the search scope, brute-force a tiny candidate set…) What does this reveal about how filter selectivity feeds back into search strategy?</li>
   </ul>
 </div>
 </div>

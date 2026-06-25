@@ -323,7 +323,7 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 <div class="topbar">
   <div class="topbar-inner">
     <span class="home">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></span>
-    <span class="pill"><span class="lang-zh">共 27 课 · 6 个部分</span><span class="lang-en">27 lessons · 6 parts</span></span>
+    <span class="pill"><span class="lang-zh">共 28 课 · 6 个部分</span><span class="lang-en">28 lessons · 6 parts</span></span>
     <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
   </div>
   <div class="progress"><span style="width:100%"></span></div>
@@ -380,7 +380,8 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 <div class="toc-part"><span class="lang-zh">第六部分 · 查询链路</span><span class="lang-en">Part 6 · The query path</span></div>
 <a href="lessons/25-search-via-proxy.html"><span class="n">25</span><span class="tt"><span class="lang-zh">经 Proxy 的搜索</span><span class="lang-en">Search via Proxy</span></span><span class="ts"><span class="lang-zh">searchTask 三段式 · 解析→建 plan→guarantee ts · 一致性级别 · 扇出到分片 · 跨分片归并</span><span class="lang-en">searchTask three stages; parse→plan→guarantee ts; consistency levels; scatter to shards; cross-shard reduce</span></span></a>
 <a href="lessons/26-querynode-and-delegator.html"><span class="n">26</span><span class="tt"><span class="lang-zh">QueryNode 与 delegator</span><span class="lang-en">QueryNode &amp;amp; the delegator</span></span><span class="ts"><span class="lang-zh">delegator/shard leader · sealed+growing · 段分布到 worker · 扇出归并 · 消费 WAL 尾部 · tsafe</span><span class="lang-en">delegator/shard leader; sealed+growing; segment distribution to workers; scatter &amp; merge; consume WAL tail; tsafe</span></span></a>
-<a href="lessons/27-segcore.html"><span class="n">27</span><span class="tt"><span class="lang-zh">Segcore（C++）</span><span class="lang-en">Segcore (C++)</span></span><span class="ts"><span class="lang-zh">C++ 单段引擎 · cgo 边界 · SegmentInterface · sealed=索引/growing=暴力 · 段内 topK</span><span class="lang-en">C++ single-segment engine; cgo boundary; SegmentInterface; sealed=index/growing=brute-force; the segment's topK</span></span></a></div>
+<a href="lessons/27-segcore.html"><span class="n">27</span><span class="tt"><span class="lang-zh">Segcore（C++）</span><span class="lang-en">Segcore (C++)</span></span><span class="ts"><span class="lang-zh">C++ 单段引擎 · cgo 边界 · SegmentInterface · sealed=索引/growing=暴力 · 段内 topK</span><span class="lang-en">C++ single-segment engine; cgo boundary; SegmentInterface; sealed=index/growing=brute-force; the segment's topK</span></span></a>
+<a href="lessons/28-execution-engine.html"><span class="n">28</span><span class="tt"><span class="lang-zh">执行引擎</span><span class="lang-en">The execution engine</span></span><span class="ts"><span class="lang-zh">表达式树(expr) · 向量化执行(exec) · 按块求 bitset · 先过滤再检索</span><span class="lang-en">expression tree (expr); vectorized exec; per-chunk bitset; filter-then-search</span></span></a></div>
   <div class="toc-empty" id="tocempty"><span class="lang-zh">没有匹配的课程，换个关键词试试。</span><span class="lang-en">No matching lessons, try another keyword.</span></div>
   <p style="margin:2.4rem 0 0;color:var(--faint);font-size:.78rem;text-align:center"><span class="lang-zh">本项目是第三方、非官方的学习材料，不含 Milvus 源码（仅引用少量标注来源的片段）；Milvus 由其作者以 Apache-2.0 许可发布。</span><span class="lang-en">Third-party, unofficial learning material; contains no Milvus source code beyond small, cited snippets. Milvus is Apache-2.0-licensed by its authors.</span></p>
 </div>

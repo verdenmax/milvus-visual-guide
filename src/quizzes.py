@@ -1875,6 +1875,67 @@ QUIZZES = {
             },
         ],
     },
+    "28-execution-engine.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "在 Milvus 的混合查询里，执行引擎（exec）对标量过滤求值后，产出什么交给向量检索？",
+                    "en": "In a Milvus hybrid query, after the execution engine (exec) evaluates the scalar filter, what does it hand to the vector search?",
+                },
+                "opts": [
+                    {"zh": "一张 bitset：每行 1 bit，标记是否满足过滤条件，作为向量检索的剪枝掩码", "en": "A bitset: one bit per row marking pass/fail, used as the pruning mask for vector search"},
+                    {"zh": "一份重新排序后的原始向量副本", "en": "A re-sorted copy of the raw vectors"},
+                    {"zh": "一个 SQL 结果集", "en": "A SQL result set"},
+                    {"zh": "一棵新的索引树", "en": "A freshly built index tree"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "exec 在列式分块上向量化地求值过滤，产出一张 bitset（合格行掩码）。向量检索只在置 1 的行里找最近邻——这就是用 bitset 剪枝。",
+                    "en": "exec evaluates the filter in a vectorized way over columnar chunks, producing a bitset (qualifying-row mask). The vector search only looks at the 1-bits — that is bitset pruning.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "为什么 Milvus 默认“先过滤、再检索”，而不是“先检索、再过滤”？",
+                    "en": "Why does Milvus default to 'filter-then-search' rather than 'search-then-filter'?",
+                },
+                "opts": [
+                    {"zh": "先过滤能保证在合格集合里稳稳取够 topK；先检索再过滤可能把 topK 过滤掉、结果不足 K 条", "en": "Filtering first reliably yields a full topK within the qualifying set; searching first then filtering may drop most of topK, leaving fewer than K"},
+                    {"zh": "因为过滤比向量检索更慢，要先做完", "en": "Because filtering is slower than vector search, so do it first"},
+                    {"zh": "因为先检索会损坏索引", "en": "Because searching first corrupts the index"},
+                    {"zh": "两者完全等价，只是习惯", "en": "They are equivalent; it's just convention"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "若先取 topK 再过滤，命中条件的可能不足 K 条，只能调大 topK 反复重搜，既慢又不稳。先过滤把检索约束在合格集合里，既保证结果数、又省下最贵的向量计算。",
+                    "en": "Take topK first then filter and you may end up with fewer than K matches, forcing repeated retries with a larger topK — slow and unstable. Filtering first constrains the search to the qualifying set, guaranteeing the count and saving the most expensive vector compute.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "为什么要把过滤字符串编译成表达式树、再用向量化引擎按“块”求值，而不是逐行解释执行？",
+                    "en": "Why compile the filter string into an expression tree and evaluate it 'by chunk' with a vectorized engine, instead of interpreting it row by row?",
+                },
+                "opts": [
+                    {"zh": "解析只做一次、可复用与优化；按列分块批量求值能用 SIMD、对缓存友好、几乎无分支预测失败，远快于逐行", "en": "Parse once (reusable + optimizable); batched per-column/chunk evaluation uses SIMD, is cache-friendly with almost no branch mispredictions — far faster than row-by-row"},
+                    {"zh": "为了让结果按字母排序", "en": "To sort results alphabetically"},
+                    {"zh": "为了节省磁盘空间", "en": "To save disk space"},
+                    {"zh": "树只是为了好看，对性能没影响", "en": "The tree is just cosmetic, no performance impact"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "树让同一过滤被多段多块复用，并能做常量折叠/短路/区间合并等优化；列式分块 + 向量化把零散的逐行计算变成批量的按列计算，充分利用 SIMD 与缓存，这是现代分析型执行引擎快的根本。",
+                    "en": "A tree lets the same filter be reused across segments/chunks and enables constant-folding/short-circuit/range-merge optimizations; columnar chunks + vectorization turn scattered row-wise work into batched column-wise work that exploits SIMD and cache — the basis of a fast modern analytical engine.",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "设想一个过滤极强的查询（合格行只占 0.1%），又要在 HNSW 这类图索引上做相似检索。“先过滤”可能让可走的图节点变得很稀疏、跳不到下一跳，从而影响召回。请思考：引擎可以用哪些策略来兼顾“过滤约束”与“召回”？（提示：放宽搜索范围、对极小候选集直接暴力计算……）这说明过滤的强弱会如何反过来影响检索策略？",
+                "en": "Imagine a very selective query (only 0.1% of rows qualify) that also needs similarity search on a graph index like HNSW. 'Filter first' can make the navigable graph too sparse to hop through, hurting recall. Consider: what strategies can the engine use to balance the filter constraint with recall? (Hints: widen the search scope, brute-force a tiny candidate set…) What does this reveal about how filter selectivity feeds back into search strategy?",
+            },
+        ],
+    },
 }
 
 

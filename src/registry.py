@@ -41,4 +41,5 @@ CONTENT = {
     "25-search-via-proxy.html": part6.LESSON_25,
     "26-querynode-and-delegator.html": part6.LESSON_26,
     "27-segcore.html": part6.LESSON_27,
+    "28-execution-engine.html": part6.LESSON_28,
 }

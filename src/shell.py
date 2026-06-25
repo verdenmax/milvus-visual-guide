@@ -101,6 +101,8 @@ PAGES = [
      "第六部分 · 查询链路", "Part 6 · The query path"),
     ("27-segcore.html", "Segcore（C++）", "Segcore (C++)",
      "第六部分 · 查询链路", "Part 6 · The query path"),
+    ("28-execution-engine.html", "执行引擎", "The execution engine",
+     "第六部分 · 查询链路", "Part 6 · The query path"),
 ]
 
 
@@ -596,6 +598,8 @@ SUBTITLES = {
                                         "delegator/shard leader; sealed+growing; segment distribution to workers; scatter & merge; consume WAL tail; tsafe"),
     "27-segcore.html": ("C++ 单段引擎 · cgo 边界 · SegmentInterface · sealed=索引/growing=暴力 · 段内 topK",
                         "C++ single-segment engine; cgo boundary; SegmentInterface; sealed=index/growing=brute-force; the segment's topK"),
+    "28-execution-engine.html": ("表达式树(expr) · 向量化执行(exec) · 按块求 bitset · 先过滤再检索",
+                                 "expression tree (expr); vectorized exec; per-chunk bitset; filter-then-search"),
 }
 
 
