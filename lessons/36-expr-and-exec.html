@@ -382,6 +382,16 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 <h2>一条查询在流水线里怎么流</h2>
 <p>把上面的零件接起来，看一次带过滤的向量搜索在引擎里实际怎么走。第一步，<strong>建流水线</strong>：根据查询计划，拼出"<span class="mono">FilterBitsNode</span> → <span class="mono">VectorSearchNode</span>"这样一条算子链，归到一个 <span class="mono">Task</span> 下，交给 <span class="mono">Driver</span> 驱动。第二步，<strong>过滤算子先跑</strong>：<span class="mono">FilterBitsNode</span> 拿出降级好的物理表达式，对段里的列式分块逐块调用 <span class="mono">Eval</span>，<strong>一批一批</strong>地算出"哪些行满足条件"，汇成一个 bitset。第三步，<strong>检索算子接力</strong>：<span class="mono">VectorSearchNode</span> 拿到这个 bitset，只在<strong>通过过滤的候选</strong>上做向量检索（这正是第 28 课说的"先过滤、再检索"）。第四步，结果沿流水线往上汇聚，<span class="mono">Task</span> 状态走向 <span class="mono">kFinished</span>。</p>
 
+<div class="flow">
+  <div class="node"><div class="nt">列式分块</div><div class="nd">mmap 数据(第 35 课)</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">FilterBitsNode</div><div class="nd">物理表达式逐批求值 → bitset</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">VectorSearchNode</div><div class="nd">仅在通过者上做 ANN</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">段内 topK</div><div class="nd">经 cgo 回 Go</div></div>
+</div>
+
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>建流水线</h4><p>按查询计划拼出 <span class="mono">FilterBitsNode</span> → <span class="mono">VectorSearchNode</span> 算子链，归入一个 <span class="mono">Task</span>、由 <span class="mono">Driver</span> 驱动。</p></div></div>
   <div class="step"><div class="num">2</div><div class="sc"><h4>过滤算子产 bitset</h4><p><span class="mono">FilterBitsNode</span> 用物理表达式对列式分块逐批 <span class="mono">Eval</span>，算出"哪些行通过"。</p></div></div>
@@ -503,6 +513,16 @@ Lesson 28 followed one query as it turned a filter string into an expression tre
 
 <h2>How one query flows through the pipeline</h2>
 <p>Wire the parts together and watch a filtered vector search actually run. Step 1, <strong>build the pipeline</strong>: from the query plan, assemble a chain like "<span class="mono">FilterBitsNode</span> → <span class="mono">VectorSearchNode</span>" under a <span class="mono">Task</span>, driven by a <span class="mono">Driver</span>. Step 2, <strong>filter first</strong>: <span class="mono">FilterBitsNode</span> takes the lowered physical expression and calls <span class="mono">Eval</span> over the segment's columnar chunks chunk by chunk, computing "which rows qualify" <strong>batch by batch</strong> into a bitset. Step 3, <strong>then search</strong>: <span class="mono">VectorSearchNode</span> takes that bitset and runs ANN only over the <strong>survivors</strong> (exactly Lesson 28's "filter-then-search"). Step 4, results flow up the pipeline and the <span class="mono">Task</span> moves to <span class="mono">kFinished</span>.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">columnar chunks</div><div class="nd">mmap data (L35)</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">FilterBitsNode</div><div class="nd">eval physical expr by batch → bitset</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">VectorSearchNode</div><div class="nd">ANN over survivors only</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">segment topK</div><div class="nd">back to Go via cgo</div></div>
+</div>
 
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>Build the pipeline</h4><p>from the plan, assemble a <span class="mono">FilterBitsNode</span> → <span class="mono">VectorSearchNode</span> chain under one <span class="mono">Task</span>, driven by a <span class="mono">Driver</span>.</p></div></div>

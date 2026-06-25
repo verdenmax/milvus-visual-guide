@@ -401,6 +401,18 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 <strong>一层调一层，方向清晰，几乎不回头</strong>。这种"<strong>单向依赖、分层清楚</strong>"的结构，不是为了好看，而是为了<strong>可维护</strong>：你改 mmap 的内部实现，只要接口不变，上面的 segcore/exec 就不用动；你想给 exec 加一个新算子，也不必担心惊动底层存储。
 读一个大型 C++ 工程，<strong>先摸清它的分层与依赖方向</strong>，往往比一头扎进某个文件更高效——这张地图，正是给你这把"先看骨架、再看血肉"的钥匙。</p>
 
+<div class="flow">
+  <div class="node"><div class="nt">common</div><div class="nd">公共类型</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">storage</div><div class="nd">binlog I/O</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">mmap</div><div class="nd">列式分块布局</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">expr/exec · index</div><div class="nd">过滤 + 向量检索</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">segcore</div><div class="nd">编排出餐 + cgo 入口</div></div>
+</div>
+
 <h2>cgo 桥：Go 与 C++ 怎么握手</h2>
 <p>Go 调 C++ 不能直接调，得经过 <strong>cgo</strong> 这道桥。具体做法是：C++ 内核把要暴露给 Go 的能力，包装成一组 <strong>C 风格的接口</strong>——文件名常以 <span class="mono">_c.h</span> / <span class="mono">_c.cpp</span> 结尾（比如第 27 课见过的 <span class="mono">segment_c.h</span>）。
 为什么是 C 接口而不是 C++？因为 cgo 只能跨越 <strong>C ABI</strong>（C++ 的类、模板、异常这些没法直接跨语言）。于是 C++ 内部该用类用类、该用模板用模板，但<strong>对外只露出一层薄薄的、扁平的 C 函数</strong>：创建段、灌数据、搜索、释放……
@@ -553,6 +565,18 @@ map</strong>" — wherever you drill in later, you can locate it here:</p>
 (clustering-compaction related). Don't memorize them; one <strong>layering intuition</strong> is enough: <strong>common is the foundation</strong> (types everyone depends on),
 <strong>storage/mmap own "how data is laid out"</strong>, <strong>index owns "how to build retrieval structures"</strong>, <strong>expr/exec/query own "how one query computes"</strong>, and
 <strong>segcore stitches them together and exposes (to Go) the single entry for "search/query within a segment"</strong>. Map in hand, the many directories gain a backbone.</p>
+
+<div class="flow">
+ <div class="node"><div class="nt">common</div><div class="nd">shared types</div></div>
+ <div class="arrow">→</div>
+ <div class="node"><div class="nt">storage</div><div class="nd">binlog I/O</div></div>
+ <div class="arrow">→</div>
+ <div class="node"><div class="nt">mmap</div><div class="nd">columnar chunk layout</div></div>
+ <div class="arrow">→</div>
+ <div class="node"><div class="nt">expr/exec · index</div><div class="nd">filter + vector search</div></div>
+ <div class="arrow">→</div>
+ <div class="node hl"><div class="nt">segcore</div><div class="nd">orchestrate + cgo entry</div></div>
+</div>
 
 <h2>The cgo bridge: how Go and C++ shake hands</h2>
 <p>Go can't call C++ directly; it goes through the <strong>cgo</strong> bridge. The way: the C++ core wraps the capabilities it exposes to Go into a set of <strong>C-style interfaces</strong> —

@@ -73,6 +73,18 @@ LESSON_34 = {
 <strong>一层调一层，方向清晰，几乎不回头</strong>。这种"<strong>单向依赖、分层清楚</strong>"的结构，不是为了好看，而是为了<strong>可维护</strong>：你改 mmap 的内部实现，只要接口不变，上面的 segcore/exec 就不用动；你想给 exec 加一个新算子，也不必担心惊动底层存储。
 读一个大型 C++ 工程，<strong>先摸清它的分层与依赖方向</strong>，往往比一头扎进某个文件更高效——这张地图，正是给你这把"先看骨架、再看血肉"的钥匙。</p>
 
+<div class="flow">
+  <div class="node"><div class="nt">common</div><div class="nd">公共类型</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">storage</div><div class="nd">binlog I/O</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">mmap</div><div class="nd">列式分块布局</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">expr/exec · index</div><div class="nd">过滤 + 向量检索</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">segcore</div><div class="nd">编排出餐 + cgo 入口</div></div>
+</div>
+
 <h2>cgo 桥：Go 与 C++ 怎么握手</h2>
 <p>Go 调 C++ 不能直接调，得经过 <strong>cgo</strong> 这道桥。具体做法是：C++ 内核把要暴露给 Go 的能力，包装成一组 <strong>C 风格的接口</strong>——文件名常以 <span class="mono">_c.h</span> / <span class="mono">_c.cpp</span> 结尾（比如第 27 课见过的 <span class="mono">segment_c.h</span>）。
 为什么是 C 接口而不是 C++？因为 cgo 只能跨越 <strong>C ABI</strong>（C++ 的类、模板、异常这些没法直接跨语言）。于是 C++ 内部该用类用类、该用模板用模板，但<strong>对外只露出一层薄薄的、扁平的 C 函数</strong>：创建段、灌数据、搜索、释放……
@@ -179,6 +191,18 @@ map</strong>" — wherever you drill in later, you can locate it here:</p>
 <strong>storage/mmap own "how data is laid out"</strong>, <strong>index owns "how to build retrieval structures"</strong>, <strong>expr/exec/query own "how one query computes"</strong>, and
 <strong>segcore stitches them together and exposes (to Go) the single entry for "search/query within a segment"</strong>. Map in hand, the many directories gain a backbone.</p>
 
+<div class="flow">
+ <div class="node"><div class="nt">common</div><div class="nd">shared types</div></div>
+ <div class="arrow">→</div>
+ <div class="node"><div class="nt">storage</div><div class="nd">binlog I/O</div></div>
+ <div class="arrow">→</div>
+ <div class="node"><div class="nt">mmap</div><div class="nd">columnar chunk layout</div></div>
+ <div class="arrow">→</div>
+ <div class="node"><div class="nt">expr/exec · index</div><div class="nd">filter + vector search</div></div>
+ <div class="arrow">→</div>
+ <div class="node hl"><div class="nt">segcore</div><div class="nd">orchestrate + cgo entry</div></div>
+</div>
+
 <h2>The cgo bridge: how Go and C++ shake hands</h2>
 <p>Go can't call C++ directly; it goes through the <strong>cgo</strong> bridge. The way: the C++ core wraps the capabilities it exposes to Go into a set of <strong>C-style interfaces</strong> —
 files often ending in <span class="mono">_c.h</span> / <span class="mono">_c.cpp</span> (like the <span class="mono">segment_c.h</span> from Lesson 27). Why C, not C++? Because cgo can only cross the
@@ -269,6 +293,11 @@ LESSON_35 = {
 
 <h2>mmap：让数据大于内存</h2>
 <p>现在到了最精彩的一招。段的原始数据，最终是以 <strong>binlog 文件</strong>的形式落在磁盘上的（第 18 课）。当 QueryNode 加载一个段时，有两种把这些列数据放进内存的方式。第一种是老老实实 <span class="mono">read()</span>：把文件内容<strong>整份拷进堆内存</strong>。简单直接，但有个硬上限——<strong>一台机器能加载的数据，被物理内存卡死了</strong>。内存 64GB，就装不下 100GB 的段。</p>
+
+<div class="cols">
+  <div class="col"><h4>read()：整份读进堆</h4><p>把 binlog 内容<strong>全部拷进堆内存</strong>。简单直接，访问无延迟；但<strong>能装的数据被物理内存卡死</strong>——64GB 内存装不下 100GB 段。</p></div>
+  <div class="col"><h4>mmap：映射 + 按需缺页</h4><p>把文件<strong>映射进虚拟地址</strong>，访问到才缺页调入页缓存、冷页由 OS 换出。<strong>能装的数据可远超内存</strong>；代价是冷页首访问的磁盘延迟。</p></div>
+</div>
 <p>第二种就是 <strong>mmap</strong>：不拷贝，而是把 binlog 文件<strong>映射</strong>进进程的<strong>虚拟地址空间</strong>。映射完成后，这段数据看起来就像一片普通内存，C++ 代码照常按地址访问；但<strong>真正的数据并不立刻进物理内存</strong>。只有当代码第一次访问到某一页时，CPU 触发一次<strong>缺页中断</strong>，操作系统才把那一页从磁盘读进<strong>页缓存</strong>（page cache）。访问过的热页留在缓存里，下次直接命中；久不访问的冷页，在内存吃紧时被操作系统<strong>悄悄换出</strong>。</p>
 <p>这一下就打破了"数据必须 ≤ 内存"的枷锁：一个节点可以加载<strong>总量远超物理内存</strong>的段——冷数据安静地躺在磁盘上不占内存，只有真正被查到的热数据才占用页缓存，换入换出全由操作系统这位"老管家"自动打理，Milvus 自己<strong>一行换页逻辑都不用写</strong>。代价当然有：访问冷页要等一次磁盘 I/O（缺页的延迟），所以 mmap 适合<strong>冷热分明、内存放不下全部</strong>的场景，是一种"用一点点延迟换巨大容量"的划算交易。要不要对某个字段启用 mmap，是<strong>可配置</strong>的——cgo 入口 <span class="inline">internal/core/src/segcore/load_field_data_c.h</span> 的 <span class="mono">EnableMmap(...)</span> 就是 Go 侧在加载字段数据时拨动的那个开关。下面用一条流程把"带 mmap 加载并访问一列"走一遍。</p>
 
@@ -338,6 +367,11 @@ Last lesson handed us the whole map of the C++ core. Now we zoom into one piece 
 
 <h2>mmap: data larger than memory</h2>
 <p>Now the best trick. A segment's raw data ultimately lands on disk as <strong>binlog files</strong> (Lesson 18). When a QueryNode loads a segment, there are two ways to bring these columns into memory. The first is a plain <span class="mono">read()</span>: copy the file contents <strong>wholesale into heap</strong>. Simple and direct, but with a hard ceiling — <strong>the data a machine can load is capped by physical RAM</strong>. With 64GB you can't hold a 100GB segment.</p>
+
+<div class="cols">
+  <div class="col"><h4>read(): copy wholesale into heap</h4><p>copy all binlog contents <strong>into heap RAM</strong>. Simple, zero access latency; but <strong>loadable data is capped by physical RAM</strong> — 64GB can't hold a 100GB segment.</p></div>
+  <div class="col"><h4>mmap: map + fault in on demand</h4><p><strong>map the file into virtual addresses</strong>; pages fault into the page cache on access, cold pages evicted by the OS. <strong>Loadable data can far exceed RAM</strong>; the cost is cold-page first-access disk latency.</p></div>
+</div>
 <p>The second is <strong>mmap</strong>: don't copy; <strong>map</strong> the binlog file into the process's <strong>virtual address space</strong>. Once mapped, the data looks like ordinary memory and C++ accesses it by address as usual — but <strong>the real data isn't in physical RAM yet</strong>. Only when code first touches a page does the CPU raise a <strong>page fault</strong>, and the OS reads that page from disk into the <strong>page cache</strong>. Hot pages already touched stay cached and hit next time; cold pages long untouched get <strong>quietly evicted</strong> when memory is tight.</p>
 <p>This breaks the "data must be ≤ RAM" shackle: a node can load segments whose <strong>total far exceeds physical RAM</strong> — cold data rests on disk taking no memory, only the hot data actually queried occupies page cache, and all swap-in/out is handled automatically by the OS, that seasoned housekeeper, with Milvus writing <strong>not one line of paging logic</strong>. The cost, of course: touching a cold page waits one disk I/O (page-fault latency), so mmap suits <strong>clearly hot/cold, doesn't-fit-in-RAM</strong> workloads — a shrewd trade of "a little latency for huge capacity". Whether to mmap a given field is <strong>configurable</strong> — the cgo entry <span class="mono">EnableMmap(...)</span> in <span class="inline">internal/core/src/segcore/load_field_data_c.h</span> is the switch the Go side flips when loading field data. The flow below walks "load a column with mmap and access it".</p>
 
@@ -412,6 +446,16 @@ LESSON_36 = {
 
 <h2>一条查询在流水线里怎么流</h2>
 <p>把上面的零件接起来，看一次带过滤的向量搜索在引擎里实际怎么走。第一步，<strong>建流水线</strong>：根据查询计划，拼出"<span class="mono">FilterBitsNode</span> → <span class="mono">VectorSearchNode</span>"这样一条算子链，归到一个 <span class="mono">Task</span> 下，交给 <span class="mono">Driver</span> 驱动。第二步，<strong>过滤算子先跑</strong>：<span class="mono">FilterBitsNode</span> 拿出降级好的物理表达式，对段里的列式分块逐块调用 <span class="mono">Eval</span>，<strong>一批一批</strong>地算出"哪些行满足条件"，汇成一个 bitset。第三步，<strong>检索算子接力</strong>：<span class="mono">VectorSearchNode</span> 拿到这个 bitset，只在<strong>通过过滤的候选</strong>上做向量检索（这正是第 28 课说的"先过滤、再检索"）。第四步，结果沿流水线往上汇聚，<span class="mono">Task</span> 状态走向 <span class="mono">kFinished</span>。</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">列式分块</div><div class="nd">mmap 数据(第 35 课)</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">FilterBitsNode</div><div class="nd">物理表达式逐批求值 → bitset</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">VectorSearchNode</div><div class="nd">仅在通过者上做 ANN</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">段内 topK</div><div class="nd">经 cgo 回 Go</div></div>
+</div>
 
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>建流水线</h4><p>按查询计划拼出 <span class="mono">FilterBitsNode</span> → <span class="mono">VectorSearchNode</span> 算子链，归入一个 <span class="mono">Task</span>、由 <span class="mono">Driver</span> 驱动。</p></div></div>
@@ -488,6 +532,16 @@ Lesson 28 followed one query as it turned a filter string into an expression tre
 <h2>How one query flows through the pipeline</h2>
 <p>Wire the parts together and watch a filtered vector search actually run. Step 1, <strong>build the pipeline</strong>: from the query plan, assemble a chain like "<span class="mono">FilterBitsNode</span> → <span class="mono">VectorSearchNode</span>" under a <span class="mono">Task</span>, driven by a <span class="mono">Driver</span>. Step 2, <strong>filter first</strong>: <span class="mono">FilterBitsNode</span> takes the lowered physical expression and calls <span class="mono">Eval</span> over the segment's columnar chunks chunk by chunk, computing "which rows qualify" <strong>batch by batch</strong> into a bitset. Step 3, <strong>then search</strong>: <span class="mono">VectorSearchNode</span> takes that bitset and runs ANN only over the <strong>survivors</strong> (exactly Lesson 28's "filter-then-search"). Step 4, results flow up the pipeline and the <span class="mono">Task</span> moves to <span class="mono">kFinished</span>.</p>
 
+<div class="flow">
+  <div class="node"><div class="nt">columnar chunks</div><div class="nd">mmap data (L35)</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">FilterBitsNode</div><div class="nd">eval physical expr by batch → bitset</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">VectorSearchNode</div><div class="nd">ANN over survivors only</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">segment topK</div><div class="nd">back to Go via cgo</div></div>
+</div>
+
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>Build the pipeline</h4><p>from the plan, assemble a <span class="mono">FilterBitsNode</span> → <span class="mono">VectorSearchNode</span> chain under one <span class="mono">Task</span>, driven by a <span class="mono">Driver</span>.</p></div></div>
   <div class="step"><div class="num">2</div><div class="sc"><h4>Filter emits a bitset</h4><p><span class="mono">FilterBitsNode</span> calls the physical expression's <span class="mono">Eval</span> over columnar chunks batch by batch — "which rows pass".</p></div></div>
@@ -544,6 +598,12 @@ LESSON_37 = {
 <h2>Milvus 提供哪些 GPU 索引（以及它们住在哪）</h2>
 <p>这里有个<strong>必须讲清的边界</strong>，初学时极易搞混：<strong>GPU 索引的"算法"并不在 Milvus 的 C++ core 里，而在 Knowhere（及其依赖的 NVIDIA RAFT/cuVS）里</strong>。Milvus 自己<strong>不手写 CUDA 核函数</strong>；它做的是"<strong>暴露与集成</strong>"——对外提供几种 GPU 索引<strong>类型名</strong>，对内把请求<strong>路由</strong>给 Knowhere 去真正调用 GPU。落到代码上，你能在 <span class="inline">internal/util/indexparamcheck</span> 里看到这些类型对应的<strong>参数校验器</strong>：<span class="mono">GPU_CAGRA</span>（cagra_checker）、<span class="mono">GPU_IVF_FLAT</span>、<span class="mono">GPU_IVF_PQ</span>（raft_ivf_* checker）、<span class="mono">GPU_BRUTE_FORCE</span>（raft_brute_force_checker）。这些校验器的职责是"<strong>看用户给这种 GPU 索引传的参数对不对</strong>"，而非实现算法本身。</p>
 <p>这其中最值得一提的是 <span class="mono">GPU_CAGRA</span>。CAGRA 是 NVIDIA 在 <strong>RAFT/cuVS</strong> 里实现的一种<strong>面向 GPU 的图索引</strong>——你可以把它理解成"<strong>专为 GPU 重新设计的 HNSW</strong>"（回忆第 5 课的图索引）：同样靠"在邻居图上贪心走近邻"来检索，但图的构建与遍历都被改造得适配 GPU 的大规模并行。其余几种里，<span class="mono">GPU_IVF_FLAT</span> / <span class="mono">GPU_IVF_PQ</span> 是把第 5 课的 IVF（倒排+聚类）搬上 GPU，<span class="mono">GPU_BRUTE_FORCE</span> 则是"<strong>暴力全算</strong>"——不建索引、直接用 GPU 的蛮力把所有距离算一遍，在数据不算太大、又要<strong>最高召回</strong>时反而简单高效。下面这张表帮你把它们归归类。记住那条红线：<strong>类型名与参数校验在 Milvus，算法实现在 Knowhere/RAFT</strong>，别把 CUDA 的功劳记到 milvus core 头上。</p>
+
+<div class="layers">
+  <div class="layer l-main"><div class="lh"><span class="badge">Milvus</span><span class="name">暴露类型 + 参数校验</span></div><div class="ld">GPU_CAGRA/IVF/BRUTE 类型名；indexparamcheck 校验器；负责调度与路由</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">Knowhere</span><span class="name">统一索引引擎</span></div><div class="ld">把请求路由到具体索引实现（CPU 或 GPU），第 22 课的同一道门</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">RAFT/cuVS</span><span class="name">NVIDIA GPU 算法</span></div><div class="ld">CAGRA 等 GPU 算法的真正实现，底下是 CUDA 核函数</div></div>
+</div>
 
 <p>一个常见的疑惑是："既然 GPU 这么快，为什么还保留暴力全算这种最'笨'的方法？"答案恰恰点出了 GPU 的精髓：当核多到一定程度，"<strong>笨办法</strong>"也能很快。CPU 上没人敢对百万向量逐一算距离（太慢），所以才要 HNSW、IVF 这些精巧索引来<strong>少算一些</strong>；但在 GPU 上，上千核一拥而上，"<strong>全算一遍</strong>"在中小数据上可能比"建索引再查"还快，而且<strong>召回率是 100%</strong>（没有近似带来的漏检）。这就是为什么 <span class="mono">GPU_BRUTE_FORCE</span> 不仅没被淘汰，反而常被当作<strong>精度基准</strong>——用它的结果来衡量其他近似索引"漏掉了多少"。可见<strong>硬件能力会反过来改变算法选择</strong>：CPU 时代"必须用索引"的直觉，到 GPU 时代未必还成立。这种"<strong>换了硬件、连算法直觉都要重估</strong>"的现象，正是理解 GPU 加速时最有意思的一课。</p>
 
@@ -614,6 +674,12 @@ In Lesson 36 we squeezed the CPU dry — vectorization and SIMD let one instruct
 <h2>Which GPU indexes Milvus offers (and where they live)</h2>
 <p>Here's a <strong>boundary you must get straight</strong>, easily confused early on: <strong>the GPU indexes' "algorithms" are not in Milvus's C++ core, but in Knowhere (and its NVIDIA RAFT/cuVS dependency)</strong>. Milvus <strong>does not hand-write CUDA kernels</strong>; it does "<strong>exposure and integration</strong>" — offering a few GPU index <strong>type names</strong> outward and <strong>routing</strong> requests inward to Knowhere to actually drive the GPU. In code, you can see the <strong>param checkers</strong> for these types under <span class="inline">internal/util/indexparamcheck</span>: <span class="mono">GPU_CAGRA</span> (cagra_checker), <span class="mono">GPU_IVF_FLAT</span>, <span class="mono">GPU_IVF_PQ</span> (raft_ivf_* checker), <span class="mono">GPU_BRUTE_FORCE</span> (raft_brute_force_checker). These checkers verify "<strong>whether the params a user gives this GPU index are valid</strong>", not the algorithm itself.</p>
 <p>The most notable is <span class="mono">GPU_CAGRA</span>. CAGRA is a <strong>GPU-oriented graph index</strong> implemented by NVIDIA in <strong>RAFT/cuVS</strong> — think of it as "<strong>HNSW redesigned for the GPU</strong>" (recall Lesson 5's graph indexes): same "greedily walk toward neighbors on a proximity graph", but graph construction and traversal reworked for the GPU's massive parallelism. Among the rest, <span class="mono">GPU_IVF_FLAT</span> / <span class="mono">GPU_IVF_PQ</span> bring Lesson 5's IVF (inverted lists + clustering) onto the GPU, and <span class="mono">GPU_BRUTE_FORCE</span> is "<strong>compute everything by force</strong>" — no index, just GPU brawn over all distances, which is simple and effective for not-too-large data demanding <strong>top recall</strong>. The table sorts them. Remember the red line: <strong>type names and param checks are in Milvus; algorithms are in Knowhere/RAFT</strong> — don't credit CUDA's work to the Milvus core.</p>
+
+<div class="layers">
+  <div class="layer l-main"><div class="lh"><span class="badge">Milvus</span><span class="name">exposes types + param checks</span></div><div class="ld">GPU_CAGRA/IVF/BRUTE type names; indexparamcheck checkers; schedules &amp; routes</div></div>
+  <div class="layer l-part"><div class="lh"><span class="badge">Knowhere</span><span class="name">unified index engine</span></div><div class="ld">routes the request to a concrete index impl (CPU or GPU) — the same door as Lesson 22</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">RAFT/cuVS</span><span class="name">NVIDIA GPU algorithms</span></div><div class="ld">the real implementation of CAGRA etc., with CUDA kernels underneath</div></div>
+</div>
 
 <table class="t">
   <tr><th>GPU index type</th><th>Essence (CPU-side analog)</th><th>Best for</th></tr>
