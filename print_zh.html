@@ -2978,34 +2978,34 @@ Proxy 把这些复杂度<strong>全部封装</strong>在身后。于是后端怎
   <div class="node"><div class="nt">节点</div><div class="nd">QueryNode / DataNode 干活</div></div>
 </div>
 
-<h2>四道关卡：鉴权、权限、数据库路由、限流</h2>
+<h2>四道关卡：数据库路由、鉴权、权限、限流</h2>
 <p>请求进了 Proxy，并不会立刻被执行，而要先过四道<strong>拦截器（interceptor）</strong>。这是 gRPC 的标准玩法：在真正的业务方法之前，
 串接一组中间件，逐个把关。Milvus 把它们拆成独立文件，职责清晰：</p>
 
 <ul>
+  <li><strong>数据库路由（database）</strong>：你说的是哪个 database？<span class="inline">database_interceptor.go</span> 把请求归到正确的 db 上下文——它最先跑，好让后面的权限校验拿到正确的库。</li>
   <li><strong>鉴权（authentication）</strong>：你是谁？<span class="inline">authentication_interceptor.go</span> 校验用户名/密码或 token，认不出来直接拒。</li>
   <li><strong>权限（privilege）</strong>：你能不能做这件事？<span class="inline">privilege_interceptor.go</span> 检查 RBAC 角色对这个集合/操作有没有授权。</li>
-  <li><strong>数据库路由（database）</strong>：你说的是哪个 database？<span class="inline">database_interceptor.go</span> 把请求归到正确的 db 上下文。</li>
   <li><strong>限流（rate limit）</strong>：你今天是不是太猛了？<span class="inline">rate_limit_interceptor.go</span> 按配额给写入/查询降速甚至挡回，保护后端不被打垮。</li>
 </ul>
 
 <div class="fig">
-  <svg viewBox="0 0 760 300" role="img" aria-label="一次请求依次经过鉴权、权限、数据库路由、限流四道拦截器，任一不过即被拦下；通过后才进入排队执行">
+  <svg viewBox="0 0 760 300" role="img" aria-label="一次请求依次经过数据库路由、鉴权、权限、限流四道拦截器，任一不过即被拦下；通过后才进入排队执行">
     <rect x="22" y="120" width="104" height="52" rx="9" style="fill:var(--panel-2);stroke:var(--line)"/>
     <text x="74" y="143" text-anchor="middle" style="fill:var(--ink)">客户端</text>
     <text x="74" y="161" text-anchor="middle" style="fill:var(--muted)">请求</text>
-    <rect x="146" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/>
-    <text x="192" y="118" text-anchor="middle" style="fill:var(--blue);font-weight:700">①鉴权</text>
-    <text x="192" y="146" text-anchor="middle" style="fill:var(--muted)">你是谁</text>
-    <text x="192" y="172" text-anchor="middle" style="fill:var(--faint)">token</text>
-    <rect x="278" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--purple);stroke-width:1.5"/>
-    <text x="324" y="118" text-anchor="middle" style="fill:var(--purple);font-weight:700">②权限</text>
-    <text x="324" y="146" text-anchor="middle" style="fill:var(--muted)">能不能做</text>
-    <text x="324" y="172" text-anchor="middle" style="fill:var(--faint)">RBAC</text>
-    <rect x="410" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/>
-    <text x="456" y="118" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">③数据库</text>
-    <text x="456" y="146" text-anchor="middle" style="fill:var(--muted)">哪个 db</text>
-    <text x="456" y="172" text-anchor="middle" style="fill:var(--faint)">路由</text>
+    <rect x="146" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="192" y="118" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">①数据库</text>
+    <text x="192" y="146" text-anchor="middle" style="fill:var(--muted)">哪个 db</text>
+    <text x="192" y="172" text-anchor="middle" style="fill:var(--faint)">路由</text>
+    <rect x="278" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/>
+    <text x="324" y="118" text-anchor="middle" style="fill:var(--blue);font-weight:700">②鉴权</text>
+    <text x="324" y="146" text-anchor="middle" style="fill:var(--muted)">你是谁</text>
+    <text x="324" y="172" text-anchor="middle" style="fill:var(--faint)">token</text>
+    <rect x="410" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--purple);stroke-width:1.5"/>
+    <text x="456" y="118" text-anchor="middle" style="fill:var(--purple);font-weight:700">③权限</text>
+    <text x="456" y="146" text-anchor="middle" style="fill:var(--muted)">能不能做</text>
+    <text x="456" y="172" text-anchor="middle" style="fill:var(--faint)">RBAC</text>
     <rect x="542" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/>
     <text x="588" y="118" text-anchor="middle" style="fill:var(--amber);font-weight:700">④限流</text>
     <text x="588" y="146" text-anchor="middle" style="fill:var(--muted)">太猛了？</text>
@@ -3021,7 +3021,7 @@ Proxy 把这些复杂度<strong>全部封装</strong>在身后。于是后端怎
     <text x="588" y="250" text-anchor="middle" style="fill:var(--red);font-weight:700">超额 → 背压 / 挡回</text>
     <text x="300" y="250" text-anchor="middle" style="fill:var(--muted)">任一关不过 → 直接拒绝（无状态，可多开）</text>
   </svg>
-  <div class="figcap"><b>四道关卡，层层把门</b>：请求先过<b>鉴权 → 权限 → 数据库路由 → 限流</b>四道拦截器，<b>挡在业务逻辑之前</b>。非法、越权、超额的请求根本到不了执行；这些判断都<b>无状态</b>，所以 Proxy 可随意多开、各自把关。</div>
+  <div class="figcap"><b>四道关卡，层层把门</b>：请求先过<b>数据库路由 → 鉴权 → 权限 → 限流</b>四道拦截器，<b>挡在业务逻辑之前</b>（数据库路由最先，好让权限校验拿到正确的库上下文）。非法、越权、超额的请求根本到不了执行；这些判断都<b>无状态</b>，所以 Proxy 可随意多开、各自把关。</div>
 </div>
 
 <p>这四关合起来，就是 Proxy 作为"门卫"的全部职责。它们<strong>挡在业务逻辑之前</strong>，意味着一个非法、越权或超额的请求，
@@ -3035,9 +3035,9 @@ Proxy 把这些复杂度<strong>全部封装</strong>在身后。于是后端怎
 
 <table class="t">
   <tr><th>关卡</th><th>问的问题</th><th>实现文件</th><th>不过会怎样</th></tr>
+  <tr><td><strong>数据库路由</strong></td><td>哪个 database</td><td class="mono">database_interceptor.go</td><td>找不到库</td></tr>
   <tr><td><strong>鉴权</strong></td><td>你是谁</td><td class="mono">authentication_interceptor.go</td><td>拒绝连接</td></tr>
   <tr><td><strong>权限</strong></td><td>你能不能做</td><td class="mono">privilege_interceptor.go</td><td>无权限错误</td></tr>
-  <tr><td><strong>数据库路由</strong></td><td>哪个 database</td><td class="mono">database_interceptor.go</td><td>找不到库</td></tr>
   <tr><td><strong>限流</strong></td><td>是否超额</td><td class="mono">rate_limit_interceptor.go</td><td>限速 / 拒绝</td></tr>
 </table>
 
@@ -3102,7 +3102,7 @@ Proxy 把这些复杂度<strong>全部封装</strong>在身后。于是后端怎
 
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>接收请求</h4><p>gRPC/REST 打到 Proxy 的 milvuspb 方法，如 <span class="mono">Search</span>。</p></div></div>
-  <div class="step"><div class="num">2</div><div class="sc"><h4>四道关卡</h4><p>鉴权 → 权限 → 数据库路由 → 限流，拦截器逐个把关。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>四道关卡</h4><p>数据库路由 → 鉴权 → 权限 → 限流，拦截器逐个把关。</p></div></div>
   <div class="step"><div class="num">3</div><div class="sc"><h4>包装成任务、选队列</h4><p>按类型进 ddQueue / dmQueue / dqQueue。</p></div></div>
   <div class="step"><div class="num">4</div><div class="sc"><h4>分配时间戳</h4><p class="mono">tsoAllocator</p><p>向协调者要全局时间戳/ID，定下这条操作的时序。</p></div></div>
   <div class="step"><div class="num">5</div><div class="sc"><h4>执行：扇出</h4><p>DML 写进 WAL/MQ；DQL 把查询发给负责各分片的 QueryNode。</p></div></div>
@@ -3175,7 +3175,7 @@ Proxy 的做法是：在发出查询前，决定带上一个<strong>保证时间
 
 <div class="card macro">
   <div class="tag">🌍 宏观理解</div>
-  一句话串起来：<strong>Proxy 是唯一入口（milvuspb 服务）→ 先过鉴权/权限/数据库/限流四关 → 包装成任务进 ddQueue/dmQueue/dqQueue 三个队列 → 向协调者要时间戳 → 写入扇进 WAL、查询扇出到节点 → 归并成一份结果返回</strong>。
+  一句话串起来：<strong>Proxy 是唯一入口（milvuspb 服务）→ 先过数据库/鉴权/权限/限流四关 → 包装成任务进 ddQueue/dmQueue/dqQueue 三个队列 → 向协调者要时间戳 → 写入扇进 WAL、查询扇出到节点 → 归并成一份结果返回</strong>。
   它无状态，所以可以横向扩展、前挂负载均衡。把这条流水线记牢，后面每个协调者都是它身后的一环。
 </div>
 
@@ -3183,7 +3183,7 @@ Proxy 的做法是：在发出查询前，决定带上一个<strong>保证时间
   <div class="tag">📌 本课要点</div>
   <ul>
     <li><strong>唯一入口</strong>：Proxy 实现对外的 <span class="mono">milvuspb</span> MilvusService（gRPC/REST），把后端拓扑全部封装在身后。</li>
-    <li><strong>四道关卡</strong>：鉴权 / 权限 / 数据库路由 / 限流，由独立 interceptor 实现，挡在业务逻辑之前。</li>
+    <li><strong>四道关卡</strong>：数据库路由 / 鉴权 / 权限 / 限流，由独立 interceptor 实现，挡在业务逻辑之前。</li>
     <li><strong>三个队列</strong>：<span class="mono">ddQueue</span>(DDL)、<span class="mono">dmQueue</span>(DML)、<span class="mono">dqQueue</span>(DQL)，按排序约束与并发画像物理隔离（另有 <span class="mono">dcQueue</span> 管 flush）。见 <span class="mono">task_scheduler.go</span>。</li>
     <li><strong>时间戳</strong>：每个写/读任务入队时向协调者 TSO 要全局时间戳，定下时序（详见第 11 课）。</li>
     <li><strong>读写两路</strong>：DML 扇进 WAL/MQ 关心持久化；DQL 扇出到 QueryNode 再<strong>归并 reduce</strong>，关心并发与延迟（reduce 深入见第 29 课）。</li>
@@ -6156,9 +6156,9 @@ Milvus 允许按字段、按场景<strong>精细配置</strong>哪些数据走 m
     <line x1="544" y1="98" x2="586" y2="66" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,66 l-11,1 l4,8 z" style="fill:var(--teal)"/>
     <line x1="544" y1="105" x2="586" y2="109" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,109 l-11,-2 l1,8 z" style="fill:var(--teal)"/>
     <line x1="544" y1="112" x2="586" y2="152" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,152 l-10,-4 l-1,9 z" style="fill:var(--teal)"/>
-    <rect x="588" y="48" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="72" text-anchor="middle" style="fill:var(--ink)">QueryNode 支持 v3 ✓</text>
-    <rect x="588" y="92" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="116" text-anchor="middle" style="fill:var(--ink)">QueryNode 支持 v3 ✓</text>
-    <rect x="588" y="136" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="664" y="160" text-anchor="middle" style="fill:var(--ink)">QueryNode 支持 v2 ✓</text>
+    <rect x="588" y="48" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="72" text-anchor="middle" style="fill:var(--ink)">QueryNode v3 ✓</text>
+    <rect x="588" y="92" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="116" text-anchor="middle" style="fill:var(--ink)">QueryNode v3 ✓</text>
+    <rect x="588" y="136" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="664" y="160" text-anchor="middle" style="fill:var(--ink)">QueryNode v2 ✓</text>
     <text x="385" y="212" text-anchor="middle" style="fill:var(--red);font-weight:700">✗ 若按 v3 建 → 只支持 v2 的老节点加载失败</text>
     <text x="385" y="244" text-anchor="middle" style="fill:var(--muted)">∴ 建索引版本 = 各节点支持版本的最小值 = 所有节点都能加载的最高格式</text>
   </svg>
@@ -6511,7 +6511,7 @@ Milvus 的 C++ core 通过 <span class="mono">internal/core/src/index/InvertedIn
 
 <div class="fig">
   <svg viewBox="0 0 760 300" role="img" aria-label="一次 search 的往返：SDK 发请求，Proxy 的 searchTask 解析建计划定时间戳、扇出到各分片、再归并，结果返回 SDK">
-    <rect x="22" y="116" width="92" height="60" rx="10" style="fill:var(--panel);stroke:var(--line)"/><text x="68" y="142" text-anchor="middle" style="fill:var(--ink);font-weight:700">SDK</text><text x="68" y="162" text-anchor="middle" style="fill:var(--muted)">向量+topK+expr</text>
+    <rect x="22" y="116" width="92" height="60" rx="10" style="fill:var(--panel);stroke:var(--line)"/><text x="68" y="138" text-anchor="middle" style="fill:var(--ink);font-weight:700">SDK</text><text x="68" y="155" text-anchor="middle" style="fill:var(--muted)">向量·topK</text><text x="68" y="169" text-anchor="middle" style="fill:var(--muted)">+ 过滤式</text>
     <rect x="146" y="74" width="234" height="142" rx="11" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
     <text x="263" y="96" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">Proxy · searchTask</text>
     <rect x="160" y="106" width="206" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="263" y="126" text-anchor="middle" style="fill:var(--ink)">① PreExecute · plan + ts</text>
@@ -6896,7 +6896,7 @@ Milvus 的 C++ core 通过 <span class="mono">internal/core/src/index/InvertedIn
 <div class="fig">
   <svg viewBox="0 0 760 300" role="img" aria-label="segcore 用同一套 SegmentInterface 抽象一个段，底下两种实现：sealed 走索引、growing 暴力扫；并按删除位图与时间戳过滤后给出段内 topK">
     <text x="380" y="32" text-anchor="middle" style="fill:var(--muted)">上层对每个段都调同一个 Search(段, plan)</text>
-    <rect x="248" y="42" width="264" height="44" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="380" y="69" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">SegmentInterface · Search（统一契约）</text>
+    <rect x="212" y="42" width="336" height="44" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="380" y="69" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">SegmentInterface · Search（统一契约）</text>
     <text x="380" y="108" text-anchor="middle" style="fill:var(--muted)">按段类型自动多态 ↓</text>
     <rect x="56" y="118" width="310" height="64" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="211" y="144" text-anchor="middle" style="fill:var(--teal);font-weight:700">SegmentSealed → 走索引</text><text x="211" y="166" text-anchor="middle" style="fill:var(--muted)">Knowhere HNSW/IVF · 跳过大多数（快）</text>
     <rect x="394" y="118" width="310" height="64" rx="10" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="549" y="144" text-anchor="middle" style="fill:var(--amber);font-weight:700">SegmentGrowing → 暴力扫</text><text x="549" y="166" text-anchor="middle" style="fill:var(--muted)">逐条算距离 · 段小、保最新（新鲜）</text>
@@ -6904,7 +6904,7 @@ Milvus 的 C++ core 通过 <span class="mono">internal/core/src/index/InvertedIn
     <line x1="442" y1="86" x2="534" y2="116" style="stroke:var(--accent);stroke-width:1.5"/><path d="M534,116 l-9,-7 l-1,11 z" style="fill:var(--accent)"/>
     <line x1="211" y1="182" x2="330" y2="210" style="stroke:var(--line);stroke-width:1.5"/><path d="M330,210 l-11,-1 l3,9 z" style="fill:var(--line)"/>
     <line x1="549" y1="182" x2="430" y2="210" style="stroke:var(--line);stroke-width:1.5"/><path d="M430,210 l-3,-11 l9,3 z" style="fill:var(--line)"/>
-    <rect x="206" y="212" width="348" height="60" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="380" y="238" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">段内 topK（已过滤）</text><text x="380" y="260" text-anchor="middle" style="fill:var(--muted)">剔除删除行 + 只看 ts ≤ guarantee（MVCC 落地点）</text>
+    <rect x="158" y="212" width="444" height="60" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="380" y="238" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">段内 topK（已过滤）</text><text x="380" y="260" text-anchor="middle" style="fill:var(--muted)">剔除删除行 + 只看 ts ≤ guarantee（MVCC 落地点）</text>
   </svg>
   <div class="figcap"><b>同一接口，两种实现（多态）</b>：segcore 用一套 <span class="mono">SegmentInterface</span> 抽象"一个段"——上层只管对每个段调同一个 <span class="mono">Search</span>，内部按段类型自动选<b>快路（sealed 走索引、跳过大多数）</b>或<b>慢路（growing 暴力扫、保最新）</b>。它还在段内落地 <b>MVCC</b>：用<b>删除位图</b>剔除已删行、用 <b>guarantee ts</b> 只放行该版本——所以你搜不到"刚被删的"或"晚于快照才写的"。</div>
 </div>
@@ -9867,8 +9867,8 @@ Go 这边则有对应的封装（如第 2、27 课的 <span class="mono">LocalSe
   <svg viewBox="0 0 760 300" role="img" aria-label="归因测试决定要不要重试：问'是请求内容本身逼出这个分支吗'，是则为 Input 错误（怪请求、不可重试、返回用户修正），否则为 System 错误（怪系统或暂时、保持可重试、由 retry.Do 自动再试）">
     <text x="380" y="26" text-anchor="middle" style="fill:var(--ink);font-weight:700">归因测试：是「请求内容本身」逼出这个分支吗？</text>
     <path d="M380,40 L470,70 L380,100 L290,70 Z" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="380" y="75" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">谁的错？</text>
-    <line x1="300" y1="84" x2="196" y2="126" style="stroke:var(--amber);stroke-width:2"/><path d="M196,126 l3,-11 l8,6 z" style="fill:var(--amber)"/><text x="214" y="106" text-anchor="middle" style="fill:var(--amber);font-weight:700">是 · 怪请求</text>
-    <line x1="460" y1="84" x2="564" y2="126" style="stroke:var(--teal);stroke-width:2"/><path d="M564,126 l-11,-3 l5,-9 z" style="fill:var(--teal)"/><text x="548" y="106" text-anchor="middle" style="fill:var(--teal);font-weight:700">否 · 怪系统/暂时</text>
+    <line x1="300" y1="84" x2="196" y2="126" style="stroke:var(--amber);stroke-width:2"/><path d="M196,126 l3,-11 l8,6 z" style="fill:var(--amber)"/><text x="250" y="92" text-anchor="middle" style="fill:var(--amber);font-weight:700">是</text>
+    <line x1="460" y1="84" x2="564" y2="126" style="stroke:var(--teal);stroke-width:2"/><path d="M564,126 l-11,-3 l5,-9 z" style="fill:var(--teal)"/><text x="510" y="92" text-anchor="middle" style="fill:var(--teal);font-weight:700">否</text>
     <rect x="40" y="128" width="300" height="52" rx="9" style="fill:var(--amber-soft);stroke:var(--amber);stroke-width:1.5"/><text x="190" y="150" text-anchor="middle" style="fill:var(--amber);font-weight:700">Input 错误（怪请求）</text><text x="190" y="169" text-anchor="middle" style="fill:var(--muted)">如：搜不存在的集合、非法参数</text>
     <line x1="190" y1="180" x2="190" y2="200" style="stroke:var(--amber);stroke-width:2"/><path d="M190,200 l-4,-10 l8,0 z" style="fill:var(--amber)"/>
     <rect x="56" y="202" width="268" height="40" rx="8" style="fill:var(--panel);stroke:var(--amber)"/><text x="190" y="227" text-anchor="middle" style="fill:var(--amber);font-weight:700">✗ 不可重试 · 如实返回用户修正</text>
@@ -10541,7 +10541,7 @@ Go 这边则有对应的封装（如第 2、27 课的 <span class="mono">LocalSe
 <p>第二档是<strong>强制拒绝（force-deny）</strong>：当指标<strong>撞穿</strong>硬上限（比如内存/磁盘水位过高、或 TT 延迟大到危险），QuotaCenter 会调用 <span class="mono">forceDenyWriting</span>（把 DML 速率直接压到 <strong>0</strong>、拒绝所有写入）或 <span class="mono">forceDenyReading</span>（把 DQL 压到 0、拒绝所有读）。这是紧急刹车——<strong>整类操作被暂时挡在门外</strong>，直到水位降回安全线。为什么要有这么"狠"的一档？因为到了硬上限，<strong>再放进来就是 OOM/写满磁盘的崩溃</strong>，与其全军覆没，不如<strong>果断拒绝新请求、保住已有的</strong>。值得注意的是，<strong>写和读是分开管的</strong>：内存/磁盘压力大时往往先 deny 写（写才是占资源的大头），读可能还能继续。下面把两档刹车摆清。</p>
 
 <div class="fig">
-  <svg viewBox="0 0 760 300" role="img" aria-label="两档刹车：随着内存磁盘用量与 TT 延迟上升，先进入限速档（接近约 80% 警戒线，逐步调低速率、请求排队慢来），再撞穿硬上限触发强制拒绝档（forceDenyWriting/Reading，速率归零、整类拒绝）">
+  <svg viewBox="0 0 760 300" role="img" aria-label="两档刹车：随着内存磁盘用量与 TT 延迟上升，先进入限速档（接近约 85% 警戒线，逐步调低速率、请求排队慢来），再撞穿硬上限触发强制拒绝档（forceDenyWriting/Reading，速率归零、整类拒绝）">
     <text x="60" y="44" style="fill:var(--muted)">内存 / 磁盘用量、TT 延迟　→　越涨越收紧</text>
     <rect x="60" y="56" width="400" height="30" rx="6" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="260" y="76" text-anchor="middle" style="fill:var(--teal);font-weight:700">正常 · 满速放行</text>
     <rect x="460" y="56" width="140" height="30" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="530" y="76" text-anchor="middle" style="fill:var(--amber);font-weight:700">限速</text>

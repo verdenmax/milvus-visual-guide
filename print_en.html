@@ -1759,7 +1759,7 @@ candidate width at query time — <strong>larger ef searches wider, higher recal
   <svg viewBox="0 0 760 300" role="img" aria-label="Greedy search on the HNSW multi-layer graph: start at an entry on the sparse top layer, descend layer by layer, reach the nearest neighbor in a few hops">
     <text x="18" y="76" style="fill:var(--muted)">top · sparse</text>
     <text x="18" y="162" style="fill:var(--muted)">middle</text>
-    <text x="18" y="252" style="fill:var(--muted)">bottom · dense</text>
+    <text x="18" y="252" style="fill:var(--muted)">bottom</text>
     <polyline points="120,72 330,72 560,72" style="fill:none;stroke:var(--line);stroke-width:1.5;opacity:.6"/>
     <polyline points="160,158 300,158 440,158 580,158 680,158" style="fill:none;stroke:var(--line);stroke-width:1.5;opacity:.6"/>
     <polyline points="110,248 190,248 270,248 350,248 430,248 510,248 590,248 670,248" style="fill:none;stroke:var(--line);stroke-width:1.5;opacity:.6"/>
@@ -2706,14 +2706,14 @@ external-dependency design. We unpack them one by one below.</p>
     <rect x="114" y="116" width="44" height="34" rx="4" style="fill:none;stroke:var(--blue);stroke-width:2"/>
     <line x1="122" y1="127" x2="150" y2="127" style="stroke:var(--blue);stroke-width:2"/><line x1="122" y1="135" x2="150" y2="135" style="stroke:var(--blue);stroke-width:2"/><line x1="122" y1="143" x2="142" y2="143" style="stroke:var(--blue);stroke-width:2"/>
     <text x="136" y="176" text-anchor="middle" style="fill:var(--ink)">metadata + discovery</text>
-    <rect x="40" y="188" width="192" height="30" rx="8" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="136" y="208" text-anchor="middle" style="fill:var(--blue);font-weight:700">small &amp; critical · consistent</text>
+    <rect x="40" y="188" width="192" height="30" rx="8" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="136" y="208" text-anchor="middle" style="fill:var(--blue);font-weight:700">small · consistent</text>
     <text x="136" y="242" text-anchor="middle" class="mono" style="fill:var(--muted)">etcd (same as K8s)</text>
     <rect x="264" y="56" width="232" height="206" rx="12" style="fill:var(--panel-2);stroke:var(--teal);stroke-width:1.5"/>
     <text x="380" y="86" text-anchor="middle" style="fill:var(--teal);font-weight:700">② object store · warehouse</text>
     <line x1="284" y1="98" x2="476" y2="98" style="stroke:var(--teal);stroke-width:1.5;opacity:.45"/>
     <rect x="360" y="116" width="18" height="16" rx="2" style="fill:none;stroke:var(--teal);stroke-width:2"/><rect x="382" y="116" width="18" height="16" rx="2" style="fill:none;stroke:var(--teal);stroke-width:2"/><rect x="360" y="134" width="18" height="16" rx="2" style="fill:none;stroke:var(--teal);stroke-width:2"/><rect x="382" y="134" width="18" height="16" rx="2" style="fill:none;stroke:var(--teal);stroke-width:2"/>
     <text x="380" y="176" text-anchor="middle" style="fill:var(--ink)">binlogs + index files</text>
-    <rect x="284" y="188" width="192" height="30" rx="8" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="380" y="208" text-anchor="middle" style="fill:var(--teal);font-weight:700">big &amp; cheap · near-infinite</text>
+    <rect x="284" y="188" width="192" height="30" rx="8" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="380" y="208" text-anchor="middle" style="fill:var(--teal);font-weight:700">cheap · vast</text>
     <text x="380" y="242" text-anchor="middle" class="mono" style="fill:var(--muted)">MinIO / S3 / OSS</text>
     <rect x="508" y="56" width="232" height="206" rx="12" style="fill:var(--panel-2);stroke:var(--amber);stroke-width:1.5"/>
     <text x="624" y="86" text-anchor="middle" style="fill:var(--amber);font-weight:700">③ message queue · log</text>
@@ -3088,7 +3088,7 @@ they snap the swirl of details back onto the "decide vs execute" through-line.</
     <line x1="220" y1="251" x2="536" y2="251" style="stroke:var(--teal);stroke-width:4"/><path d="M536,251 l-12,-6 l0,12 z" style="fill:var(--teal)"/>
     <text x="474" y="206" style="fill:var(--teal)">user data: search / insert bytes</text>
     <line x1="395" y1="112" x2="395" y2="178" style="stroke:var(--accent);stroke-width:2;stroke-dasharray:5 4"/><path d="M395,178 l-5,-11 l10,0 z" style="fill:var(--accent)"/>
-    <text x="406" y="152" style="fill:var(--accent-ink);font-weight:700">decide · schedule (low freq)</text>
+    <text x="440" y="152" style="fill:var(--accent-ink);font-weight:700">decide · schedule (low freq)</text>
     <line x1="150" y1="206" x2="150" y2="156" style="stroke:var(--red);stroke-width:3"/><path d="M150,156 l-6,11 l12,0 z" style="fill:var(--red)"/>
     <path d="M132,150 l24,18 M156,150 l-24,18" style="stroke:var(--red);stroke-width:3"/>
     <text x="168" y="150" style="fill:var(--red);font-weight:700">throughput ✗ never hits control</text>
@@ -3205,34 +3205,34 @@ Precisely because this "translation" only reads metadata and never writes it, mu
   <div class="node"><div class="nt">nodes</div><div class="nd">QueryNode / DataNode do work</div></div>
 </div>
 
-<h2>Four gates: auth, privilege, db routing, rate-limit</h2>
+<h2>Four gates: db routing, auth, privilege, rate-limit</h2>
 <p>Once a request enters the Proxy it isn't executed right away — it must first pass a chain of <strong>interceptors</strong>. This is standard gRPC practice: before the real business method,
 a set of middlewares vet the request one by one. Milvus splits them into clear, single-purpose files:</p>
 
 <ul>
+  <li><strong>Database routing</strong>: which database do you mean? <span class="inline">database_interceptor.go</span> pins the request to the right db context — this runs first so the privilege check has the right database.</li>
   <li><strong>Authentication</strong>: who are you? <span class="inline">authentication_interceptor.go</span> checks username/password or token; unknown callers are rejected.</li>
   <li><strong>Privilege</strong>: are you allowed to do this? <span class="inline">privilege_interceptor.go</span> checks the RBAC role against this collection/operation.</li>
-  <li><strong>Database routing</strong>: which database do you mean? <span class="inline">database_interceptor.go</span> pins the request to the right db context.</li>
   <li><strong>Rate limit</strong>: are you hammering us today? <span class="inline">rate_limit_interceptor.go</span> throttles or blocks writes/queries by quota to protect the backend.</li>
 </ul>
 
 <div class="fig">
-  <svg viewBox="0 0 760 300" role="img" aria-label="A request passes four interceptors in order — auth, privilege, db routing, rate-limit; failing any one stops it; only after passing does it reach queue and execution">
+  <svg viewBox="0 0 760 300" role="img" aria-label="A request passes four interceptors in order — db routing, auth, privilege, rate-limit; failing any one stops it; only after passing does it reach queue and execution">
     <rect x="22" y="120" width="104" height="52" rx="9" style="fill:var(--panel-2);stroke:var(--line)"/>
     <text x="74" y="143" text-anchor="middle" style="fill:var(--ink)">client</text>
     <text x="74" y="161" text-anchor="middle" style="fill:var(--muted)">request</text>
-    <rect x="146" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/>
-    <text x="192" y="118" text-anchor="middle" style="fill:var(--blue);font-weight:700">① auth</text>
-    <text x="192" y="146" text-anchor="middle" style="fill:var(--muted)">who are you</text>
-    <text x="192" y="172" text-anchor="middle" style="fill:var(--faint)">token</text>
-    <rect x="278" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--purple);stroke-width:1.5"/>
-    <text x="324" y="118" text-anchor="middle" style="fill:var(--purple);font-weight:700">② privilege</text>
-    <text x="324" y="146" text-anchor="middle" style="fill:var(--muted)">allowed?</text>
-    <text x="324" y="172" text-anchor="middle" style="fill:var(--faint)">RBAC</text>
-    <rect x="410" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/>
-    <text x="456" y="118" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">③ database</text>
-    <text x="456" y="146" text-anchor="middle" style="fill:var(--muted)">which db</text>
-    <text x="456" y="172" text-anchor="middle" style="fill:var(--faint)">route</text>
+    <rect x="146" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="192" y="118" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">① database</text>
+    <text x="192" y="146" text-anchor="middle" style="fill:var(--muted)">which db</text>
+    <text x="192" y="172" text-anchor="middle" style="fill:var(--faint)">route</text>
+    <rect x="278" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/>
+    <text x="324" y="118" text-anchor="middle" style="fill:var(--blue);font-weight:700">② auth</text>
+    <text x="324" y="146" text-anchor="middle" style="fill:var(--muted)">who are you</text>
+    <text x="324" y="172" text-anchor="middle" style="fill:var(--faint)">token</text>
+    <rect x="410" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--purple);stroke-width:1.5"/>
+    <text x="456" y="118" text-anchor="middle" style="fill:var(--purple);font-weight:700">③ privilege</text>
+    <text x="456" y="146" text-anchor="middle" style="fill:var(--muted)">allowed?</text>
+    <text x="456" y="172" text-anchor="middle" style="fill:var(--faint)">RBAC</text>
     <rect x="542" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/>
     <text x="588" y="118" text-anchor="middle" style="fill:var(--amber);font-weight:700">④ rate-limit</text>
     <text x="588" y="146" text-anchor="middle" style="fill:var(--muted)">too much?</text>
@@ -3248,7 +3248,7 @@ a set of middlewares vet the request one by one. Milvus splits them into clear, 
     <text x="588" y="250" text-anchor="middle" style="fill:var(--red);font-weight:700">over quota → backpressure</text>
     <text x="300" y="250" text-anchor="middle" style="fill:var(--muted)">fail any gate → rejected (stateless, scale out)</text>
   </svg>
-  <div class="figcap"><b>Four gates, layered doorkeeping</b>: a request passes <b>auth → privilege → db routing → rate-limit</b> — all <b>before business logic</b>. Illegal, unauthorized, or over-quota requests never reach execution; the checks are <b>stateless</b>, so Proxy can scale out and each instance vets independently.</div>
+  <div class="figcap"><b>Four gates, layered doorkeeping</b>: a request passes <b>db routing → auth → privilege → rate-limit</b> — all <b>before business logic</b>. Illegal, unauthorized, or over-quota requests never reach execution; the checks are <b>stateless</b>, so Proxy can scale out and each instance vets independently.</div>
 </div>
 
 <p>Together these four gates are the Proxy's full "doorkeeper" duty. Because they sit <strong>before business logic</strong>, an illegal, unauthorized, or over-quota request is stopped
@@ -3262,9 +3262,9 @@ This is a "rather slow a few requests than crash the whole cluster" trade-off �
 
 <table class="t">
   <tr><th>Gate</th><th>Question</th><th>Impl file</th><th>If it fails</th></tr>
+  <tr><td><strong>DB routing</strong></td><td>which database</td><td class="mono">database_interceptor.go</td><td>db not found</td></tr>
   <tr><td><strong>Auth</strong></td><td>who are you</td><td class="mono">authentication_interceptor.go</td><td>reject connection</td></tr>
   <tr><td><strong>Privilege</strong></td><td>may you do this</td><td class="mono">privilege_interceptor.go</td><td>permission error</td></tr>
-  <tr><td><strong>DB routing</strong></td><td>which database</td><td class="mono">database_interceptor.go</td><td>db not found</td></tr>
   <tr><td><strong>Rate limit</strong></td><td>over quota</td><td class="mono">rate_limit_interceptor.go</td><td>throttle / reject</td></tr>
 </table>
 
@@ -3329,7 +3329,7 @@ ordering on RootCoord's TSO, fan-out and reduce on the shard distribution QueryC
 
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>receive</h4><p>gRPC/REST hits a Proxy milvuspb method, e.g. <span class="mono">Search</span>.</p></div></div>
-  <div class="step"><div class="num">2</div><div class="sc"><h4>four gates</h4><p>auth → privilege → db routing → rate limit, interceptors vet in turn.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>four gates</h4><p>db routing → auth → privilege → rate limit, interceptors vet in turn.</p></div></div>
   <div class="step"><div class="num">3</div><div class="sc"><h4>wrap as task, pick queue</h4><p>route into ddQueue / dmQueue / dqQueue by kind.</p></div></div>
   <div class="step"><div class="num">4</div><div class="sc"><h4>assign timestamp</h4><p class="mono">tsoAllocator</p><p>ask the coordinator for a global timestamp/ID, fixing this op's order.</p></div></div>
   <div class="step"><div class="num">5</div><div class="sc"><h4>execute: fan out</h4><p>DML writes into WAL/MQ; DQL sends the query to the QueryNodes serving each shard.</p></div></div>
@@ -3368,7 +3368,7 @@ ordering on RootCoord's TSO, fan-out and reduce on the shard distribution QueryC
     <line x1="350" y1="264" x2="430" y2="234" style="stroke:var(--blue);stroke-width:1.5"/>
     <rect x="432" y="200" width="150" height="56" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="507" y="224" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">reduce</text><text x="507" y="244" text-anchor="middle" style="fill:var(--muted)">local topK → global</text>
     <line x1="582" y1="228" x2="616" y2="228" style="stroke:var(--accent);stroke-width:2"/><path d="M616,228 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
-    <text x="620" y="222" style="fill:var(--blue);font-weight:700">read</text><text x="620" y="240" style="fill:var(--muted)">concurrency+latency</text>
+    <text x="620" y="216" style="fill:var(--blue);font-weight:700">read</text><text x="620" y="234" style="fill:var(--muted)">concurrency</text><text x="620" y="250" style="fill:var(--muted)">+ latency</text>
   </svg>
   <div class="figcap"><b>One Proxy, two paths</b>: a <b>write</b> lands on the <span class="mono">WAL</span> <b>in order, durably</b> (returns on success; flush happens in the background); a <b>read</b> <b>fans out</b> to shard QueryNodes for local topKs, then <b>reduces</b> them into a global topK — <b>the slowest shard sets the latency</b>.</div>
 </div>
@@ -3402,7 +3402,7 @@ The next three lessons walk into these three coordinators one by one, and you'll
 
 <div class="card macro">
   <div class="tag">🌍 The big picture</div>
-  In one line: <strong>the Proxy is the single entry (milvuspb service) → it passes four gates auth/privilege/db/rate-limit → wraps tasks into ddQueue/dmQueue/dqQueue → asks the coordinator for a timestamp → writes fan into the WAL, queries fan out to nodes → results are reduced into one answer and returned</strong>.
+  In one line: <strong>the Proxy is the single entry (milvuspb service) → it passes four gates db/auth/privilege/rate-limit → wraps tasks into ddQueue/dmQueue/dqQueue → asks the coordinator for a timestamp → writes fan into the WAL, queries fan out to nodes → results are reduced into one answer and returned</strong>.
   It is stateless, so it scales horizontally behind a load balancer. Hold this pipeline in mind and every coordinator ahead is one link behind it.
 </div>
 
@@ -3410,7 +3410,7 @@ The next three lessons walk into these three coordinators one by one, and you'll
   <div class="tag">📌 Key points</div>
   <ul>
     <li><strong>Single entry</strong>: the Proxy implements the public <span class="mono">milvuspb</span> MilvusService (gRPC/REST), encapsulating all backend topology behind it.</li>
-    <li><strong>Four gates</strong>: auth / privilege / db routing / rate limit, each an independent interceptor sitting before business logic.</li>
+    <li><strong>Four gates</strong>: db routing / auth / privilege / rate limit, each an independent interceptor sitting before business logic.</li>
     <li><strong>Three queues</strong>: <span class="mono">ddQueue</span>(DDL), <span class="mono">dmQueue</span>(DML), <span class="mono">dqQueue</span>(DQL), physically isolated by ordering and concurrency profile (plus a <span class="mono">dcQueue</span> for flush). See <span class="mono">task_scheduler.go</span>.</li>
     <li><strong>Timestamps</strong>: each write/read task asks the coordinator's TSO for a global timestamp to fix its order (detailed in Lesson 11).</li>
     <li><strong>Two paths</strong>: DML fans into the WAL/MQ (durability); DQL fans out to QueryNodes then <strong>reduces</strong> (concurrency/latency; reduce deep-dived in Lesson 29).</li>
@@ -3563,7 +3563,7 @@ and you'll see the same pattern again when we cover segment allocation and ID al
     <text x="646" y="100" text-anchor="middle" style="fill:var(--blue);font-weight:700">etcd · high-water</text>
     <text x="646" y="122" text-anchor="middle" class="mono" style="fill:var(--muted)">high-water=200</text>
     <line x1="480" y1="104" x2="558" y2="104" style="stroke:var(--blue);stroke-width:1.5;stroke-dasharray:5 4"/><path d="M558,104 l-11,-5 l0,10 z" style="fill:var(--blue)"/>
-    <text x="486" y="96" style="fill:var(--muted)">persist periodically</text>
+    <text x="486" y="96" style="fill:var(--muted)">periodic</text>
     <text x="40" y="226" style="fill:var(--muted)">issued timestamps (only increase):</text>
     <rect x="288" y="208" width="54" height="30" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="315" y="228" text-anchor="middle" class="mono" style="fill:var(--muted)">100</text>
     <rect x="348" y="208" width="54" height="30" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="375" y="228" text-anchor="middle" class="mono" style="fill:var(--muted)">101</text>
@@ -3755,10 +3755,10 @@ Understand this transition and you understand the whole process of data "going f
     <text x="273" y="72" text-anchor="middle" style="fill:var(--muted)">flush</text>
     <text x="407" y="72" text-anchor="middle" style="fill:var(--muted)">to object store</text>
     <text x="541" y="72" text-anchor="middle" style="fill:var(--muted)">compaction</text>
-    <rect x="20" y="80" width="104" height="64" rx="10" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="72" y="106" text-anchor="middle" style="fill:var(--blue);font-weight:700">Growing</text><text x="72" y="128" text-anchor="middle" style="fill:var(--muted)">memory·mutable</text>
+    <rect x="20" y="80" width="104" height="64" rx="10" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="72" y="106" text-anchor="middle" style="fill:var(--blue);font-weight:700">Growing</text><text x="72" y="128" text-anchor="middle" style="fill:var(--muted)">mutable</text>
     <rect x="154" y="80" width="104" height="64" rx="10" style="fill:var(--panel);stroke:var(--purple);stroke-width:1.5"/><text x="206" y="106" text-anchor="middle" style="fill:var(--purple);font-weight:700">Sealed</text><text x="206" y="128" text-anchor="middle" style="fill:var(--muted)">read-only</text>
     <rect x="288" y="80" width="104" height="64" rx="10" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="340" y="106" text-anchor="middle" style="fill:var(--amber);font-weight:700">Flushing</text><text x="340" y="128" text-anchor="middle" style="fill:var(--muted)">writing binlog</text>
-    <rect x="422" y="80" width="104" height="64" rx="10" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:2"/><text x="474" y="106" text-anchor="middle" style="fill:var(--teal);font-weight:700">★ Flushed</text><text x="474" y="128" text-anchor="middle" style="fill:var(--muted)">immutable·durable</text>
+    <rect x="422" y="80" width="104" height="64" rx="10" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:2"/><text x="474" y="106" text-anchor="middle" style="fill:var(--teal);font-weight:700">★ Flushed</text><text x="474" y="128" text-anchor="middle" style="fill:var(--muted)">immutable</text>
     <rect x="556" y="80" width="104" height="64" rx="10" style="fill:var(--panel-2);stroke:var(--line)"/><text x="608" y="106" text-anchor="middle" style="fill:var(--muted);font-weight:700">Dropped</text><text x="608" y="128" text-anchor="middle" style="fill:var(--faint)">awaiting GC</text>
     <line x1="124" y1="112" x2="152" y2="112" style="stroke:var(--line);stroke-width:2"/><path d="M152,112 l-10,-5 l0,10 z" style="fill:var(--line)"/>
     <line x1="258" y1="112" x2="286" y2="112" style="stroke:var(--line);stroke-width:2"/><path d="M286,112 l-10,-5 l0,10 z" style="fill:var(--line)"/>
@@ -5078,7 +5078,7 @@ That is also why this part (the write path) centers on the WAL and the Streaming
     <line x1="314" y1="156" x2="476" y2="156" style="stroke:var(--teal);stroke-width:3"/><path d="M476,156 l-12,-5 l0,10 z" style="fill:var(--teal)"/>
     <text x="394" y="147" text-anchor="middle" style="fill:var(--teal);font-weight:700">flush · SyncTask</text>
     <line x1="443" y1="84" x2="443" y2="252" style="stroke:var(--line);stroke-width:1.5;stroke-dasharray:4 5"/>
-    <rect x="490" y="98" width="210" height="36" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="595" y="121" text-anchor="middle" class="mono" style="fill:var(--ink)">insert binlog (columnar)</text>
+    <rect x="490" y="98" width="210" height="36" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="595" y="121" text-anchor="middle" class="mono" style="fill:var(--ink)">insert binlog</text>
     <rect x="490" y="140" width="210" height="36" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="595" y="163" text-anchor="middle" class="mono" style="fill:var(--ink)">stats binlog</text>
     <rect x="490" y="182" width="210" height="36" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="595" y="205" text-anchor="middle" class="mono" style="fill:var(--ink)">delta binlog</text>
     <text x="595" y="242" text-anchor="middle" style="fill:var(--muted)">write back metadata + advance checkpoint</text>
@@ -6387,9 +6387,9 @@ The version manager's "<strong>take the minimal compatible version</strong>" pol
     <line x1="544" y1="98" x2="586" y2="66" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,66 l-11,1 l4,8 z" style="fill:var(--teal)"/>
     <line x1="544" y1="105" x2="586" y2="109" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,109 l-11,-2 l1,8 z" style="fill:var(--teal)"/>
     <line x1="544" y1="112" x2="586" y2="152" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,152 l-10,-4 l-1,9 z" style="fill:var(--teal)"/>
-    <rect x="588" y="48" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="72" text-anchor="middle" style="fill:var(--ink)">QueryNode supports v3 ✓</text>
-    <rect x="588" y="92" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="116" text-anchor="middle" style="fill:var(--ink)">QueryNode supports v3 ✓</text>
-    <rect x="588" y="136" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="664" y="160" text-anchor="middle" style="fill:var(--ink)">QueryNode supports v2 ✓</text>
+    <rect x="588" y="48" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="72" text-anchor="middle" style="fill:var(--ink)">QueryNode v3 ✓</text>
+    <rect x="588" y="92" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="116" text-anchor="middle" style="fill:var(--ink)">QueryNode v3 ✓</text>
+    <rect x="588" y="136" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="664" y="160" text-anchor="middle" style="fill:var(--ink)">QueryNode v2 ✓</text>
     <text x="385" y="212" text-anchor="middle" style="fill:var(--red);font-weight:700">✗ if built at v3 → the node that only supports v2 fails to load</text>
     <text x="385" y="244" text-anchor="middle" style="fill:var(--muted)">∴ build version = the minimum of nodes' versions = the highest format all can load</text>
   </svg>
@@ -6578,7 +6578,7 @@ In other words, you can have Milvus do full-text search <strong>directly on text
     <rect x="222" y="182" width="24" height="26" rx="4" style="fill:var(--panel-2);stroke:var(--line)"/><text x="234" y="200" text-anchor="middle" class="mono" style="fill:var(--faint)">0</text>
     <line x1="258" y1="125" x2="354" y2="125" style="stroke:var(--accent);stroke-width:2;stroke-dasharray:5 4"/><path d="M354,125 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
     <text x="306" y="115" text-anchor="middle" style="fill:var(--accent-ink)">push down</text>
-    <rect x="356" y="100" width="210" height="66" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="461" y="128" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">vector ANN (HNSW/IVF)</text><text x="461" y="150" text-anchor="middle" style="fill:var(--muted)">search nearest only among "pass" rows</text>
+    <rect x="356" y="100" width="210" height="66" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="461" y="128" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">vector ANN (HNSW/IVF)</text><text x="461" y="150" text-anchor="middle" style="fill:var(--muted)">only among "pass" rows</text>
     <line x1="566" y1="133" x2="600" y2="133" style="stroke:var(--teal);stroke-width:2"/><path d="M600,133 l-11,-5 l0,10 z" style="fill:var(--teal)"/>
     <rect x="602" y="108" width="150" height="52" rx="10" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="677" y="130" text-anchor="middle" style="fill:var(--teal);font-weight:700">top10</text><text x="677" y="150" text-anchor="middle" style="fill:var(--muted)">qualified + nearest</text>
     <text x="380" y="246" text-anchor="middle" style="fill:var(--muted)"><tspan style="fill:var(--teal);font-weight:700">filter-then-search (pushdown) → stable recall ✓</tspan> | search-then-filter → may filter the whole topK away ✗</text>
@@ -6742,7 +6742,7 @@ This part is the <strong>mirror</strong> of the write path, and it descends all 
 
 <div class="fig">
   <svg viewBox="0 0 760 300" role="img" aria-label="A search round-trip: the SDK sends a request, the Proxy's searchTask parses and builds a plan and timestamp, scatters to the shards, then reduces, and the result returns to the SDK">
-    <rect x="22" y="116" width="92" height="60" rx="10" style="fill:var(--panel);stroke:var(--line)"/><text x="68" y="142" text-anchor="middle" style="fill:var(--ink);font-weight:700">SDK</text><text x="68" y="162" text-anchor="middle" style="fill:var(--muted)">vec+topK+expr</text>
+    <rect x="22" y="116" width="92" height="60" rx="10" style="fill:var(--panel);stroke:var(--line)"/><text x="68" y="138" text-anchor="middle" style="fill:var(--ink);font-weight:700">SDK</text><text x="68" y="155" text-anchor="middle" style="fill:var(--muted)">vec·topK</text><text x="68" y="169" text-anchor="middle" style="fill:var(--muted)">+ filter</text>
     <rect x="146" y="74" width="234" height="142" rx="11" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
     <text x="263" y="96" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">Proxy · searchTask</text>
     <rect x="160" y="106" width="206" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="263" y="126" text-anchor="middle" style="fill:var(--ink)">① PreExecute · plan + ts</text>
@@ -6960,11 +6960,11 @@ If Lesson 25's Proxy is "<strong>the courier that brings the request to the door
     <rect x="230" y="46" width="300" height="92" rx="11" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
     <text x="380" y="70" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">delegator · shard leader (sole entry)</text>
     <text x="380" y="90" text-anchor="middle" style="fill:var(--muted)">scatter · reduce · maintain tsafe</text>
-    <rect x="252" y="102" width="256" height="28" rx="6" style="fill:var(--panel);stroke:var(--blue)"/><text x="380" y="121" text-anchor="middle" style="fill:var(--blue)">growing segment (local · brute · newest)</text>
+    <rect x="252" y="102" width="256" height="28" rx="6" style="fill:var(--panel);stroke:var(--blue)"/><text x="380" y="121" text-anchor="middle" style="fill:var(--blue)">growing seg (local·brute·newest)</text>
     <text x="380" y="172" text-anchor="middle" style="fill:var(--muted)">scatter ↓　partials ↑</text>
-    <rect x="60" y="204" width="200" height="68" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="160" y="232" text-anchor="middle" style="fill:var(--teal);font-weight:700">worker QueryNode</text><text x="160" y="254" text-anchor="middle" style="fill:var(--muted)">sealed segs · segcore search</text>
-    <rect x="280" y="204" width="200" height="68" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="380" y="232" text-anchor="middle" style="fill:var(--teal);font-weight:700">worker QueryNode</text><text x="380" y="254" text-anchor="middle" style="fill:var(--muted)">sealed segs · segcore search</text>
-    <rect x="500" y="204" width="200" height="68" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="600" y="232" text-anchor="middle" style="fill:var(--teal);font-weight:700">worker QueryNode</text><text x="600" y="254" text-anchor="middle" style="fill:var(--muted)">sealed segs · segcore search</text>
+    <rect x="60" y="204" width="200" height="68" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="160" y="232" text-anchor="middle" style="fill:var(--teal);font-weight:700">worker QueryNode</text><text x="160" y="254" text-anchor="middle" style="fill:var(--muted)">sealed · segcore search</text>
+    <rect x="280" y="204" width="200" height="68" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="380" y="232" text-anchor="middle" style="fill:var(--teal);font-weight:700">worker QueryNode</text><text x="380" y="254" text-anchor="middle" style="fill:var(--muted)">sealed · segcore search</text>
+    <rect x="500" y="204" width="200" height="68" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="600" y="232" text-anchor="middle" style="fill:var(--teal);font-weight:700">worker QueryNode</text><text x="600" y="254" text-anchor="middle" style="fill:var(--muted)">sealed · segcore search</text>
     <line x1="320" y1="138" x2="180" y2="202" style="stroke:var(--accent);stroke-width:1.5"/><path d="M180,202 l3,-11 l7,7 z" style="fill:var(--accent)"/>
     <line x1="380" y1="138" x2="380" y2="202" style="stroke:var(--accent);stroke-width:1.5"/><path d="M380,202 l-5,-10 l10,0 z" style="fill:var(--accent)"/>
     <line x1="440" y1="138" x2="580" y2="202" style="stroke:var(--accent);stroke-width:1.5"/><path d="M580,202 l-10,-4 l0,10 z" style="fill:var(--accent)"/>
@@ -7127,7 +7127,7 @@ This is the <strong>deepest layer</strong> of the whole query path and the <stro
 <div class="fig">
   <svg viewBox="0 0 760 300" role="img" aria-label="segcore abstracts a segment with one SegmentInterface and two implementations: sealed goes through the index, growing brute-forces; it filters by the delete bitmap and timestamp before returning the in-segment topK">
     <text x="380" y="32" text-anchor="middle" style="fill:var(--muted)">the upper layer calls the same Search(segment, plan) on every segment</text>
-    <rect x="248" y="42" width="264" height="44" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="380" y="69" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">SegmentInterface · Search (one contract)</text>
+    <rect x="212" y="42" width="336" height="44" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="380" y="69" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">SegmentInterface · Search (one contract)</text>
     <text x="380" y="108" text-anchor="middle" style="fill:var(--muted)">polymorphic by segment type ↓</text>
     <rect x="56" y="118" width="310" height="64" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="211" y="144" text-anchor="middle" style="fill:var(--teal);font-weight:700">SegmentSealed → via index</text><text x="211" y="166" text-anchor="middle" style="fill:var(--muted)">Knowhere HNSW/IVF · skip most (fast)</text>
     <rect x="394" y="118" width="310" height="64" rx="10" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="549" y="144" text-anchor="middle" style="fill:var(--amber);font-weight:700">SegmentGrowing → brute force</text><text x="549" y="166" text-anchor="middle" style="fill:var(--muted)">scan every vector · small, freshest</text>
@@ -7135,7 +7135,7 @@ This is the <strong>deepest layer</strong> of the whole query path and the <stro
     <line x1="442" y1="86" x2="534" y2="116" style="stroke:var(--accent);stroke-width:1.5"/><path d="M534,116 l-9,-7 l-1,11 z" style="fill:var(--accent)"/>
     <line x1="211" y1="182" x2="330" y2="210" style="stroke:var(--line);stroke-width:1.5"/><path d="M330,210 l-11,-1 l3,9 z" style="fill:var(--line)"/>
     <line x1="549" y1="182" x2="430" y2="210" style="stroke:var(--line);stroke-width:1.5"/><path d="M430,210 l-3,-11 l9,3 z" style="fill:var(--line)"/>
-    <rect x="196" y="212" width="368" height="60" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="380" y="238" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">in-segment topK (filtered)</text><text x="380" y="260" text-anchor="middle" style="fill:var(--muted)">drop deleted rows + only ts ≤ guarantee (MVCC lands here)</text>
+    <rect x="158" y="212" width="444" height="60" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="380" y="238" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">in-segment topK (filtered)</text><text x="380" y="260" text-anchor="middle" style="fill:var(--muted)">drop deleted rows + only ts ≤ guarantee (MVCC lands here)</text>
   </svg>
   <div class="figcap"><b>One interface, two implementations (polymorphism)</b>: segcore abstracts "a segment" with one <span class="mono">SegmentInterface</span> — upper layers just call the same <span class="mono">Search</span>, and it picks the <b>fast path (sealed via index, skip most)</b> or <b>slow path (growing brute force, freshest)</b> by type. It also lands <b>MVCC</b> in-segment: a <b>delete bitmap</b> drops deleted rows and the <b>guarantee ts</b> admits only that version — so you never find a just-deleted or too-new row.</div>
 </div>
@@ -9588,7 +9588,7 @@ Lesson 8 told you what Milvus <strong>depends on</strong> (etcd, object storage,
     <text x="626" y="64" text-anchor="middle" style="fill:var(--ink);font-weight:700">Cluster payoff: scale on demand</text>
     <rect x="514" y="74" width="226" height="46" rx="9" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:1.5"/><text x="528" y="94" style="fill:var(--teal);font-weight:700">QueryNode ×5</text><text x="528" y="112" style="fill:var(--muted)">read-heavy → add here</text>
     <rect x="514" y="126" width="226" height="46" rx="9" style="fill:var(--blue-soft);stroke:var(--blue);stroke-width:1.5"/><text x="528" y="146" style="fill:var(--blue);font-weight:700">DataNode / streaming ×3</text><text x="528" y="164" style="fill:var(--muted)">write-heavy → add here</text>
-    <rect x="514" y="178" width="226" height="46" rx="9" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="528" y="198" style="fill:var(--amber);font-weight:700">object storage · scale</text><text x="528" y="216" style="fill:var(--muted)">compute-decoupled → +capacity</text>
+    <rect x="514" y="178" width="226" height="46" rx="9" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="528" y="198" style="fill:var(--amber);font-weight:700">object storage · scale</text><text x="528" y="216" style="fill:var(--muted)">decoupled → +capacity</text>
     <text x="255" y="262" text-anchor="middle" style="fill:var(--muted)">climb rung by rung: easy to start, production-grade when serious</text>
     <text x="255" y="282" text-anchor="middle" style="fill:var(--muted)">real payoff = add machines only to the bottlenecked part</text>
   </svg>
@@ -9971,8 +9971,8 @@ You can build and test; one gate remains before "<strong>your code can be merged
   <svg viewBox="0 0 760 300" role="img" aria-label="The blame test decides whether to retry: ask 'did the request content itself force this branch'; if yes it's an Input error (blame the request, no retry, return for the user to fix); if no it's a System error (system or transient, stays retriable, retry.Do auto-retries)">
     <text x="380" y="26" text-anchor="middle" style="fill:var(--ink);font-weight:700">blame test: did "the request content itself" force this branch?</text>
     <path d="M380,40 L470,70 L380,100 L290,70 Z" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="380" y="75" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">whose fault?</text>
-    <line x1="300" y1="84" x2="196" y2="126" style="stroke:var(--amber);stroke-width:2"/><path d="M196,126 l3,-11 l8,6 z" style="fill:var(--amber)"/><text x="210" y="106" text-anchor="middle" style="fill:var(--amber);font-weight:700">yes · request</text>
-    <line x1="460" y1="84" x2="564" y2="126" style="stroke:var(--teal);stroke-width:2"/><path d="M564,126 l-11,-3 l5,-9 z" style="fill:var(--teal)"/><text x="550" y="106" text-anchor="middle" style="fill:var(--teal);font-weight:700">no · system/transient</text>
+    <line x1="300" y1="84" x2="196" y2="126" style="stroke:var(--amber);stroke-width:2"/><path d="M196,126 l3,-11 l8,6 z" style="fill:var(--amber)"/><text x="250" y="92" text-anchor="middle" style="fill:var(--amber);font-weight:700">yes</text>
+    <line x1="460" y1="84" x2="564" y2="126" style="stroke:var(--teal);stroke-width:2"/><path d="M564,126 l-11,-3 l5,-9 z" style="fill:var(--teal)"/><text x="510" y="92" text-anchor="middle" style="fill:var(--teal);font-weight:700">no</text>
     <rect x="40" y="128" width="300" height="52" rx="9" style="fill:var(--amber-soft);stroke:var(--amber);stroke-width:1.5"/><text x="190" y="150" text-anchor="middle" style="fill:var(--amber);font-weight:700">Input error (blame request)</text><text x="190" y="169" text-anchor="middle" style="fill:var(--muted)">e.g. missing collection, bad params</text>
     <line x1="190" y1="180" x2="190" y2="200" style="stroke:var(--amber);stroke-width:2"/><path d="M190,200 l-4,-10 l8,0 z" style="fill:var(--amber)"/>
     <rect x="56" y="202" width="268" height="40" rx="8" style="fill:var(--panel);stroke:var(--amber)"/><text x="190" y="227" text-anchor="middle" style="fill:var(--amber);font-weight:700">✗ no retry · user must fix</text>
@@ -10623,7 +10623,7 @@ Every system has a <strong>capacity ceiling</strong>. If writes outrun flushing,
 <p>Second, <strong>force-deny</strong>: when a metric <strong>breaches</strong> a hard limit (memory/disk water level too high, or TT lag dangerously large), QuotaCenter calls <span class="mono">forceDenyWriting</span> (drive DML rate straight to <strong>0</strong>, reject all writes) or <span class="mono">forceDenyReading</span> (DQL to 0, reject all reads). An emergency brake — <strong>a whole operation class is temporarily held at the door</strong> until the water level recedes to safety. Why such a "harsh" level? Because at the hard limit, <strong>admitting more means an OOM/disk-full crash</strong>; rather than total wipeout, <strong>decisively reject new requests to save the existing ones</strong>. Notably, <strong>writes and reads are managed separately</strong>: under memory/disk pressure, writes (the big resource hog) are often denied first, while reads may still go. The two brakes side by side:</p>
 
 <div class="fig">
-  <svg viewBox="0 0 760 300" role="img" aria-label="Two brakes: as memory/disk usage and TT delay climb, first the throttle band kicks in (near the ~80% watermark, gradually lowering the rate so requests queue and slow), then hitting the hard limit triggers force-deny (forceDenyWriting/Reading, rate to zero, the whole class rejected)">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Two brakes: as memory/disk usage and TT delay climb, first the throttle band kicks in (near the ~85% watermark, gradually lowering the rate so requests queue and slow), then hitting the hard limit triggers force-deny (forceDenyWriting/Reading, rate to zero, the whole class rejected)">
     <text x="60" y="44" style="fill:var(--muted)">memory / disk usage, TT delay　→　tighter as it climbs</text>
     <rect x="60" y="56" width="400" height="30" rx="6" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="260" y="76" text-anchor="middle" style="fill:var(--teal);font-weight:700">normal · full speed</text>
     <rect x="460" y="56" width="140" height="30" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="530" y="76" text-anchor="middle" style="fill:var(--amber);font-weight:700">throttle</text>

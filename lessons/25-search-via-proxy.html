@@ -412,7 +412,7 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 
 <div class="fig">
   <svg viewBox="0 0 760 300" role="img" aria-label="一次 search 的往返：SDK 发请求，Proxy 的 searchTask 解析建计划定时间戳、扇出到各分片、再归并，结果返回 SDK">
-    <rect x="22" y="116" width="92" height="60" rx="10" style="fill:var(--panel);stroke:var(--line)"/><text x="68" y="142" text-anchor="middle" style="fill:var(--ink);font-weight:700">SDK</text><text x="68" y="162" text-anchor="middle" style="fill:var(--muted)">向量+topK+expr</text>
+    <rect x="22" y="116" width="92" height="60" rx="10" style="fill:var(--panel);stroke:var(--line)"/><text x="68" y="138" text-anchor="middle" style="fill:var(--ink);font-weight:700">SDK</text><text x="68" y="155" text-anchor="middle" style="fill:var(--muted)">向量·topK</text><text x="68" y="169" text-anchor="middle" style="fill:var(--muted)">+ 过滤式</text>
     <rect x="146" y="74" width="234" height="142" rx="11" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
     <text x="263" y="96" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">Proxy · searchTask</text>
     <rect x="160" y="106" width="206" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="263" y="126" text-anchor="middle" style="fill:var(--ink)">① PreExecute · plan + ts</text>
@@ -616,7 +616,7 @@ This part is the <strong>mirror</strong> of the write path, and it descends all 
 
 <div class="fig">
   <svg viewBox="0 0 760 300" role="img" aria-label="A search round-trip: the SDK sends a request, the Proxy's searchTask parses and builds a plan and timestamp, scatters to the shards, then reduces, and the result returns to the SDK">
-    <rect x="22" y="116" width="92" height="60" rx="10" style="fill:var(--panel);stroke:var(--line)"/><text x="68" y="142" text-anchor="middle" style="fill:var(--ink);font-weight:700">SDK</text><text x="68" y="162" text-anchor="middle" style="fill:var(--muted)">vec+topK+expr</text>
+    <rect x="22" y="116" width="92" height="60" rx="10" style="fill:var(--panel);stroke:var(--line)"/><text x="68" y="138" text-anchor="middle" style="fill:var(--ink);font-weight:700">SDK</text><text x="68" y="155" text-anchor="middle" style="fill:var(--muted)">vec·topK</text><text x="68" y="169" text-anchor="middle" style="fill:var(--muted)">+ filter</text>
     <rect x="146" y="74" width="234" height="142" rx="11" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
     <text x="263" y="96" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">Proxy · searchTask</text>
     <rect x="160" y="106" width="206" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="263" y="126" text-anchor="middle" style="fill:var(--ink)">① PreExecute · plan + ts</text>

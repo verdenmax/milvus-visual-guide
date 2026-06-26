@@ -765,9 +765,9 @@ Milvus 允许按字段、按场景<strong>精细配置</strong>哪些数据走 m
     <line x1="544" y1="98" x2="586" y2="66" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,66 l-11,1 l4,8 z" style="fill:var(--teal)"/>
     <line x1="544" y1="105" x2="586" y2="109" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,109 l-11,-2 l1,8 z" style="fill:var(--teal)"/>
     <line x1="544" y1="112" x2="586" y2="152" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,152 l-10,-4 l-1,9 z" style="fill:var(--teal)"/>
-    <rect x="588" y="48" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="72" text-anchor="middle" style="fill:var(--ink)">QueryNode 支持 v3 ✓</text>
-    <rect x="588" y="92" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="116" text-anchor="middle" style="fill:var(--ink)">QueryNode 支持 v3 ✓</text>
-    <rect x="588" y="136" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="664" y="160" text-anchor="middle" style="fill:var(--ink)">QueryNode 支持 v2 ✓</text>
+    <rect x="588" y="48" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="72" text-anchor="middle" style="fill:var(--ink)">QueryNode v3 ✓</text>
+    <rect x="588" y="92" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="116" text-anchor="middle" style="fill:var(--ink)">QueryNode v3 ✓</text>
+    <rect x="588" y="136" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="664" y="160" text-anchor="middle" style="fill:var(--ink)">QueryNode v2 ✓</text>
     <text x="385" y="212" text-anchor="middle" style="fill:var(--red);font-weight:700">✗ 若按 v3 建 → 只支持 v2 的老节点加载失败</text>
     <text x="385" y="244" text-anchor="middle" style="fill:var(--muted)">∴ 建索引版本 = 各节点支持版本的最小值 = 所有节点都能加载的最高格式</text>
   </svg>
@@ -909,9 +909,9 @@ The version manager's "<strong>take the minimal compatible version</strong>" pol
     <line x1="544" y1="98" x2="586" y2="66" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,66 l-11,1 l4,8 z" style="fill:var(--teal)"/>
     <line x1="544" y1="105" x2="586" y2="109" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,109 l-11,-2 l1,8 z" style="fill:var(--teal)"/>
     <line x1="544" y1="112" x2="586" y2="152" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,152 l-10,-4 l-1,9 z" style="fill:var(--teal)"/>
-    <rect x="588" y="48" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="72" text-anchor="middle" style="fill:var(--ink)">QueryNode supports v3 ✓</text>
-    <rect x="588" y="92" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="116" text-anchor="middle" style="fill:var(--ink)">QueryNode supports v3 ✓</text>
-    <rect x="588" y="136" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="664" y="160" text-anchor="middle" style="fill:var(--ink)">QueryNode supports v2 ✓</text>
+    <rect x="588" y="48" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="72" text-anchor="middle" style="fill:var(--ink)">QueryNode v3 ✓</text>
+    <rect x="588" y="92" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="116" text-anchor="middle" style="fill:var(--ink)">QueryNode v3 ✓</text>
+    <rect x="588" y="136" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="664" y="160" text-anchor="middle" style="fill:var(--ink)">QueryNode v2 ✓</text>
     <text x="385" y="212" text-anchor="middle" style="fill:var(--red);font-weight:700">✗ if built at v3 → the node that only supports v2 fails to load</text>
     <text x="385" y="244" text-anchor="middle" style="fill:var(--muted)">∴ build version = the minimum of nodes' versions = the highest format all can load</text>
   </svg>
@@ -1186,7 +1186,7 @@ In other words, you can have Milvus do full-text search <strong>directly on text
     <rect x="222" y="182" width="24" height="26" rx="4" style="fill:var(--panel-2);stroke:var(--line)"/><text x="234" y="200" text-anchor="middle" class="mono" style="fill:var(--faint)">0</text>
     <line x1="258" y1="125" x2="354" y2="125" style="stroke:var(--accent);stroke-width:2;stroke-dasharray:5 4"/><path d="M354,125 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
     <text x="306" y="115" text-anchor="middle" style="fill:var(--accent-ink)">push down</text>
-    <rect x="356" y="100" width="210" height="66" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="461" y="128" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">vector ANN (HNSW/IVF)</text><text x="461" y="150" text-anchor="middle" style="fill:var(--muted)">search nearest only among "pass" rows</text>
+    <rect x="356" y="100" width="210" height="66" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="461" y="128" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">vector ANN (HNSW/IVF)</text><text x="461" y="150" text-anchor="middle" style="fill:var(--muted)">only among "pass" rows</text>
     <line x1="566" y1="133" x2="600" y2="133" style="stroke:var(--teal);stroke-width:2"/><path d="M600,133 l-11,-5 l0,10 z" style="fill:var(--teal)"/>
     <rect x="602" y="108" width="150" height="52" rx="10" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="677" y="130" text-anchor="middle" style="fill:var(--teal);font-weight:700">top10</text><text x="677" y="150" text-anchor="middle" style="fill:var(--muted)">qualified + nearest</text>
     <text x="380" y="246" text-anchor="middle" style="fill:var(--muted)"><tspan style="fill:var(--teal);font-weight:700">filter-then-search (pushdown) → stable recall ✓</tspan> | search-then-filter → may filter the whole topK away ✗</text>

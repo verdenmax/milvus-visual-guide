@@ -416,7 +416,7 @@ they snap the swirl of details back onto the "decide vs execute" through-line.</
     <line x1="220" y1="251" x2="536" y2="251" style="stroke:var(--teal);stroke-width:4"/><path d="M536,251 l-12,-6 l0,12 z" style="fill:var(--teal)"/>
     <text x="474" y="206" style="fill:var(--teal)">user data: search / insert bytes</text>
     <line x1="395" y1="112" x2="395" y2="178" style="stroke:var(--accent);stroke-width:2;stroke-dasharray:5 4"/><path d="M395,178 l-5,-11 l10,0 z" style="fill:var(--accent)"/>
-    <text x="406" y="152" style="fill:var(--accent-ink);font-weight:700">decide · schedule (low freq)</text>
+    <text x="440" y="152" style="fill:var(--accent-ink);font-weight:700">decide · schedule (low freq)</text>
     <line x1="150" y1="206" x2="150" y2="156" style="stroke:var(--red);stroke-width:3"/><path d="M150,156 l-6,11 l12,0 z" style="fill:var(--red)"/>
     <path d="M132,150 l24,18 M156,150 l-24,18" style="stroke:var(--red);stroke-width:3"/>
     <text x="168" y="150" style="fill:var(--red);font-weight:700">throughput ✗ never hits control</text>
@@ -484,34 +484,34 @@ Proxy 把这些复杂度<strong>全部封装</strong>在身后。于是后端怎
   <div class="node"><div class="nt">节点</div><div class="nd">QueryNode / DataNode 干活</div></div>
 </div>
 
-<h2>四道关卡：鉴权、权限、数据库路由、限流</h2>
+<h2>四道关卡：数据库路由、鉴权、权限、限流</h2>
 <p>请求进了 Proxy，并不会立刻被执行，而要先过四道<strong>拦截器（interceptor）</strong>。这是 gRPC 的标准玩法：在真正的业务方法之前，
 串接一组中间件，逐个把关。Milvus 把它们拆成独立文件，职责清晰：</p>
 
 <ul>
+  <li><strong>数据库路由（database）</strong>：你说的是哪个 database？<span class="inline">database_interceptor.go</span> 把请求归到正确的 db 上下文——它最先跑，好让后面的权限校验拿到正确的库。</li>
   <li><strong>鉴权（authentication）</strong>：你是谁？<span class="inline">authentication_interceptor.go</span> 校验用户名/密码或 token，认不出来直接拒。</li>
   <li><strong>权限（privilege）</strong>：你能不能做这件事？<span class="inline">privilege_interceptor.go</span> 检查 RBAC 角色对这个集合/操作有没有授权。</li>
-  <li><strong>数据库路由（database）</strong>：你说的是哪个 database？<span class="inline">database_interceptor.go</span> 把请求归到正确的 db 上下文。</li>
   <li><strong>限流（rate limit）</strong>：你今天是不是太猛了？<span class="inline">rate_limit_interceptor.go</span> 按配额给写入/查询降速甚至挡回，保护后端不被打垮。</li>
 </ul>
 
 <div class="fig">
-  <svg viewBox="0 0 760 300" role="img" aria-label="一次请求依次经过鉴权、权限、数据库路由、限流四道拦截器，任一不过即被拦下；通过后才进入排队执行">
+  <svg viewBox="0 0 760 300" role="img" aria-label="一次请求依次经过数据库路由、鉴权、权限、限流四道拦截器，任一不过即被拦下；通过后才进入排队执行">
     <rect x="22" y="120" width="104" height="52" rx="9" style="fill:var(--panel-2);stroke:var(--line)"/>
     <text x="74" y="143" text-anchor="middle" style="fill:var(--ink)">客户端</text>
     <text x="74" y="161" text-anchor="middle" style="fill:var(--muted)">请求</text>
-    <rect x="146" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/>
-    <text x="192" y="118" text-anchor="middle" style="fill:var(--blue);font-weight:700">①鉴权</text>
-    <text x="192" y="146" text-anchor="middle" style="fill:var(--muted)">你是谁</text>
-    <text x="192" y="172" text-anchor="middle" style="fill:var(--faint)">token</text>
-    <rect x="278" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--purple);stroke-width:1.5"/>
-    <text x="324" y="118" text-anchor="middle" style="fill:var(--purple);font-weight:700">②权限</text>
-    <text x="324" y="146" text-anchor="middle" style="fill:var(--muted)">能不能做</text>
-    <text x="324" y="172" text-anchor="middle" style="fill:var(--faint)">RBAC</text>
-    <rect x="410" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/>
-    <text x="456" y="118" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">③数据库</text>
-    <text x="456" y="146" text-anchor="middle" style="fill:var(--muted)">哪个 db</text>
-    <text x="456" y="172" text-anchor="middle" style="fill:var(--faint)">路由</text>
+    <rect x="146" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="192" y="118" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">①数据库</text>
+    <text x="192" y="146" text-anchor="middle" style="fill:var(--muted)">哪个 db</text>
+    <text x="192" y="172" text-anchor="middle" style="fill:var(--faint)">路由</text>
+    <rect x="278" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/>
+    <text x="324" y="118" text-anchor="middle" style="fill:var(--blue);font-weight:700">②鉴权</text>
+    <text x="324" y="146" text-anchor="middle" style="fill:var(--muted)">你是谁</text>
+    <text x="324" y="172" text-anchor="middle" style="fill:var(--faint)">token</text>
+    <rect x="410" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--purple);stroke-width:1.5"/>
+    <text x="456" y="118" text-anchor="middle" style="fill:var(--purple);font-weight:700">③权限</text>
+    <text x="456" y="146" text-anchor="middle" style="fill:var(--muted)">能不能做</text>
+    <text x="456" y="172" text-anchor="middle" style="fill:var(--faint)">RBAC</text>
     <rect x="542" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/>
     <text x="588" y="118" text-anchor="middle" style="fill:var(--amber);font-weight:700">④限流</text>
     <text x="588" y="146" text-anchor="middle" style="fill:var(--muted)">太猛了？</text>
@@ -527,7 +527,7 @@ Proxy 把这些复杂度<strong>全部封装</strong>在身后。于是后端怎
     <text x="588" y="250" text-anchor="middle" style="fill:var(--red);font-weight:700">超额 → 背压 / 挡回</text>
     <text x="300" y="250" text-anchor="middle" style="fill:var(--muted)">任一关不过 → 直接拒绝（无状态，可多开）</text>
   </svg>
-  <div class="figcap"><b>四道关卡，层层把门</b>：请求先过<b>鉴权 → 权限 → 数据库路由 → 限流</b>四道拦截器，<b>挡在业务逻辑之前</b>。非法、越权、超额的请求根本到不了执行；这些判断都<b>无状态</b>，所以 Proxy 可随意多开、各自把关。</div>
+  <div class="figcap"><b>四道关卡，层层把门</b>：请求先过<b>数据库路由 → 鉴权 → 权限 → 限流</b>四道拦截器，<b>挡在业务逻辑之前</b>（数据库路由最先，好让权限校验拿到正确的库上下文）。非法、越权、超额的请求根本到不了执行；这些判断都<b>无状态</b>，所以 Proxy 可随意多开、各自把关。</div>
 </div>
 
 <p>这四关合起来，就是 Proxy 作为"门卫"的全部职责。它们<strong>挡在业务逻辑之前</strong>，意味着一个非法、越权或超额的请求，
@@ -541,9 +541,9 @@ Proxy 把这些复杂度<strong>全部封装</strong>在身后。于是后端怎
 
 <table class="t">
   <tr><th>关卡</th><th>问的问题</th><th>实现文件</th><th>不过会怎样</th></tr>
+  <tr><td><strong>数据库路由</strong></td><td>哪个 database</td><td class="mono">database_interceptor.go</td><td>找不到库</td></tr>
   <tr><td><strong>鉴权</strong></td><td>你是谁</td><td class="mono">authentication_interceptor.go</td><td>拒绝连接</td></tr>
   <tr><td><strong>权限</strong></td><td>你能不能做</td><td class="mono">privilege_interceptor.go</td><td>无权限错误</td></tr>
-  <tr><td><strong>数据库路由</strong></td><td>哪个 database</td><td class="mono">database_interceptor.go</td><td>找不到库</td></tr>
   <tr><td><strong>限流</strong></td><td>是否超额</td><td class="mono">rate_limit_interceptor.go</td><td>限速 / 拒绝</td></tr>
 </table>
 
@@ -608,7 +608,7 @@ Proxy 把这些复杂度<strong>全部封装</strong>在身后。于是后端怎
 
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>接收请求</h4><p>gRPC/REST 打到 Proxy 的 milvuspb 方法，如 <span class="mono">Search</span>。</p></div></div>
-  <div class="step"><div class="num">2</div><div class="sc"><h4>四道关卡</h4><p>鉴权 → 权限 → 数据库路由 → 限流，拦截器逐个把关。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>四道关卡</h4><p>数据库路由 → 鉴权 → 权限 → 限流，拦截器逐个把关。</p></div></div>
   <div class="step"><div class="num">3</div><div class="sc"><h4>包装成任务、选队列</h4><p>按类型进 ddQueue / dmQueue / dqQueue。</p></div></div>
   <div class="step"><div class="num">4</div><div class="sc"><h4>分配时间戳</h4><p class="mono">tsoAllocator</p><p>向协调者要全局时间戳/ID，定下这条操作的时序。</p></div></div>
   <div class="step"><div class="num">5</div><div class="sc"><h4>执行：扇出</h4><p>DML 写进 WAL/MQ；DQL 把查询发给负责各分片的 QueryNode。</p></div></div>
@@ -681,7 +681,7 @@ Proxy 的做法是：在发出查询前，决定带上一个<strong>保证时间
 
 <div class="card macro">
   <div class="tag">🌍 宏观理解</div>
-  一句话串起来：<strong>Proxy 是唯一入口（milvuspb 服务）→ 先过鉴权/权限/数据库/限流四关 → 包装成任务进 ddQueue/dmQueue/dqQueue 三个队列 → 向协调者要时间戳 → 写入扇进 WAL、查询扇出到节点 → 归并成一份结果返回</strong>。
+  一句话串起来：<strong>Proxy 是唯一入口（milvuspb 服务）→ 先过数据库/鉴权/权限/限流四关 → 包装成任务进 ddQueue/dmQueue/dqQueue 三个队列 → 向协调者要时间戳 → 写入扇进 WAL、查询扇出到节点 → 归并成一份结果返回</strong>。
   它无状态，所以可以横向扩展、前挂负载均衡。把这条流水线记牢，后面每个协调者都是它身后的一环。
 </div>
 
@@ -689,7 +689,7 @@ Proxy 的做法是：在发出查询前，决定带上一个<strong>保证时间
   <div class="tag">📌 本课要点</div>
   <ul>
     <li><strong>唯一入口</strong>：Proxy 实现对外的 <span class="mono">milvuspb</span> MilvusService（gRPC/REST），把后端拓扑全部封装在身后。</li>
-    <li><strong>四道关卡</strong>：鉴权 / 权限 / 数据库路由 / 限流，由独立 interceptor 实现，挡在业务逻辑之前。</li>
+    <li><strong>四道关卡</strong>：数据库路由 / 鉴权 / 权限 / 限流，由独立 interceptor 实现，挡在业务逻辑之前。</li>
     <li><strong>三个队列</strong>：<span class="mono">ddQueue</span>(DDL)、<span class="mono">dmQueue</span>(DML)、<span class="mono">dqQueue</span>(DQL)，按排序约束与并发画像物理隔离（另有 <span class="mono">dcQueue</span> 管 flush）。见 <span class="mono">task_scheduler.go</span>。</li>
     <li><strong>时间戳</strong>：每个写/读任务入队时向协调者 TSO 要全局时间戳，定下时序（详见第 11 课）。</li>
     <li><strong>读写两路</strong>：DML 扇进 WAL/MQ 关心持久化；DQL 扇出到 QueryNode 再<strong>归并 reduce</strong>，关心并发与延迟（reduce 深入见第 29 课）。</li>
@@ -738,34 +738,34 @@ Precisely because this "translation" only reads metadata and never writes it, mu
   <div class="node"><div class="nt">nodes</div><div class="nd">QueryNode / DataNode do work</div></div>
 </div>
 
-<h2>Four gates: auth, privilege, db routing, rate-limit</h2>
+<h2>Four gates: db routing, auth, privilege, rate-limit</h2>
 <p>Once a request enters the Proxy it isn't executed right away — it must first pass a chain of <strong>interceptors</strong>. This is standard gRPC practice: before the real business method,
 a set of middlewares vet the request one by one. Milvus splits them into clear, single-purpose files:</p>
 
 <ul>
+  <li><strong>Database routing</strong>: which database do you mean? <span class="inline">database_interceptor.go</span> pins the request to the right db context — this runs first so the privilege check has the right database.</li>
   <li><strong>Authentication</strong>: who are you? <span class="inline">authentication_interceptor.go</span> checks username/password or token; unknown callers are rejected.</li>
   <li><strong>Privilege</strong>: are you allowed to do this? <span class="inline">privilege_interceptor.go</span> checks the RBAC role against this collection/operation.</li>
-  <li><strong>Database routing</strong>: which database do you mean? <span class="inline">database_interceptor.go</span> pins the request to the right db context.</li>
   <li><strong>Rate limit</strong>: are you hammering us today? <span class="inline">rate_limit_interceptor.go</span> throttles or blocks writes/queries by quota to protect the backend.</li>
 </ul>
 
 <div class="fig">
-  <svg viewBox="0 0 760 300" role="img" aria-label="A request passes four interceptors in order — auth, privilege, db routing, rate-limit; failing any one stops it; only after passing does it reach queue and execution">
+  <svg viewBox="0 0 760 300" role="img" aria-label="A request passes four interceptors in order — db routing, auth, privilege, rate-limit; failing any one stops it; only after passing does it reach queue and execution">
     <rect x="22" y="120" width="104" height="52" rx="9" style="fill:var(--panel-2);stroke:var(--line)"/>
     <text x="74" y="143" text-anchor="middle" style="fill:var(--ink)">client</text>
     <text x="74" y="161" text-anchor="middle" style="fill:var(--muted)">request</text>
-    <rect x="146" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/>
-    <text x="192" y="118" text-anchor="middle" style="fill:var(--blue);font-weight:700">① auth</text>
-    <text x="192" y="146" text-anchor="middle" style="fill:var(--muted)">who are you</text>
-    <text x="192" y="172" text-anchor="middle" style="fill:var(--faint)">token</text>
-    <rect x="278" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--purple);stroke-width:1.5"/>
-    <text x="324" y="118" text-anchor="middle" style="fill:var(--purple);font-weight:700">② privilege</text>
-    <text x="324" y="146" text-anchor="middle" style="fill:var(--muted)">allowed?</text>
-    <text x="324" y="172" text-anchor="middle" style="fill:var(--faint)">RBAC</text>
-    <rect x="410" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/>
-    <text x="456" y="118" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">③ database</text>
-    <text x="456" y="146" text-anchor="middle" style="fill:var(--muted)">which db</text>
-    <text x="456" y="172" text-anchor="middle" style="fill:var(--faint)">route</text>
+    <rect x="146" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="192" y="118" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">① database</text>
+    <text x="192" y="146" text-anchor="middle" style="fill:var(--muted)">which db</text>
+    <text x="192" y="172" text-anchor="middle" style="fill:var(--faint)">route</text>
+    <rect x="278" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/>
+    <text x="324" y="118" text-anchor="middle" style="fill:var(--blue);font-weight:700">② auth</text>
+    <text x="324" y="146" text-anchor="middle" style="fill:var(--muted)">who are you</text>
+    <text x="324" y="172" text-anchor="middle" style="fill:var(--faint)">token</text>
+    <rect x="410" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--purple);stroke-width:1.5"/>
+    <text x="456" y="118" text-anchor="middle" style="fill:var(--purple);font-weight:700">③ privilege</text>
+    <text x="456" y="146" text-anchor="middle" style="fill:var(--muted)">allowed?</text>
+    <text x="456" y="172" text-anchor="middle" style="fill:var(--faint)">RBAC</text>
     <rect x="542" y="90" width="92" height="112" rx="10" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/>
     <text x="588" y="118" text-anchor="middle" style="fill:var(--amber);font-weight:700">④ rate-limit</text>
     <text x="588" y="146" text-anchor="middle" style="fill:var(--muted)">too much?</text>
@@ -781,7 +781,7 @@ a set of middlewares vet the request one by one. Milvus splits them into clear, 
     <text x="588" y="250" text-anchor="middle" style="fill:var(--red);font-weight:700">over quota → backpressure</text>
     <text x="300" y="250" text-anchor="middle" style="fill:var(--muted)">fail any gate → rejected (stateless, scale out)</text>
   </svg>
-  <div class="figcap"><b>Four gates, layered doorkeeping</b>: a request passes <b>auth → privilege → db routing → rate-limit</b> — all <b>before business logic</b>. Illegal, unauthorized, or over-quota requests never reach execution; the checks are <b>stateless</b>, so Proxy can scale out and each instance vets independently.</div>
+  <div class="figcap"><b>Four gates, layered doorkeeping</b>: a request passes <b>db routing → auth → privilege → rate-limit</b> — all <b>before business logic</b>. Illegal, unauthorized, or over-quota requests never reach execution; the checks are <b>stateless</b>, so Proxy can scale out and each instance vets independently.</div>
 </div>
 
 <p>Together these four gates are the Proxy's full "doorkeeper" duty. Because they sit <strong>before business logic</strong>, an illegal, unauthorized, or over-quota request is stopped
@@ -795,9 +795,9 @@ This is a "rather slow a few requests than crash the whole cluster" trade-off �
 
 <table class="t">
   <tr><th>Gate</th><th>Question</th><th>Impl file</th><th>If it fails</th></tr>
+  <tr><td><strong>DB routing</strong></td><td>which database</td><td class="mono">database_interceptor.go</td><td>db not found</td></tr>
   <tr><td><strong>Auth</strong></td><td>who are you</td><td class="mono">authentication_interceptor.go</td><td>reject connection</td></tr>
   <tr><td><strong>Privilege</strong></td><td>may you do this</td><td class="mono">privilege_interceptor.go</td><td>permission error</td></tr>
-  <tr><td><strong>DB routing</strong></td><td>which database</td><td class="mono">database_interceptor.go</td><td>db not found</td></tr>
   <tr><td><strong>Rate limit</strong></td><td>over quota</td><td class="mono">rate_limit_interceptor.go</td><td>throttle / reject</td></tr>
 </table>
 
@@ -862,7 +862,7 @@ ordering on RootCoord's TSO, fan-out and reduce on the shard distribution QueryC
 
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>receive</h4><p>gRPC/REST hits a Proxy milvuspb method, e.g. <span class="mono">Search</span>.</p></div></div>
-  <div class="step"><div class="num">2</div><div class="sc"><h4>four gates</h4><p>auth → privilege → db routing → rate limit, interceptors vet in turn.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>four gates</h4><p>db routing → auth → privilege → rate limit, interceptors vet in turn.</p></div></div>
   <div class="step"><div class="num">3</div><div class="sc"><h4>wrap as task, pick queue</h4><p>route into ddQueue / dmQueue / dqQueue by kind.</p></div></div>
   <div class="step"><div class="num">4</div><div class="sc"><h4>assign timestamp</h4><p class="mono">tsoAllocator</p><p>ask the coordinator for a global timestamp/ID, fixing this op's order.</p></div></div>
   <div class="step"><div class="num">5</div><div class="sc"><h4>execute: fan out</h4><p>DML writes into WAL/MQ; DQL sends the query to the QueryNodes serving each shard.</p></div></div>
@@ -901,7 +901,7 @@ ordering on RootCoord's TSO, fan-out and reduce on the shard distribution QueryC
     <line x1="350" y1="264" x2="430" y2="234" style="stroke:var(--blue);stroke-width:1.5"/>
     <rect x="432" y="200" width="150" height="56" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="507" y="224" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">reduce</text><text x="507" y="244" text-anchor="middle" style="fill:var(--muted)">local topK → global</text>
     <line x1="582" y1="228" x2="616" y2="228" style="stroke:var(--accent);stroke-width:2"/><path d="M616,228 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
-    <text x="620" y="222" style="fill:var(--blue);font-weight:700">read</text><text x="620" y="240" style="fill:var(--muted)">concurrency+latency</text>
+    <text x="620" y="216" style="fill:var(--blue);font-weight:700">read</text><text x="620" y="234" style="fill:var(--muted)">concurrency</text><text x="620" y="250" style="fill:var(--muted)">+ latency</text>
   </svg>
   <div class="figcap"><b>One Proxy, two paths</b>: a <b>write</b> lands on the <span class="mono">WAL</span> <b>in order, durably</b> (returns on success; flush happens in the background); a <b>read</b> <b>fans out</b> to shard QueryNodes for local topKs, then <b>reduces</b> them into a global topK — <b>the slowest shard sets the latency</b>.</div>
 </div>
@@ -935,7 +935,7 @@ The next three lessons walk into these three coordinators one by one, and you'll
 
 <div class="card macro">
   <div class="tag">🌍 The big picture</div>
-  In one line: <strong>the Proxy is the single entry (milvuspb service) → it passes four gates auth/privilege/db/rate-limit → wraps tasks into ddQueue/dmQueue/dqQueue → asks the coordinator for a timestamp → writes fan into the WAL, queries fan out to nodes → results are reduced into one answer and returned</strong>.
+  In one line: <strong>the Proxy is the single entry (milvuspb service) → it passes four gates db/auth/privilege/rate-limit → wraps tasks into ddQueue/dmQueue/dqQueue → asks the coordinator for a timestamp → writes fan into the WAL, queries fan out to nodes → results are reduced into one answer and returned</strong>.
   It is stateless, so it scales horizontally behind a load balancer. Hold this pipeline in mind and every coordinator ahead is one link behind it.
 </div>
 
@@ -943,7 +943,7 @@ The next three lessons walk into these three coordinators one by one, and you'll
   <div class="tag">📌 Key points</div>
   <ul>
     <li><strong>Single entry</strong>: the Proxy implements the public <span class="mono">milvuspb</span> MilvusService (gRPC/REST), encapsulating all backend topology behind it.</li>
-    <li><strong>Four gates</strong>: auth / privilege / db routing / rate limit, each an independent interceptor sitting before business logic.</li>
+    <li><strong>Four gates</strong>: db routing / auth / privilege / rate limit, each an independent interceptor sitting before business logic.</li>
     <li><strong>Three queues</strong>: <span class="mono">ddQueue</span>(DDL), <span class="mono">dmQueue</span>(DML), <span class="mono">dqQueue</span>(DQL), physically isolated by ordering and concurrency profile (plus a <span class="mono">dcQueue</span> for flush). See <span class="mono">task_scheduler.go</span>.</li>
     <li><strong>Timestamps</strong>: each write/read task asks the coordinator's TSO for a global timestamp to fix its order (detailed in Lesson 11).</li>
     <li><strong>Two paths</strong>: DML fans into the WAL/MQ (durability); DQL fans out to QueryNodes then <strong>reduces</strong> (concurrency/latency; reduce deep-dived in Lesson 29).</li>
@@ -1238,7 +1238,7 @@ and you'll see the same pattern again when we cover segment allocation and ID al
     <text x="646" y="100" text-anchor="middle" style="fill:var(--blue);font-weight:700">etcd · high-water</text>
     <text x="646" y="122" text-anchor="middle" class="mono" style="fill:var(--muted)">high-water=200</text>
     <line x1="480" y1="104" x2="558" y2="104" style="stroke:var(--blue);stroke-width:1.5;stroke-dasharray:5 4"/><path d="M558,104 l-11,-5 l0,10 z" style="fill:var(--blue)"/>
-    <text x="486" y="96" style="fill:var(--muted)">persist periodically</text>
+    <text x="486" y="96" style="fill:var(--muted)">periodic</text>
     <text x="40" y="226" style="fill:var(--muted)">issued timestamps (only increase):</text>
     <rect x="288" y="208" width="54" height="30" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="315" y="228" text-anchor="middle" class="mono" style="fill:var(--muted)">100</text>
     <rect x="348" y="208" width="54" height="30" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="375" y="228" text-anchor="middle" class="mono" style="fill:var(--muted)">101</text>
@@ -1564,10 +1564,10 @@ Understand this transition and you understand the whole process of data "going f
     <text x="273" y="72" text-anchor="middle" style="fill:var(--muted)">flush</text>
     <text x="407" y="72" text-anchor="middle" style="fill:var(--muted)">to object store</text>
     <text x="541" y="72" text-anchor="middle" style="fill:var(--muted)">compaction</text>
-    <rect x="20" y="80" width="104" height="64" rx="10" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="72" y="106" text-anchor="middle" style="fill:var(--blue);font-weight:700">Growing</text><text x="72" y="128" text-anchor="middle" style="fill:var(--muted)">memory·mutable</text>
+    <rect x="20" y="80" width="104" height="64" rx="10" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="72" y="106" text-anchor="middle" style="fill:var(--blue);font-weight:700">Growing</text><text x="72" y="128" text-anchor="middle" style="fill:var(--muted)">mutable</text>
     <rect x="154" y="80" width="104" height="64" rx="10" style="fill:var(--panel);stroke:var(--purple);stroke-width:1.5"/><text x="206" y="106" text-anchor="middle" style="fill:var(--purple);font-weight:700">Sealed</text><text x="206" y="128" text-anchor="middle" style="fill:var(--muted)">read-only</text>
     <rect x="288" y="80" width="104" height="64" rx="10" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="340" y="106" text-anchor="middle" style="fill:var(--amber);font-weight:700">Flushing</text><text x="340" y="128" text-anchor="middle" style="fill:var(--muted)">writing binlog</text>
-    <rect x="422" y="80" width="104" height="64" rx="10" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:2"/><text x="474" y="106" text-anchor="middle" style="fill:var(--teal);font-weight:700">★ Flushed</text><text x="474" y="128" text-anchor="middle" style="fill:var(--muted)">immutable·durable</text>
+    <rect x="422" y="80" width="104" height="64" rx="10" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:2"/><text x="474" y="106" text-anchor="middle" style="fill:var(--teal);font-weight:700">★ Flushed</text><text x="474" y="128" text-anchor="middle" style="fill:var(--muted)">immutable</text>
     <rect x="556" y="80" width="104" height="64" rx="10" style="fill:var(--panel-2);stroke:var(--line)"/><text x="608" y="106" text-anchor="middle" style="fill:var(--muted);font-weight:700">Dropped</text><text x="608" y="128" text-anchor="middle" style="fill:var(--faint)">awaiting GC</text>
     <line x1="124" y1="112" x2="152" y2="112" style="stroke:var(--line);stroke-width:2"/><path d="M152,112 l-10,-5 l0,10 z" style="fill:var(--line)"/>
     <line x1="258" y1="112" x2="286" y2="112" style="stroke:var(--line);stroke-width:2"/><path d="M286,112 l-10,-5 l0,10 z" style="fill:var(--line)"/>

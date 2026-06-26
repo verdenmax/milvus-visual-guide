@@ -1188,7 +1188,7 @@ That is also why this part (the write path) centers on the WAL and the Streaming
     <line x1="314" y1="156" x2="476" y2="156" style="stroke:var(--teal);stroke-width:3"/><path d="M476,156 l-12,-5 l0,10 z" style="fill:var(--teal)"/>
     <text x="394" y="147" text-anchor="middle" style="fill:var(--teal);font-weight:700">flush · SyncTask</text>
     <line x1="443" y1="84" x2="443" y2="252" style="stroke:var(--line);stroke-width:1.5;stroke-dasharray:4 5"/>
-    <rect x="490" y="98" width="210" height="36" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="595" y="121" text-anchor="middle" class="mono" style="fill:var(--ink)">insert binlog (columnar)</text>
+    <rect x="490" y="98" width="210" height="36" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="595" y="121" text-anchor="middle" class="mono" style="fill:var(--ink)">insert binlog</text>
     <rect x="490" y="140" width="210" height="36" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="595" y="163" text-anchor="middle" class="mono" style="fill:var(--ink)">stats binlog</text>
     <rect x="490" y="182" width="210" height="36" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="595" y="205" text-anchor="middle" class="mono" style="fill:var(--ink)">delta binlog</text>
     <text x="595" y="242" text-anchor="middle" style="fill:var(--muted)">write back metadata + advance checkpoint</text>

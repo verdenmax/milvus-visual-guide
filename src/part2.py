@@ -1026,7 +1026,7 @@ candidate width at query time — <strong>larger ef searches wider, higher recal
   <svg viewBox="0 0 760 300" role="img" aria-label="Greedy search on the HNSW multi-layer graph: start at an entry on the sparse top layer, descend layer by layer, reach the nearest neighbor in a few hops">
     <text x="18" y="76" style="fill:var(--muted)">top · sparse</text>
     <text x="18" y="162" style="fill:var(--muted)">middle</text>
-    <text x="18" y="252" style="fill:var(--muted)">bottom · dense</text>
+    <text x="18" y="252" style="fill:var(--muted)">bottom</text>
     <polyline points="120,72 330,72 560,72" style="fill:none;stroke:var(--line);stroke-width:1.5;opacity:.6"/>
     <polyline points="160,158 300,158 440,158 580,158 680,158" style="fill:none;stroke:var(--line);stroke-width:1.5;opacity:.6"/>
     <polyline points="110,248 190,248 270,248 350,248 430,248 510,248 590,248 670,248" style="fill:none;stroke:var(--line);stroke-width:1.5;opacity:.6"/>
@@ -2547,14 +2547,14 @@ external-dependency design. We unpack them one by one below.</p>
     <rect x="114" y="116" width="44" height="34" rx="4" style="fill:none;stroke:var(--blue);stroke-width:2"/>
     <line x1="122" y1="127" x2="150" y2="127" style="stroke:var(--blue);stroke-width:2"/><line x1="122" y1="135" x2="150" y2="135" style="stroke:var(--blue);stroke-width:2"/><line x1="122" y1="143" x2="142" y2="143" style="stroke:var(--blue);stroke-width:2"/>
     <text x="136" y="176" text-anchor="middle" style="fill:var(--ink)">metadata + discovery</text>
-    <rect x="40" y="188" width="192" height="30" rx="8" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="136" y="208" text-anchor="middle" style="fill:var(--blue);font-weight:700">small &amp; critical · consistent</text>
+    <rect x="40" y="188" width="192" height="30" rx="8" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="136" y="208" text-anchor="middle" style="fill:var(--blue);font-weight:700">small · consistent</text>
     <text x="136" y="242" text-anchor="middle" class="mono" style="fill:var(--muted)">etcd (same as K8s)</text>
     <rect x="264" y="56" width="232" height="206" rx="12" style="fill:var(--panel-2);stroke:var(--teal);stroke-width:1.5"/>
     <text x="380" y="86" text-anchor="middle" style="fill:var(--teal);font-weight:700">② object store · warehouse</text>
     <line x1="284" y1="98" x2="476" y2="98" style="stroke:var(--teal);stroke-width:1.5;opacity:.45"/>
     <rect x="360" y="116" width="18" height="16" rx="2" style="fill:none;stroke:var(--teal);stroke-width:2"/><rect x="382" y="116" width="18" height="16" rx="2" style="fill:none;stroke:var(--teal);stroke-width:2"/><rect x="360" y="134" width="18" height="16" rx="2" style="fill:none;stroke:var(--teal);stroke-width:2"/><rect x="382" y="134" width="18" height="16" rx="2" style="fill:none;stroke:var(--teal);stroke-width:2"/>
     <text x="380" y="176" text-anchor="middle" style="fill:var(--ink)">binlogs + index files</text>
-    <rect x="284" y="188" width="192" height="30" rx="8" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="380" y="208" text-anchor="middle" style="fill:var(--teal);font-weight:700">big &amp; cheap · near-infinite</text>
+    <rect x="284" y="188" width="192" height="30" rx="8" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="380" y="208" text-anchor="middle" style="fill:var(--teal);font-weight:700">cheap · vast</text>
     <text x="380" y="242" text-anchor="middle" class="mono" style="fill:var(--muted)">MinIO / S3 / OSS</text>
     <rect x="508" y="56" width="232" height="206" rx="12" style="fill:var(--panel-2);stroke:var(--amber);stroke-width:1.5"/>
     <text x="624" y="86" text-anchor="middle" style="fill:var(--amber);font-weight:700">③ message queue · log</text>

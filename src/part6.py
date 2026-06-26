@@ -77,7 +77,7 @@ LESSON_25 = {
 
 <div class="fig">
   <svg viewBox="0 0 760 300" role="img" aria-label="一次 search 的往返：SDK 发请求，Proxy 的 searchTask 解析建计划定时间戳、扇出到各分片、再归并，结果返回 SDK">
-    <rect x="22" y="116" width="92" height="60" rx="10" style="fill:var(--panel);stroke:var(--line)"/><text x="68" y="142" text-anchor="middle" style="fill:var(--ink);font-weight:700">SDK</text><text x="68" y="162" text-anchor="middle" style="fill:var(--muted)">向量+topK+expr</text>
+    <rect x="22" y="116" width="92" height="60" rx="10" style="fill:var(--panel);stroke:var(--line)"/><text x="68" y="138" text-anchor="middle" style="fill:var(--ink);font-weight:700">SDK</text><text x="68" y="155" text-anchor="middle" style="fill:var(--muted)">向量·topK</text><text x="68" y="169" text-anchor="middle" style="fill:var(--muted)">+ 过滤式</text>
     <rect x="146" y="74" width="234" height="142" rx="11" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
     <text x="263" y="96" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">Proxy · searchTask</text>
     <rect x="160" y="106" width="206" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="263" y="126" text-anchor="middle" style="fill:var(--ink)">① PreExecute · plan + ts</text>
@@ -234,7 +234,7 @@ This part is the <strong>mirror</strong> of the write path, and it descends all 
 
 <div class="fig">
   <svg viewBox="0 0 760 300" role="img" aria-label="A search round-trip: the SDK sends a request, the Proxy's searchTask parses and builds a plan and timestamp, scatters to the shards, then reduces, and the result returns to the SDK">
-    <rect x="22" y="116" width="92" height="60" rx="10" style="fill:var(--panel);stroke:var(--line)"/><text x="68" y="142" text-anchor="middle" style="fill:var(--ink);font-weight:700">SDK</text><text x="68" y="162" text-anchor="middle" style="fill:var(--muted)">vec+topK+expr</text>
+    <rect x="22" y="116" width="92" height="60" rx="10" style="fill:var(--panel);stroke:var(--line)"/><text x="68" y="138" text-anchor="middle" style="fill:var(--ink);font-weight:700">SDK</text><text x="68" y="155" text-anchor="middle" style="fill:var(--muted)">vec·topK</text><text x="68" y="169" text-anchor="middle" style="fill:var(--muted)">+ filter</text>
     <rect x="146" y="74" width="234" height="142" rx="11" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
     <text x="263" y="96" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">Proxy · searchTask</text>
     <rect x="160" y="106" width="206" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="263" y="126" text-anchor="middle" style="fill:var(--ink)">① PreExecute · plan + ts</text>
@@ -545,11 +545,11 @@ If Lesson 25's Proxy is "<strong>the courier that brings the request to the door
     <rect x="230" y="46" width="300" height="92" rx="11" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
     <text x="380" y="70" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">delegator · shard leader (sole entry)</text>
     <text x="380" y="90" text-anchor="middle" style="fill:var(--muted)">scatter · reduce · maintain tsafe</text>
-    <rect x="252" y="102" width="256" height="28" rx="6" style="fill:var(--panel);stroke:var(--blue)"/><text x="380" y="121" text-anchor="middle" style="fill:var(--blue)">growing segment (local · brute · newest)</text>
+    <rect x="252" y="102" width="256" height="28" rx="6" style="fill:var(--panel);stroke:var(--blue)"/><text x="380" y="121" text-anchor="middle" style="fill:var(--blue)">growing seg (local·brute·newest)</text>
     <text x="380" y="172" text-anchor="middle" style="fill:var(--muted)">scatter ↓　partials ↑</text>
-    <rect x="60" y="204" width="200" height="68" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="160" y="232" text-anchor="middle" style="fill:var(--teal);font-weight:700">worker QueryNode</text><text x="160" y="254" text-anchor="middle" style="fill:var(--muted)">sealed segs · segcore search</text>
-    <rect x="280" y="204" width="200" height="68" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="380" y="232" text-anchor="middle" style="fill:var(--teal);font-weight:700">worker QueryNode</text><text x="380" y="254" text-anchor="middle" style="fill:var(--muted)">sealed segs · segcore search</text>
-    <rect x="500" y="204" width="200" height="68" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="600" y="232" text-anchor="middle" style="fill:var(--teal);font-weight:700">worker QueryNode</text><text x="600" y="254" text-anchor="middle" style="fill:var(--muted)">sealed segs · segcore search</text>
+    <rect x="60" y="204" width="200" height="68" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="160" y="232" text-anchor="middle" style="fill:var(--teal);font-weight:700">worker QueryNode</text><text x="160" y="254" text-anchor="middle" style="fill:var(--muted)">sealed · segcore search</text>
+    <rect x="280" y="204" width="200" height="68" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="380" y="232" text-anchor="middle" style="fill:var(--teal);font-weight:700">worker QueryNode</text><text x="380" y="254" text-anchor="middle" style="fill:var(--muted)">sealed · segcore search</text>
+    <rect x="500" y="204" width="200" height="68" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="600" y="232" text-anchor="middle" style="fill:var(--teal);font-weight:700">worker QueryNode</text><text x="600" y="254" text-anchor="middle" style="fill:var(--muted)">sealed · segcore search</text>
     <line x1="320" y1="138" x2="180" y2="202" style="stroke:var(--accent);stroke-width:1.5"/><path d="M180,202 l3,-11 l7,7 z" style="fill:var(--accent)"/>
     <line x1="380" y1="138" x2="380" y2="202" style="stroke:var(--accent);stroke-width:1.5"/><path d="M380,202 l-5,-10 l10,0 z" style="fill:var(--accent)"/>
     <line x1="440" y1="138" x2="580" y2="202" style="stroke:var(--accent);stroke-width:1.5"/><path d="M580,202 l-10,-4 l0,10 z" style="fill:var(--accent)"/>
@@ -664,7 +664,7 @@ LESSON_27 = {
 <div class="fig">
   <svg viewBox="0 0 760 300" role="img" aria-label="segcore 用同一套 SegmentInterface 抽象一个段，底下两种实现：sealed 走索引、growing 暴力扫；并按删除位图与时间戳过滤后给出段内 topK">
     <text x="380" y="32" text-anchor="middle" style="fill:var(--muted)">上层对每个段都调同一个 Search(段, plan)</text>
-    <rect x="248" y="42" width="264" height="44" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="380" y="69" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">SegmentInterface · Search（统一契约）</text>
+    <rect x="212" y="42" width="336" height="44" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="380" y="69" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">SegmentInterface · Search（统一契约）</text>
     <text x="380" y="108" text-anchor="middle" style="fill:var(--muted)">按段类型自动多态 ↓</text>
     <rect x="56" y="118" width="310" height="64" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="211" y="144" text-anchor="middle" style="fill:var(--teal);font-weight:700">SegmentSealed → 走索引</text><text x="211" y="166" text-anchor="middle" style="fill:var(--muted)">Knowhere HNSW/IVF · 跳过大多数（快）</text>
     <rect x="394" y="118" width="310" height="64" rx="10" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="549" y="144" text-anchor="middle" style="fill:var(--amber);font-weight:700">SegmentGrowing → 暴力扫</text><text x="549" y="166" text-anchor="middle" style="fill:var(--muted)">逐条算距离 · 段小、保最新（新鲜）</text>
@@ -672,7 +672,7 @@ LESSON_27 = {
     <line x1="442" y1="86" x2="534" y2="116" style="stroke:var(--accent);stroke-width:1.5"/><path d="M534,116 l-9,-7 l-1,11 z" style="fill:var(--accent)"/>
     <line x1="211" y1="182" x2="330" y2="210" style="stroke:var(--line);stroke-width:1.5"/><path d="M330,210 l-11,-1 l3,9 z" style="fill:var(--line)"/>
     <line x1="549" y1="182" x2="430" y2="210" style="stroke:var(--line);stroke-width:1.5"/><path d="M430,210 l-3,-11 l9,3 z" style="fill:var(--line)"/>
-    <rect x="206" y="212" width="348" height="60" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="380" y="238" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">段内 topK（已过滤）</text><text x="380" y="260" text-anchor="middle" style="fill:var(--muted)">剔除删除行 + 只看 ts ≤ guarantee（MVCC 落地点）</text>
+    <rect x="158" y="212" width="444" height="60" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="380" y="238" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">段内 topK（已过滤）</text><text x="380" y="260" text-anchor="middle" style="fill:var(--muted)">剔除删除行 + 只看 ts ≤ guarantee（MVCC 落地点）</text>
   </svg>
   <div class="figcap"><b>同一接口，两种实现（多态）</b>：segcore 用一套 <span class="mono">SegmentInterface</span> 抽象"一个段"——上层只管对每个段调同一个 <span class="mono">Search</span>，内部按段类型自动选<b>快路（sealed 走索引、跳过大多数）</b>或<b>慢路（growing 暴力扫、保最新）</b>。它还在段内落地 <b>MVCC</b>：用<b>删除位图</b>剔除已删行、用 <b>guarantee ts</b> 只放行该版本——所以你搜不到"刚被删的"或"晚于快照才写的"。</div>
 </div>
@@ -781,7 +781,7 @@ This is the <strong>deepest layer</strong> of the whole query path and the <stro
 <div class="fig">
   <svg viewBox="0 0 760 300" role="img" aria-label="segcore abstracts a segment with one SegmentInterface and two implementations: sealed goes through the index, growing brute-forces; it filters by the delete bitmap and timestamp before returning the in-segment topK">
     <text x="380" y="32" text-anchor="middle" style="fill:var(--muted)">the upper layer calls the same Search(segment, plan) on every segment</text>
-    <rect x="248" y="42" width="264" height="44" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="380" y="69" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">SegmentInterface · Search (one contract)</text>
+    <rect x="212" y="42" width="336" height="44" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="380" y="69" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">SegmentInterface · Search (one contract)</text>
     <text x="380" y="108" text-anchor="middle" style="fill:var(--muted)">polymorphic by segment type ↓</text>
     <rect x="56" y="118" width="310" height="64" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="211" y="144" text-anchor="middle" style="fill:var(--teal);font-weight:700">SegmentSealed → via index</text><text x="211" y="166" text-anchor="middle" style="fill:var(--muted)">Knowhere HNSW/IVF · skip most (fast)</text>
     <rect x="394" y="118" width="310" height="64" rx="10" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="549" y="144" text-anchor="middle" style="fill:var(--amber);font-weight:700">SegmentGrowing → brute force</text><text x="549" y="166" text-anchor="middle" style="fill:var(--muted)">scan every vector · small, freshest</text>
@@ -789,7 +789,7 @@ This is the <strong>deepest layer</strong> of the whole query path and the <stro
     <line x1="442" y1="86" x2="534" y2="116" style="stroke:var(--accent);stroke-width:1.5"/><path d="M534,116 l-9,-7 l-1,11 z" style="fill:var(--accent)"/>
     <line x1="211" y1="182" x2="330" y2="210" style="stroke:var(--line);stroke-width:1.5"/><path d="M330,210 l-11,-1 l3,9 z" style="fill:var(--line)"/>
     <line x1="549" y1="182" x2="430" y2="210" style="stroke:var(--line);stroke-width:1.5"/><path d="M430,210 l-3,-11 l9,3 z" style="fill:var(--line)"/>
-    <rect x="196" y="212" width="368" height="60" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="380" y="238" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">in-segment topK (filtered)</text><text x="380" y="260" text-anchor="middle" style="fill:var(--muted)">drop deleted rows + only ts ≤ guarantee (MVCC lands here)</text>
+    <rect x="158" y="212" width="444" height="60" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="380" y="238" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">in-segment topK (filtered)</text><text x="380" y="260" text-anchor="middle" style="fill:var(--muted)">drop deleted rows + only ts ≤ guarantee (MVCC lands here)</text>
   </svg>
   <div class="figcap"><b>One interface, two implementations (polymorphism)</b>: segcore abstracts "a segment" with one <span class="mono">SegmentInterface</span> — upper layers just call the same <span class="mono">Search</span>, and it picks the <b>fast path (sealed via index, skip most)</b> or <b>slow path (growing brute force, freshest)</b> by type. It also lands <b>MVCC</b> in-segment: a <b>delete bitmap</b> drops deleted rows and the <b>guarantee ts</b> admits only that version — so you never find a just-deleted or too-new row.</div>
 </div>
