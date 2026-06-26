@@ -6,6 +6,70 @@ scripts/ (install_deps, start_standalone/cluster, standalone_embed), the test
 tags (dynamic,test + gcflags), pkg/util/merr, and PR/DCO conventions.
 Lesson 46 is a glossary (soft-exempt from the CJK/diagram floors).
 """
+import re as _re
+
+import shell as _shell
+
+
+def _linkify_lessons(html):
+    """Turn lesson references in each glossary row's last cell into links.
+
+    The reference column uses '第 N 课' (zh) and 'L<N>' (en), in single, range
+    ('第 11-13 课' / 'L11-13') and list ('第 10、17 课' / 'L10, L17') forms. We only
+    touch the LAST <td> of each table row, and only when that cell is purely a
+    reference list — so definition prose (e.g. 'L0 segment', 'L2 distance') is
+    never mislinked. Numbers outside 1..len(PAGES) are left as text. Idempotent:
+    glossary cells have no pre-existing <a>.
+    """
+    n = len(_shell.PAGES)
+    zh_ref = _re.compile(r"\s*第[\d\s、，,–-]*课\s*")
+    en_ref = _re.compile(r"\s*L\d+(?:[–-]\d+)?(?:\s*,\s*L\d+(?:[–-]\d+)?)*\s*")
+
+    def href(k):
+        return _shell.PAGES[k - 1][0]
+
+    def link_num(m):
+        k = int(m.group())
+        return f'<a href="{href(k)}">{m.group()}</a>' if 1 <= k <= n else m.group()
+
+    def link_l(m):
+        k = int(m.group(1))
+        return f'<a href="{href(k)}">L{m.group(1)}</a>' if 1 <= k <= n else m.group()
+
+    def proc_row(rm):
+        row = rm.group(0)
+        cells = list(_re.finditer(r"<td[^>]*>(.*?)</td>", row, _re.S))
+        if not cells:
+            return row
+        last = cells[-1]
+        inner = last.group(1)
+        if zh_ref.fullmatch(inner):
+            new = _re.sub(r"\d+", link_num, inner)
+        elif en_ref.fullmatch(inner):
+            new = _re.sub(r"L(\d+)", link_l, inner)
+        else:
+            return row
+        return row[: last.start(1)] + new + row[last.end(1):]
+
+    return _re.sub(r"<tr>.*?</tr>", proc_row, html, flags=_re.S)
+
+
+def _gl_search(lang):
+    """Search box + empty-state for the glossary, wired by shell.GLOSSARY_JS."""
+    if lang == "zh":
+        return (
+            '<div class="toc-search"><input id="qglzh" type="search" '
+            'placeholder="🔎 搜索术语（中英皆可）" autocomplete="off" aria-label="search terms">'
+            '<span class="qcount" id="qglzhc"></span></div>'
+            '<div class="toc-empty" id="qglzhe">没有匹配的术语，换个关键词试试。</div>'
+        )
+    return (
+        '<div class="toc-search"><input id="qglen" type="search" '
+        'placeholder="🔎 Search terms (zh or en)" autocomplete="off" aria-label="search terms">'
+        '<span class="qcount" id="qglenc"></span></div>'
+        '<div class="toc-empty" id="qglene">No matching terms — try another keyword.</div>'
+    )
+
 
 LESSON_42 = {
     "zh": r"""
@@ -830,4 +894,12 @@ This is the guide's <strong>quick-reference glossary</strong>, gathering the key
 
 <p style="margin-top:1.4rem;color:var(--muted)">The main ten parts close here. The following <strong>Part 11, "Advanced topics (optional)"</strong> is a bonus course for when you have appetite to spare — bulk import, multi-vector hybrid search & reranking, quotas and rate-limiting, plus RBAC/resource groups/multi-tenancy and other production features; come back when you need them. May these diagrams, analogies, and snippets of source help you see a vast vector database as a landscape you can understand — and join. <strong>Go contribute — the world awaits your first PR.</strong></p>
 """,
+}
+
+# Make the glossary searchable + cross-linked: prepend a filter box (wired by
+# shell.GLOSSARY_JS, appended once to the en copy) and turn every "第 N 课 /
+# L<N>" reference in each row's last cell into a link to that lesson.
+LESSON_46 = {
+    "zh": _gl_search("zh") + _linkify_lessons(LESSON_46["zh"]),
+    "en": _gl_search("en") + _linkify_lessons(LESSON_46["en"]) + f"<script>{_shell.GLOSSARY_JS}</script>",
 }

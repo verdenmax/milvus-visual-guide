@@ -516,6 +516,30 @@ SEARCH_JS = """
 })();
 """
 
+GLOSSARY_JS = """
+(function(){
+  function wire(inputId, countId, emptyId, scope){
+    var q=document.getElementById(inputId); if(!q) return;
+    var root=document.querySelector(scope); if(!root) return;
+    var empty=document.getElementById(emptyId), count=document.getElementById(countId);
+    var rows=[].slice.call(root.querySelectorAll('table.t tr')).filter(function(tr){return tr.querySelector('td');});
+    rows.forEach(function(tr){ tr.setAttribute('data-s',(tr.textContent||'').toLowerCase()); });
+    function run(){
+      var t=(q.value||'').toLowerCase().trim(), n=0;
+      rows.forEach(function(tr){
+        var hit=!t||tr.getAttribute('data-s').indexOf(t)>=0;
+        tr.classList.toggle('hide',!hit); if(hit)n++;
+      });
+      if(empty) empty.classList.toggle('show', !!t && n===0);
+      if(count) count.textContent = t ? String(n) : '';
+    }
+    q.addEventListener('input',run);
+  }
+  wire('qglzh','qglzhc','qglzhe','.lang-zh');
+  wire('qglen','qglenc','qglene','.lang-en');
+})();
+"""
+
 LANG_JS = """
 function mvgSetLang(l){
   l=(l==='en')?'en':'zh';
