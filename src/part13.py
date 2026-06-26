@@ -49,7 +49,7 @@ LESSON_57 = {
 <h2>第 1 站 · 写入：进了日志就算数</h2>
 <p>你调用 <span class="mono">insert</span>，请求先到 <strong>Proxy</strong>。Proxy 不存数据，它是<strong>门卫加调度</strong>：校验 schema、必要时向 RootCoord 申请一段<strong>全局唯一主键</strong>（autoID 时，由 RootCoord 的 ID allocator 批量发号）、
 向 RootCoord 要一个<strong>时间戳 ts</strong>（TSO，全局单调递增——见<span class="inline">第 11 课</span>），再按主键哈希把每一行<strong>路由到某个 vchannel（分片）</strong>，最后把这批行打包成 <span class="mono">InsertMsg</span> <strong>写进该分片的 WAL</strong>。
-源码可循：<span class="inline">internal/proxy/task_insert.go</span>（insertTask 的 PreExecute/Execute）、<span class="inline">internal/rootcoord</span>（TSO 与 ID allocator）、流式写入在 <span class="inline">internal/streamingnode</span> 与 <span class="inline">pkg/streaming</span>。</p>
+源码可循：<span class="inline">internal/proxy/task_insert.go</span>（insertTask 的 PreExecute）与 <span class="inline">task_insert_streaming.go</span>（Execute：把 InsertMsg append 进 WAL）、<span class="inline">internal/rootcoord</span>（TSO 与 ID allocator）、流式写入在 <span class="inline">internal/streamingnode</span> 与 <span class="inline">pkg/streaming</span>。</p>
 
 <p>关键的一刻在这里：<strong>一旦 InsertMsg 追加进 WAL 并被确认（ack），这次写入就"算数"了</strong>——insert 返回成功。为什么这么早就敢返回？因为 WAL 是<strong>顺序、可靠、可重放</strong>的（<span class="inline">第 7 课</span>、<span class="inline">第 16 课</span>）：
 哪怕下一秒整个进程崩了，这条记录还在日志里，重启后照着重放就回来了。<strong>"持久"不等于"落盘成了 binlog"，而是"进了 WAL"</strong>——这是理解后面一切的地基。</p>
@@ -104,11 +104,25 @@ insert binlog（真数据）、stats binlog（统计/主键索引）、delta bin
 <p>为什么非要把这些活儿甩到后台？因为它们<strong>又重又慢</strong>：序列化几十万行、建一棵 HNSW 图，都是秒级甚至更久的重活。如果让 <span class="mono">insert</span> 一直<strong>傻等</strong>到落盘、建索引全做完才返回，写入吞吐立刻就被拖垮了。Milvus 的选择是把它们<strong>异步挪到后台</strong>，前台只留"写一条日志"这一件极快的事——<strong>这正是写入能扛住高并发的关键</strong>，也再次印证了那条主线：<strong>先持久、快返回，慢工放后台</strong>。</p>
 
 <h2>第 4 站 · 建索引 + 加载：从"能查"到"查得快"</h2>
-<p>封存的段还只能<strong>暴力扫</strong>，要"查得快"得有索引。DataCoord 的 index 调度发现这个 sealed 段<strong>还缺索引</strong>，就派一个构建任务给 <strong>IndexNode</strong>；IndexNode 读 binlog、用 <strong>Knowhere</strong> 建出 HNSW/IVF 之类的向量索引，写成<strong>索引文件</strong>落对象存储（<span class="inline">第 21 课</span>、<span class="inline">第 23 课</span>）。
+<p>封存的段还只能<strong>暴力扫</strong>，要"查得快"得有索引。DataCoord 的 index 调度发现这个 sealed 段<strong>还缺索引</strong>，就把一个构建任务派给一个 <strong>worker</strong>——注意：这个 worker 跑在 <strong>datanode</strong> 上，<strong>并没有独立的 indexnode 进程</strong>（这是<span class="inline">第 21 课</span>反复强调、最容易记错的一点）；它读 binlog、用 <strong>Knowhere</strong> 建出 HNSW/IVF 之类的向量索引，写成<strong>索引文件</strong>落对象存储（<span class="inline">第 21 课</span>、<span class="inline">第 23 课</span>）。
 接着 <strong>QueryCoord</strong> 把这个"已封存 + 已建索引"的段<strong>分配给某个 QueryNode</strong>，QueryNode 用 <strong>segcore</strong> 把列与索引<strong>加载</strong>进来（常用 mmap，见<span class="inline">第 27 课</span>、<span class="inline">第 35 课</span>）。</p>
 
 <p>最后是漂亮的一手——<strong>接力（handoff）</strong>：在 sealed 段加载好之前，这行一直由 growing 段服务；加载完成后，delegator 把它从"growing 还在顶"切换成"<strong>由 sealed + 索引来服务</strong>"，并<strong>把 growing 里这部分排除掉</strong>，确保<strong>不重不漏</strong>（<span class="inline">第 26 课</span>）。
 对查询者完全无感：可见性一刻没断，只是背后从"内存暴力"换成了"索引快搜"。</p>
+
+<div class="fig"><svg viewBox="0 0 760 300" role="img" aria-label="接力：sealed 段建好索引并加载之前，行 R 由 growing 段服务；加载完成的接力点之后，改由 sealed 加索引服务，并把 growing 里这部分排除，做到不重不漏">
+  <text x="380" y="24" text-anchor="middle" style="fill:var(--ink);font-weight:700">接力（handoff）：谁负责服务「行 R」</text>
+  <line x1="392" y1="46" x2="392" y2="248" style="stroke:var(--accent);stroke-width:1.5;stroke-dasharray:5 3"/>
+  <text x="392" y="40" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700;font-size:12px">sealed 加载完成 · 接力点</text>
+  <text x="120" y="70" style="fill:var(--teal);font-weight:700">growing 段</text>
+  <rect x="120" y="78" width="268" height="40" rx="8" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="254" y="103" text-anchor="middle" style="fill:var(--teal);font-weight:700">服务 R（暴力扫）</text>
+  <rect x="396" y="78" width="284" height="40" rx="8" style="fill:var(--panel-2);stroke:var(--line)"/><text x="538" y="103" text-anchor="middle" style="fill:var(--muted)">✕ 已排除（不再服务）</text>
+  <text x="120" y="178" style="fill:var(--blue);font-weight:700">sealed + 索引</text>
+  <rect x="120" y="186" width="268" height="40" rx="8" style="fill:var(--panel-2);stroke:var(--line);stroke-dasharray:4 3"/><text x="254" y="211" text-anchor="middle" style="fill:var(--muted)">尚未加载（不服务）</text>
+  <rect x="396" y="186" width="284" height="40" rx="8" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="538" y="211" text-anchor="middle" style="fill:var(--blue);font-weight:700">服务 R（索引快搜）</text>
+  <path d="M360,120 C392,152 392,152 424,184" style="fill:none;stroke:var(--accent);stroke-width:1.5"/><path d="M424,184 l-10,-2 l2,-10 z" style="fill:var(--accent)"/>
+  <text x="380" y="266" text-anchor="middle" style="fill:var(--faint);font-size:12px">可见性一刻不断：服务方从 growing 接力到 sealed+索引，排除重叠 → 不重不漏</text>
+</svg><div class="figcap"><b>接力的本质是「换服务方」</b>：接力点（sealed 段加载完成）之前，行 R 由 <b>growing 段</b>暴力扫服务；之后改由 <b>sealed + 索引</b>快搜服务，同时 delegator 把 growing 里的这部分<b>排除</b>。两边各服务一段、绝不重叠——<b>不重不漏</b>，查询者全程无感。</div></div>
 
 <div class="cols">
   <div class="col"><h4>🌱 growing 段先顶（能查）</h4><p>新行驻内存、<strong>暴力扫</strong>，胜在<strong>最新、零等待</strong>。tsafe 追上即可见，不必等落盘建索引。</p></div>
@@ -126,7 +140,7 @@ insert binlog（真数据）、stats binlog（统计/主键索引）、delta bin
   <tr><td>进 growing 段（可查）</td><td>delegator（QueryNode）</td><td class="mono">internal/querynodev2/delegator（tsafe）</td><td>第 26、30 课</td></tr>
   <tr><td>封段 + flush</td><td>writebuffer / SyncTask</td><td class="mono">internal/flushcommon/writebuffer · syncmgr</td><td>第 17、18 课</td></tr>
   <tr><td>记账 binlog</td><td>DataCoord</td><td class="mono">internal/datacoord · internal/storage</td><td>第 12、18 课</td></tr>
-  <tr><td>建索引</td><td>IndexNode + Knowhere</td><td class="mono">internal/indexnode · internal/datacoord（index 调度）</td><td>第 21、22、23 课</td></tr>
+  <tr><td>建索引</td><td>datanode worker + Knowhere</td><td class="mono">internal/datanode/index/task_index.go · internal/datacoord（index 调度）</td><td>第 21、22、23 课</td></tr>
   <tr><td>分配 + 加载</td><td>QueryCoord + segcore</td><td class="mono">internal/querycoordv2 · internal/core（segcore）</td><td>第 13、27 课</td></tr>
   <tr><td>接力服务</td><td>delegator</td><td class="mono">internal/querynodev2/delegator（handoff）</td><td>第 26 课</td></tr>
 </table>
@@ -199,7 +213,7 @@ The key intuition: <strong>"durable" and "visible" happen in the foreground, ear
 
 <h2>Stop 1 · Write: it counts once it's in the log</h2>
 <p>You call <span class="mono">insert</span>, and the request hits the <strong>Proxy</strong> first. The Proxy stores nothing; it is <strong>gatekeeper plus dispatcher</strong>: it validates the schema, requests a batch of <strong>globally-unique primary keys</strong> when autoID is on (handed out in bulk by RootCoord's ID allocator), asks RootCoord for a <strong>timestamp ts</strong> (TSO, globally monotonic — see <span class="inline">Lesson 11</span>), hashes each row to a <strong>vchannel (shard)</strong>, and finally packs the batch into an <span class="mono">InsertMsg</span> <strong>written to that shard's WAL</strong>.
-Trace it in source: <span class="inline">internal/proxy/task_insert.go</span> (insertTask's PreExecute/Execute), <span class="inline">internal/rootcoord</span> (TSO and ID allocator), with streaming writes in <span class="inline">internal/streamingnode</span> and <span class="inline">pkg/streaming</span>.</p>
+Trace it in source: <span class="inline">internal/proxy/task_insert.go</span> (insertTask's PreExecute) and <span class="inline">task_insert_streaming.go</span> (Execute: appends the InsertMsg to the WAL), <span class="inline">internal/rootcoord</span> (TSO and ID allocator), with streaming writes in <span class="inline">internal/streamingnode</span> and <span class="inline">pkg/streaming</span>.</p>
 
 <p>Here is the pivotal moment: <strong>once the InsertMsg is appended to the WAL and acknowledged, the write "counts"</strong> — insert returns success. Why dare return so early? Because the WAL is <strong>ordered, reliable and replayable</strong> (<span class="inline">Lesson 7</span>, <span class="inline">Lesson 16</span>): even if the whole process crashes a second later, the record is still in the log, and a replay after restart brings it back. <strong>"Durable" does not mean "flushed into a binlog" — it means "in the WAL"</strong>, and that is the bedrock of everything that follows.</p>
 
@@ -250,10 +264,24 @@ At this step the data becomes <strong>durable a second time, more solidly</stron
 <p>Why insist on pushing this work to the background? Because it is <strong>heavy and slow</strong>: serializing hundreds of thousands of rows, building an HNSW graph — these take seconds or more. If <span class="mono">insert</span> had to <strong>sit and wait</strong> for flush and indexing to finish before returning, write throughput would collapse. Milvus's choice is to <strong>do them asynchronously in the background</strong>, leaving the foreground with just "write one log entry," the one fast thing — <strong>which is exactly why writes sustain high concurrency</strong>, and proves the throughline again: <strong>durable first, return fast, slow work goes to the background</strong>.</p>
 
 <h2>Stop 4 · Index + load: from "searchable" to "searchable fast"</h2>
-<p>A sealed segment can still only be <strong>brute-force scanned</strong>; to be "fast" it needs an index. DataCoord's index scheduling notices this sealed segment <strong>still lacks an index</strong> and dispatches a build task to an <strong>IndexNode</strong>; the IndexNode reads the binlog, uses <strong>Knowhere</strong> to build an HNSW/IVF-style vector index, and writes <strong>index files</strong> into object storage (<span class="inline">Lesson 21</span>, <span class="inline">Lesson 23</span>).
+<p>A sealed segment can still only be <strong>brute-force scanned</strong>; to be "fast" it needs an index. DataCoord's index scheduling notices this sealed segment <strong>still lacks an index</strong> and dispatches a build task to a <strong>worker</strong> — note this worker runs on a <strong>datanode</strong>; there is <strong>no separate indexnode process</strong> (the point <span class="inline">Lesson 21</span> stresses as most-easily-misremembered); the worker reads the binlog, uses <strong>Knowhere</strong> to build an HNSW/IVF-style vector index, and writes <strong>index files</strong> into object storage (<span class="inline">Lesson 21</span>, <span class="inline">Lesson 23</span>).
 Then <strong>QueryCoord</strong> <strong>assigns</strong> this "sealed + indexed" segment to some <strong>QueryNode</strong>, which uses <strong>segcore</strong> to <strong>load</strong> the columns and index in (often mmap — see <span class="inline">Lesson 27</span>, <span class="inline">Lesson 35</span>).</p>
 
 <p>Last comes the elegant move — the <strong>handoff</strong>: until the sealed segment is loaded, the row is served by the growing segment; once loading completes, the delegator switches it from "growing still covers it" to "<strong>served by sealed + index</strong>", and <strong>excludes that portion from growing</strong>, guaranteeing <strong>no double-count, no gap</strong> (<span class="inline">Lesson 26</span>). To the querier it's entirely seamless: visibility never lapses for an instant, the engine behind it merely swaps "in-memory brute force" for "fast indexed search."</p>
+
+<div class="fig"><svg viewBox="0 0 760 300" role="img" aria-label="Handoff: before the sealed segment is indexed and loaded, row R is served by the growing segment; after the handoff point when loading completes, it is served by sealed plus index, and the delegator excludes this portion from growing, so no double-count and no gap">
+  <text x="380" y="24" text-anchor="middle" style="fill:var(--ink);font-weight:700">Handoff: who serves "row R"</text>
+  <line x1="392" y1="46" x2="392" y2="248" style="stroke:var(--accent);stroke-width:1.5;stroke-dasharray:5 3"/>
+  <text x="392" y="40" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700;font-size:12px">sealed loaded · handoff point</text>
+  <text x="120" y="70" style="fill:var(--teal);font-weight:700">growing seg</text>
+  <rect x="120" y="78" width="268" height="40" rx="8" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="254" y="103" text-anchor="middle" style="fill:var(--teal);font-weight:700">serves R (brute force)</text>
+  <rect x="396" y="78" width="284" height="40" rx="8" style="fill:var(--panel-2);stroke:var(--line)"/><text x="538" y="103" text-anchor="middle" style="fill:var(--muted)">✕ excluded (no longer serves)</text>
+  <text x="120" y="178" style="fill:var(--blue);font-weight:700">sealed + index</text>
+  <rect x="120" y="186" width="268" height="40" rx="8" style="fill:var(--panel-2);stroke:var(--line);stroke-dasharray:4 3"/><text x="254" y="211" text-anchor="middle" style="fill:var(--muted)">not loaded yet (idle)</text>
+  <rect x="396" y="186" width="284" height="40" rx="8" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="538" y="211" text-anchor="middle" style="fill:var(--blue);font-weight:700">serves R (indexed)</text>
+  <path d="M360,120 C392,152 392,152 424,184" style="fill:none;stroke:var(--accent);stroke-width:1.5"/><path d="M424,184 l-10,-2 l2,-10 z" style="fill:var(--accent)"/>
+  <text x="380" y="266" text-anchor="middle" style="fill:var(--faint);font-size:12px">visibility never lapses: serving moves from growing to sealed+index, overlap excluded → no double-count, no gap</text>
+</svg><div class="figcap"><b>The handoff is a change of server</b>: before the handoff point (sealed segment loaded), row R is served by the <b>growing segment</b> (brute force); after it, by <b>sealed + index</b> (fast), while the delegator <b>excludes</b> that portion from growing. Each serves one stretch, never overlapping — <b>no double-count, no gap</b>, seamless to the querier.</div></div>
 
 <div class="cols">
   <div class="col"><h4>🌱 growing serves first (searchable)</h4><p>New rows in memory, <strong>brute-force scanned</strong>, winning on <strong>freshness and zero wait</strong>. Visible once tsafe catches up — no need to wait for flush or index.</p></div>
@@ -271,7 +299,7 @@ Then <strong>QueryCoord</strong> <strong>assigns</strong> this "sealed + indexed
   <tr><td>enter growing seg (searchable)</td><td>delegator (QueryNode)</td><td class="mono">internal/querynodev2/delegator (tsafe)</td><td>Lessons 26, 30</td></tr>
   <tr><td>seal + flush</td><td>writebuffer / SyncTask</td><td class="mono">internal/flushcommon/writebuffer · syncmgr</td><td>Lessons 17, 18</td></tr>
   <tr><td>record binlog</td><td>DataCoord</td><td class="mono">internal/datacoord · internal/storage</td><td>Lessons 12, 18</td></tr>
-  <tr><td>build index</td><td>IndexNode + Knowhere</td><td class="mono">internal/indexnode · internal/datacoord (index scheduling)</td><td>Lessons 21, 22, 23</td></tr>
+  <tr><td>build index</td><td>datanode worker + Knowhere</td><td class="mono">internal/datanode/index/task_index.go · internal/datacoord (index scheduling)</td><td>Lessons 21, 22, 23</td></tr>
   <tr><td>assign + load</td><td>QueryCoord + segcore</td><td class="mono">internal/querycoordv2 · internal/core (segcore)</td><td>Lessons 13, 27</td></tr>
   <tr><td>handoff serving</td><td>delegator</td><td class="mono">internal/querynodev2/delegator (handoff)</td><td>Lesson 26</td></tr>
 </table>
