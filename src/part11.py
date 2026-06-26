@@ -70,6 +70,31 @@ LESSON_47 = {
 <h2>它和流式写入怎么分工</h2>
 <p>最后把两条写入路径的<strong>分工与协同</strong>讲清。它们<strong>共享同一套"段"的抽象</strong>（第 7 课）：无论数据是流式攒进 growing 再 flush 成的段，还是批量导入直接生成的段，<strong>最终都是对象存储里同样格式的 binlog 段</strong>，被 QueryNode 一视同仁地加载、检索。也就是说，批量导入<strong>不是另起炉灶</strong>，而是<strong>换一条更高效的路、生产出同样的产物</strong>——这正是它能无缝融入整个系统的原因。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="两条写入路径殊途同归：流式写入（实时 insert → WAL → growing → flush 成段）与批量导入（批量文件 → ImportV2 作业 → 直接建段）都产出同规格的 binlog 段落到对象存储，被 QueryNode 一视同仁地加载与检索">
+    <text x="24" y="56" style="fill:var(--muted)">① 流式写入（在线 · 实时可见）</text>
+    <rect x="24" y="64" width="104" height="40" rx="8" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="76" y="89" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">实时 insert</text>
+    <line x1="128" y1="84" x2="146" y2="84" style="stroke:var(--line);stroke-width:2"/><path d="M146,84 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="148" y="64" width="130" height="40" rx="8" style="fill:var(--panel);stroke:var(--accent)"/><text x="213" y="89" text-anchor="middle" style="fill:var(--ink)">WAL → growing</text>
+    <line x1="278" y1="84" x2="296" y2="84" style="stroke:var(--line);stroke-width:2"/><path d="M296,84 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="298" y="64" width="104" height="40" rx="8" style="fill:var(--panel);stroke:var(--accent)"/><text x="350" y="89" text-anchor="middle" style="fill:var(--ink)">flush 成段</text>
+    <text x="24" y="158" style="fill:var(--muted)">② 批量导入（离线 · 一次写定）</text>
+    <rect x="24" y="166" width="104" height="40" rx="8" style="fill:var(--blue-soft);stroke:var(--blue);stroke-width:1.5"/><text x="76" y="191" text-anchor="middle" style="fill:var(--blue);font-weight:700">批量文件</text>
+    <line x1="128" y1="186" x2="146" y2="186" style="stroke:var(--line);stroke-width:2"/><path d="M146,186 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="148" y="166" width="130" height="40" rx="8" style="fill:var(--panel);stroke:var(--blue)"/><text x="213" y="191" text-anchor="middle" style="fill:var(--ink)">ImportV2 作业</text>
+    <line x1="278" y1="186" x2="296" y2="186" style="stroke:var(--line);stroke-width:2"/><path d="M296,186 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="298" y="166" width="104" height="40" rx="8" style="fill:var(--panel);stroke:var(--blue)"/><text x="350" y="191" text-anchor="middle" style="fill:var(--ink)">直接建段</text>
+    <line x1="404" y1="88" x2="470" y2="120" style="stroke:var(--teal);stroke-width:2.5"/><path d="M470,120 l-11,-2 l3,-9 z" style="fill:var(--teal)"/>
+    <line x1="404" y1="182" x2="470" y2="150" style="stroke:var(--teal);stroke-width:2.5"/><path d="M470,150 l-8,-7 l8,-4 z" style="fill:var(--teal)"/>
+    <text x="430" y="128" text-anchor="middle" style="fill:var(--teal);font-weight:700">殊途同归</text>
+    <rect x="474" y="100" width="220" height="56" rx="11" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:2"/><text x="584" y="124" text-anchor="middle" style="fill:var(--teal);font-weight:700">同规格 binlog 段</text><text x="584" y="144" text-anchor="middle" style="fill:var(--muted)">对象存储 · 同一张图纸</text>
+    <line x1="584" y1="156" x2="584" y2="174" style="stroke:var(--teal);stroke-width:2"/><path d="M584,174 l-4,-10 l8,0 z" style="fill:var(--teal)"/>
+    <rect x="474" y="176" width="220" height="40" rx="9" style="fill:var(--panel);stroke:var(--line)"/><text x="584" y="201" text-anchor="middle" style="fill:var(--ink)">QueryNode 一视同仁加载、检索</text>
+    <text x="380" y="256" text-anchor="middle" style="fill:var(--muted)">两条生产路径、同一种产物：上游细水长流或整车卸货，交付下游的都是同规格的段</text>
+  </svg>
+  <div class="figcap"><b>两条写入路径，殊途同归</b>：<b>① 流式写入</b>（在线、实时可见）走 <span class="mono">实时 insert → WAL → growing → flush 成段</span>；<b>② 批量导入</b>（离线、一次写定）走 <span class="mono">批量文件 → ImportV2 作业 → 直接建段</span>。两条路<b>最终都产出同规格的 binlog 段</b>落到对象存储——就像"不管哪条产线，下线的零件都符合同一张图纸"，于是 <b>QueryNode 一视同仁</b>地加载、检索，不必认两种段。把"多样的生产"收敛到"统一的产物接口"，正是系统能容纳多路径却不失控的关键。</div>
+</div>
+
 <p>这种"<strong>不同生产路径、相同最终产物</strong>"的设计，其实是个值得反复体会的架构智慧。试想另一种糟糕的设计：如果批量导入产出的是一种<strong>和流式段格式不同的"导入专用段"</strong>，那 QueryNode 就得<strong>认两种段、写两套加载与检索逻辑</strong>，整个读路径瞬间复杂一倍、还容易出 bug。Milvus 偏不——它让两条写入路径在<strong>"段"这个抽象上汇合</strong>：上游你爱怎么生产怎么生产（细水长流也好、整车卸货也罢），但<strong>交付给下游的，必须是同一种规格的段</strong>。这就像工厂里"<strong>不管哪条产线，下线的零件都得符合同一张图纸</strong>"——于是组装环节（QueryNode）才能对所有零件一视同仁。把"<strong>多样的生产</strong>"收敛到"<strong>统一的产物接口</strong>"，正是让一个系统能<strong>容纳多条路径却不失控</strong>的关键。你在第 22 课（索引交给 Knowhere 的统一接口）、第 36 课（算子统一吃一批吐一批）都见过这种审美，这里是它在<strong>写入路径</strong>上的又一次体现——而这，也正是第 11 部分想带你看到的：<strong>主干之外，Milvus 在每一处"该统一的地方统一、该分路的地方分路"的成熟权衡</strong>。</p>
 <p>那实践中怎么选？<strong>在线、持续、要求实时可见</strong>的写入（用户应用的日常 insert）走<strong>流式</strong>；<strong>一次性、海量、离线、一次写定</strong>的灌库（数据迁移、批量回填、离线建库）走<strong>批量导入</strong>。很多生产部署是<strong>两者并用</strong>：先用一次大 import 把历史数据灌进来打底，再用流式写入承接此后的增量。理解了"<strong>同一个段抽象、两条生产路径</strong>"，你对 Milvus 写入侧的认识就完整了——它既能像水龙头一样接住实时细流，也能像卸货码头一样吞下整车批货。这正是一个成熟数据库该有的<strong>弹性</strong>。</p>
 
@@ -139,6 +164,32 @@ The writes in Part 4 were the <strong>online, streaming</strong> path: row by ro
 
 <h2>How it divides labor with streaming writes</h2>
 <p>Finally, the <strong>division and cooperation</strong> of the two write paths. They <strong>share the same "segment" abstraction</strong> (Lesson 7): whether data was streamed into a growing segment then flushed, or bulk-imported straight into a segment, <strong>the end product is the same binlog-format segment in object storage</strong>, loaded and searched by QueryNodes alike. So bulk import <strong>isn't a separate world</strong> — it's <strong>a more efficient path producing the same product</strong>, which is why it slots seamlessly into the whole system.</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Two write paths converge: streaming (live insert → WAL → growing → flush to segment) and bulk import (bulk files → ImportV2 job → build segment) both produce the same binlog-format segment in object storage, loaded and searched by QueryNode alike">
+    <text x="24" y="56" style="fill:var(--muted)">① streaming (online · real-time)</text>
+    <rect x="24" y="64" width="104" height="40" rx="8" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="76" y="89" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">live insert</text>
+    <line x1="128" y1="84" x2="146" y2="84" style="stroke:var(--line);stroke-width:2"/><path d="M146,84 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="148" y="64" width="130" height="40" rx="8" style="fill:var(--panel);stroke:var(--accent)"/><text x="213" y="89" text-anchor="middle" style="fill:var(--ink)">WAL → growing</text>
+    <line x1="278" y1="84" x2="296" y2="84" style="stroke:var(--line);stroke-width:2"/><path d="M296,84 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="298" y="64" width="104" height="40" rx="8" style="fill:var(--panel);stroke:var(--accent)"/><text x="350" y="89" text-anchor="middle" style="fill:var(--ink)">flush → seg</text>
+    <text x="24" y="158" style="fill:var(--muted)">② bulk import (offline · write-once)</text>
+    <rect x="24" y="166" width="104" height="40" rx="8" style="fill:var(--blue-soft);stroke:var(--blue);stroke-width:1.5"/><text x="76" y="191" text-anchor="middle" style="fill:var(--blue);font-weight:700">bulk files</text>
+    <line x1="128" y1="186" x2="146" y2="186" style="stroke:var(--line);stroke-width:2"/><path d="M146,186 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="148" y="166" width="130" height="40" rx="8" style="fill:var(--panel);stroke:var(--blue)"/><text x="213" y="191" text-anchor="middle" style="fill:var(--ink)">ImportV2 job</text>
+    <line x1="278" y1="186" x2="296" y2="186" style="stroke:var(--line);stroke-width:2"/><path d="M296,186 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="298" y="166" width="104" height="40" rx="8" style="fill:var(--panel);stroke:var(--blue)"/><text x="350" y="191" text-anchor="middle" style="fill:var(--ink)">build seg</text>
+    <line x1="404" y1="88" x2="470" y2="120" style="stroke:var(--teal);stroke-width:2.5"/><path d="M470,120 l-11,-2 l3,-9 z" style="fill:var(--teal)"/>
+    <line x1="404" y1="182" x2="470" y2="150" style="stroke:var(--teal);stroke-width:2.5"/><path d="M470,150 l-8,-7 l8,-4 z" style="fill:var(--teal)"/>
+    <text x="430" y="128" text-anchor="middle" style="fill:var(--teal);font-weight:700">converge</text>
+    <rect x="474" y="100" width="220" height="56" rx="11" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:2"/><text x="584" y="124" text-anchor="middle" style="fill:var(--teal);font-weight:700">same binlog segment</text><text x="584" y="144" text-anchor="middle" style="fill:var(--muted)">object storage · one blueprint</text>
+    <line x1="584" y1="156" x2="584" y2="174" style="stroke:var(--teal);stroke-width:2"/><path d="M584,174 l-4,-10 l8,0 z" style="fill:var(--teal)"/>
+    <rect x="474" y="176" width="220" height="40" rx="9" style="fill:var(--panel);stroke:var(--line)"/><text x="584" y="201" text-anchor="middle" style="fill:var(--ink)">QueryNode loads both alike</text>
+    <text x="380" y="256" text-anchor="middle" style="fill:var(--muted)">two paths, one product: a trickle or a truckload upstream → the same segment downstream</text>
+  </svg>
+  <div class="figcap"><b>Two write paths, converging</b>: <b>① streaming</b> (online, real-time-visible) goes <span class="mono">live insert → WAL → growing → flush to segment</span>; <b>② bulk import</b> (offline, write-once) goes <span class="mono">bulk files → ImportV2 job → build segment</span>. Both paths <b>end in the same binlog-format segment</b> in object storage — like "whatever the production line, the parts off it meet one blueprint" — so <b>QueryNode treats them alike</b>, never needing to know two segment kinds. Converging "diverse production" onto "one product interface" is what lets a system hold many paths without losing control.</div>
+</div>
+
 <p>How to choose in practice? <strong>Online, continuous, real-time-visible</strong> writes (an app's everyday insert) go <strong>streaming</strong>; <strong>one-shot, massive, offline, write-once</strong> loading (migration, batch backfill, offline base-loading) goes <strong>bulk import</strong>. Many production deployments <strong>use both</strong>: one big import to base-load historical data, then streaming writes to carry the incremental flow thereafter. Grasp "<strong>one segment abstraction, two production paths</strong>" and your view of Milvus's write side is complete — it can catch a real-time trickle like a tap, and swallow a truckload like a loading dock. That's the <strong>elasticity</strong> a mature database should have.</p>
 
 <div class="card key">
@@ -199,6 +250,29 @@ LESSON_48 = {
 <h2>融合：RRF / 加权 / 模型重排</h2>
 <p>把 N 份排名<strong>合成一份</strong>，是混合检索的灵魂，这一步叫 <strong>rerank（重排 / 融合）</strong>。难点在于：<strong>不同子搜索的"分数"往往不可比</strong>——稠密向量的相似度（比如 0.92）和稀疏向量的 BM25 分（比如 14.7）<strong>根本不是一个量纲</strong>，直接相加毫无意义。Milvus 提供三类 ranker 来解决这件事（配置见 <span class="inline">proxy/rerank_meta.go</span>、<span class="mono">parseRankParams</span>）。</p>
 <p>第一类 <strong>RRF（Reciprocal Rank Fusion，倒数排名融合）</strong>：它<strong>干脆不看原始分数，只看名次</strong>。一个文档在某份榜单里排第 r 名，就得 <span class="mono">1/(k+r)</span> 分（k 是个平滑常数，默认 60），把它在所有榜单里的这种"名次分"加起来，就是最终分。妙在它<strong>天然抹平了量纲差异</strong>——名次永远是可比的。当你不确定各路分数该怎么权衡时，RRF 是个稳健的默认。第二类 <strong>WeightedRanker（加权融合）</strong>：当你<strong>明确想让某一路更重要</strong>时（比如"语义占七成、关键词占三成"），就给各路一个权重，把<strong>归一化后的分数</strong>加权求和。第三类 <strong>模型重排（model reranker）</strong>：把各路的候选<strong>交给一个专门的重排模型</strong>（cross-encoder，如 Cohere、TEI 等，代码在 <span class="inline">internal/util/function/rerank</span>）重新打分排序——质量最高，但要<strong>调用外部模型、成本也最高</strong>。下面把三者摆清。</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="RRF 倒数排名融合：向量 ANN 榜与 BM25 榜各自排名，RRF 只看名次给每个文档 1/(k+r) 分、跨榜相加，k=60；d1 在两榜都排第二、不拔尖却都在，融合后总分最高、排第一">
+    <text x="86" y="60" text-anchor="middle" style="fill:var(--muted)">向量 ANN 榜</text>
+    <rect x="30" y="72" width="118" height="32" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="89" y="93" text-anchor="middle" class="mono" style="fill:var(--muted)">① d3</text>
+    <rect x="30" y="108" width="118" height="32" rx="7" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="89" y="129" text-anchor="middle" class="mono" style="fill:var(--accent-ink);font-weight:700">② d1</text>
+    <rect x="30" y="144" width="118" height="32" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="89" y="165" text-anchor="middle" class="mono" style="fill:var(--muted)">③ d9</text>
+    <text x="218" y="60" text-anchor="middle" style="fill:var(--muted)">BM25 榜</text>
+    <rect x="162" y="72" width="118" height="32" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="221" y="93" text-anchor="middle" class="mono" style="fill:var(--muted)">① d5</text>
+    <rect x="162" y="108" width="118" height="32" rx="7" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="221" y="129" text-anchor="middle" class="mono" style="fill:var(--accent-ink);font-weight:700">② d1</text>
+    <rect x="162" y="144" width="118" height="32" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="221" y="165" text-anchor="middle" class="mono" style="fill:var(--muted)">③ d8</text>
+    <line x1="282" y1="124" x2="312" y2="124" style="stroke:var(--teal);stroke-width:2.5"/><path d="M312,124 l-11,-5 l0,10 z" style="fill:var(--teal)"/>
+    <rect x="314" y="78" width="130" height="92" rx="10" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:1.5"/><text x="379" y="102" text-anchor="middle" style="fill:var(--teal);font-weight:700">RRF · 只看名次</text><text x="379" y="126" text-anchor="middle" class="mono" style="fill:var(--ink)">Σ 1/(k+r)</text><text x="379" y="150" text-anchor="middle" style="fill:var(--muted)">k=60，抹平量纲</text>
+    <line x1="444" y1="124" x2="472" y2="124" style="stroke:var(--accent);stroke-width:2.5"/><path d="M472,124 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <text x="606" y="60" text-anchor="middle" style="fill:var(--muted)">融合最终榜</text>
+    <rect x="476" y="72" width="262" height="32" rx="7" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:2"/><text x="607" y="93" text-anchor="middle" class="mono" style="fill:var(--accent-ink);font-weight:700">① d1 · 0.032（两榜都第 2）</text>
+    <rect x="476" y="108" width="262" height="32" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="607" y="129" text-anchor="middle" class="mono" style="fill:var(--muted)">② d3 · 0.016（只在一榜拔尖）</text>
+    <rect x="476" y="144" width="262" height="32" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="607" y="165" text-anchor="middle" class="mono" style="fill:var(--muted)">③ d5 · 0.016（只在一榜拔尖）</text>
+    <text x="380" y="210" text-anchor="middle" style="fill:var(--muted)">RRF 不看原始分、只看名次（稠密相似度 0.92 与 BM25 14.7 不可比）→ 名次永远可比</text>
+    <text x="380" y="232" text-anchor="middle" style="fill:var(--ink);font-weight:700">d1 两榜都第 2、不拔尖却都在 → 融合第 1：稳健的"哪都不差"胜过偏科的"只在一榜拔尖"</text>
+  </svg>
+  <div class="figcap"><b>RRF：把多份排名合成一份</b>，难点是不同子搜索的"分数"<b>不可比</b>（稠密相似度 0.92 vs BM25 14.7 不是一个量纲）。<b>RRF（倒数排名融合）</b>干脆<b>只看名次不看分数</b>：文档在某榜排第 r 名就得 <span class="mono">1/(k+r)</span> 分（k=60），跨榜相加即最终分——名次永远可比，天然抹平量纲。看 <span class="mono">d1</span>：它在两榜都只排<b>第 2</b>（不拔尖），但<b>两榜都在</b>，<span class="mono">1/62 + 1/62 ≈ 0.032</span> 反而<b>压过</b>只在单榜第 1 的 d3/d5（<span class="mono">1/61 ≈ 0.016</span>）→ 融合后<b>排第 1</b>。这正是 RRF 的精髓：<b>稳健地"哪都不差"，胜过偏科地"只在一路拔尖"</b>。（另有 WeightedRanker 加权、model reranker 精排两类。）</div>
+</div>
 
 <p>怎么在这三者间选？这又是一道熟悉的<strong>取舍题</strong>。RRF <strong>最省心、最稳健</strong>——不用调参、不怕量纲、对"我也说不清两路谁更重要"的场景最友好，所以常被设成默认。WeightedRanker <strong>给你控制权</strong>——当你凭业务经验知道"这个场景语义更重要"时，能手动压一个权重上去，代价是要自己调那个比例。模型重排<strong>质量天花板最高</strong>——cross-encoder 会把"查询和每个候选"成对地细看一遍，比单纯的分数融合精准得多，但它要<strong>为每个候选都跑一次模型推理</strong>，延迟和成本都显著上去，所以通常只对前融合出的<strong>少量候选</strong>(比如 top-50)做精排。一个常见的生产组合是"<strong>先粗后精</strong>"：先用 RRF 把多路快速融合出一批候选，再用模型重排对这批候选做最终精排——<strong>用便宜的方法过滤大头、用昂贵的方法雕琢尖端</strong>。这种"两级排序"的思路，和第 5 课 ANN"先粗筛桶、再精算"、第 28 课"先过滤、再检索"是同一种<strong>分层收敛、把贵的算力花在刀刃上</strong>的智慧。</p>
 
@@ -276,6 +350,29 @@ The searches so far were mostly "<strong>one query vector, find neighbors in one
 <p>Combining N rankings <strong>into one</strong> is the soul of hybrid search; this step is <strong>rerank (fusion)</strong>. The hard part: <strong>scores from different sub-searches are often incomparable</strong> — a dense similarity (say 0.92) and a sparse BM25 score (say 14.7) are <strong>simply not the same unit</strong>, so adding them is meaningless. Milvus offers three kinds of ranker (config in <span class="inline">proxy/rerank_meta.go</span>, <span class="mono">parseRankParams</span>).</p>
 <p>First, <strong>RRF (Reciprocal Rank Fusion)</strong>: it <strong>ignores raw scores and looks only at rank</strong>. A document ranked r-th in some list earns <span class="mono">1/(k+r)</span> (k a smoothing constant, default 60); summing these "rank scores" across all lists gives the final score. The beauty: it <strong>naturally erases unit differences</strong> — ranks are always comparable. When unsure how to weigh the scores, RRF is a robust default. Second, <strong>WeightedRanker</strong>: when you <strong>clearly want one path to matter more</strong> (say "semantics 70%, keywords 30%"), give each path a weight and sum the <strong>normalized scores</strong>. Third, <strong>model reranking</strong>: hand the candidates to a dedicated rerank model (a cross-encoder, e.g. Cohere, TEI; code in <span class="inline">internal/util/function/rerank</span>) to re-score and reorder — highest quality, but it <strong>calls an external model and costs the most</strong>. The three side by side:</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="RRF reciprocal-rank fusion: the vector ANN list and the BM25 list each rank documents; RRF looks only at rank, giving each document 1/(k+r) and summing across lists with k=60; d1 is #2 in both lists (never top but always present) and so scores highest after fusion, ranking #1">
+    <text x="86" y="60" text-anchor="middle" style="fill:var(--muted)">vector ANN</text>
+    <rect x="30" y="72" width="118" height="32" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="89" y="93" text-anchor="middle" class="mono" style="fill:var(--muted)">① d3</text>
+    <rect x="30" y="108" width="118" height="32" rx="7" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="89" y="129" text-anchor="middle" class="mono" style="fill:var(--accent-ink);font-weight:700">② d1</text>
+    <rect x="30" y="144" width="118" height="32" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="89" y="165" text-anchor="middle" class="mono" style="fill:var(--muted)">③ d9</text>
+    <text x="218" y="60" text-anchor="middle" style="fill:var(--muted)">BM25</text>
+    <rect x="162" y="72" width="118" height="32" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="221" y="93" text-anchor="middle" class="mono" style="fill:var(--muted)">① d5</text>
+    <rect x="162" y="108" width="118" height="32" rx="7" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="221" y="129" text-anchor="middle" class="mono" style="fill:var(--accent-ink);font-weight:700">② d1</text>
+    <rect x="162" y="144" width="118" height="32" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="221" y="165" text-anchor="middle" class="mono" style="fill:var(--muted)">③ d8</text>
+    <line x1="282" y1="124" x2="312" y2="124" style="stroke:var(--teal);stroke-width:2.5"/><path d="M312,124 l-11,-5 l0,10 z" style="fill:var(--teal)"/>
+    <rect x="314" y="78" width="130" height="92" rx="10" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:1.5"/><text x="379" y="102" text-anchor="middle" style="fill:var(--teal);font-weight:700">RRF · rank only</text><text x="379" y="126" text-anchor="middle" class="mono" style="fill:var(--ink)">Σ 1/(k+r)</text><text x="379" y="150" text-anchor="middle" style="fill:var(--muted)">k=60, unit-free</text>
+    <line x1="444" y1="124" x2="472" y2="124" style="stroke:var(--accent);stroke-width:2.5"/><path d="M472,124 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <text x="606" y="60" text-anchor="middle" style="fill:var(--muted)">fused final</text>
+    <rect x="476" y="72" width="262" height="32" rx="7" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:2"/><text x="607" y="93" text-anchor="middle" class="mono" style="fill:var(--accent-ink);font-weight:700">① d1 · 0.032 (#2 both)</text>
+    <rect x="476" y="108" width="262" height="32" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="607" y="129" text-anchor="middle" class="mono" style="fill:var(--muted)">② d3 · 0.016 (#1 one only)</text>
+    <rect x="476" y="144" width="262" height="32" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="607" y="165" text-anchor="middle" class="mono" style="fill:var(--muted)">③ d5 · 0.016 (#1 one only)</text>
+    <text x="380" y="210" text-anchor="middle" style="fill:var(--muted)">RRF ignores raw scores, ranks only (0.92 vs 14.7 incomparable) → ranks always comparable</text>
+    <text x="380" y="232" text-anchor="middle" style="fill:var(--ink);font-weight:700">d1 is #2 in both (never top, always there) → fused #1: consistent beats spiky</text>
+  </svg>
+  <div class="figcap"><b>RRF: merge several rankings into one</b>. The hard part is that sub-searches' "scores" are <b>incomparable</b> (a dense similarity 0.92 vs a BM25 14.7 aren't the same unit). <b>RRF (reciprocal rank fusion)</b> simply <b>looks at rank, not score</b>: a doc ranked r in a list earns <span class="mono">1/(k+r)</span> (k=60), summed across lists — ranks are always comparable, erasing the unit gap. See <span class="mono">d1</span>: only <b>#2</b> in each list (never top), yet <b>present in both</b>, so <span class="mono">1/62 + 1/62 ≈ 0.032</span> <b>beats</b> d3/d5 that top a single list (<span class="mono">1/61 ≈ 0.016</span>) → it ranks <b>#1</b> after fusion. That's RRF's essence: <b>consistently good everywhere beats spiky in one place</b>. (Also: WeightedRanker, and model rerankers for precision.)</div>
+</div>
+
 <table class="t">
   <tr><th>Ranker</th><th>How it fuses</th><th>Best for</th></tr>
   <tr><td class="mono"><strong>RRF</strong></td><td>by rank only: each list adds 1/(k+r) (k default 60), erasing unit differences</td><td>incomparable scores / robust default</td></tr>
@@ -350,6 +447,24 @@ LESSON_49 = {
 <p>QuotaCenter 的"减速"不是一刀切，而是<strong>两档力度</strong>，对应过载的不同严重程度。第一档是<strong>限速（throttle / cool-off）</strong>：当指标<strong>接近</strong>警戒线（比如内存到了 80%），就把对应操作的速率<strong>逐步调低</strong>，让请求"<strong>排着队慢慢来</strong>"，给系统喘息和消化的时间。这是温和的刹车——请求还能进，只是变慢。</p>
 <p>第二档是<strong>强制拒绝（force-deny）</strong>：当指标<strong>撞穿</strong>硬上限（比如内存/磁盘水位过高、或 TT 延迟大到危险），QuotaCenter 会调用 <span class="mono">forceDenyWriting</span>（把 DML 速率直接压到 <strong>0</strong>、拒绝所有写入）或 <span class="mono">forceDenyReading</span>（把 DQL 压到 0、拒绝所有读）。这是紧急刹车——<strong>整类操作被暂时挡在门外</strong>，直到水位降回安全线。为什么要有这么"狠"的一档？因为到了硬上限，<strong>再放进来就是 OOM/写满磁盘的崩溃</strong>，与其全军覆没，不如<strong>果断拒绝新请求、保住已有的</strong>。值得注意的是，<strong>写和读是分开管的</strong>：内存/磁盘压力大时往往先 deny 写（写才是占资源的大头），读可能还能继续。下面把两档刹车摆清。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="两档刹车：随着内存磁盘用量与 TT 延迟上升，先进入限速档（接近约 80% 警戒线，逐步调低速率、请求排队慢来），再撞穿硬上限触发强制拒绝档（forceDenyWriting/Reading，速率归零、整类拒绝）">
+    <text x="60" y="44" style="fill:var(--muted)">内存 / 磁盘用量、TT 延迟　→　越涨越收紧</text>
+    <rect x="60" y="56" width="400" height="30" rx="6" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="260" y="76" text-anchor="middle" style="fill:var(--teal);font-weight:700">正常 · 满速放行</text>
+    <rect x="460" y="56" width="140" height="30" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="530" y="76" text-anchor="middle" style="fill:var(--amber);font-weight:700">限速</text>
+    <rect x="600" y="56" width="100" height="30" rx="6" style="fill:var(--red-soft);stroke:var(--red);stroke-width:2"/><text x="650" y="76" text-anchor="middle" style="fill:var(--red);font-weight:700">拒绝</text>
+    <line x1="460" y1="50" x2="460" y2="92" style="stroke:var(--amber);stroke-dasharray:3 3"/><text x="460" y="104" text-anchor="middle" style="fill:var(--muted)">≈80% 警戒线</text>
+    <line x1="600" y1="50" x2="600" y2="92" style="stroke:var(--red);stroke-dasharray:3 3"/><text x="600" y="104" text-anchor="middle" style="fill:var(--red)">硬上限 100%</text>
+    <rect x="40" y="120" width="156" height="36" rx="8" style="fill:var(--amber-soft);stroke:var(--amber);stroke-width:1.5"/><text x="118" y="143" text-anchor="middle" style="fill:var(--amber);font-weight:700">① 限速 throttle</text>
+    <text x="206" y="143" style="fill:var(--muted)">接近警戒线(~80%)：逐步调低速率、请求排队慢来——还能进，只是变慢</text>
+    <rect x="40" y="164" width="156" height="36" rx="8" style="fill:var(--red-soft);stroke:var(--red);stroke-width:1.5"/><text x="118" y="187" text-anchor="middle" style="fill:var(--red);font-weight:700">② 强制拒绝 deny</text>
+    <text x="206" y="187" style="fill:var(--muted)">撞穿硬上限：forceDeny 写/读、速率→0、整类拒绝——保住已有</text>
+    <text x="380" y="232" text-anchor="middle" style="fill:var(--ink);font-weight:700">渐进施压 + 极端兜底：平时柔和限速控压，真要撞墙才急刹拒绝</text>
+    <text x="380" y="254" text-anchor="middle" style="fill:var(--muted)">写和读分开管：压力大时先 deny 写（写占资源大头），读可能还能继续</text>
+  </svg>
+  <div class="figcap"><b>两档刹车 = 渐进限速 + 极端拒绝</b>：<span class="mono">QuotaCenter</span> 的减速不是一刀切。随着内存/磁盘用量、TT 延迟上升——<b>① 限速 throttle</b>：接近警戒线（如内存 ~80%）就<b>逐步调低速率</b>、让请求排队慢来（还能进，只是变慢，温和刹车）；<b>② 强制拒绝 force-deny</b>：撞穿硬上限就调 <span class="mono">forceDenyWriting/forceDenyReading</span> 把速率<b>压到 0、整类拒绝</b>（紧急刹车，保住已有，避免 OOM/写满盘）。只有"拒绝"一档会在临界点剧烈抖动，只有"限速"又压不住洪峰——<b>两档配合才既平滑又托底</b>。写读分开管，压力大先 deny 写。</div>
+</div>
+
 <p>这"两档刹车"的设计，藏着一个很重要的<strong>分级响应</strong>思想，值得点透。如果只有"<strong>拒绝</strong>"一档会怎样？那系统就成了"<strong>要么全放、要么全关</strong>"的开关——在临界点附近<strong>剧烈抖动</strong>：刚一拒绝、压力降了又全放，放完又爆、又全拒……用户体验是"<strong>时好时坏、忽快忽停</strong>"。反过来，如果只有"<strong>限速</strong>"一档、没有硬性拒绝，那遇到极端洪峰时，温和的限速可能<strong>压不住</strong>，系统还是会被缓慢地推向崩溃。<strong>两档配合，才能既平滑又托底</strong>：平时用限速<strong>柔和地</strong>把压力维持在安全区（像汽车轻点刹车控速），只有在真要撞墙的瞬间才动用强制拒绝这记<strong>急刹</strong>。这种"<strong>渐进施压 + 极端兜底</strong>"的分级策略，在工程上随处可见——从网络拥塞控制（慢启动→拥塞避免→快速重传）到操作系统的内存回收（轻度回收→OOM kill）。Milvus 的配额限流，正是这套成熟智慧在向量数据库上的落地。看懂了"<strong>为什么要两档、而不是一档</strong>"，你对系统稳定性设计的理解就深了一层：<strong>好的自我保护，不是一道生硬的墙，而是一条有弹性的、能随压力平滑收紧的缰绳</strong>。</p>
 
 <div class="cols">
@@ -418,6 +533,24 @@ Every system has a <strong>capacity ceiling</strong>. If writes outrun flushing,
 <p>QuotaCenter's "slowing down" isn't all-or-nothing but <strong>two levels of force</strong>, matching overload severity. First, <strong>throttle (cool-off)</strong>: when a metric <strong>approaches</strong> a warning line (say memory at 80%), gradually <strong>lower the rate</strong> for the matching operation, making requests "<strong>queue and go slowly</strong>", giving the system room to breathe and digest. A gentle brake — requests still get in, just slower.</p>
 <p>Second, <strong>force-deny</strong>: when a metric <strong>breaches</strong> a hard limit (memory/disk water level too high, or TT lag dangerously large), QuotaCenter calls <span class="mono">forceDenyWriting</span> (drive DML rate straight to <strong>0</strong>, reject all writes) or <span class="mono">forceDenyReading</span> (DQL to 0, reject all reads). An emergency brake — <strong>a whole operation class is temporarily held at the door</strong> until the water level recedes to safety. Why such a "harsh" level? Because at the hard limit, <strong>admitting more means an OOM/disk-full crash</strong>; rather than total wipeout, <strong>decisively reject new requests to save the existing ones</strong>. Notably, <strong>writes and reads are managed separately</strong>: under memory/disk pressure, writes (the big resource hog) are often denied first, while reads may still go. The two brakes side by side:</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Two brakes: as memory/disk usage and TT delay climb, first the throttle band kicks in (near the ~80% watermark, gradually lowering the rate so requests queue and slow), then hitting the hard limit triggers force-deny (forceDenyWriting/Reading, rate to zero, the whole class rejected)">
+    <text x="60" y="44" style="fill:var(--muted)">memory / disk usage, TT delay　→　tighter as it climbs</text>
+    <rect x="60" y="56" width="400" height="30" rx="6" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="260" y="76" text-anchor="middle" style="fill:var(--teal);font-weight:700">normal · full speed</text>
+    <rect x="460" y="56" width="140" height="30" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="530" y="76" text-anchor="middle" style="fill:var(--amber);font-weight:700">throttle</text>
+    <rect x="600" y="56" width="100" height="30" rx="6" style="fill:var(--red-soft);stroke:var(--red);stroke-width:2"/><text x="650" y="76" text-anchor="middle" style="fill:var(--red);font-weight:700">deny</text>
+    <line x1="460" y1="50" x2="460" y2="92" style="stroke:var(--amber);stroke-dasharray:3 3"/><text x="460" y="104" text-anchor="middle" style="fill:var(--muted)">≈80% watermark</text>
+    <line x1="600" y1="50" x2="600" y2="92" style="stroke:var(--red);stroke-dasharray:3 3"/><text x="600" y="104" text-anchor="middle" style="fill:var(--red)">hard limit 100%</text>
+    <rect x="40" y="120" width="156" height="36" rx="8" style="fill:var(--amber-soft);stroke:var(--amber);stroke-width:1.5"/><text x="118" y="143" text-anchor="middle" style="fill:var(--amber);font-weight:700">① throttle</text>
+    <text x="206" y="143" style="fill:var(--muted)">near ~80%: lower the rate, requests queue and slow (still in, just slower)</text>
+    <rect x="40" y="164" width="156" height="36" rx="8" style="fill:var(--red-soft);stroke:var(--red);stroke-width:1.5"/><text x="118" y="187" text-anchor="middle" style="fill:var(--red);font-weight:700">② force-deny</text>
+    <text x="206" y="187" style="fill:var(--muted)">hard limit hit: forceDeny writes/reads, rate→0, deny all (save the existing)</text>
+    <text x="380" y="232" text-anchor="middle" style="fill:var(--ink);font-weight:700">gradual pressure + extreme backstop: throttle gently, hard-deny only at the wall</text>
+    <text x="380" y="254" text-anchor="middle" style="fill:var(--muted)">writes and reads managed separately: under pressure deny writes first (the resource hog)</text>
+  </svg>
+  <div class="figcap"><b>Two brakes = gradual throttle + extreme deny</b>: <span class="mono">QuotaCenter</span> doesn't slow with one switch. As memory/disk usage and TT delay climb — <b>① throttle</b>: near the watermark (memory ~80%) it <b>gradually lowers the rate</b>, requests queue and slow (still get in, just slower — a gentle brake); <b>② force-deny</b>: hitting the hard limit calls <span class="mono">forceDenyWriting/forceDenyReading</span> to drop the rate <b>to 0 and reject the whole class</b> (an emergency brake — save the existing, avoid OOM / a full disk). Deny-only would thrash at the threshold; throttle-only can't hold a flood — <b>the two together are both smooth and safe</b>. Writes and reads are governed separately; under pressure, writes are denied first.</div>
+</div>
+
 <div class="cols">
   <div class="col"><h4>Throttle (gentle)</h4><p>as a metric <strong>approaches</strong> the warning line, gradually <strong>lower the rate</strong> so requests queue and go slowly. Requests still get in, just slower — room to breathe.</p></div>
   <div class="col"><h4>Force-deny (emergency)</h4><p>as a metric <strong>breaches</strong> a hard limit, <span class="mono">forceDenyWriting/Reading</span> drives that rate to <strong>0</strong>, rejecting the whole class until levels recede. Reject the new, save the existing.</p></div>
@@ -482,6 +615,30 @@ LESSON_50 = {
 
 <p>资源组这件事，背后是个很现实的<strong>"吵闹邻居"问题</strong>。设想没有资源组：A 业务和 B 业务的集合<strong>混在同一批 QueryNode</strong> 上，某天 A 跑了一个超大范围的批量检索，把这些节点的 CPU 和内存吃光——结果<strong>B 业务的在线查询也跟着变慢甚至超时</strong>，明明 B 什么都没做错。这就是"吵闹邻居"：<strong>共享资源时，一个租户的行为会殃及另一个</strong>。资源组的解法很直接：<strong>给关键业务划一块专属的节点</strong>，把它和别人的负载<strong>物理隔开</strong>。这和第 13 课 QueryCoord"把段分配到节点"是同一层的事，只不过资源组多加了一道"<strong>这些节点只服务这个组</strong>"的约束。理解了它，你就明白为什么严肃的多租户部署几乎都要用资源组——<strong>隔离不是奢侈，而是多租户共存的前提</strong>。</p>
 <p><strong>数据库（Database）</strong>则解决"<strong>命名与数据隔离</strong>"：它在<strong>集合之上又加了一层</strong>。回忆第 6 课的层级是"集合 → 分区 → 段"；数据库把它再往上扩一层成"<strong>数据库 → 集合 → 分区 → 段</strong>"。不同租户用不同数据库，<strong>集合名互不冲突、权限可按库授予</strong>（<span class="mono">CreateDatabase</span>，默认库 <span class="mono">default</span>）。<strong>资源组管"算力分给谁"、数据库管"数据归谁"</strong>，两者配合，才让一个 Milvus 集群能<strong>体面地服务很多家租户</strong>。下面这张分层图把多租户的层级摆清。</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="多租户隔离的两条泳道：租户 A 用 Database A（命名/数据隔离）与资源组 A（QueryNode n1、n2，算力隔离），租户 B 用 Database B 与资源组 B（QueryNode n3、n4）；两条泳道互不重叠，A 的负载压不到 B 的节点、集合名也不冲突">
+    <rect x="20" y="48" width="722" height="60" rx="10" style="fill:none;stroke:var(--teal);stroke-dasharray:5 4"/>
+    <rect x="30" y="58" width="78" height="40" rx="8" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:1.5"/><text x="69" y="83" text-anchor="middle" style="fill:var(--teal);font-weight:700">租户 A</text>
+    <line x1="108" y1="78" x2="124" y2="78" style="stroke:var(--teal);stroke-width:2"/><path d="M124,78 l-9,-4 l0,8 z" style="fill:var(--teal)"/>
+    <rect x="126" y="58" width="138" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="195" y="76" text-anchor="middle" style="fill:var(--ink)">Database A</text><text x="195" y="92" text-anchor="middle" style="fill:var(--muted)">命名 / 数据隔离</text>
+    <rect x="276" y="58" width="458" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="290" y="83" style="fill:var(--teal);font-weight:700">资源组 A · 算力隔离</text>
+    <rect x="470" y="64" width="66" height="28" rx="6" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="503" y="83" text-anchor="middle" class="mono" style="fill:var(--teal)">n1</text>
+    <rect x="544" y="64" width="66" height="28" rx="6" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="577" y="83" text-anchor="middle" class="mono" style="fill:var(--teal)">n2</text>
+    <text x="676" y="83" text-anchor="middle" style="fill:var(--faint)">专属</text>
+    <rect x="20" y="142" width="722" height="60" rx="10" style="fill:none;stroke:var(--purple);stroke-dasharray:5 4"/>
+    <rect x="30" y="152" width="78" height="40" rx="8" style="fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5"/><text x="69" y="177" text-anchor="middle" style="fill:var(--purple);font-weight:700">租户 B</text>
+    <line x1="108" y1="172" x2="124" y2="172" style="stroke:var(--purple);stroke-width:2"/><path d="M124,172 l-9,-4 l0,8 z" style="fill:var(--purple)"/>
+    <rect x="126" y="152" width="138" height="40" rx="8" style="fill:var(--panel);stroke:var(--purple)"/><text x="195" y="170" text-anchor="middle" style="fill:var(--ink)">Database B</text><text x="195" y="186" text-anchor="middle" style="fill:var(--muted)">命名 / 数据隔离</text>
+    <rect x="276" y="152" width="458" height="40" rx="8" style="fill:var(--panel);stroke:var(--purple)"/><text x="290" y="177" style="fill:var(--purple);font-weight:700">资源组 B · 算力隔离</text>
+    <rect x="470" y="158" width="66" height="28" rx="6" style="fill:var(--purple-soft);stroke:var(--purple)"/><text x="503" y="177" text-anchor="middle" class="mono" style="fill:var(--purple)">n3</text>
+    <rect x="544" y="158" width="66" height="28" rx="6" style="fill:var(--purple-soft);stroke:var(--purple)"/><text x="577" y="177" text-anchor="middle" class="mono" style="fill:var(--purple)">n4</text>
+    <text x="676" y="177" text-anchor="middle" style="fill:var(--faint)">专属</text>
+    <text x="380" y="234" text-anchor="middle" style="fill:var(--ink);font-weight:700">两条泳道互不重叠：资源组隔算力（节点池）、数据库隔数据（命名/权限）</text>
+    <text x="380" y="256" text-anchor="middle" style="fill:var(--muted)">A 的大查询压不到 B 的节点、集合名也不冲突——"吵闹邻居"被物理隔开</text>
+  </svg>
+  <div class="figcap"><b>多租户隔离 = 资源组（算力）+ 数据库（数据）</b>：很多业务共用一个集群时，怕"<b>抢算力、串数据</b>"。<b>资源组</b>解决<b>算力隔离</b>：把 QueryNode 分成若干组（如 A 用 <span class="mono">n1,n2</span>、B 用 <span class="mono">n3,n4</span>），不同业务的集合加载到不同节点组，<b>A 的大查询压不到 B 的节点</b>（需要时还能 <span class="mono">TransferNode</span> 在组间挪）。<b>数据库</b>解决<b>命名/数据隔离</b>：在集合之上再加一层（数据库 → 集合 → 分区 → 段），不同租户用不同库，<b>集合名不冲突、权限按库授予</b>。两条泳道互不重叠，"吵闹邻居"被隔开——隔离不是奢侈，而是多租户共存的前提。</div>
+</div>
 
 <div class="layers">
   <div class="layer l-main"><div class="lh"><span class="badge">数据库</span><span class="name">Database（多租户的最外层）</span></div><div class="ld">不同租户用不同库；集合名互不冲突、权限/配额可按库管(默认库 default)</div></div>
@@ -564,6 +721,30 @@ To close Part 11, this lesson is a <strong>quick tour</strong> of several featur
 
 <p>Resource groups exist to tame a very real <strong>"noisy neighbor" problem</strong>. Picture no resource groups: workload A's and workload B's collections <strong>share the same QueryNodes</strong>, and one day A runs a huge-range batch search that devours those nodes' CPU and memory — so <strong>B's online queries slow down or time out, even though B did nothing wrong</strong>. That's the noisy neighbor: <strong>when resources are shared, one tenant's behavior spills over onto another</strong>. The fix is direct — <strong>carve out dedicated nodes for the important workload and physically isolate it</strong> from everyone else's load. It's the same layer as Lesson 13's QueryCoord assigning segments to nodes, just with the added constraint that "<strong>these nodes serve only this group</strong>". That's why serious multi-tenant deployments almost always reach for resource groups — <strong>isolation isn't a luxury but a precondition for tenants coexisting</strong>.</p>
 <p><strong>Databases</strong> solve <strong>naming and data isolation</strong>: they add <strong>another layer above collections</strong>. Recall Lesson 6's hierarchy "collection → partition → segment"; databases extend it upward into "<strong>database → collection → partition → segment</strong>". Different tenants use different databases, so <strong>collection names don't clash and permissions can be granted per database</strong> (<span class="mono">CreateDatabase</span>, default DB <span class="mono">default</span>). <strong>Resource groups govern "who gets compute", databases govern "whose data is whose"</strong>; together they let one Milvus cluster <strong>serve many tenants gracefully</strong>. The layered diagram lays out the multi-tenancy hierarchy.</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Two non-overlapping lanes of multi-tenant isolation: tenant A uses Database A (naming/data isolation) and Resource Group A (QueryNode n1, n2 — compute isolation); tenant B uses Database B and Resource Group B (QueryNode n3, n4); the lanes never overlap, so A's load can't touch B's nodes and collection names don't clash">
+    <rect x="20" y="48" width="722" height="60" rx="10" style="fill:none;stroke:var(--teal);stroke-dasharray:5 4"/>
+    <rect x="30" y="58" width="78" height="40" rx="8" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:1.5"/><text x="69" y="83" text-anchor="middle" style="fill:var(--teal);font-weight:700">tenant A</text>
+    <line x1="108" y1="78" x2="124" y2="78" style="stroke:var(--teal);stroke-width:2"/><path d="M124,78 l-9,-4 l0,8 z" style="fill:var(--teal)"/>
+    <rect x="126" y="58" width="138" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="195" y="76" text-anchor="middle" style="fill:var(--ink)">Database A</text><text x="195" y="92" text-anchor="middle" style="fill:var(--muted)">naming / data iso</text>
+    <rect x="276" y="58" width="458" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="290" y="83" style="fill:var(--teal);font-weight:700">Resource Group A</text>
+    <rect x="470" y="64" width="66" height="28" rx="6" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="503" y="83" text-anchor="middle" class="mono" style="fill:var(--teal)">n1</text>
+    <rect x="544" y="64" width="66" height="28" rx="6" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="577" y="83" text-anchor="middle" class="mono" style="fill:var(--teal)">n2</text>
+    <text x="676" y="83" text-anchor="middle" style="fill:var(--faint)">exclusive</text>
+    <rect x="20" y="142" width="722" height="60" rx="10" style="fill:none;stroke:var(--purple);stroke-dasharray:5 4"/>
+    <rect x="30" y="152" width="78" height="40" rx="8" style="fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5"/><text x="69" y="177" text-anchor="middle" style="fill:var(--purple);font-weight:700">tenant B</text>
+    <line x1="108" y1="172" x2="124" y2="172" style="stroke:var(--purple);stroke-width:2"/><path d="M124,172 l-9,-4 l0,8 z" style="fill:var(--purple)"/>
+    <rect x="126" y="152" width="138" height="40" rx="8" style="fill:var(--panel);stroke:var(--purple)"/><text x="195" y="170" text-anchor="middle" style="fill:var(--ink)">Database B</text><text x="195" y="186" text-anchor="middle" style="fill:var(--muted)">naming / data iso</text>
+    <rect x="276" y="152" width="458" height="40" rx="8" style="fill:var(--panel);stroke:var(--purple)"/><text x="290" y="177" style="fill:var(--purple);font-weight:700">Resource Group B</text>
+    <rect x="470" y="158" width="66" height="28" rx="6" style="fill:var(--purple-soft);stroke:var(--purple)"/><text x="503" y="177" text-anchor="middle" class="mono" style="fill:var(--purple)">n3</text>
+    <rect x="544" y="158" width="66" height="28" rx="6" style="fill:var(--purple-soft);stroke:var(--purple)"/><text x="577" y="177" text-anchor="middle" class="mono" style="fill:var(--purple)">n4</text>
+    <text x="676" y="177" text-anchor="middle" style="fill:var(--faint)">exclusive</text>
+    <text x="380" y="234" text-anchor="middle" style="fill:var(--ink);font-weight:700">two lanes never overlap: resource groups isolate compute, databases isolate data</text>
+    <text x="380" y="256" text-anchor="middle" style="fill:var(--muted)">A's big query can't touch B's nodes, names don't clash — noisy neighbor fenced off</text>
+  </svg>
+  <div class="figcap"><b>Multi-tenant isolation = resource groups (compute) + databases (data)</b>: when many workloads share a cluster, you fear "<b>compute contention, data leakage</b>". <b>Resource groups</b> give <b>compute isolation</b>: split QueryNodes into groups (A uses <span class="mono">n1,n2</span>, B uses <span class="mono">n3,n4</span>) and load different workloads onto different node groups, so <b>A's big query can't touch B's nodes</b> (and <span class="mono">TransferNode</span> can move nodes between groups). <b>Databases</b> give <b>naming/data isolation</b>: a layer above collections (database → collection → partition → segment); different tenants use different DBs, so <b>names don't clash and permissions are per-database</b>. Two non-overlapping lanes — the noisy neighbor is fenced off; isolation isn't a luxury but the premise of multi-tenancy.</div>
+</div>
 
 <div class="layers">
   <div class="layer l-main"><div class="lh"><span class="badge">database</span><span class="name">Database (the outermost multi-tenancy layer)</span></div><div class="ld">different tenants use different DBs; collection names don't clash, permissions/quota per DB (default DB: default)</div></div>

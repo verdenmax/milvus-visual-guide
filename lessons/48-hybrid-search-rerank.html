@@ -388,6 +388,29 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 <p>把 N 份排名<strong>合成一份</strong>，是混合检索的灵魂，这一步叫 <strong>rerank（重排 / 融合）</strong>。难点在于：<strong>不同子搜索的"分数"往往不可比</strong>——稠密向量的相似度（比如 0.92）和稀疏向量的 BM25 分（比如 14.7）<strong>根本不是一个量纲</strong>，直接相加毫无意义。Milvus 提供三类 ranker 来解决这件事（配置见 <span class="inline">proxy/rerank_meta.go</span>、<span class="mono">parseRankParams</span>）。</p>
 <p>第一类 <strong>RRF（Reciprocal Rank Fusion，倒数排名融合）</strong>：它<strong>干脆不看原始分数，只看名次</strong>。一个文档在某份榜单里排第 r 名，就得 <span class="mono">1/(k+r)</span> 分（k 是个平滑常数，默认 60），把它在所有榜单里的这种"名次分"加起来，就是最终分。妙在它<strong>天然抹平了量纲差异</strong>——名次永远是可比的。当你不确定各路分数该怎么权衡时，RRF 是个稳健的默认。第二类 <strong>WeightedRanker（加权融合）</strong>：当你<strong>明确想让某一路更重要</strong>时（比如"语义占七成、关键词占三成"），就给各路一个权重，把<strong>归一化后的分数</strong>加权求和。第三类 <strong>模型重排（model reranker）</strong>：把各路的候选<strong>交给一个专门的重排模型</strong>（cross-encoder，如 Cohere、TEI 等，代码在 <span class="inline">internal/util/function/rerank</span>）重新打分排序——质量最高，但要<strong>调用外部模型、成本也最高</strong>。下面把三者摆清。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="RRF 倒数排名融合：向量 ANN 榜与 BM25 榜各自排名，RRF 只看名次给每个文档 1/(k+r) 分、跨榜相加，k=60；d1 在两榜都排第二、不拔尖却都在，融合后总分最高、排第一">
+    <text x="86" y="60" text-anchor="middle" style="fill:var(--muted)">向量 ANN 榜</text>
+    <rect x="30" y="72" width="118" height="32" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="89" y="93" text-anchor="middle" class="mono" style="fill:var(--muted)">① d3</text>
+    <rect x="30" y="108" width="118" height="32" rx="7" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="89" y="129" text-anchor="middle" class="mono" style="fill:var(--accent-ink);font-weight:700">② d1</text>
+    <rect x="30" y="144" width="118" height="32" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="89" y="165" text-anchor="middle" class="mono" style="fill:var(--muted)">③ d9</text>
+    <text x="218" y="60" text-anchor="middle" style="fill:var(--muted)">BM25 榜</text>
+    <rect x="162" y="72" width="118" height="32" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="221" y="93" text-anchor="middle" class="mono" style="fill:var(--muted)">① d5</text>
+    <rect x="162" y="108" width="118" height="32" rx="7" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="221" y="129" text-anchor="middle" class="mono" style="fill:var(--accent-ink);font-weight:700">② d1</text>
+    <rect x="162" y="144" width="118" height="32" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="221" y="165" text-anchor="middle" class="mono" style="fill:var(--muted)">③ d8</text>
+    <line x1="282" y1="124" x2="312" y2="124" style="stroke:var(--teal);stroke-width:2.5"/><path d="M312,124 l-11,-5 l0,10 z" style="fill:var(--teal)"/>
+    <rect x="314" y="78" width="130" height="92" rx="10" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:1.5"/><text x="379" y="102" text-anchor="middle" style="fill:var(--teal);font-weight:700">RRF · 只看名次</text><text x="379" y="126" text-anchor="middle" class="mono" style="fill:var(--ink)">Σ 1/(k+r)</text><text x="379" y="150" text-anchor="middle" style="fill:var(--muted)">k=60，抹平量纲</text>
+    <line x1="444" y1="124" x2="472" y2="124" style="stroke:var(--accent);stroke-width:2.5"/><path d="M472,124 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <text x="606" y="60" text-anchor="middle" style="fill:var(--muted)">融合最终榜</text>
+    <rect x="476" y="72" width="262" height="32" rx="7" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:2"/><text x="607" y="93" text-anchor="middle" class="mono" style="fill:var(--accent-ink);font-weight:700">① d1 · 0.032（两榜都第 2）</text>
+    <rect x="476" y="108" width="262" height="32" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="607" y="129" text-anchor="middle" class="mono" style="fill:var(--muted)">② d3 · 0.016（只在一榜拔尖）</text>
+    <rect x="476" y="144" width="262" height="32" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="607" y="165" text-anchor="middle" class="mono" style="fill:var(--muted)">③ d5 · 0.016（只在一榜拔尖）</text>
+    <text x="380" y="210" text-anchor="middle" style="fill:var(--muted)">RRF 不看原始分、只看名次（稠密相似度 0.92 与 BM25 14.7 不可比）→ 名次永远可比</text>
+    <text x="380" y="232" text-anchor="middle" style="fill:var(--ink);font-weight:700">d1 两榜都第 2、不拔尖却都在 → 融合第 1：稳健的"哪都不差"胜过偏科的"只在一榜拔尖"</text>
+  </svg>
+  <div class="figcap"><b>RRF：把多份排名合成一份</b>，难点是不同子搜索的"分数"<b>不可比</b>（稠密相似度 0.92 vs BM25 14.7 不是一个量纲）。<b>RRF（倒数排名融合）</b>干脆<b>只看名次不看分数</b>：文档在某榜排第 r 名就得 <span class="mono">1/(k+r)</span> 分（k=60），跨榜相加即最终分——名次永远可比，天然抹平量纲。看 <span class="mono">d1</span>：它在两榜都只排<b>第 2</b>（不拔尖），但<b>两榜都在</b>，<span class="mono">1/62 + 1/62 ≈ 0.032</span> 反而<b>压过</b>只在单榜第 1 的 d3/d5（<span class="mono">1/61 ≈ 0.016</span>）→ 融合后<b>排第 1</b>。这正是 RRF 的精髓：<b>稳健地"哪都不差"，胜过偏科地"只在一路拔尖"</b>。（另有 WeightedRanker 加权、model reranker 精排两类。）</div>
+</div>
+
 <p>怎么在这三者间选？这又是一道熟悉的<strong>取舍题</strong>。RRF <strong>最省心、最稳健</strong>——不用调参、不怕量纲、对"我也说不清两路谁更重要"的场景最友好，所以常被设成默认。WeightedRanker <strong>给你控制权</strong>——当你凭业务经验知道"这个场景语义更重要"时，能手动压一个权重上去，代价是要自己调那个比例。模型重排<strong>质量天花板最高</strong>——cross-encoder 会把"查询和每个候选"成对地细看一遍，比单纯的分数融合精准得多，但它要<strong>为每个候选都跑一次模型推理</strong>，延迟和成本都显著上去，所以通常只对前融合出的<strong>少量候选</strong>(比如 top-50)做精排。一个常见的生产组合是"<strong>先粗后精</strong>"：先用 RRF 把多路快速融合出一批候选，再用模型重排对这批候选做最终精排——<strong>用便宜的方法过滤大头、用昂贵的方法雕琢尖端</strong>。这种"两级排序"的思路，和第 5 课 ANN"先粗筛桶、再精算"、第 28 课"先过滤、再检索"是同一种<strong>分层收敛、把贵的算力花在刀刃上</strong>的智慧。</p>
 
 <table class="t">
@@ -510,6 +533,29 @@ The searches so far were mostly "<strong>one query vector, find neighbors in one
 <h2>Fusion: RRF / weighted / model reranking</h2>
 <p>Combining N rankings <strong>into one</strong> is the soul of hybrid search; this step is <strong>rerank (fusion)</strong>. The hard part: <strong>scores from different sub-searches are often incomparable</strong> — a dense similarity (say 0.92) and a sparse BM25 score (say 14.7) are <strong>simply not the same unit</strong>, so adding them is meaningless. Milvus offers three kinds of ranker (config in <span class="inline">proxy/rerank_meta.go</span>, <span class="mono">parseRankParams</span>).</p>
 <p>First, <strong>RRF (Reciprocal Rank Fusion)</strong>: it <strong>ignores raw scores and looks only at rank</strong>. A document ranked r-th in some list earns <span class="mono">1/(k+r)</span> (k a smoothing constant, default 60); summing these "rank scores" across all lists gives the final score. The beauty: it <strong>naturally erases unit differences</strong> — ranks are always comparable. When unsure how to weigh the scores, RRF is a robust default. Second, <strong>WeightedRanker</strong>: when you <strong>clearly want one path to matter more</strong> (say "semantics 70%, keywords 30%"), give each path a weight and sum the <strong>normalized scores</strong>. Third, <strong>model reranking</strong>: hand the candidates to a dedicated rerank model (a cross-encoder, e.g. Cohere, TEI; code in <span class="inline">internal/util/function/rerank</span>) to re-score and reorder — highest quality, but it <strong>calls an external model and costs the most</strong>. The three side by side:</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="RRF reciprocal-rank fusion: the vector ANN list and the BM25 list each rank documents; RRF looks only at rank, giving each document 1/(k+r) and summing across lists with k=60; d1 is #2 in both lists (never top but always present) and so scores highest after fusion, ranking #1">
+    <text x="86" y="60" text-anchor="middle" style="fill:var(--muted)">vector ANN</text>
+    <rect x="30" y="72" width="118" height="32" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="89" y="93" text-anchor="middle" class="mono" style="fill:var(--muted)">① d3</text>
+    <rect x="30" y="108" width="118" height="32" rx="7" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="89" y="129" text-anchor="middle" class="mono" style="fill:var(--accent-ink);font-weight:700">② d1</text>
+    <rect x="30" y="144" width="118" height="32" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="89" y="165" text-anchor="middle" class="mono" style="fill:var(--muted)">③ d9</text>
+    <text x="218" y="60" text-anchor="middle" style="fill:var(--muted)">BM25</text>
+    <rect x="162" y="72" width="118" height="32" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="221" y="93" text-anchor="middle" class="mono" style="fill:var(--muted)">① d5</text>
+    <rect x="162" y="108" width="118" height="32" rx="7" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="221" y="129" text-anchor="middle" class="mono" style="fill:var(--accent-ink);font-weight:700">② d1</text>
+    <rect x="162" y="144" width="118" height="32" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="221" y="165" text-anchor="middle" class="mono" style="fill:var(--muted)">③ d8</text>
+    <line x1="282" y1="124" x2="312" y2="124" style="stroke:var(--teal);stroke-width:2.5"/><path d="M312,124 l-11,-5 l0,10 z" style="fill:var(--teal)"/>
+    <rect x="314" y="78" width="130" height="92" rx="10" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:1.5"/><text x="379" y="102" text-anchor="middle" style="fill:var(--teal);font-weight:700">RRF · rank only</text><text x="379" y="126" text-anchor="middle" class="mono" style="fill:var(--ink)">Σ 1/(k+r)</text><text x="379" y="150" text-anchor="middle" style="fill:var(--muted)">k=60, unit-free</text>
+    <line x1="444" y1="124" x2="472" y2="124" style="stroke:var(--accent);stroke-width:2.5"/><path d="M472,124 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <text x="606" y="60" text-anchor="middle" style="fill:var(--muted)">fused final</text>
+    <rect x="476" y="72" width="262" height="32" rx="7" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:2"/><text x="607" y="93" text-anchor="middle" class="mono" style="fill:var(--accent-ink);font-weight:700">① d1 · 0.032 (#2 both)</text>
+    <rect x="476" y="108" width="262" height="32" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="607" y="129" text-anchor="middle" class="mono" style="fill:var(--muted)">② d3 · 0.016 (#1 one only)</text>
+    <rect x="476" y="144" width="262" height="32" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="607" y="165" text-anchor="middle" class="mono" style="fill:var(--muted)">③ d5 · 0.016 (#1 one only)</text>
+    <text x="380" y="210" text-anchor="middle" style="fill:var(--muted)">RRF ignores raw scores, ranks only (0.92 vs 14.7 incomparable) → ranks always comparable</text>
+    <text x="380" y="232" text-anchor="middle" style="fill:var(--ink);font-weight:700">d1 is #2 in both (never top, always there) → fused #1: consistent beats spiky</text>
+  </svg>
+  <div class="figcap"><b>RRF: merge several rankings into one</b>. The hard part is that sub-searches' "scores" are <b>incomparable</b> (a dense similarity 0.92 vs a BM25 14.7 aren't the same unit). <b>RRF (reciprocal rank fusion)</b> simply <b>looks at rank, not score</b>: a doc ranked r in a list earns <span class="mono">1/(k+r)</span> (k=60), summed across lists — ranks are always comparable, erasing the unit gap. See <span class="mono">d1</span>: only <b>#2</b> in each list (never top), yet <b>present in both</b>, so <span class="mono">1/62 + 1/62 ≈ 0.032</span> <b>beats</b> d3/d5 that top a single list (<span class="mono">1/61 ≈ 0.016</span>) → it ranks <b>#1</b> after fusion. That's RRF's essence: <b>consistently good everywhere beats spiky in one place</b>. (Also: WeightedRanker, and model rerankers for precision.)</div>
+</div>
 
 <table class="t">
   <tr><th>Ranker</th><th>How it fuses</th><th>Best for</th></tr>

@@ -378,6 +378,30 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 <p>资源组这件事，背后是个很现实的<strong>"吵闹邻居"问题</strong>。设想没有资源组：A 业务和 B 业务的集合<strong>混在同一批 QueryNode</strong> 上，某天 A 跑了一个超大范围的批量检索，把这些节点的 CPU 和内存吃光——结果<strong>B 业务的在线查询也跟着变慢甚至超时</strong>，明明 B 什么都没做错。这就是"吵闹邻居"：<strong>共享资源时，一个租户的行为会殃及另一个</strong>。资源组的解法很直接：<strong>给关键业务划一块专属的节点</strong>，把它和别人的负载<strong>物理隔开</strong>。这和第 13 课 QueryCoord"把段分配到节点"是同一层的事，只不过资源组多加了一道"<strong>这些节点只服务这个组</strong>"的约束。理解了它，你就明白为什么严肃的多租户部署几乎都要用资源组——<strong>隔离不是奢侈，而是多租户共存的前提</strong>。</p>
 <p><strong>数据库（Database）</strong>则解决"<strong>命名与数据隔离</strong>"：它在<strong>集合之上又加了一层</strong>。回忆第 6 课的层级是"集合 → 分区 → 段"；数据库把它再往上扩一层成"<strong>数据库 → 集合 → 分区 → 段</strong>"。不同租户用不同数据库，<strong>集合名互不冲突、权限可按库授予</strong>（<span class="mono">CreateDatabase</span>，默认库 <span class="mono">default</span>）。<strong>资源组管"算力分给谁"、数据库管"数据归谁"</strong>，两者配合，才让一个 Milvus 集群能<strong>体面地服务很多家租户</strong>。下面这张分层图把多租户的层级摆清。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="多租户隔离的两条泳道：租户 A 用 Database A（命名/数据隔离）与资源组 A（QueryNode n1、n2，算力隔离），租户 B 用 Database B 与资源组 B（QueryNode n3、n4）；两条泳道互不重叠，A 的负载压不到 B 的节点、集合名也不冲突">
+    <rect x="20" y="48" width="722" height="60" rx="10" style="fill:none;stroke:var(--teal);stroke-dasharray:5 4"/>
+    <rect x="30" y="58" width="78" height="40" rx="8" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:1.5"/><text x="69" y="83" text-anchor="middle" style="fill:var(--teal);font-weight:700">租户 A</text>
+    <line x1="108" y1="78" x2="124" y2="78" style="stroke:var(--teal);stroke-width:2"/><path d="M124,78 l-9,-4 l0,8 z" style="fill:var(--teal)"/>
+    <rect x="126" y="58" width="138" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="195" y="76" text-anchor="middle" style="fill:var(--ink)">Database A</text><text x="195" y="92" text-anchor="middle" style="fill:var(--muted)">命名 / 数据隔离</text>
+    <rect x="276" y="58" width="458" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="290" y="83" style="fill:var(--teal);font-weight:700">资源组 A · 算力隔离</text>
+    <rect x="470" y="64" width="66" height="28" rx="6" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="503" y="83" text-anchor="middle" class="mono" style="fill:var(--teal)">n1</text>
+    <rect x="544" y="64" width="66" height="28" rx="6" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="577" y="83" text-anchor="middle" class="mono" style="fill:var(--teal)">n2</text>
+    <text x="676" y="83" text-anchor="middle" style="fill:var(--faint)">专属</text>
+    <rect x="20" y="142" width="722" height="60" rx="10" style="fill:none;stroke:var(--purple);stroke-dasharray:5 4"/>
+    <rect x="30" y="152" width="78" height="40" rx="8" style="fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5"/><text x="69" y="177" text-anchor="middle" style="fill:var(--purple);font-weight:700">租户 B</text>
+    <line x1="108" y1="172" x2="124" y2="172" style="stroke:var(--purple);stroke-width:2"/><path d="M124,172 l-9,-4 l0,8 z" style="fill:var(--purple)"/>
+    <rect x="126" y="152" width="138" height="40" rx="8" style="fill:var(--panel);stroke:var(--purple)"/><text x="195" y="170" text-anchor="middle" style="fill:var(--ink)">Database B</text><text x="195" y="186" text-anchor="middle" style="fill:var(--muted)">命名 / 数据隔离</text>
+    <rect x="276" y="152" width="458" height="40" rx="8" style="fill:var(--panel);stroke:var(--purple)"/><text x="290" y="177" style="fill:var(--purple);font-weight:700">资源组 B · 算力隔离</text>
+    <rect x="470" y="158" width="66" height="28" rx="6" style="fill:var(--purple-soft);stroke:var(--purple)"/><text x="503" y="177" text-anchor="middle" class="mono" style="fill:var(--purple)">n3</text>
+    <rect x="544" y="158" width="66" height="28" rx="6" style="fill:var(--purple-soft);stroke:var(--purple)"/><text x="577" y="177" text-anchor="middle" class="mono" style="fill:var(--purple)">n4</text>
+    <text x="676" y="177" text-anchor="middle" style="fill:var(--faint)">专属</text>
+    <text x="380" y="234" text-anchor="middle" style="fill:var(--ink);font-weight:700">两条泳道互不重叠：资源组隔算力（节点池）、数据库隔数据（命名/权限）</text>
+    <text x="380" y="256" text-anchor="middle" style="fill:var(--muted)">A 的大查询压不到 B 的节点、集合名也不冲突——"吵闹邻居"被物理隔开</text>
+  </svg>
+  <div class="figcap"><b>多租户隔离 = 资源组（算力）+ 数据库（数据）</b>：很多业务共用一个集群时，怕"<b>抢算力、串数据</b>"。<b>资源组</b>解决<b>算力隔离</b>：把 QueryNode 分成若干组（如 A 用 <span class="mono">n1,n2</span>、B 用 <span class="mono">n3,n4</span>），不同业务的集合加载到不同节点组，<b>A 的大查询压不到 B 的节点</b>（需要时还能 <span class="mono">TransferNode</span> 在组间挪）。<b>数据库</b>解决<b>命名/数据隔离</b>：在集合之上再加一层（数据库 → 集合 → 分区 → 段），不同租户用不同库，<b>集合名不冲突、权限按库授予</b>。两条泳道互不重叠，"吵闹邻居"被隔开——隔离不是奢侈，而是多租户共存的前提。</div>
+</div>
+
 <div class="layers">
   <div class="layer l-main"><div class="lh"><span class="badge">数据库</span><span class="name">Database（多租户的最外层）</span></div><div class="ld">不同租户用不同库；集合名互不冲突、权限/配额可按库管(默认库 default)</div></div>
   <div class="layer l-part"><div class="lh"><span class="badge">集合·分区</span><span class="name">Collection → Partition（第 6 课）</span></div><div class="ld">一个库下的表与切分；段(Segment)是其下的物理单位</div></div>
@@ -506,6 +530,30 @@ To close Part 11, this lesson is a <strong>quick tour</strong> of several featur
 
 <p>Resource groups exist to tame a very real <strong>"noisy neighbor" problem</strong>. Picture no resource groups: workload A's and workload B's collections <strong>share the same QueryNodes</strong>, and one day A runs a huge-range batch search that devours those nodes' CPU and memory — so <strong>B's online queries slow down or time out, even though B did nothing wrong</strong>. That's the noisy neighbor: <strong>when resources are shared, one tenant's behavior spills over onto another</strong>. The fix is direct — <strong>carve out dedicated nodes for the important workload and physically isolate it</strong> from everyone else's load. It's the same layer as Lesson 13's QueryCoord assigning segments to nodes, just with the added constraint that "<strong>these nodes serve only this group</strong>". That's why serious multi-tenant deployments almost always reach for resource groups — <strong>isolation isn't a luxury but a precondition for tenants coexisting</strong>.</p>
 <p><strong>Databases</strong> solve <strong>naming and data isolation</strong>: they add <strong>another layer above collections</strong>. Recall Lesson 6's hierarchy "collection → partition → segment"; databases extend it upward into "<strong>database → collection → partition → segment</strong>". Different tenants use different databases, so <strong>collection names don't clash and permissions can be granted per database</strong> (<span class="mono">CreateDatabase</span>, default DB <span class="mono">default</span>). <strong>Resource groups govern "who gets compute", databases govern "whose data is whose"</strong>; together they let one Milvus cluster <strong>serve many tenants gracefully</strong>. The layered diagram lays out the multi-tenancy hierarchy.</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Two non-overlapping lanes of multi-tenant isolation: tenant A uses Database A (naming/data isolation) and Resource Group A (QueryNode n1, n2 — compute isolation); tenant B uses Database B and Resource Group B (QueryNode n3, n4); the lanes never overlap, so A's load can't touch B's nodes and collection names don't clash">
+    <rect x="20" y="48" width="722" height="60" rx="10" style="fill:none;stroke:var(--teal);stroke-dasharray:5 4"/>
+    <rect x="30" y="58" width="78" height="40" rx="8" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:1.5"/><text x="69" y="83" text-anchor="middle" style="fill:var(--teal);font-weight:700">tenant A</text>
+    <line x1="108" y1="78" x2="124" y2="78" style="stroke:var(--teal);stroke-width:2"/><path d="M124,78 l-9,-4 l0,8 z" style="fill:var(--teal)"/>
+    <rect x="126" y="58" width="138" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="195" y="76" text-anchor="middle" style="fill:var(--ink)">Database A</text><text x="195" y="92" text-anchor="middle" style="fill:var(--muted)">naming / data iso</text>
+    <rect x="276" y="58" width="458" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="290" y="83" style="fill:var(--teal);font-weight:700">Resource Group A</text>
+    <rect x="470" y="64" width="66" height="28" rx="6" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="503" y="83" text-anchor="middle" class="mono" style="fill:var(--teal)">n1</text>
+    <rect x="544" y="64" width="66" height="28" rx="6" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="577" y="83" text-anchor="middle" class="mono" style="fill:var(--teal)">n2</text>
+    <text x="676" y="83" text-anchor="middle" style="fill:var(--faint)">exclusive</text>
+    <rect x="20" y="142" width="722" height="60" rx="10" style="fill:none;stroke:var(--purple);stroke-dasharray:5 4"/>
+    <rect x="30" y="152" width="78" height="40" rx="8" style="fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5"/><text x="69" y="177" text-anchor="middle" style="fill:var(--purple);font-weight:700">tenant B</text>
+    <line x1="108" y1="172" x2="124" y2="172" style="stroke:var(--purple);stroke-width:2"/><path d="M124,172 l-9,-4 l0,8 z" style="fill:var(--purple)"/>
+    <rect x="126" y="152" width="138" height="40" rx="8" style="fill:var(--panel);stroke:var(--purple)"/><text x="195" y="170" text-anchor="middle" style="fill:var(--ink)">Database B</text><text x="195" y="186" text-anchor="middle" style="fill:var(--muted)">naming / data iso</text>
+    <rect x="276" y="152" width="458" height="40" rx="8" style="fill:var(--panel);stroke:var(--purple)"/><text x="290" y="177" style="fill:var(--purple);font-weight:700">Resource Group B</text>
+    <rect x="470" y="158" width="66" height="28" rx="6" style="fill:var(--purple-soft);stroke:var(--purple)"/><text x="503" y="177" text-anchor="middle" class="mono" style="fill:var(--purple)">n3</text>
+    <rect x="544" y="158" width="66" height="28" rx="6" style="fill:var(--purple-soft);stroke:var(--purple)"/><text x="577" y="177" text-anchor="middle" class="mono" style="fill:var(--purple)">n4</text>
+    <text x="676" y="177" text-anchor="middle" style="fill:var(--faint)">exclusive</text>
+    <text x="380" y="234" text-anchor="middle" style="fill:var(--ink);font-weight:700">two lanes never overlap: resource groups isolate compute, databases isolate data</text>
+    <text x="380" y="256" text-anchor="middle" style="fill:var(--muted)">A's big query can't touch B's nodes, names don't clash — noisy neighbor fenced off</text>
+  </svg>
+  <div class="figcap"><b>Multi-tenant isolation = resource groups (compute) + databases (data)</b>: when many workloads share a cluster, you fear "<b>compute contention, data leakage</b>". <b>Resource groups</b> give <b>compute isolation</b>: split QueryNodes into groups (A uses <span class="mono">n1,n2</span>, B uses <span class="mono">n3,n4</span>) and load different workloads onto different node groups, so <b>A's big query can't touch B's nodes</b> (and <span class="mono">TransferNode</span> can move nodes between groups). <b>Databases</b> give <b>naming/data isolation</b>: a layer above collections (database → collection → partition → segment); different tenants use different DBs, so <b>names don't clash and permissions are per-database</b>. Two non-overlapping lanes — the noisy neighbor is fenced off; isolation isn't a luxury but the premise of multi-tenancy.</div>
+</div>
 
 <div class="layers">
   <div class="layer l-main"><div class="lh"><span class="badge">database</span><span class="name">Database (the outermost multi-tenancy layer)</span></div><div class="ld">different tenants use different DBs; collection names don't clash, permissions/quota per DB (default DB: default)</div></div>

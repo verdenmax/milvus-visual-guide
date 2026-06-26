@@ -390,7 +390,7 @@ LESSON_40 = {
     <rect x="40" y="96" width="384" height="36" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="54" y="119" style="fill:var(--muted)">环境变量 env（pri=11）</text><text x="410" y="119" text-anchor="end" style="fill:var(--faint)">未设</text>
     <rect x="40" y="140" width="384" height="36" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="54" y="163" style="fill:var(--muted)">milvus.yaml 文件（pri=21）</text><text x="410" y="163" text-anchor="end" style="fill:var(--faint);text-decoration:line-through">30s</text>
     <rect x="40" y="184" width="384" height="36" rx="7" style="fill:var(--panel-2);stroke:var(--line)"/><text x="54" y="207" style="fill:var(--muted)">默认值 default（内置兜底）</text><text x="410" y="207" text-anchor="end" style="fill:var(--faint);text-decoration:line-through">10s</text>
-    <text x="34" y="48" style="fill:var(--faint)">高</text><text x="34" y="216" style="fill:var(--faint)">低</text>
+    <text x="34" y="48" style="fill:var(--faint)">高</text><text x="34" y="236" style="fill:var(--faint)">低</text>
     <line x1="446" y1="136" x2="532" y2="136" style="stroke:var(--accent);stroke-width:2.5"/><path d="M532,136 l-12,-5 l0,10 z" style="fill:var(--accent)"/><text x="489" y="128" text-anchor="middle" style="fill:var(--muted)">合并</text>
     <rect x="536" y="106" width="206" height="62" rx="11" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:2"/><text x="639" y="132" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">生效值 = 60s</text><text x="639" y="153" text-anchor="middle" style="fill:var(--muted)">← 最高优先级且有值</text>
     <text x="380" y="252" text-anchor="middle" style="fill:var(--muted)">config.Manager 合并：越贴身/越动态越优先（etcd &gt; env &gt; yaml &gt; default），可变项还能热更新</text>
@@ -487,7 +487,7 @@ A distributed system like Milvus hides <strong>hundreds of knobs</strong>: timeo
     <rect x="40" y="96" width="384" height="36" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="54" y="119" style="fill:var(--muted)">env vars (pri=11)</text><text x="410" y="119" text-anchor="end" style="fill:var(--faint)">unset</text>
     <rect x="40" y="140" width="384" height="36" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="54" y="163" style="fill:var(--muted)">milvus.yaml file (pri=21)</text><text x="410" y="163" text-anchor="end" style="fill:var(--faint);text-decoration:line-through">30s</text>
     <rect x="40" y="184" width="384" height="36" rx="7" style="fill:var(--panel-2);stroke:var(--line)"/><text x="54" y="207" style="fill:var(--muted)">default value (built-in)</text><text x="410" y="207" text-anchor="end" style="fill:var(--faint);text-decoration:line-through">10s</text>
-    <text x="34" y="48" style="fill:var(--faint)">high</text><text x="34" y="216" style="fill:var(--faint)">low</text>
+    <text x="34" y="48" style="fill:var(--faint)">high</text><text x="34" y="236" style="fill:var(--faint)">low</text>
     <line x1="446" y1="136" x2="532" y2="136" style="stroke:var(--accent);stroke-width:2.5"/><path d="M532,136 l-12,-5 l0,10 z" style="fill:var(--accent)"/><text x="489" y="128" text-anchor="middle" style="fill:var(--muted)">merge</text>
     <rect x="536" y="106" width="206" height="62" rx="11" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:2"/><text x="639" y="132" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">effective = 60s</text><text x="639" y="153" text-anchor="middle" style="fill:var(--muted)">← highest with a value</text>
     <text x="380" y="252" text-anchor="middle" style="fill:var(--muted)">config.Manager merges by priority: etcd &gt; env &gt; yaml &gt; default; mutable keys hot-reload</text>
@@ -569,7 +569,7 @@ LESSON_41 = {
     <text x="626" y="64" text-anchor="middle" style="fill:var(--ink);font-weight:700">集群的回报：按需独立伸缩</text>
     <rect x="514" y="74" width="226" height="46" rx="9" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:1.5"/><text x="528" y="94" style="fill:var(--teal);font-weight:700">QueryNode ×5</text><text x="528" y="112" style="fill:var(--muted)">读多写少 → 多加这侧</text>
     <rect x="514" y="126" width="226" height="46" rx="9" style="fill:var(--blue-soft);stroke:var(--blue);stroke-width:1.5"/><text x="528" y="146" style="fill:var(--blue);font-weight:700">DataNode / 流式 ×3</text><text x="528" y="164" style="fill:var(--muted)">写多 → 加这一侧</text>
-    <rect x="514" y="178" width="226" height="46" rx="9" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="528" y="198" style="fill:var(--amber);font-weight:700">对象存储 · 独立扩容</text><text x="528" y="216" style="fill:var(--muted)">无状态 → 单独加容量</text>
+    <rect x="514" y="178" width="226" height="46" rx="9" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="528" y="198" style="fill:var(--amber);font-weight:700">对象存储 · 独立扩容</text><text x="528" y="216" style="fill:var(--muted)">与计算分离 → 单独加容量</text>
     <text x="255" y="262" text-anchor="middle" style="fill:var(--muted)">逐级往上：上手零负担、认真用有生产级</text>
     <text x="255" y="282" text-anchor="middle" style="fill:var(--muted)">上集群的真正回报 = 哪一环瓶颈就单独给哪一环加机器</text>
   </svg>
@@ -661,7 +661,7 @@ Lesson 8 told you what Milvus <strong>depends on</strong> (etcd, object storage,
     <text x="626" y="64" text-anchor="middle" style="fill:var(--ink);font-weight:700">Cluster payoff: scale on demand</text>
     <rect x="514" y="74" width="226" height="46" rx="9" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:1.5"/><text x="528" y="94" style="fill:var(--teal);font-weight:700">QueryNode ×5</text><text x="528" y="112" style="fill:var(--muted)">read-heavy → add here</text>
     <rect x="514" y="126" width="226" height="46" rx="9" style="fill:var(--blue-soft);stroke:var(--blue);stroke-width:1.5"/><text x="528" y="146" style="fill:var(--blue);font-weight:700">DataNode / streaming ×3</text><text x="528" y="164" style="fill:var(--muted)">write-heavy → add here</text>
-    <rect x="514" y="178" width="226" height="46" rx="9" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="528" y="198" style="fill:var(--amber);font-weight:700">object storage · scale</text><text x="528" y="216" style="fill:var(--muted)">stateless → +capacity</text>
+    <rect x="514" y="178" width="226" height="46" rx="9" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="528" y="198" style="fill:var(--amber);font-weight:700">object storage · scale</text><text x="528" y="216" style="fill:var(--muted)">compute-decoupled → +capacity</text>
     <text x="255" y="262" text-anchor="middle" style="fill:var(--muted)">climb rung by rung: easy to start, production-grade when serious</text>
     <text x="255" y="282" text-anchor="middle" style="fill:var(--muted)">real payoff = add machines only to the bottlenecked part</text>
   </svg>

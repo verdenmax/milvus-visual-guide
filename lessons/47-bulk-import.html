@@ -401,6 +401,31 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 <h2>它和流式写入怎么分工</h2>
 <p>最后把两条写入路径的<strong>分工与协同</strong>讲清。它们<strong>共享同一套"段"的抽象</strong>（第 7 课）：无论数据是流式攒进 growing 再 flush 成的段，还是批量导入直接生成的段，<strong>最终都是对象存储里同样格式的 binlog 段</strong>，被 QueryNode 一视同仁地加载、检索。也就是说，批量导入<strong>不是另起炉灶</strong>，而是<strong>换一条更高效的路、生产出同样的产物</strong>——这正是它能无缝融入整个系统的原因。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="两条写入路径殊途同归：流式写入（实时 insert → WAL → growing → flush 成段）与批量导入（批量文件 → ImportV2 作业 → 直接建段）都产出同规格的 binlog 段落到对象存储，被 QueryNode 一视同仁地加载与检索">
+    <text x="24" y="56" style="fill:var(--muted)">① 流式写入（在线 · 实时可见）</text>
+    <rect x="24" y="64" width="104" height="40" rx="8" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="76" y="89" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">实时 insert</text>
+    <line x1="128" y1="84" x2="146" y2="84" style="stroke:var(--line);stroke-width:2"/><path d="M146,84 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="148" y="64" width="130" height="40" rx="8" style="fill:var(--panel);stroke:var(--accent)"/><text x="213" y="89" text-anchor="middle" style="fill:var(--ink)">WAL → growing</text>
+    <line x1="278" y1="84" x2="296" y2="84" style="stroke:var(--line);stroke-width:2"/><path d="M296,84 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="298" y="64" width="104" height="40" rx="8" style="fill:var(--panel);stroke:var(--accent)"/><text x="350" y="89" text-anchor="middle" style="fill:var(--ink)">flush 成段</text>
+    <text x="24" y="158" style="fill:var(--muted)">② 批量导入（离线 · 一次写定）</text>
+    <rect x="24" y="166" width="104" height="40" rx="8" style="fill:var(--blue-soft);stroke:var(--blue);stroke-width:1.5"/><text x="76" y="191" text-anchor="middle" style="fill:var(--blue);font-weight:700">批量文件</text>
+    <line x1="128" y1="186" x2="146" y2="186" style="stroke:var(--line);stroke-width:2"/><path d="M146,186 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="148" y="166" width="130" height="40" rx="8" style="fill:var(--panel);stroke:var(--blue)"/><text x="213" y="191" text-anchor="middle" style="fill:var(--ink)">ImportV2 作业</text>
+    <line x1="278" y1="186" x2="296" y2="186" style="stroke:var(--line);stroke-width:2"/><path d="M296,186 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="298" y="166" width="104" height="40" rx="8" style="fill:var(--panel);stroke:var(--blue)"/><text x="350" y="191" text-anchor="middle" style="fill:var(--ink)">直接建段</text>
+    <line x1="404" y1="88" x2="470" y2="120" style="stroke:var(--teal);stroke-width:2.5"/><path d="M470,120 l-11,-2 l3,-9 z" style="fill:var(--teal)"/>
+    <line x1="404" y1="182" x2="470" y2="150" style="stroke:var(--teal);stroke-width:2.5"/><path d="M470,150 l-8,-7 l8,-4 z" style="fill:var(--teal)"/>
+    <text x="430" y="128" text-anchor="middle" style="fill:var(--teal);font-weight:700">殊途同归</text>
+    <rect x="474" y="100" width="220" height="56" rx="11" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:2"/><text x="584" y="124" text-anchor="middle" style="fill:var(--teal);font-weight:700">同规格 binlog 段</text><text x="584" y="144" text-anchor="middle" style="fill:var(--muted)">对象存储 · 同一张图纸</text>
+    <line x1="584" y1="156" x2="584" y2="174" style="stroke:var(--teal);stroke-width:2"/><path d="M584,174 l-4,-10 l8,0 z" style="fill:var(--teal)"/>
+    <rect x="474" y="176" width="220" height="40" rx="9" style="fill:var(--panel);stroke:var(--line)"/><text x="584" y="201" text-anchor="middle" style="fill:var(--ink)">QueryNode 一视同仁加载、检索</text>
+    <text x="380" y="256" text-anchor="middle" style="fill:var(--muted)">两条生产路径、同一种产物：上游细水长流或整车卸货，交付下游的都是同规格的段</text>
+  </svg>
+  <div class="figcap"><b>两条写入路径，殊途同归</b>：<b>① 流式写入</b>（在线、实时可见）走 <span class="mono">实时 insert → WAL → growing → flush 成段</span>；<b>② 批量导入</b>（离线、一次写定）走 <span class="mono">批量文件 → ImportV2 作业 → 直接建段</span>。两条路<b>最终都产出同规格的 binlog 段</b>落到对象存储——就像"不管哪条产线，下线的零件都符合同一张图纸"，于是 <b>QueryNode 一视同仁</b>地加载、检索，不必认两种段。把"多样的生产"收敛到"统一的产物接口"，正是系统能容纳多路径却不失控的关键。</div>
+</div>
+
 <p>这种"<strong>不同生产路径、相同最终产物</strong>"的设计，其实是个值得反复体会的架构智慧。试想另一种糟糕的设计：如果批量导入产出的是一种<strong>和流式段格式不同的"导入专用段"</strong>，那 QueryNode 就得<strong>认两种段、写两套加载与检索逻辑</strong>，整个读路径瞬间复杂一倍、还容易出 bug。Milvus 偏不——它让两条写入路径在<strong>"段"这个抽象上汇合</strong>：上游你爱怎么生产怎么生产（细水长流也好、整车卸货也罢），但<strong>交付给下游的，必须是同一种规格的段</strong>。这就像工厂里"<strong>不管哪条产线，下线的零件都得符合同一张图纸</strong>"——于是组装环节（QueryNode）才能对所有零件一视同仁。把"<strong>多样的生产</strong>"收敛到"<strong>统一的产物接口</strong>"，正是让一个系统能<strong>容纳多条路径却不失控</strong>的关键。你在第 22 课（索引交给 Knowhere 的统一接口）、第 36 课（算子统一吃一批吐一批）都见过这种审美，这里是它在<strong>写入路径</strong>上的又一次体现——而这，也正是第 11 部分想带你看到的：<strong>主干之外，Milvus 在每一处"该统一的地方统一、该分路的地方分路"的成熟权衡</strong>。</p>
 <p>那实践中怎么选？<strong>在线、持续、要求实时可见</strong>的写入（用户应用的日常 insert）走<strong>流式</strong>；<strong>一次性、海量、离线、一次写定</strong>的灌库（数据迁移、批量回填、离线建库）走<strong>批量导入</strong>。很多生产部署是<strong>两者并用</strong>：先用一次大 import 把历史数据灌进来打底，再用流式写入承接此后的增量。理解了"<strong>同一个段抽象、两条生产路径</strong>"，你对 Milvus 写入侧的认识就完整了——它既能像水龙头一样接住实时细流，也能像卸货码头一样吞下整车批货。这正是一个成熟数据库该有的<strong>弹性</strong>。</p>
 
@@ -517,6 +542,32 @@ The writes in Part 4 were the <strong>online, streaming</strong> path: row by ro
 
 <h2>How it divides labor with streaming writes</h2>
 <p>Finally, the <strong>division and cooperation</strong> of the two write paths. They <strong>share the same "segment" abstraction</strong> (Lesson 7): whether data was streamed into a growing segment then flushed, or bulk-imported straight into a segment, <strong>the end product is the same binlog-format segment in object storage</strong>, loaded and searched by QueryNodes alike. So bulk import <strong>isn't a separate world</strong> — it's <strong>a more efficient path producing the same product</strong>, which is why it slots seamlessly into the whole system.</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Two write paths converge: streaming (live insert → WAL → growing → flush to segment) and bulk import (bulk files → ImportV2 job → build segment) both produce the same binlog-format segment in object storage, loaded and searched by QueryNode alike">
+    <text x="24" y="56" style="fill:var(--muted)">① streaming (online · real-time)</text>
+    <rect x="24" y="64" width="104" height="40" rx="8" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="76" y="89" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">live insert</text>
+    <line x1="128" y1="84" x2="146" y2="84" style="stroke:var(--line);stroke-width:2"/><path d="M146,84 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="148" y="64" width="130" height="40" rx="8" style="fill:var(--panel);stroke:var(--accent)"/><text x="213" y="89" text-anchor="middle" style="fill:var(--ink)">WAL → growing</text>
+    <line x1="278" y1="84" x2="296" y2="84" style="stroke:var(--line);stroke-width:2"/><path d="M296,84 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="298" y="64" width="104" height="40" rx="8" style="fill:var(--panel);stroke:var(--accent)"/><text x="350" y="89" text-anchor="middle" style="fill:var(--ink)">flush → seg</text>
+    <text x="24" y="158" style="fill:var(--muted)">② bulk import (offline · write-once)</text>
+    <rect x="24" y="166" width="104" height="40" rx="8" style="fill:var(--blue-soft);stroke:var(--blue);stroke-width:1.5"/><text x="76" y="191" text-anchor="middle" style="fill:var(--blue);font-weight:700">bulk files</text>
+    <line x1="128" y1="186" x2="146" y2="186" style="stroke:var(--line);stroke-width:2"/><path d="M146,186 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="148" y="166" width="130" height="40" rx="8" style="fill:var(--panel);stroke:var(--blue)"/><text x="213" y="191" text-anchor="middle" style="fill:var(--ink)">ImportV2 job</text>
+    <line x1="278" y1="186" x2="296" y2="186" style="stroke:var(--line);stroke-width:2"/><path d="M296,186 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="298" y="166" width="104" height="40" rx="8" style="fill:var(--panel);stroke:var(--blue)"/><text x="350" y="191" text-anchor="middle" style="fill:var(--ink)">build seg</text>
+    <line x1="404" y1="88" x2="470" y2="120" style="stroke:var(--teal);stroke-width:2.5"/><path d="M470,120 l-11,-2 l3,-9 z" style="fill:var(--teal)"/>
+    <line x1="404" y1="182" x2="470" y2="150" style="stroke:var(--teal);stroke-width:2.5"/><path d="M470,150 l-8,-7 l8,-4 z" style="fill:var(--teal)"/>
+    <text x="430" y="128" text-anchor="middle" style="fill:var(--teal);font-weight:700">converge</text>
+    <rect x="474" y="100" width="220" height="56" rx="11" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:2"/><text x="584" y="124" text-anchor="middle" style="fill:var(--teal);font-weight:700">same binlog segment</text><text x="584" y="144" text-anchor="middle" style="fill:var(--muted)">object storage · one blueprint</text>
+    <line x1="584" y1="156" x2="584" y2="174" style="stroke:var(--teal);stroke-width:2"/><path d="M584,174 l-4,-10 l8,0 z" style="fill:var(--teal)"/>
+    <rect x="474" y="176" width="220" height="40" rx="9" style="fill:var(--panel);stroke:var(--line)"/><text x="584" y="201" text-anchor="middle" style="fill:var(--ink)">QueryNode loads both alike</text>
+    <text x="380" y="256" text-anchor="middle" style="fill:var(--muted)">two paths, one product: a trickle or a truckload upstream → the same segment downstream</text>
+  </svg>
+  <div class="figcap"><b>Two write paths, converging</b>: <b>① streaming</b> (online, real-time-visible) goes <span class="mono">live insert → WAL → growing → flush to segment</span>; <b>② bulk import</b> (offline, write-once) goes <span class="mono">bulk files → ImportV2 job → build segment</span>. Both paths <b>end in the same binlog-format segment</b> in object storage — like "whatever the production line, the parts off it meet one blueprint" — so <b>QueryNode treats them alike</b>, never needing to know two segment kinds. Converging "diverse production" onto "one product interface" is what lets a system hold many paths without losing control.</div>
+</div>
+
 <p>How to choose in practice? <strong>Online, continuous, real-time-visible</strong> writes (an app's everyday insert) go <strong>streaming</strong>; <strong>one-shot, massive, offline, write-once</strong> loading (migration, batch backfill, offline base-loading) goes <strong>bulk import</strong>. Many production deployments <strong>use both</strong>: one big import to base-load historical data, then streaming writes to carry the incremental flow thereafter. Grasp "<strong>one segment abstraction, two production paths</strong>" and your view of Milvus's write side is complete — it can catch a real-time trickle like a tap, and swallow a truckload like a loading dock. That's the <strong>elasticity</strong> a mature database should have.</p>
 
 <div class="card key">
