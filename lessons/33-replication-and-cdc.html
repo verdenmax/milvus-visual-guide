@@ -416,6 +416,27 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 需要"双活"或主备切换时，则通过 controller <strong>显式地变更角色</strong>来完成，而不是放任两边自由互写。这种"<strong>宁可简单也不要含糊</strong>"的取舍，和前面 TSO 用单一来源发号、Broadcaster 用单一源头广播，是<strong>同一种工程审美</strong>：
 把"谁说了算"这件事收敛到一个明确的权威上，复杂度就塌缩了一大半。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="跨集群复制的星型拓扑：主集群的 WAL 经 CDC 单向复制给多个备集群，备集群用 Replicate 拦截器原样保留原 TimeTick 后按同序重放，得到与主集群一致的状态">
+    <rect x="300" y="24" width="200" height="30" rx="15" style="fill:var(--panel);stroke:var(--purple)"/><text x="400" y="44" text-anchor="middle" style="fill:var(--purple);font-weight:700">CDC controller · 协调角色</text>
+    <rect x="36" y="106" width="224" height="96" rx="11" style="fill:var(--blue-soft);stroke:var(--blue);stroke-width:2"/><text x="148" y="132" text-anchor="middle" style="fill:var(--blue);font-weight:700">primary · 主集群</text><text x="148" y="151" text-anchor="middle" style="fill:var(--muted)">唯一变更源头</text>
+    <text x="52" y="186" style="fill:var(--muted)">WAL</text>
+    <rect x="92" y="168" width="48" height="24" rx="4" style="fill:var(--panel);stroke:var(--line)"/><text x="116" y="185" text-anchor="middle" class="mono" style="fill:var(--ink)">t1</text>
+    <rect x="146" y="168" width="48" height="24" rx="4" style="fill:var(--panel);stroke:var(--line)"/><text x="170" y="185" text-anchor="middle" class="mono" style="fill:var(--ink)">t2</text>
+    <rect x="200" y="168" width="48" height="24" rx="4" style="fill:var(--panel);stroke:var(--line)"/><text x="224" y="185" text-anchor="middle" class="mono" style="fill:var(--ink)">t3</text>
+    <line x1="262" y1="150" x2="536" y2="66" style="stroke:var(--teal);stroke-width:2"/><path d="M536,66 l-11,0 l3,9 z" style="fill:var(--teal)"/>
+    <line x1="262" y1="154" x2="536" y2="150" style="stroke:var(--teal);stroke-width:2"/><path d="M536,150 l-11,-3 l1,9 z" style="fill:var(--teal)"/>
+    <line x1="262" y1="158" x2="536" y2="232" style="stroke:var(--teal);stroke-width:2"/><path d="M536,232 l-10,-5 l-1,9 z" style="fill:var(--teal)"/>
+    <text x="400" y="142" text-anchor="middle" style="fill:var(--teal);font-weight:700">单向 ship log</text>
+    <text x="380" y="246" text-anchor="middle" style="fill:var(--muted)">Replicate 拦截器：保留原 TimeTick</text>
+    <rect x="538" y="40" width="206" height="52" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="641" y="61" text-anchor="middle" style="fill:var(--teal);font-weight:700">secondary · 备 A</text><text x="641" y="80" text-anchor="middle" style="fill:var(--muted)">重放同序 → 同状态</text>
+    <rect x="538" y="124" width="206" height="52" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="641" y="145" text-anchor="middle" style="fill:var(--teal);font-weight:700">secondary · 备 B</text><text x="641" y="164" text-anchor="middle" style="fill:var(--muted)">重放同序 → 同状态</text>
+    <rect x="538" y="208" width="206" height="52" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="641" y="229" text-anchor="middle" style="fill:var(--teal);font-weight:700">secondary · 备 C</text><text x="641" y="248" text-anchor="middle" style="fill:var(--muted)">重放同序 → 同状态</text>
+    <text x="380" y="288" text-anchor="middle" style="fill:var(--muted)">复制"日志"（发生了什么）而非"状态"（现在是什么）：备 = 把上游 WAL 接到远方的普通消费者</text>
+  </svg>
+  <div class="figcap"><b>星型拓扑 · 复制日志而非状态</b>：一个 <b>primary</b> 居中，把它<b>已有的 WAL</b> 经 CDC <b>单向</b>复制给若干 <b>secondary</b>（由 CDC controller 协调角色）。最妙的一笔是备集群的 <b>Replicate 拦截器</b>「原样保留消息里主集群盖好的 TimeTick、不重新盖戳」——正是这"保留原序"的一小步，保证主备重放<b>顺序严格一致</b>、从而状态严格一致。备集群因此只是"把上游日志接到远方"的<b>普通消费者</b>。</div>
+</div>
+
 <div class="layers">
   <div class="layer l-core"><div class="lh"><span class="badge">primary</span><span class="name">主集群</span></div><div class="ld">唯一的变更源头；其 WAL 被复制出去</div></div>
   <div class="layer l-main"><div class="lh"><span class="badge">controller</span><span class="name">CDC controller</span></div><div class="ld">协调角色与复制关系（谁复制给谁）</div></div>
@@ -589,6 +610,27 @@ one authoritative source" (recall the TSO does the same). When needed, primary/s
 the new primary), which is the basis of disaster failover.</p>
 
 <p>Why <strong>one-directional</strong> rather than two sides syncing each other? Because "<strong>who is the single truth</strong>" must be unambiguous. If both clusters could write and replicate to each other, you'd hit the classic <strong>multi-primary conflict</strong>: the same row changed to different values on both sides at nearly the same instant — whose wins? Resolving multi-primary conflicts requires complex merge/arbitration logic, both hard and error-prone. Milvus's choice is clean: <strong>only one primary writes at a time, and changes flow one-way to the secondaries</strong>, which are read-only (serving reads only). With "truth from a single source", there's simply no room for conflict. When you need "active-active" or a switchover, the controller <strong>explicitly changes roles</strong> rather than letting both sides write freely. This "<strong>prefer simple over ambiguous</strong>" trade-off is the <strong>same engineering aesthetic</strong> as the TSO handing out numbers from one source and the Broadcaster broadcasting from one source: converge "who decides" onto one clear authority and most of the complexity collapses.</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="The star topology of cross-cluster replication: the primary cluster's WAL is replicated one-way through CDC to several secondaries, which keep the original TimeTick via a Replicate interceptor and replay in the same order to reach a state identical to the primary">
+    <rect x="290" y="24" width="220" height="30" rx="15" style="fill:var(--panel);stroke:var(--purple)"/><text x="400" y="44" text-anchor="middle" style="fill:var(--purple);font-weight:700">CDC controller · roles</text>
+    <rect x="36" y="106" width="224" height="96" rx="11" style="fill:var(--blue-soft);stroke:var(--blue);stroke-width:2"/><text x="148" y="132" text-anchor="middle" style="fill:var(--blue);font-weight:700">primary cluster</text><text x="148" y="151" text-anchor="middle" style="fill:var(--muted)">single source of change</text>
+    <text x="52" y="186" style="fill:var(--muted)">WAL</text>
+    <rect x="92" y="168" width="48" height="24" rx="4" style="fill:var(--panel);stroke:var(--line)"/><text x="116" y="185" text-anchor="middle" class="mono" style="fill:var(--ink)">t1</text>
+    <rect x="146" y="168" width="48" height="24" rx="4" style="fill:var(--panel);stroke:var(--line)"/><text x="170" y="185" text-anchor="middle" class="mono" style="fill:var(--ink)">t2</text>
+    <rect x="200" y="168" width="48" height="24" rx="4" style="fill:var(--panel);stroke:var(--line)"/><text x="224" y="185" text-anchor="middle" class="mono" style="fill:var(--ink)">t3</text>
+    <line x1="262" y1="150" x2="536" y2="66" style="stroke:var(--teal);stroke-width:2"/><path d="M536,66 l-11,0 l3,9 z" style="fill:var(--teal)"/>
+    <line x1="262" y1="154" x2="536" y2="150" style="stroke:var(--teal);stroke-width:2"/><path d="M536,150 l-11,-3 l1,9 z" style="fill:var(--teal)"/>
+    <line x1="262" y1="158" x2="536" y2="232" style="stroke:var(--teal);stroke-width:2"/><path d="M536,232 l-10,-5 l-1,9 z" style="fill:var(--teal)"/>
+    <text x="400" y="142" text-anchor="middle" style="fill:var(--teal);font-weight:700">one-way ship log</text>
+    <text x="380" y="246" text-anchor="middle" style="fill:var(--muted)">Replicate · keep original TimeTick</text>
+    <rect x="538" y="40" width="206" height="52" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="641" y="61" text-anchor="middle" style="fill:var(--teal);font-weight:700">secondary · standby A</text><text x="641" y="80" text-anchor="middle" style="fill:var(--muted)">same order → same state</text>
+    <rect x="538" y="124" width="206" height="52" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="641" y="145" text-anchor="middle" style="fill:var(--teal);font-weight:700">secondary · standby B</text><text x="641" y="164" text-anchor="middle" style="fill:var(--muted)">same order → same state</text>
+    <rect x="538" y="208" width="206" height="52" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="641" y="229" text-anchor="middle" style="fill:var(--teal);font-weight:700">secondary · standby C</text><text x="641" y="248" text-anchor="middle" style="fill:var(--muted)">same order → same state</text>
+    <text x="380" y="288" text-anchor="middle" style="fill:var(--muted)">replicate the LOG (what happened), not the STATE (what is now)</text>
+  </svg>
+  <div class="figcap"><b>Star topology · replicate the log, not the state</b>: one <b>primary</b> at the center replicates its <b>already-existing WAL</b> one-way to several <b>secondaries</b> (the CDC controller coordinates the roles). The neat trick: a secondary's <b>Replicate interceptor</b> «<b>keeps the TimeTick the primary already stamped, instead of re-stamping</b>» — that one "preserve the order" step keeps the primary and secondary replays in <b>strictly the same order</b>, hence identical state. A secondary is therefore just an ordinary <b>consumer</b> that happens to read the upstream log from far away.</div>
+</div>
 
 <div class="layers">
   <div class="layer l-core"><div class="lh"><span class="badge">primary</span><span class="name">primary cluster</span></div><div class="ld">the single source of change; its WAL is replicated out</div></div>

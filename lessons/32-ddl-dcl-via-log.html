@@ -373,6 +373,33 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 这种<strong>元信息层面的不一致</strong>，比丢几条数据要可怕得多——它会让系统对"现在到底有哪些集合、什么 schema、谁有权限"失去统一答案，进而引发连锁错误。所以 DDL/DCL 的原子性不是"锦上添花"，而是<strong>正确性的底线</strong>：
 要么让所有人同时进入新认知，要么所有人都停在旧认知，绝不允许中间态。理解了这个"底线"，你就明白 Broadcaster 那套看似繁琐的"锁 + 全员 ACK"为什么必不可少——它正是为了把"中间态"彻底消灭。换句话说，繁琐不是设计的缺点，而是"原子性"在分布式世界里必须付出的、最小的代价。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="对比 DML 与 DDL：一次 DML 按主键哈希只落到一条 PChannel，是一条日志；一次 DDL 经 Broadcaster 加锁并收齐全员 ACK，原子广播到所有 PChannel，是一群日志">
+    <text x="20" y="34" style="fill:var(--muted)">DML · 数据操作（insert / delete / upsert）</text>
+    <rect x="20" y="44" width="150" height="46" rx="9" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="95" y="72" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">DML · insert pk=42</text>
+    <line x1="170" y1="67" x2="356" y2="67" style="stroke:var(--accent);stroke-width:2"/><path d="M356,67 l-11,-5 l0,10 z" style="fill:var(--accent)"/><text x="262" y="58" text-anchor="middle" style="fill:var(--muted)">按主键哈希 → 命中 P2</text>
+    <rect x="360" y="44" width="380" height="46" rx="9" style="fill:none;stroke:var(--line);stroke-dasharray:4 3"/>
+    <rect x="368" y="50" width="84" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="410" y="72" text-anchor="middle" style="fill:var(--faint)">P0</text>
+    <rect x="460" y="50" width="84" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="502" y="72" text-anchor="middle" style="fill:var(--faint)">P1</text>
+    <rect x="552" y="50" width="84" height="34" rx="6" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="594" y="72" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">P2 ✓</text>
+    <rect x="644" y="50" width="84" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="686" y="72" text-anchor="middle" style="fill:var(--faint)">P3</text>
+    <text x="380" y="118" text-anchor="middle" style="fill:var(--muted)">一次 DML：按主键落到某一条 PChannel = <tspan style="fill:var(--accent-ink);font-weight:700">一条日志</tspan>（范围小·并行高·最快路径）</text>
+    <line x1="20" y1="138" x2="740" y2="138" style="stroke:var(--line);stroke-dasharray:2 4"/>
+    <text x="20" y="160" style="fill:var(--muted)">DDL / DCL · 数据定义 / 控制（create·drop·RBAC）</text>
+    <rect x="20" y="170" width="150" height="48" rx="9" style="fill:var(--panel);stroke:var(--purple);stroke-width:1.5"/><text x="95" y="199" text-anchor="middle" style="fill:var(--purple);font-weight:700">DDL · create(C)</text>
+    <line x1="170" y1="194" x2="192" y2="194" style="stroke:var(--purple);stroke-width:2"/><path d="M192,194 l-10,-5 l0,10 z" style="fill:var(--purple)"/>
+    <rect x="194" y="169" width="150" height="50" rx="9" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="269" y="190" text-anchor="middle" style="fill:var(--amber);font-weight:700">Broadcaster</text><text x="269" y="209" text-anchor="middle" style="fill:var(--muted)">锁 + 全员 ACK</text>
+    <line x1="344" y1="194" x2="358" y2="194" style="stroke:var(--purple);stroke-width:2.5"/><path d="M358,194 l-11,-5 l0,10 z" style="fill:var(--purple)"/>
+    <rect x="360" y="171" width="380" height="46" rx="9" style="fill:none;stroke:var(--purple);stroke-dasharray:4 3"/>
+    <rect x="368" y="177" width="84" height="34" rx="6" style="fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5"/><text x="410" y="199" text-anchor="middle" style="fill:var(--purple);font-weight:700">P0 ✓</text>
+    <rect x="460" y="177" width="84" height="34" rx="6" style="fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5"/><text x="502" y="199" text-anchor="middle" style="fill:var(--purple);font-weight:700">P1 ✓</text>
+    <rect x="552" y="177" width="84" height="34" rx="6" style="fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5"/><text x="594" y="199" text-anchor="middle" style="fill:var(--purple);font-weight:700">P2 ✓</text>
+    <rect x="644" y="177" width="84" height="34" rx="6" style="fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5"/><text x="686" y="199" text-anchor="middle" style="fill:var(--purple);font-weight:700">P3 ✓</text>
+    <text x="380" y="248" text-anchor="middle" style="fill:var(--muted)">一次 DDL/DCL：Broadcaster 原子广播到所有 PChannel = <tspan style="fill:var(--purple);font-weight:700">一群日志</tspan>（要么全成、要么全不成）</text>
+  </svg>
+  <div class="figcap"><b>一条日志 vs 一群日志</b>：<b>DML</b>（insert/delete）按主键哈希只落到<b>某一条 PChannel</b>，进一条日志即可——范围小、并行高、走最快路径。<b>DDL/DCL</b>（建/删集合、RBAC）改的是<b>整集合的元信息</b>，必须经 <b>Broadcaster</b>「<b>加锁 + 收齐全员 ACK</b>」<b>原子广播到所有 PChannel</b>——要么全生效、要么全不生效，绝不允许"一半分片认得 C、一半不认"的分裂中间态。</div>
+</div>
+
 <div class="cols">
   <div class="col"><h4>DML：单 PChannel Append</h4><p>insert/delete 按主键落到某条 PChannel，<strong>进一条日志</strong>即可。范围小、并行高、走最快的路径。</p></div>
   <div class="col"><h4>DDL/DCL：多 PChannel Broadcast</h4><p>建/删集合、RBAC 等改元信息，必须<strong>原子地广播到所有相关 PChannel</strong>，要么全成、要么全不成，宁慢勿乱。</p></div>
@@ -552,6 +579,33 @@ hard requirements: <strong>(1) atomicity</strong> (all relevant PChannels take e
 ("create the collection, then write into it" causality must not scramble). An ordinary Append can't give these two, hence the Broadcaster.</p>
 
 <p>Why is "half applied" so deadly? Because many Milvus components <strong>independently consume their own PChannels</strong> to perceive the world (Lesson 31's "one log, many parties replaying it"). If a create-collection message reaches only half the PChannels, the StreamingNodes, DataNodes and QueryNodes owning the other half land in a split state — <strong>holding different beliefs about whether the same collection even exists</strong>: some start allocating segments, building indexes and accepting queries for it, while others reject incoming writes as an "unknown collection". This <strong>metadata-level inconsistency is far scarier than losing a few rows</strong> — it robs the system of a single answer to "which collections exist right now, with what schema, and who has permission", triggering cascading errors. So DDL/DCL atomicity isn't a nice-to-have, it is the <strong>floor of correctness</strong>: either everyone enters the new belief at once, or everyone stays on the old — never an in-between. Once you see this floor, you understand why the Broadcaster's seemingly fussy "lock + all-acks" is indispensable: it exists to abolish the in-between state entirely.</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="DML vs DDL: one DML hashes by primary key to a single PChannel and is one log entry; one DDL goes through the Broadcaster (lock + all-acks) to atomically broadcast to every PChannel and is a group of logs">
+    <text x="20" y="34" style="fill:var(--muted)">DML · data ops (insert / delete / upsert)</text>
+    <rect x="20" y="44" width="150" height="46" rx="9" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="95" y="72" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">DML · insert pk=42</text>
+    <line x1="170" y1="67" x2="356" y2="67" style="stroke:var(--accent);stroke-width:2"/><path d="M356,67 l-11,-5 l0,10 z" style="fill:var(--accent)"/><text x="262" y="58" text-anchor="middle" style="fill:var(--muted)">hash by pk → hits P2</text>
+    <rect x="360" y="44" width="380" height="46" rx="9" style="fill:none;stroke:var(--line);stroke-dasharray:4 3"/>
+    <rect x="368" y="50" width="84" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="410" y="72" text-anchor="middle" style="fill:var(--faint)">P0</text>
+    <rect x="460" y="50" width="84" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="502" y="72" text-anchor="middle" style="fill:var(--faint)">P1</text>
+    <rect x="552" y="50" width="84" height="34" rx="6" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="594" y="72" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">P2 ✓</text>
+    <rect x="644" y="50" width="84" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="686" y="72" text-anchor="middle" style="fill:var(--faint)">P3</text>
+    <text x="380" y="118" text-anchor="middle" style="fill:var(--muted)">one DML: by primary key into one PChannel = <tspan style="fill:var(--accent-ink);font-weight:700">one log entry</tspan> (small · parallel)</text>
+    <line x1="20" y1="138" x2="740" y2="138" style="stroke:var(--line);stroke-dasharray:2 4"/>
+    <text x="20" y="160" style="fill:var(--muted)">DDL / DCL · data definition / control (create · drop · RBAC)</text>
+    <rect x="20" y="170" width="150" height="48" rx="9" style="fill:var(--panel);stroke:var(--purple);stroke-width:1.5"/><text x="95" y="199" text-anchor="middle" style="fill:var(--purple);font-weight:700">DDL · create(C)</text>
+    <line x1="170" y1="194" x2="192" y2="194" style="stroke:var(--purple);stroke-width:2"/><path d="M192,194 l-10,-5 l0,10 z" style="fill:var(--purple)"/>
+    <rect x="194" y="169" width="150" height="50" rx="9" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="269" y="190" text-anchor="middle" style="fill:var(--amber);font-weight:700">Broadcaster</text><text x="269" y="209" text-anchor="middle" style="fill:var(--muted)">lock + all-acks</text>
+    <line x1="344" y1="194" x2="358" y2="194" style="stroke:var(--purple);stroke-width:2.5"/><path d="M358,194 l-11,-5 l0,10 z" style="fill:var(--purple)"/>
+    <rect x="360" y="171" width="380" height="46" rx="9" style="fill:none;stroke:var(--purple);stroke-dasharray:4 3"/>
+    <rect x="368" y="177" width="84" height="34" rx="6" style="fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5"/><text x="410" y="199" text-anchor="middle" style="fill:var(--purple);font-weight:700">P0 ✓</text>
+    <rect x="460" y="177" width="84" height="34" rx="6" style="fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5"/><text x="502" y="199" text-anchor="middle" style="fill:var(--purple);font-weight:700">P1 ✓</text>
+    <rect x="552" y="177" width="84" height="34" rx="6" style="fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5"/><text x="594" y="199" text-anchor="middle" style="fill:var(--purple);font-weight:700">P2 ✓</text>
+    <rect x="644" y="177" width="84" height="34" rx="6" style="fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5"/><text x="686" y="199" text-anchor="middle" style="fill:var(--purple);font-weight:700">P3 ✓</text>
+    <text x="380" y="248" text-anchor="middle" style="fill:var(--muted)">one DDL/DCL: atomic broadcast to all PChannels = <tspan style="fill:var(--purple);font-weight:700">a group of logs</tspan> (all or nothing)</text>
+  </svg>
+  <div class="figcap"><b>One log vs a group of logs</b>: <b>DML</b> (insert/delete) hashes by primary key into <b>a single PChannel</b> — one log entry, small scope, high parallelism, the fastest path. <b>DDL/DCL</b> (create/drop collection, RBAC) change <b>whole-collection metadata</b>, so they go through the <b>Broadcaster</b> — «<b>lock + collect all acks</b>» to <b>atomically broadcast to every PChannel</b> — all or nothing, never the split state where half the shards know collection C and half don't.</div>
+</div>
 
 <div class="cols">
   <div class="col"><h4>DML: single-PChannel Append</h4><p>insert/delete land in one PChannel by primary key, <strong>into one log</strong>. Small scope, high parallelism.</p></div>

@@ -59,6 +59,25 @@ LESSON_31 = {
 每个工位只拧一种螺丝，零件按固定顺序流过，最后下线的就是一条"<strong>盖好戳、归好属、入好账</strong>"的合规日志。这种"<strong>责任单一、按序串联</strong>"的设计，让 Milvus 能<strong>灵活增减横切能力</strong>：
 要支持一种新的写语义，往链上挂一个新拦截器即可，不必去动核心的追加逻辑。这也是为什么 DDL/DCL、事务、复制这些后来才加的能力，能比较干净地融进来——它们大多就是链上多挂的一环。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="拦截器链装配线：每次 Append 顺序穿过 TimeTick、Txn、Shard、Lock 四个拦截器，最后落到 WAL Backend，成为一条合规的不可变日志">
+    <text x="380" y="32" text-anchor="middle" style="fill:var(--ink);font-weight:700">每次 Append 顺序穿过拦截器链（过五关）→ 下线即合规日志</text>
+    <rect x="14" y="104" width="76" height="86" rx="9" style="fill:var(--panel-2);stroke:var(--line)"/><text x="52" y="140" text-anchor="middle" style="fill:var(--muted)">原始</text><text x="52" y="162" text-anchor="middle" class="mono" style="fill:var(--muted)">Append</text>
+    <line x1="90" y1="147" x2="106" y2="147" style="stroke:var(--line);stroke-width:2"/><path d="M106,147 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="108" y="104" width="110" height="86" rx="9" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="163" y="140" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">① TimeTick</text><text x="163" y="162" text-anchor="middle" style="fill:var(--muted)">盖单调戳</text>
+    <line x1="218" y1="147" x2="234" y2="147" style="stroke:var(--line);stroke-width:2"/><path d="M234,147 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="236" y="104" width="100" height="86" rx="9" style="fill:var(--panel);stroke:var(--purple);stroke-width:1.5"/><text x="286" y="140" text-anchor="middle" style="fill:var(--purple);font-weight:700">② Txn</text><text x="286" y="162" text-anchor="middle" style="fill:var(--muted)">事务原子</text>
+    <line x1="336" y1="147" x2="352" y2="147" style="stroke:var(--line);stroke-width:2"/><path d="M352,147 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="354" y="104" width="100" height="86" rx="9" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="404" y="140" text-anchor="middle" style="fill:var(--teal);font-weight:700">③ Shard</text><text x="404" y="162" text-anchor="middle" style="fill:var(--muted)">段分配</text>
+    <line x1="454" y1="147" x2="470" y2="147" style="stroke:var(--line);stroke-width:2"/><path d="M470,147 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="472" y="104" width="100" height="86" rx="9" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="522" y="140" text-anchor="middle" style="fill:var(--amber);font-weight:700">④ Lock</text><text x="522" y="162" text-anchor="middle" style="fill:var(--muted)">并发上锁</text>
+    <line x1="572" y1="147" x2="592" y2="147" style="stroke:var(--accent);stroke-width:2.5"/><path d="M592,147 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <rect x="594" y="104" width="152" height="86" rx="9" style="fill:var(--blue-soft);stroke:var(--blue);stroke-width:2"/><text x="670" y="140" text-anchor="middle" style="fill:var(--blue);font-weight:700">⑤ WAL Backend</text><text x="670" y="162" text-anchor="middle" style="fill:var(--muted)">不可变日志</text>
+    <text x="380" y="232" text-anchor="middle" style="fill:var(--muted)">装配线：每关只拧一种螺丝、按序流过 → 下线即"盖好戳·归好属·入好账"的合规日志</text>
+  </svg>
+  <div class="figcap"><b>拦截器链 = 一条装配线</b>：每次 <span class="mono">Append</span> 顺序穿过 <b>① TimeTick</b>（盖 PChannel 级单调戳，正是读路径 tsafe 等待的对象）<b>② Txn</b>（事务原子性）<b>③ Shard</b>（段分配，段 ID 此刻才定）<b>④ Lock</b>（并发上锁），最后 <b>⑤</b> 真正落到 WAL Backend。关注点正交、可插拔——要加新写语义，往链上挂一环即可，不动核心追加逻辑。</div>
+</div>
+
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>TimeTick 拦截器</h4><p>给这条消息盖上 PChannel 级<strong>单调递增</strong>的 TimeTick——这把"日志时钟"正是读路径 tsafe 等待的对象（第 30 课）。</p></div></div>
   <div class="step"><div class="num">2</div><div class="sc"><h4>Txn 拦截器</h4><p>管理<strong>事务</strong>的生命周期：把一批本应"要么都见、要么都不见"的写入，框在一个事务里原子地落日志。</p></div></div>
@@ -204,6 +223,25 @@ chain</strong> — an ordered set of handlers, each owning one cross-cutting con
 timestamps, managing transactions, assigning segments, locking — so each is independent, pluggable and testable, rather than tangled together. The main
 gates are:</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="The interceptor chain as an assembly line: every Append threads TimeTick, Txn, Shard and Lock in order, then lands in the WAL Backend as a compliant immutable log entry">
+    <text x="380" y="32" text-anchor="middle" style="fill:var(--ink);font-weight:700">every Append threads the interceptor chain → a compliant log entry</text>
+    <rect x="14" y="104" width="76" height="86" rx="9" style="fill:var(--panel-2);stroke:var(--line)"/><text x="52" y="140" text-anchor="middle" style="fill:var(--muted)">raw</text><text x="52" y="162" text-anchor="middle" class="mono" style="fill:var(--muted)">Append</text>
+    <line x1="90" y1="147" x2="106" y2="147" style="stroke:var(--line);stroke-width:2"/><path d="M106,147 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="108" y="104" width="110" height="86" rx="9" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="163" y="140" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">① TimeTick</text><text x="163" y="162" text-anchor="middle" style="fill:var(--muted)">stamp ts</text>
+    <line x1="218" y1="147" x2="234" y2="147" style="stroke:var(--line);stroke-width:2"/><path d="M234,147 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="236" y="104" width="100" height="86" rx="9" style="fill:var(--panel);stroke:var(--purple);stroke-width:1.5"/><text x="286" y="140" text-anchor="middle" style="fill:var(--purple);font-weight:700">② Txn</text><text x="286" y="162" text-anchor="middle" style="fill:var(--muted)">atomic</text>
+    <line x1="336" y1="147" x2="352" y2="147" style="stroke:var(--line);stroke-width:2"/><path d="M352,147 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="354" y="104" width="100" height="86" rx="9" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="404" y="140" text-anchor="middle" style="fill:var(--teal);font-weight:700">③ Shard</text><text x="404" y="162" text-anchor="middle" style="fill:var(--muted)">assign seg</text>
+    <line x1="454" y1="147" x2="470" y2="147" style="stroke:var(--line);stroke-width:2"/><path d="M470,147 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="472" y="104" width="100" height="86" rx="9" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="522" y="140" text-anchor="middle" style="fill:var(--amber);font-weight:700">④ Lock</text><text x="522" y="162" text-anchor="middle" style="fill:var(--muted)">lock</text>
+    <line x1="572" y1="147" x2="592" y2="147" style="stroke:var(--accent);stroke-width:2.5"/><path d="M592,147 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <rect x="594" y="104" width="152" height="86" rx="9" style="fill:var(--blue-soft);stroke:var(--blue);stroke-width:2"/><text x="670" y="140" text-anchor="middle" style="fill:var(--blue);font-weight:700">⑤ WAL Backend</text><text x="670" y="162" text-anchor="middle" style="fill:var(--muted)">immutable log</text>
+    <text x="380" y="232" text-anchor="middle" style="fill:var(--muted)">assembly line: each gate adds one thing, in fixed order → a compliant log entry</text>
+  </svg>
+  <div class="figcap"><b>The interceptor chain = an assembly line</b>: every <span class="mono">Append</span> threads <b>① TimeTick</b> (stamp a PChannel-level monotonic ts — what the read path's tsafe waits on) <b>② Txn</b> (transaction atomicity) <b>③ Shard</b> (segment assignment — the segment ID is fixed here) <b>④ Lock</b> (concurrency control), then <b>⑤</b> truly lands in the WAL Backend. Concerns stay orthogonal and pluggable — a new write semantic is just one more link, no change to the core append.</div>
+</div>
+
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>TimeTick interceptor</h4><p>stamps the message with a PChannel-level <strong>monotonically increasing</strong> TimeTick — the "log clock" that the read path's tsafe waits on (Lesson 30).</p></div></div>
   <div class="step"><div class="num">2</div><div class="sc"><h4>Txn interceptor</h4><p>manages the <strong>transaction</strong> lifecycle: framing a batch that should be "all-or-nothing visible" into one atomic log transaction.</p></div></div>
@@ -320,6 +358,33 @@ LESSON_32 = {
 那么负责另一半的 StreamingNode、DataNode、QueryNode 就会处在"<strong>对同一个集合是否存在持有不同认知</strong>"的分裂状态：有的开始为它分配段、建索引、接收查询，有的却把发来的写入当成"未知集合"拒掉。
 这种<strong>元信息层面的不一致</strong>，比丢几条数据要可怕得多——它会让系统对"现在到底有哪些集合、什么 schema、谁有权限"失去统一答案，进而引发连锁错误。所以 DDL/DCL 的原子性不是"锦上添花"，而是<strong>正确性的底线</strong>：
 要么让所有人同时进入新认知，要么所有人都停在旧认知，绝不允许中间态。理解了这个"底线"，你就明白 Broadcaster 那套看似繁琐的"锁 + 全员 ACK"为什么必不可少——它正是为了把"中间态"彻底消灭。换句话说，繁琐不是设计的缺点，而是"原子性"在分布式世界里必须付出的、最小的代价。</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="对比 DML 与 DDL：一次 DML 按主键哈希只落到一条 PChannel，是一条日志；一次 DDL 经 Broadcaster 加锁并收齐全员 ACK，原子广播到所有 PChannel，是一群日志">
+    <text x="20" y="34" style="fill:var(--muted)">DML · 数据操作（insert / delete / upsert）</text>
+    <rect x="20" y="44" width="150" height="46" rx="9" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="95" y="72" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">DML · insert pk=42</text>
+    <line x1="170" y1="67" x2="356" y2="67" style="stroke:var(--accent);stroke-width:2"/><path d="M356,67 l-11,-5 l0,10 z" style="fill:var(--accent)"/><text x="262" y="58" text-anchor="middle" style="fill:var(--muted)">按主键哈希 → 命中 P2</text>
+    <rect x="360" y="44" width="380" height="46" rx="9" style="fill:none;stroke:var(--line);stroke-dasharray:4 3"/>
+    <rect x="368" y="50" width="84" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="410" y="72" text-anchor="middle" style="fill:var(--faint)">P0</text>
+    <rect x="460" y="50" width="84" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="502" y="72" text-anchor="middle" style="fill:var(--faint)">P1</text>
+    <rect x="552" y="50" width="84" height="34" rx="6" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="594" y="72" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">P2 ✓</text>
+    <rect x="644" y="50" width="84" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="686" y="72" text-anchor="middle" style="fill:var(--faint)">P3</text>
+    <text x="380" y="118" text-anchor="middle" style="fill:var(--muted)">一次 DML：按主键落到某一条 PChannel = <tspan style="fill:var(--accent-ink);font-weight:700">一条日志</tspan>（范围小·并行高·最快路径）</text>
+    <line x1="20" y1="138" x2="740" y2="138" style="stroke:var(--line);stroke-dasharray:2 4"/>
+    <text x="20" y="160" style="fill:var(--muted)">DDL / DCL · 数据定义 / 控制（create·drop·RBAC）</text>
+    <rect x="20" y="170" width="150" height="48" rx="9" style="fill:var(--panel);stroke:var(--purple);stroke-width:1.5"/><text x="95" y="199" text-anchor="middle" style="fill:var(--purple);font-weight:700">DDL · create(C)</text>
+    <line x1="170" y1="194" x2="192" y2="194" style="stroke:var(--purple);stroke-width:2"/><path d="M192,194 l-10,-5 l0,10 z" style="fill:var(--purple)"/>
+    <rect x="194" y="169" width="150" height="50" rx="9" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="269" y="190" text-anchor="middle" style="fill:var(--amber);font-weight:700">Broadcaster</text><text x="269" y="209" text-anchor="middle" style="fill:var(--muted)">锁 + 全员 ACK</text>
+    <line x1="344" y1="194" x2="358" y2="194" style="stroke:var(--purple);stroke-width:2.5"/><path d="M358,194 l-11,-5 l0,10 z" style="fill:var(--purple)"/>
+    <rect x="360" y="171" width="380" height="46" rx="9" style="fill:none;stroke:var(--purple);stroke-dasharray:4 3"/>
+    <rect x="368" y="177" width="84" height="34" rx="6" style="fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5"/><text x="410" y="199" text-anchor="middle" style="fill:var(--purple);font-weight:700">P0 ✓</text>
+    <rect x="460" y="177" width="84" height="34" rx="6" style="fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5"/><text x="502" y="199" text-anchor="middle" style="fill:var(--purple);font-weight:700">P1 ✓</text>
+    <rect x="552" y="177" width="84" height="34" rx="6" style="fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5"/><text x="594" y="199" text-anchor="middle" style="fill:var(--purple);font-weight:700">P2 ✓</text>
+    <rect x="644" y="177" width="84" height="34" rx="6" style="fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5"/><text x="686" y="199" text-anchor="middle" style="fill:var(--purple);font-weight:700">P3 ✓</text>
+    <text x="380" y="248" text-anchor="middle" style="fill:var(--muted)">一次 DDL/DCL：Broadcaster 原子广播到所有 PChannel = <tspan style="fill:var(--purple);font-weight:700">一群日志</tspan>（要么全成、要么全不成）</text>
+  </svg>
+  <div class="figcap"><b>一条日志 vs 一群日志</b>：<b>DML</b>（insert/delete）按主键哈希只落到<b>某一条 PChannel</b>，进一条日志即可——范围小、并行高、走最快路径。<b>DDL/DCL</b>（建/删集合、RBAC）改的是<b>整集合的元信息</b>，必须经 <b>Broadcaster</b>「<b>加锁 + 收齐全员 ACK</b>」<b>原子广播到所有 PChannel</b>——要么全生效、要么全不生效，绝不允许"一半分片认得 C、一半不认"的分裂中间态。</div>
+</div>
 
 <div class="cols">
   <div class="col"><h4>DML：单 PChannel Append</h4><p>insert/delete 按主键落到某条 PChannel，<strong>进一条日志</strong>即可。范围小、并行高、走最快的路径。</p></div>
@@ -453,6 +518,33 @@ hard requirements: <strong>(1) atomicity</strong> (all relevant PChannels take e
 ("create the collection, then write into it" causality must not scramble). An ordinary Append can't give these two, hence the Broadcaster.</p>
 
 <p>Why is "half applied" so deadly? Because many Milvus components <strong>independently consume their own PChannels</strong> to perceive the world (Lesson 31's "one log, many parties replaying it"). If a create-collection message reaches only half the PChannels, the StreamingNodes, DataNodes and QueryNodes owning the other half land in a split state — <strong>holding different beliefs about whether the same collection even exists</strong>: some start allocating segments, building indexes and accepting queries for it, while others reject incoming writes as an "unknown collection". This <strong>metadata-level inconsistency is far scarier than losing a few rows</strong> — it robs the system of a single answer to "which collections exist right now, with what schema, and who has permission", triggering cascading errors. So DDL/DCL atomicity isn't a nice-to-have, it is the <strong>floor of correctness</strong>: either everyone enters the new belief at once, or everyone stays on the old — never an in-between. Once you see this floor, you understand why the Broadcaster's seemingly fussy "lock + all-acks" is indispensable: it exists to abolish the in-between state entirely.</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="DML vs DDL: one DML hashes by primary key to a single PChannel and is one log entry; one DDL goes through the Broadcaster (lock + all-acks) to atomically broadcast to every PChannel and is a group of logs">
+    <text x="20" y="34" style="fill:var(--muted)">DML · data ops (insert / delete / upsert)</text>
+    <rect x="20" y="44" width="150" height="46" rx="9" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="95" y="72" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">DML · insert pk=42</text>
+    <line x1="170" y1="67" x2="356" y2="67" style="stroke:var(--accent);stroke-width:2"/><path d="M356,67 l-11,-5 l0,10 z" style="fill:var(--accent)"/><text x="262" y="58" text-anchor="middle" style="fill:var(--muted)">hash by pk → hits P2</text>
+    <rect x="360" y="44" width="380" height="46" rx="9" style="fill:none;stroke:var(--line);stroke-dasharray:4 3"/>
+    <rect x="368" y="50" width="84" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="410" y="72" text-anchor="middle" style="fill:var(--faint)">P0</text>
+    <rect x="460" y="50" width="84" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="502" y="72" text-anchor="middle" style="fill:var(--faint)">P1</text>
+    <rect x="552" y="50" width="84" height="34" rx="6" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="594" y="72" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">P2 ✓</text>
+    <rect x="644" y="50" width="84" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="686" y="72" text-anchor="middle" style="fill:var(--faint)">P3</text>
+    <text x="380" y="118" text-anchor="middle" style="fill:var(--muted)">one DML: by primary key into one PChannel = <tspan style="fill:var(--accent-ink);font-weight:700">one log entry</tspan> (small · parallel)</text>
+    <line x1="20" y1="138" x2="740" y2="138" style="stroke:var(--line);stroke-dasharray:2 4"/>
+    <text x="20" y="160" style="fill:var(--muted)">DDL / DCL · data definition / control (create · drop · RBAC)</text>
+    <rect x="20" y="170" width="150" height="48" rx="9" style="fill:var(--panel);stroke:var(--purple);stroke-width:1.5"/><text x="95" y="199" text-anchor="middle" style="fill:var(--purple);font-weight:700">DDL · create(C)</text>
+    <line x1="170" y1="194" x2="192" y2="194" style="stroke:var(--purple);stroke-width:2"/><path d="M192,194 l-10,-5 l0,10 z" style="fill:var(--purple)"/>
+    <rect x="194" y="169" width="150" height="50" rx="9" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="269" y="190" text-anchor="middle" style="fill:var(--amber);font-weight:700">Broadcaster</text><text x="269" y="209" text-anchor="middle" style="fill:var(--muted)">lock + all-acks</text>
+    <line x1="344" y1="194" x2="358" y2="194" style="stroke:var(--purple);stroke-width:2.5"/><path d="M358,194 l-11,-5 l0,10 z" style="fill:var(--purple)"/>
+    <rect x="360" y="171" width="380" height="46" rx="9" style="fill:none;stroke:var(--purple);stroke-dasharray:4 3"/>
+    <rect x="368" y="177" width="84" height="34" rx="6" style="fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5"/><text x="410" y="199" text-anchor="middle" style="fill:var(--purple);font-weight:700">P0 ✓</text>
+    <rect x="460" y="177" width="84" height="34" rx="6" style="fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5"/><text x="502" y="199" text-anchor="middle" style="fill:var(--purple);font-weight:700">P1 ✓</text>
+    <rect x="552" y="177" width="84" height="34" rx="6" style="fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5"/><text x="594" y="199" text-anchor="middle" style="fill:var(--purple);font-weight:700">P2 ✓</text>
+    <rect x="644" y="177" width="84" height="34" rx="6" style="fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5"/><text x="686" y="199" text-anchor="middle" style="fill:var(--purple);font-weight:700">P3 ✓</text>
+    <text x="380" y="248" text-anchor="middle" style="fill:var(--muted)">one DDL/DCL: atomic broadcast to all PChannels = <tspan style="fill:var(--purple);font-weight:700">a group of logs</tspan> (all or nothing)</text>
+  </svg>
+  <div class="figcap"><b>One log vs a group of logs</b>: <b>DML</b> (insert/delete) hashes by primary key into <b>a single PChannel</b> — one log entry, small scope, high parallelism, the fastest path. <b>DDL/DCL</b> (create/drop collection, RBAC) change <b>whole-collection metadata</b>, so they go through the <b>Broadcaster</b> — «<b>lock + collect all acks</b>» to <b>atomically broadcast to every PChannel</b> — all or nothing, never the split state where half the shards know collection C and half don't.</div>
+</div>
 
 <div class="cols">
   <div class="col"><h4>DML: single-PChannel Append</h4><p>insert/delete land in one PChannel by primary key, <strong>into one log</strong>. Small scope, high parallelism.</p></div>
@@ -627,6 +719,27 @@ LESSON_33 = {
 需要"双活"或主备切换时，则通过 controller <strong>显式地变更角色</strong>来完成，而不是放任两边自由互写。这种"<strong>宁可简单也不要含糊</strong>"的取舍，和前面 TSO 用单一来源发号、Broadcaster 用单一源头广播，是<strong>同一种工程审美</strong>：
 把"谁说了算"这件事收敛到一个明确的权威上，复杂度就塌缩了一大半。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="跨集群复制的星型拓扑：主集群的 WAL 经 CDC 单向复制给多个备集群，备集群用 Replicate 拦截器原样保留原 TimeTick 后按同序重放，得到与主集群一致的状态">
+    <rect x="300" y="24" width="200" height="30" rx="15" style="fill:var(--panel);stroke:var(--purple)"/><text x="400" y="44" text-anchor="middle" style="fill:var(--purple);font-weight:700">CDC controller · 协调角色</text>
+    <rect x="36" y="106" width="224" height="96" rx="11" style="fill:var(--blue-soft);stroke:var(--blue);stroke-width:2"/><text x="148" y="132" text-anchor="middle" style="fill:var(--blue);font-weight:700">primary · 主集群</text><text x="148" y="151" text-anchor="middle" style="fill:var(--muted)">唯一变更源头</text>
+    <text x="52" y="186" style="fill:var(--muted)">WAL</text>
+    <rect x="92" y="168" width="48" height="24" rx="4" style="fill:var(--panel);stroke:var(--line)"/><text x="116" y="185" text-anchor="middle" class="mono" style="fill:var(--ink)">t1</text>
+    <rect x="146" y="168" width="48" height="24" rx="4" style="fill:var(--panel);stroke:var(--line)"/><text x="170" y="185" text-anchor="middle" class="mono" style="fill:var(--ink)">t2</text>
+    <rect x="200" y="168" width="48" height="24" rx="4" style="fill:var(--panel);stroke:var(--line)"/><text x="224" y="185" text-anchor="middle" class="mono" style="fill:var(--ink)">t3</text>
+    <line x1="262" y1="150" x2="536" y2="66" style="stroke:var(--teal);stroke-width:2"/><path d="M536,66 l-11,0 l3,9 z" style="fill:var(--teal)"/>
+    <line x1="262" y1="154" x2="536" y2="150" style="stroke:var(--teal);stroke-width:2"/><path d="M536,150 l-11,-3 l1,9 z" style="fill:var(--teal)"/>
+    <line x1="262" y1="158" x2="536" y2="232" style="stroke:var(--teal);stroke-width:2"/><path d="M536,232 l-10,-5 l-1,9 z" style="fill:var(--teal)"/>
+    <text x="400" y="142" text-anchor="middle" style="fill:var(--teal);font-weight:700">单向 ship log</text>
+    <text x="380" y="246" text-anchor="middle" style="fill:var(--muted)">Replicate 拦截器：保留原 TimeTick</text>
+    <rect x="538" y="40" width="206" height="52" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="641" y="61" text-anchor="middle" style="fill:var(--teal);font-weight:700">secondary · 备 A</text><text x="641" y="80" text-anchor="middle" style="fill:var(--muted)">重放同序 → 同状态</text>
+    <rect x="538" y="124" width="206" height="52" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="641" y="145" text-anchor="middle" style="fill:var(--teal);font-weight:700">secondary · 备 B</text><text x="641" y="164" text-anchor="middle" style="fill:var(--muted)">重放同序 → 同状态</text>
+    <rect x="538" y="208" width="206" height="52" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="641" y="229" text-anchor="middle" style="fill:var(--teal);font-weight:700">secondary · 备 C</text><text x="641" y="248" text-anchor="middle" style="fill:var(--muted)">重放同序 → 同状态</text>
+    <text x="380" y="288" text-anchor="middle" style="fill:var(--muted)">复制"日志"（发生了什么）而非"状态"（现在是什么）：备 = 把上游 WAL 接到远方的普通消费者</text>
+  </svg>
+  <div class="figcap"><b>星型拓扑 · 复制日志而非状态</b>：一个 <b>primary</b> 居中，把它<b>已有的 WAL</b> 经 CDC <b>单向</b>复制给若干 <b>secondary</b>（由 CDC controller 协调角色）。最妙的一笔是备集群的 <b>Replicate 拦截器</b>「原样保留消息里主集群盖好的 TimeTick、不重新盖戳」——正是这"保留原序"的一小步，保证主备重放<b>顺序严格一致</b>、从而状态严格一致。备集群因此只是"把上游日志接到远方"的<b>普通消费者</b>。</div>
+</div>
+
 <div class="layers">
   <div class="layer l-core"><div class="lh"><span class="badge">primary</span><span class="name">主集群</span></div><div class="ld">唯一的变更源头；其 WAL 被复制出去</div></div>
   <div class="layer l-main"><div class="lh"><span class="badge">controller</span><span class="name">CDC controller</span></div><div class="ld">协调角色与复制关系（谁复制给谁）</div></div>
@@ -753,6 +866,27 @@ one authoritative source" (recall the TSO does the same). When needed, primary/s
 the new primary), which is the basis of disaster failover.</p>
 
 <p>Why <strong>one-directional</strong> rather than two sides syncing each other? Because "<strong>who is the single truth</strong>" must be unambiguous. If both clusters could write and replicate to each other, you'd hit the classic <strong>multi-primary conflict</strong>: the same row changed to different values on both sides at nearly the same instant — whose wins? Resolving multi-primary conflicts requires complex merge/arbitration logic, both hard and error-prone. Milvus's choice is clean: <strong>only one primary writes at a time, and changes flow one-way to the secondaries</strong>, which are read-only (serving reads only). With "truth from a single source", there's simply no room for conflict. When you need "active-active" or a switchover, the controller <strong>explicitly changes roles</strong> rather than letting both sides write freely. This "<strong>prefer simple over ambiguous</strong>" trade-off is the <strong>same engineering aesthetic</strong> as the TSO handing out numbers from one source and the Broadcaster broadcasting from one source: converge "who decides" onto one clear authority and most of the complexity collapses.</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="The star topology of cross-cluster replication: the primary cluster's WAL is replicated one-way through CDC to several secondaries, which keep the original TimeTick via a Replicate interceptor and replay in the same order to reach a state identical to the primary">
+    <rect x="290" y="24" width="220" height="30" rx="15" style="fill:var(--panel);stroke:var(--purple)"/><text x="400" y="44" text-anchor="middle" style="fill:var(--purple);font-weight:700">CDC controller · roles</text>
+    <rect x="36" y="106" width="224" height="96" rx="11" style="fill:var(--blue-soft);stroke:var(--blue);stroke-width:2"/><text x="148" y="132" text-anchor="middle" style="fill:var(--blue);font-weight:700">primary cluster</text><text x="148" y="151" text-anchor="middle" style="fill:var(--muted)">single source of change</text>
+    <text x="52" y="186" style="fill:var(--muted)">WAL</text>
+    <rect x="92" y="168" width="48" height="24" rx="4" style="fill:var(--panel);stroke:var(--line)"/><text x="116" y="185" text-anchor="middle" class="mono" style="fill:var(--ink)">t1</text>
+    <rect x="146" y="168" width="48" height="24" rx="4" style="fill:var(--panel);stroke:var(--line)"/><text x="170" y="185" text-anchor="middle" class="mono" style="fill:var(--ink)">t2</text>
+    <rect x="200" y="168" width="48" height="24" rx="4" style="fill:var(--panel);stroke:var(--line)"/><text x="224" y="185" text-anchor="middle" class="mono" style="fill:var(--ink)">t3</text>
+    <line x1="262" y1="150" x2="536" y2="66" style="stroke:var(--teal);stroke-width:2"/><path d="M536,66 l-11,0 l3,9 z" style="fill:var(--teal)"/>
+    <line x1="262" y1="154" x2="536" y2="150" style="stroke:var(--teal);stroke-width:2"/><path d="M536,150 l-11,-3 l1,9 z" style="fill:var(--teal)"/>
+    <line x1="262" y1="158" x2="536" y2="232" style="stroke:var(--teal);stroke-width:2"/><path d="M536,232 l-10,-5 l-1,9 z" style="fill:var(--teal)"/>
+    <text x="400" y="142" text-anchor="middle" style="fill:var(--teal);font-weight:700">one-way ship log</text>
+    <text x="380" y="246" text-anchor="middle" style="fill:var(--muted)">Replicate · keep original TimeTick</text>
+    <rect x="538" y="40" width="206" height="52" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="641" y="61" text-anchor="middle" style="fill:var(--teal);font-weight:700">secondary · standby A</text><text x="641" y="80" text-anchor="middle" style="fill:var(--muted)">same order → same state</text>
+    <rect x="538" y="124" width="206" height="52" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="641" y="145" text-anchor="middle" style="fill:var(--teal);font-weight:700">secondary · standby B</text><text x="641" y="164" text-anchor="middle" style="fill:var(--muted)">same order → same state</text>
+    <rect x="538" y="208" width="206" height="52" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="641" y="229" text-anchor="middle" style="fill:var(--teal);font-weight:700">secondary · standby C</text><text x="641" y="248" text-anchor="middle" style="fill:var(--muted)">same order → same state</text>
+    <text x="380" y="288" text-anchor="middle" style="fill:var(--muted)">replicate the LOG (what happened), not the STATE (what is now)</text>
+  </svg>
+  <div class="figcap"><b>Star topology · replicate the log, not the state</b>: one <b>primary</b> at the center replicates its <b>already-existing WAL</b> one-way to several <b>secondaries</b> (the CDC controller coordinates the roles). The neat trick: a secondary's <b>Replicate interceptor</b> «<b>keeps the TimeTick the primary already stamped, instead of re-stamping</b>» — that one "preserve the order" step keeps the primary and secondary replays in <b>strictly the same order</b>, hence identical state. A secondary is therefore just an ordinary <b>consumer</b> that happens to read the upstream log from far away.</div>
+</div>
 
 <div class="layers">
   <div class="layer l-core"><div class="lh"><span class="badge">primary</span><span class="name">primary cluster</span></div><div class="ld">the single source of change; its WAL is replicated out</div></div>

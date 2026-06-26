@@ -393,6 +393,25 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 每个工位只拧一种螺丝，零件按固定顺序流过，最后下线的就是一条"<strong>盖好戳、归好属、入好账</strong>"的合规日志。这种"<strong>责任单一、按序串联</strong>"的设计，让 Milvus 能<strong>灵活增减横切能力</strong>：
 要支持一种新的写语义，往链上挂一个新拦截器即可，不必去动核心的追加逻辑。这也是为什么 DDL/DCL、事务、复制这些后来才加的能力，能比较干净地融进来——它们大多就是链上多挂的一环。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="拦截器链装配线：每次 Append 顺序穿过 TimeTick、Txn、Shard、Lock 四个拦截器，最后落到 WAL Backend，成为一条合规的不可变日志">
+    <text x="380" y="32" text-anchor="middle" style="fill:var(--ink);font-weight:700">每次 Append 顺序穿过拦截器链（过五关）→ 下线即合规日志</text>
+    <rect x="14" y="104" width="76" height="86" rx="9" style="fill:var(--panel-2);stroke:var(--line)"/><text x="52" y="140" text-anchor="middle" style="fill:var(--muted)">原始</text><text x="52" y="162" text-anchor="middle" class="mono" style="fill:var(--muted)">Append</text>
+    <line x1="90" y1="147" x2="106" y2="147" style="stroke:var(--line);stroke-width:2"/><path d="M106,147 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="108" y="104" width="110" height="86" rx="9" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="163" y="140" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">① TimeTick</text><text x="163" y="162" text-anchor="middle" style="fill:var(--muted)">盖单调戳</text>
+    <line x1="218" y1="147" x2="234" y2="147" style="stroke:var(--line);stroke-width:2"/><path d="M234,147 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="236" y="104" width="100" height="86" rx="9" style="fill:var(--panel);stroke:var(--purple);stroke-width:1.5"/><text x="286" y="140" text-anchor="middle" style="fill:var(--purple);font-weight:700">② Txn</text><text x="286" y="162" text-anchor="middle" style="fill:var(--muted)">事务原子</text>
+    <line x1="336" y1="147" x2="352" y2="147" style="stroke:var(--line);stroke-width:2"/><path d="M352,147 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="354" y="104" width="100" height="86" rx="9" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="404" y="140" text-anchor="middle" style="fill:var(--teal);font-weight:700">③ Shard</text><text x="404" y="162" text-anchor="middle" style="fill:var(--muted)">段分配</text>
+    <line x1="454" y1="147" x2="470" y2="147" style="stroke:var(--line);stroke-width:2"/><path d="M470,147 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="472" y="104" width="100" height="86" rx="9" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="522" y="140" text-anchor="middle" style="fill:var(--amber);font-weight:700">④ Lock</text><text x="522" y="162" text-anchor="middle" style="fill:var(--muted)">并发上锁</text>
+    <line x1="572" y1="147" x2="592" y2="147" style="stroke:var(--accent);stroke-width:2.5"/><path d="M592,147 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <rect x="594" y="104" width="152" height="86" rx="9" style="fill:var(--blue-soft);stroke:var(--blue);stroke-width:2"/><text x="670" y="140" text-anchor="middle" style="fill:var(--blue);font-weight:700">⑤ WAL Backend</text><text x="670" y="162" text-anchor="middle" style="fill:var(--muted)">不可变日志</text>
+    <text x="380" y="232" text-anchor="middle" style="fill:var(--muted)">装配线：每关只拧一种螺丝、按序流过 → 下线即"盖好戳·归好属·入好账"的合规日志</text>
+  </svg>
+  <div class="figcap"><b>拦截器链 = 一条装配线</b>：每次 <span class="mono">Append</span> 顺序穿过 <b>① TimeTick</b>（盖 PChannel 级单调戳，正是读路径 tsafe 等待的对象）<b>② Txn</b>（事务原子性）<b>③ Shard</b>（段分配，段 ID 此刻才定）<b>④ Lock</b>（并发上锁），最后 <b>⑤</b> 真正落到 WAL Backend。关注点正交、可插拔——要加新写语义，往链上挂一环即可，不动核心追加逻辑。</div>
+</div>
+
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>TimeTick 拦截器</h4><p>给这条消息盖上 PChannel 级<strong>单调递增</strong>的 TimeTick——这把"日志时钟"正是读路径 tsafe 等待的对象（第 30 课）。</p></div></div>
   <div class="step"><div class="num">2</div><div class="sc"><h4>Txn 拦截器</h4><p>管理<strong>事务</strong>的生命周期：把一批本应"要么都见、要么都不见"的写入，框在一个事务里原子地落日志。</p></div></div>
@@ -584,6 +603,25 @@ executes</strong>" split, showing up once more at the very bottom of the write p
 chain</strong> — an ordered set of handlers, each owning one cross-cutting concern. The beauty: <strong>separate orthogonal concerns</strong> — stamping
 timestamps, managing transactions, assigning segments, locking — so each is independent, pluggable and testable, rather than tangled together. The main
 gates are:</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="The interceptor chain as an assembly line: every Append threads TimeTick, Txn, Shard and Lock in order, then lands in the WAL Backend as a compliant immutable log entry">
+    <text x="380" y="32" text-anchor="middle" style="fill:var(--ink);font-weight:700">every Append threads the interceptor chain → a compliant log entry</text>
+    <rect x="14" y="104" width="76" height="86" rx="9" style="fill:var(--panel-2);stroke:var(--line)"/><text x="52" y="140" text-anchor="middle" style="fill:var(--muted)">raw</text><text x="52" y="162" text-anchor="middle" class="mono" style="fill:var(--muted)">Append</text>
+    <line x1="90" y1="147" x2="106" y2="147" style="stroke:var(--line);stroke-width:2"/><path d="M106,147 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="108" y="104" width="110" height="86" rx="9" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="163" y="140" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">① TimeTick</text><text x="163" y="162" text-anchor="middle" style="fill:var(--muted)">stamp ts</text>
+    <line x1="218" y1="147" x2="234" y2="147" style="stroke:var(--line);stroke-width:2"/><path d="M234,147 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="236" y="104" width="100" height="86" rx="9" style="fill:var(--panel);stroke:var(--purple);stroke-width:1.5"/><text x="286" y="140" text-anchor="middle" style="fill:var(--purple);font-weight:700">② Txn</text><text x="286" y="162" text-anchor="middle" style="fill:var(--muted)">atomic</text>
+    <line x1="336" y1="147" x2="352" y2="147" style="stroke:var(--line);stroke-width:2"/><path d="M352,147 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="354" y="104" width="100" height="86" rx="9" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="404" y="140" text-anchor="middle" style="fill:var(--teal);font-weight:700">③ Shard</text><text x="404" y="162" text-anchor="middle" style="fill:var(--muted)">assign seg</text>
+    <line x1="454" y1="147" x2="470" y2="147" style="stroke:var(--line);stroke-width:2"/><path d="M470,147 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="472" y="104" width="100" height="86" rx="9" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="522" y="140" text-anchor="middle" style="fill:var(--amber);font-weight:700">④ Lock</text><text x="522" y="162" text-anchor="middle" style="fill:var(--muted)">lock</text>
+    <line x1="572" y1="147" x2="592" y2="147" style="stroke:var(--accent);stroke-width:2.5"/><path d="M592,147 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <rect x="594" y="104" width="152" height="86" rx="9" style="fill:var(--blue-soft);stroke:var(--blue);stroke-width:2"/><text x="670" y="140" text-anchor="middle" style="fill:var(--blue);font-weight:700">⑤ WAL Backend</text><text x="670" y="162" text-anchor="middle" style="fill:var(--muted)">immutable log</text>
+    <text x="380" y="232" text-anchor="middle" style="fill:var(--muted)">assembly line: each gate adds one thing, in fixed order → a compliant log entry</text>
+  </svg>
+  <div class="figcap"><b>The interceptor chain = an assembly line</b>: every <span class="mono">Append</span> threads <b>① TimeTick</b> (stamp a PChannel-level monotonic ts — what the read path's tsafe waits on) <b>② Txn</b> (transaction atomicity) <b>③ Shard</b> (segment assignment — the segment ID is fixed here) <b>④ Lock</b> (concurrency control), then <b>⑤</b> truly lands in the WAL Backend. Concerns stay orthogonal and pluggable — a new write semantic is just one more link, no change to the core append.</div>
+</div>
 
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>TimeTick interceptor</h4><p>stamps the message with a PChannel-level <strong>monotonically increasing</strong> TimeTick — the "log clock" that the read path's tsafe waits on (Lesson 30).</p></div></div>
