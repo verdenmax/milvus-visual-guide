@@ -3,14 +3,20 @@
 <p align="center">
   <a href="https://verdenmax.github.io/milvus-visual-guide/"><b>📖&nbsp; Read the guide online&nbsp; →&nbsp; verdenmax.github.io/milvus-visual-guide</b></a>
   <br>
-  <sub>The complete bilingual (English&nbsp;+&nbsp;中文) visual guide to Milvus internals — 56 lessons, runs in your browser, zero install.<br>点开即读这份 Milvus 内部原理图解指南 · 中英双语 · 56 课 · 无需安装</sub>
+  <sub>The complete bilingual (English&nbsp;+&nbsp;中文) visual guide to Milvus internals — 57 lessons, runs in your browser, zero install.<br>点开即读这份 Milvus 内部原理图解指南 · 中英双语 · 57 课 · 无需安装</sub>
+</p>
+
+<p align="center">
+  <a href="https://verdenmax.github.io/milvus-visual-guide/"><b>📖&nbsp; Read the guide&nbsp; →&nbsp; verdenmax.github.io/milvus-visual-guide</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://verdenmax.github.io/milvus-visual-guide/covers.html"><b>🖼️&nbsp; Cover gallery</b></a>
 </p>
 
 [![Read online](https://img.shields.io/badge/Read_online-Live_Demo-1296db?logo=githubpages&logoColor=white)](https://verdenmax.github.io/milvus-visual-guide/)
 [![CI](https://github.com/verdenmax/milvus-visual-guide/actions/workflows/ci.yml/badge.svg)](https://github.com/verdenmax/milvus-visual-guide/actions/workflows/ci.yml)
 [![Deploy](https://github.com/verdenmax/milvus-visual-guide/actions/workflows/deploy.yml/badge.svg)](https://github.com/verdenmax/milvus-visual-guide/actions/workflows/deploy.yml)
-[![Parts](https://img.shields.io/badge/parts-12-7048e8)](https://verdenmax.github.io/milvus-visual-guide/)
-[![Lessons](https://img.shields.io/badge/lessons-56-7048e8)](https://verdenmax.github.io/milvus-visual-guide/)
+[![Parts](https://img.shields.io/badge/parts-13-7048e8)](https://verdenmax.github.io/milvus-visual-guide/)
+[![Lessons](https://img.shields.io/badge/lessons-57-7048e8)](https://verdenmax.github.io/milvus-visual-guide/)
 [![Explains Milvus](https://img.shields.io/badge/explains-milvus-1296db?logo=github&logoColor=white)](https://github.com/milvus-io/milvus)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-2b8a3e)](#build--validate)
 [![Code: MIT](https://img.shields.io/badge/code-MIT-blue.svg)](LICENSE)
@@ -25,7 +31,7 @@ and *"how to build, test and contribute a PR"*.
 > contains **no Milvus source code** beyond small, cited snippets; it explains Milvus by quoting
 > short, attributed excerpts. Milvus itself is **Apache-2.0**-licensed by its own authors.
 
-> **Status:** **complete** - all **12 parts / 56 lessons** are built and validated. The guide was
+> **Status:** **complete** - all **13 parts / 57 lessons** are built and validated. The guide was
 > built milestone-driven; see `docs/superpowers/plans/` for the roadmap.
 
 Every lesson is self-contained, embeds both languages (toggle in the page), and uses hand-drawn
@@ -35,7 +41,7 @@ diagrams, worked-example traces, real (cited) code, and a short self-test quiz.
 
 ## What it covers
 
-The guide is organized into twelve parts that build up along the data lifecycle:
+The guide is organized into thirteen parts that build up along the data lifecycle:
 
 | Part | Topic | Lessons |
 | --- | --- | --- |
@@ -51,6 +57,7 @@ The guide is organized into twelve parts that build up along the data lifecycle:
 | 10 | Practice & contributing - build/run, testing, conventions, PRs, glossary | L42-46 |
 | 11 | Advanced topics (optional) - bulk import, hybrid search & rerank, quota/rate-limit, advanced features tour | L47-50 |
 | 12 | Design themes (synthesis) - log-as-data, query-while-write consistency, storage-compute separation, scale-to-billions, the two-language split, failure-as-default | L51-56 |
+| 13 | Capstone - the life of one row, end to end (write → durable → visible → served) | L57 |
 
 ## How to view
 
@@ -122,16 +129,16 @@ Dual-licensed:
 > **声明：** 本项目是**第三方、非官方**的学习材料，**不包含 Milvus 源码**（仅引用少量、标注来源的
 > 代码片段来讲解）。Milvus 本身由其作者以 **Apache-2.0** 许可发布。
 
-> **进度：** **已完成** —— 全部 **12 个部分 / 56 课**均已构建并通过校验。本指南按里程碑分部分构建，
+> **进度：** **已完成** —— 全部 **13 个部分 / 57 课**均已构建并通过校验。本指南按里程碑分部分构建，
 > 路线图见 `docs/superpowers/plans/`。
 
 每一课都自成一体、内嵌中英双语（页内可切换），用手绘图、worked-example 追踪图、真实（标注来源的）
 代码和一段自测题来讲清一个概念。
 
-**十二个部分**（沿数据生命周期层层递进）：① 宏观全景（L01-03）② 前置基础（L04-08）
+**十三个部分**（沿数据生命周期层层递进）：① 宏观全景（L01-03）② 前置基础（L04-08）
 ③ 分布式架构（L09-14）④ 写入链路（L15-20）⑤ 索引（L21-24）⑥ 查询链路（L25-30）
 ⑦ 流式系统（L31-33）⑧ C++ 内核（L34-37）⑨ API·工具·运维（L38-41）⑩ 实战与贡献（L42-46）
-⑪ 进阶专题·选读（L47-50）⑫ 设计专题·综合（L51-56）。
+⑪ 进阶专题·选读（L47-50）⑫ 设计专题·综合（L51-56）⑬ 终章·一条数据的一生（L57）。
 
 **怎么看：** 在线版见 **https://verdenmax.github.io/milvus-visual-guide/**；本地零依赖，
 `cd src && python3 build.py` 后用浏览器打开 `index.html`。

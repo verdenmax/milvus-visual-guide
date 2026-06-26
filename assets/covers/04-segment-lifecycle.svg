@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+<style>text{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}</style>
+<rect width="1200" height="630" fill="#0e1116"/>
+<rect x="0" y="0" width="1200" height="8" fill="#4cb8ec"/>
+<text x="60" y="66" font-size="30" font-weight="700" fill="#e6edf3">🐦 Milvus 图解教程 · Milvus Visual Guide</text>
+<text x="60" y="112" font-size="36" font-weight="700" fill="#4cb8ec">第 12 课 · 段的生命周期</text>
+<text x="60" y="142" font-size="22" fill="#9aa6b2">Segment lifecycle</text>
+<rect x="92" y="154" width="1016" height="417" rx="16" fill="#161b22" stroke="#2a323c"/>
+<svg x="112" y="170" width="976" height="385" viewBox="0 0 760 300">
+    <text x="139" y="72" text-anchor="middle" style="fill:#9aa6b2">写满 / 超时</text>
+    <text x="273" y="72" text-anchor="middle" style="fill:#9aa6b2">刷盘</text>
+    <text x="407" y="72" text-anchor="middle" style="fill:#9aa6b2">落对象存储</text>
+    <text x="541" y="72" text-anchor="middle" style="fill:#9aa6b2">compaction</text>
+    <rect x="20" y="80" width="104" height="64" rx="10" style="fill:#161b22;stroke:#6ea8fe;stroke-width:1.5"/><text x="72" y="106" text-anchor="middle" style="fill:#6ea8fe;font-weight:700">Growing</text><text x="72" y="128" text-anchor="middle" style="fill:#9aa6b2">内存·可变</text>
+    <rect x="154" y="80" width="104" height="64" rx="10" style="fill:#161b22;stroke:#b794f6;stroke-width:1.5"/><text x="206" y="106" text-anchor="middle" style="fill:#b794f6;font-weight:700">Sealed</text><text x="206" y="128" text-anchor="middle" style="fill:#9aa6b2">封存·只读</text>
+    <rect x="288" y="80" width="104" height="64" rx="10" style="fill:#161b22;stroke:#e0a44a;stroke-width:1.5"/><text x="340" y="106" text-anchor="middle" style="fill:#e0a44a;font-weight:700">Flushing</text><text x="340" y="128" text-anchor="middle" style="fill:#9aa6b2">写 binlog</text>
+    <rect x="422" y="80" width="104" height="64" rx="10" style="fill:#0d2e2a;stroke:#5ed0c4;stroke-width:2"/><text x="474" y="106" text-anchor="middle" style="fill:#5ed0c4;font-weight:700">★ Flushed</text><text x="474" y="128" text-anchor="middle" style="fill:#9aa6b2">不可变·持久</text>
+    <rect x="556" y="80" width="104" height="64" rx="10" style="fill:#1c232c;stroke:#2a323c"/><text x="608" y="106" text-anchor="middle" style="fill:#9aa6b2;font-weight:700">Dropped</text><text x="608" y="128" text-anchor="middle" style="fill:#6e7a86">等 GC</text>
+    <line x1="124" y1="112" x2="152" y2="112" style="stroke:#2a323c;stroke-width:2"/><path d="M152,112 l-10,-5 l0,10 z" style="fill:#2a323c"/>
+    <line x1="258" y1="112" x2="286" y2="112" style="stroke:#2a323c;stroke-width:2"/><path d="M286,112 l-10,-5 l0,10 z" style="fill:#2a323c"/>
+    <line x1="392" y1="112" x2="420" y2="112" style="stroke:#2a323c;stroke-width:2"/><path d="M420,112 l-10,-5 l0,10 z" style="fill:#2a323c"/>
+    <line x1="526" y1="112" x2="554" y2="112" style="stroke:#2a323c;stroke-width:2"/><path d="M554,112 l-10,-5 l0,10 z" style="fill:#2a323c"/>
+    <path d="M20,166 L258,166" style="stroke:#6ea8fe;stroke-width:1.5"/><path d="M20,166 l0,-8 M258,166 l0,-8" style="stroke:#6ea8fe;stroke-width:1.5"/>
+    <text x="139" y="186" text-anchor="middle" style="fill:#6ea8fe">内存：节点挂 → 可能丢</text>
+    <path d="M422,166 L526,166" style="stroke:#5ed0c4;stroke-width:1.5"/><path d="M422,166 l0,-8 M526,166 l0,-8" style="stroke:#5ed0c4;stroke-width:1.5"/>
+    <text x="474" y="186" text-anchor="middle" style="fill:#5ed0c4">对象存储：怎么挂都能恢复</text>
+    <text x="380" y="222" text-anchor="middle" style="fill:#8fd3f4;font-weight:700">★ 一旦 Flushed 即不可变：可被多个 QueryNode 安全加载 / 建索引 / 缓存</text>
+  </svg>
+<text x="60" y="598" font-size="22" fill="#9aa6b2">verdenmax.github.io/milvus-visual-guide</text>
+<text x="1140" y="598" text-anchor="end" font-size="22" fill="#9aa6b2">57 课 · 中英双语 / bilingual</text>
+</svg>

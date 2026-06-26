@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+<style>text{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}</style>
+<rect width="1200" height="630" fill="#0e1116"/>
+<rect x="0" y="0" width="1200" height="8" fill="#4cb8ec"/>
+<text x="60" y="66" font-size="30" font-weight="700" fill="#e6edf3">🐦 Milvus 图解教程 · Milvus Visual Guide</text>
+<text x="60" y="112" font-size="36" font-weight="700" fill="#4cb8ec">第 26 课 · 两层扇出查询</text>
+<text x="60" y="142" font-size="22" fill="#9aa6b2">Two-layer fan-out query</text>
+<rect x="92" y="154" width="1016" height="417" rx="16" fill="#161b22" stroke="#2a323c"/>
+<svg x="112" y="170" width="976" height="385" viewBox="0 0 760 300">
+    <rect x="24" y="62" width="130" height="50" rx="9" style="fill:#33270f;stroke:#e0a44a"/><text x="89" y="84" text-anchor="middle" style="fill:#e0a44a;font-weight:700">WAL 尾部</text><text x="89" y="103" text-anchor="middle" style="fill:#9aa6b2">流式日志</text>
+    <line x1="154" y1="87" x2="226" y2="87" style="stroke:#e0a44a;stroke-width:2"/><path d="M226,87 l-11,-5 l0,10 z" style="fill:#e0a44a"/>
+    <text x="190" y="79" text-anchor="middle" style="fill:#e0a44a">Tail 保鲜</text>
+    <rect x="230" y="46" width="300" height="92" rx="11" style="fill:#0e2c3e;stroke:#4cb8ec;stroke-width:1.5"/>
+    <text x="380" y="70" text-anchor="middle" style="fill:#8fd3f4;font-weight:700">delegator · shard leader（唯一入口）</text>
+    <text x="380" y="90" text-anchor="middle" style="fill:#9aa6b2">扇出 scatter · 归并 reduce · 维护 tsafe</text>
+    <rect x="252" y="102" width="256" height="28" rx="6" style="fill:#161b22;stroke:#6ea8fe"/><text x="380" y="121" text-anchor="middle" style="fill:#6ea8fe">growing 段（本地 · 暴力搜 · 最新）</text>
+    <text x="380" y="172" text-anchor="middle" style="fill:#9aa6b2">扇出 ↓　局部结果 ↑</text>
+    <rect x="60" y="204" width="200" height="68" rx="10" style="fill:#161b22;stroke:#5ed0c4;stroke-width:1.5"/><text x="160" y="232" text-anchor="middle" style="fill:#5ed0c4;font-weight:700">worker QueryNode</text><text x="160" y="254" text-anchor="middle" style="fill:#9aa6b2">sealed 段 · segcore 检索</text>
+    <rect x="280" y="204" width="200" height="68" rx="10" style="fill:#161b22;stroke:#5ed0c4;stroke-width:1.5"/><text x="380" y="232" text-anchor="middle" style="fill:#5ed0c4;font-weight:700">worker QueryNode</text><text x="380" y="254" text-anchor="middle" style="fill:#9aa6b2">sealed 段 · segcore 检索</text>
+    <rect x="500" y="204" width="200" height="68" rx="10" style="fill:#161b22;stroke:#5ed0c4;stroke-width:1.5"/><text x="600" y="232" text-anchor="middle" style="fill:#5ed0c4;font-weight:700">worker QueryNode</text><text x="600" y="254" text-anchor="middle" style="fill:#9aa6b2">sealed 段 · segcore 检索</text>
+    <line x1="320" y1="138" x2="180" y2="202" style="stroke:#4cb8ec;stroke-width:1.5"/><path d="M180,202 l3,-11 l7,7 z" style="fill:#4cb8ec"/>
+    <line x1="380" y1="138" x2="380" y2="202" style="stroke:#4cb8ec;stroke-width:1.5"/><path d="M380,202 l-5,-10 l10,0 z" style="fill:#4cb8ec"/>
+    <line x1="440" y1="138" x2="580" y2="202" style="stroke:#4cb8ec;stroke-width:1.5"/><path d="M580,202 l-10,-4 l0,10 z" style="fill:#4cb8ec"/>
+    <line x1="210" y1="204" x2="338" y2="140" style="stroke:#5ed0c4;stroke-width:1.5;stroke-dasharray:4 3"/>
+    <line x1="552" y1="204" x2="422" y2="140" style="stroke:#5ed0c4;stroke-width:1.5;stroke-dasharray:4 3"/>
+  </svg>
+<text x="60" y="598" font-size="22" fill="#9aa6b2">verdenmax.github.io/milvus-visual-guide</text>
+<text x="1140" y="598" text-anchor="end" font-size="22" fill="#9aa6b2">57 课 · 中英双语 / bilingual</text>
+</svg>

@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+<style>text{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}</style>
+<rect width="1200" height="630" fill="#0e1116"/>
+<rect x="0" y="0" width="1200" height="8" fill="#4cb8ec"/>
+<text x="60" y="66" font-size="30" font-weight="700" fill="#e6edf3">🐦 Milvus 图解教程 · Milvus Visual Guide</text>
+<text x="60" y="112" font-size="36" font-weight="700" fill="#4cb8ec">第 57 课 · 一条数据的一生</text>
+<text x="60" y="142" font-size="22" fill="#9aa6b2">Life of a row</text>
+<rect x="92" y="154" width="1016" height="417" rx="16" fill="#161b22" stroke="#2a323c"/>
+<svg x="112" y="170" width="976" height="385" viewBox="0 0 760 300">
+  <text x="380" y="22" text-anchor="middle" style="fill:#e6edf3;font-weight:700">一条数据的一生：前台「写入→持久→可见」，后台「落盘→索引→加载」</text>
+  <rect x="16" y="70" width="110" height="44" rx="9" style="fill:#16243f;stroke:#6ea8fe"/><text x="71" y="90" text-anchor="middle" style="fill:#6ea8fe;font-weight:700">SDK</text><text x="71" y="107" text-anchor="middle" style="fill:#9aa6b2">insert · 行</text>
+  <rect x="170" y="70" width="110" height="44" rx="9" style="fill:#16243f;stroke:#6ea8fe"/><text x="225" y="90" text-anchor="middle" style="fill:#6ea8fe;font-weight:700">Proxy</text><text x="225" y="107" text-anchor="middle" style="fill:#9aa6b2">盖 ts · PK</text>
+  <rect x="324" y="70" width="110" height="44" rx="9" style="fill:#33270f;stroke:#e0a44a"/><text x="379" y="90" text-anchor="middle" style="fill:#e0a44a;font-weight:700">WAL / MQ</text><text x="379" y="107" text-anchor="middle" style="fill:#9aa6b2">顺序 · 持久</text>
+  <rect x="478" y="70" width="110" height="44" rx="9" style="fill:#0d2e2a;stroke:#5ed0c4"/><text x="533" y="90" text-anchor="middle" style="fill:#5ed0c4;font-weight:700">growing 段</text><text x="533" y="107" text-anchor="middle" style="fill:#9aa6b2">驻内存</text>
+  <rect x="632" y="70" width="110" height="44" rx="9" style="fill:#0e2c3e;stroke:#4cb8ec"/><text x="687" y="90" text-anchor="middle" style="fill:#8fd3f4;font-weight:700">可见 ✓</text><text x="687" y="107" text-anchor="middle" style="fill:#9aa6b2">tsafe ≥ ts</text>
+  <line x1="126" y1="92" x2="168" y2="92" style="stroke:#2a323c;stroke-width:2"/><path d="M168,92 l-10,-5 l0,10 z" style="fill:#2a323c"/>
+  <line x1="280" y1="92" x2="322" y2="92" style="stroke:#2a323c;stroke-width:2"/><path d="M322,92 l-10,-5 l0,10 z" style="fill:#2a323c"/>
+  <line x1="434" y1="92" x2="476" y2="92" style="stroke:#2a323c;stroke-width:2"/><path d="M476,92 l-10,-5 l0,10 z" style="fill:#2a323c"/>
+  <line x1="588" y1="92" x2="630" y2="92" style="stroke:#2a323c;stroke-width:2"/><path d="M630,92 l-10,-5 l0,10 z" style="fill:#2a323c"/>
+  <line x1="456" y1="58" x2="456" y2="124" style="stroke:#4cb8ec;stroke-width:1.5;stroke-dasharray:4 3"/><text x="456" y="50" text-anchor="middle" style="fill:#8fd3f4;font-weight:700;font-size:11px">持久✓ 不丢</text>
+  <path d="M533,114 C533,150 360,156 268,190" style="fill:none;stroke:#9aa6b2;stroke-width:1.5;stroke-dasharray:5 3"/><path d="M268,190 l9,-3 l-2,10 z" style="fill:#9aa6b2"/><text x="470" y="132" text-anchor="middle" style="fill:#9aa6b2;font-size:11px">满/超时</text>
+  <rect x="188" y="192" width="128" height="44" rx="9" style="fill:#1c232c;stroke:#2a323c"/><text x="252" y="212" text-anchor="middle" style="fill:#e6edf3;font-weight:700">seal 封段</text><text x="252" y="229" text-anchor="middle" style="fill:#9aa6b2">只读</text>
+  <rect x="332" y="192" width="128" height="44" rx="9" style="fill:#1c232c;stroke:#2a323c"/><text x="396" y="212" text-anchor="middle" style="fill:#e6edf3;font-weight:700">flush</text><text x="396" y="229" text-anchor="middle" style="fill:#9aa6b2">binlog → 对象存储</text>
+  <rect x="476" y="192" width="128" height="44" rx="9" style="fill:#1c232c;stroke:#2a323c"/><text x="540" y="212" text-anchor="middle" style="fill:#e6edf3;font-weight:700">index</text><text x="540" y="229" text-anchor="middle" style="fill:#9aa6b2">建索引 · Knowhere</text>
+  <rect x="620" y="192" width="128" height="44" rx="9" style="fill:#1c232c;stroke:#2a323c"/><text x="684" y="212" text-anchor="middle" style="fill:#e6edf3;font-weight:700">load</text><text x="684" y="229" text-anchor="middle" style="fill:#9aa6b2">QueryNode 加载</text>
+  <line x1="316" y1="214" x2="330" y2="214" style="stroke:#2a323c;stroke-width:2"/><path d="M330,214 l-10,-5 l0,10 z" style="fill:#2a323c"/>
+  <line x1="460" y1="214" x2="474" y2="214" style="stroke:#2a323c;stroke-width:2"/><path d="M474,214 l-10,-5 l0,10 z" style="fill:#2a323c"/>
+  <line x1="604" y1="214" x2="618" y2="214" style="stroke:#2a323c;stroke-width:2"/><path d="M618,214 l-10,-5 l0,10 z" style="fill:#2a323c"/>
+  <path d="M684,192 C684,158 686,148 687,116" style="fill:none;stroke:#5ed0c4;stroke-width:1.5;stroke-dasharray:5 3"/><path d="M687,116 l-5,11 l10,0 z" style="fill:#5ed0c4"/><text x="706" y="166" text-anchor="start" style="fill:#5ed0c4;font-size:11px">接力</text>
+  <text x="380" y="262" text-anchor="middle" style="fill:#6e7a86;font-size:12px">后台（封段·落盘·建索引·加载）不阻塞「可见」：行在 growing 段里就已能被查到</text>
+</svg>
+<text x="60" y="598" font-size="22" fill="#9aa6b2">verdenmax.github.io/milvus-visual-guide</text>
+<text x="1140" y="598" text-anchor="end" font-size="22" fill="#9aa6b2">57 课 · 中英双语 / bilingual</text>
+</svg>
