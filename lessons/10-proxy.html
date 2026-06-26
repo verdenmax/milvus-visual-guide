@@ -529,12 +529,11 @@ Proxy 把这些复杂度<strong>全部封装</strong>在身后。于是后端怎
     <text x="82" y="144" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">Proxy</text>
     <text x="82" y="164" text-anchor="middle" style="fill:var(--muted)">分派</text>
     <path d="M140,130 C170,130 172,80 200,80" style="fill:none;stroke:var(--amber);stroke-width:2.5"/><path d="M200,80 l-12,-5 l2,11 z" style="fill:var(--amber)"/>
-    <rect x="202" y="58" width="160" height="44" rx="9" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="282" y="85" text-anchor="middle" style="fill:var(--amber);font-weight:700">WAL / MQ · 按 vchannel</text>
+    <rect x="202" y="58" width="160" height="44" rx="9" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="282" y="85" text-anchor="middle" style="fill:var(--amber);font-weight:700">WAL / MQ</text>
     <line x1="362" y1="80" x2="398" y2="80" style="stroke:var(--line);stroke-width:2"/><path d="M398,80 l-11,-5 l0,10 z" style="fill:var(--line)"/>
-    <rect x="400" y="58" width="180" height="44" rx="9" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="490" y="85" text-anchor="middle" style="fill:var(--ink)">StreamingNode/DataNode 落盘</text>
+    <rect x="400" y="58" width="180" height="44" rx="9" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="490" y="85" text-anchor="middle" style="fill:var(--ink)">DataNode 落盘</text>
     <text x="600" y="76" style="fill:var(--amber);font-weight:700">写</text><text x="600" y="94" style="fill:var(--muted)">顺序+持久</text>
     <path d="M140,166 C170,166 173,216 196,216" style="fill:none;stroke:var(--blue);stroke-width:2.5"/>
-    <path d="M196,196 l-2,0 M196,234 l-2,0" style="stroke:none"/>
     <line x1="178" y1="216" x2="200" y2="196" style="stroke:var(--blue);stroke-width:1.5"/><path d="M200,196 l-11,2 l5,7 z" style="fill:var(--blue)"/>
     <line x1="178" y1="216" x2="200" y2="252" style="stroke:var(--blue);stroke-width:1.5"/><path d="M200,252 l-6,-9 l-3,10 z" style="fill:var(--blue)"/>
     <rect x="200" y="182" width="150" height="28" rx="7" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="275" y="201" text-anchor="middle" style="fill:var(--ink)">QueryNode 分片①</text>
@@ -831,9 +830,9 @@ ordering on RootCoord's TSO, fan-out and reduce on the shard distribution QueryC
     <text x="82" y="144" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">Proxy</text>
     <text x="82" y="164" text-anchor="middle" style="fill:var(--muted)">dispatch</text>
     <path d="M140,130 C170,130 172,80 200,80" style="fill:none;stroke:var(--amber);stroke-width:2.5"/><path d="M200,80 l-12,-5 l2,11 z" style="fill:var(--amber)"/>
-    <rect x="202" y="58" width="160" height="44" rx="9" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="282" y="85" text-anchor="middle" style="fill:var(--amber);font-weight:700">WAL / MQ · by vchannel</text>
+    <rect x="202" y="58" width="160" height="44" rx="9" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="282" y="85" text-anchor="middle" style="fill:var(--amber);font-weight:700">WAL / MQ</text>
     <line x1="362" y1="80" x2="398" y2="80" style="stroke:var(--line);stroke-width:2"/><path d="M398,80 l-11,-5 l0,10 z" style="fill:var(--line)"/>
-    <rect x="400" y="58" width="180" height="44" rx="9" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="490" y="85" text-anchor="middle" style="fill:var(--ink)">StreamingNode/DataNode flush</text>
+    <rect x="400" y="58" width="180" height="44" rx="9" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="490" y="85" text-anchor="middle" style="fill:var(--ink)">DataNode flush</text>
     <text x="600" y="76" style="fill:var(--amber);font-weight:700">write</text><text x="600" y="94" style="fill:var(--muted)">ordered+durable</text>
     <path d="M140,166 C170,166 173,216 196,216" style="fill:none;stroke:var(--blue);stroke-width:2.5"/>
     <line x1="178" y1="216" x2="200" y2="196" style="stroke:var(--blue);stroke-width:1.5"/><path d="M200,196 l-11,2 l5,7 z" style="fill:var(--blue)"/>
@@ -846,7 +845,7 @@ ordering on RootCoord's TSO, fan-out and reduce on the shard distribution QueryC
     <line x1="350" y1="264" x2="430" y2="234" style="stroke:var(--blue);stroke-width:1.5"/>
     <rect x="432" y="200" width="150" height="56" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="507" y="224" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">reduce</text><text x="507" y="244" text-anchor="middle" style="fill:var(--muted)">local topK → global</text>
     <line x1="582" y1="228" x2="616" y2="228" style="stroke:var(--accent);stroke-width:2"/><path d="M616,228 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
-    <text x="650" y="222" style="fill:var(--blue);font-weight:700">read</text><text x="650" y="240" style="fill:var(--muted)">concurrency+latency</text>
+    <text x="620" y="222" style="fill:var(--blue);font-weight:700">read</text><text x="620" y="240" style="fill:var(--muted)">concurrency+latency</text>
   </svg>
   <div class="figcap"><b>One Proxy, two paths</b>: a <b>write</b> lands on the <span class="mono">WAL</span> <b>in order, durably</b> (returns on success; flush happens in the background); a <b>read</b> <b>fans out</b> to shard QueryNodes for local topKs, then <b>reduces</b> them into a global topK — <b>the slowest shard sets the latency</b>.</div>
 </div>

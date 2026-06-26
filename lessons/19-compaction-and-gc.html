@@ -366,6 +366,31 @@ html[data-lang="zh"] .lang-en { display: none !important; }
   <div class="lane"><span class="lane-label">整理后</span><span class="tslot now">段D（大·干净·无墓碑）</span></div>
 </div>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="compaction 把多个带墓碑的小段合并成一个大而干净的段：应用墓碑物理删除作废行，旧段标记 dropped 等 GC 回收">
+    <text x="120" y="42" text-anchor="middle" style="fill:var(--muted)">整理前：碎小段 + 墓碑</text>
+    <rect x="30" y="52" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="78" class="mono" style="fill:var(--ink)">段A · pk1 pk2</text>
+    <rect x="30" y="100" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="126" class="mono" style="fill:var(--ink)">段B · pk5 </text><text x="142" y="126" class="mono" style="fill:var(--red)">pk6✗</text>
+    <rect x="30" y="148" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="174" class="mono" style="fill:var(--red)">pk9✗</text><text x="98" y="174" class="mono" style="fill:var(--ink)"> pk10</text>
+    <rect x="30" y="200" width="200" height="40" rx="8" style="fill:var(--panel);stroke:var(--red);stroke-width:1.5"/><text x="44" y="225" class="mono" style="fill:var(--red)">delta 墓碑 {pk6, pk9}</text>
+    <line x1="210" y1="73" x2="288" y2="140" style="stroke:var(--line);stroke-width:1.5"/>
+    <line x1="210" y1="121" x2="288" y2="146" style="stroke:var(--line);stroke-width:1.5"/>
+    <line x1="210" y1="169" x2="288" y2="152" style="stroke:var(--line);stroke-width:1.5"/>
+    <line x1="230" y1="220" x2="288" y2="166" style="stroke:var(--red);stroke-width:1.5"/>
+    <rect x="290" y="110" width="158" height="86" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="369" y="142" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">compaction</text>
+    <text x="369" y="164" text-anchor="middle" style="fill:var(--muted)">合并碎片</text>
+    <text x="369" y="182" text-anchor="middle" style="fill:var(--muted)">+ 应用墓碑</text>
+    <line x1="448" y1="153" x2="486" y2="153" style="stroke:var(--accent);stroke-width:2.5"/><path d="M486,153 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <rect x="490" y="104" width="250" height="92" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:2"/>
+    <text x="615" y="132" text-anchor="middle" style="fill:var(--teal);font-weight:700">段D · 大 · 干净 · 已排序</text>
+    <text x="615" y="158" text-anchor="middle" class="mono" style="fill:var(--ink)">pk1 pk2 pk5 pk10</text>
+    <text x="615" y="180" text-anchor="middle" style="fill:var(--muted)">pk6 · pk9 已物理删除</text>
+    <text x="615" y="226" text-anchor="middle" style="fill:var(--muted)">旧段 A/B/C → 标记 dropped → GC 回收</text>
+  </svg>
+  <div class="figcap"><b>把碎片整理成整洁</b>：compaction 一并做两件事——把同字段的<b>小 binlog/小段合并</b>成更大更连续的段，并把 delta 里的<b>墓碑物理应用</b>（作废行 <span class="mono">pk6、pk9</span> 真正删掉）。旧段随即标记 <span class="mono">dropped</span> 交给 GC。这是典型的 <b>LSM 思路</b>：前台只管快追加，后台慢慢归并整理。</div>
+</div>
+
 <p>整理之后的收益是<strong>实打实的读效率</strong>：要打开的段更少、每段更大更连续（顺序 I/O 更友好）、墓碑已被清掉（不必再叠加比对）、数据更适合建索引。
 换句话说，compaction 是 Milvus"<strong>写得快、读得快</strong>"这对矛盾的<strong>调和器</strong>——写入只管<strong>追加</strong>（快但碎、带墓碑），把"整理成利于读的样子"这件慢活，留给后台在系统空闲时慢慢做。这也是典型的 <strong>LSM 式</strong>思路：先快速追加写，再后台归并整理。</p>
 
@@ -563,6 +588,31 @@ Second, <strong>tombstone buildup</strong>: a delete only appends "PK X voided a
   <div class="lane"><span class="lane-label">before</span><span class="tslot">seg A (small)</span><span class="tslot">seg B (small)</span><span class="tslot">seg C (small)</span><span class="tslot span">+ a pile of delta tombstones</span></div>
   <div class="lane"><span class="lane-label">compaction</span><span class="tslot now">merge + physically delete void rows</span></div>
   <div class="lane"><span class="lane-label">after</span><span class="tslot now">seg D (large · clean · no tombstones)</span></div>
+</div>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="compaction merges several tombstoned small segments into one large clean segment: tombstones are physically applied to delete void rows, old segments are marked dropped and awaiting GC">
+    <text x="120" y="42" text-anchor="middle" style="fill:var(--muted)">before: fragmented + tombstones</text>
+    <rect x="30" y="52" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="78" class="mono" style="fill:var(--ink)">seg A · pk1 pk2</text>
+    <rect x="30" y="100" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="126" class="mono" style="fill:var(--ink)">seg B · pk5 </text><text x="150" y="126" class="mono" style="fill:var(--red)">pk6✗</text>
+    <rect x="30" y="148" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="174" class="mono" style="fill:var(--red)">pk9✗</text><text x="98" y="174" class="mono" style="fill:var(--ink)"> pk10</text>
+    <rect x="30" y="200" width="200" height="40" rx="8" style="fill:var(--panel);stroke:var(--red);stroke-width:1.5"/><text x="44" y="225" class="mono" style="fill:var(--red)">delta tombstones {pk6, pk9}</text>
+    <line x1="210" y1="73" x2="288" y2="140" style="stroke:var(--line);stroke-width:1.5"/>
+    <line x1="210" y1="121" x2="288" y2="146" style="stroke:var(--line);stroke-width:1.5"/>
+    <line x1="210" y1="169" x2="288" y2="152" style="stroke:var(--line);stroke-width:1.5"/>
+    <line x1="230" y1="220" x2="288" y2="166" style="stroke:var(--red);stroke-width:1.5"/>
+    <rect x="290" y="110" width="158" height="86" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="369" y="142" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">compaction</text>
+    <text x="369" y="164" text-anchor="middle" style="fill:var(--muted)">merge fragments</text>
+    <text x="369" y="182" text-anchor="middle" style="fill:var(--muted)">+ apply tombstones</text>
+    <line x1="448" y1="153" x2="486" y2="153" style="stroke:var(--accent);stroke-width:2.5"/><path d="M486,153 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <rect x="490" y="104" width="250" height="92" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:2"/>
+    <text x="615" y="132" text-anchor="middle" style="fill:var(--teal);font-weight:700">seg D · large · clean · sorted</text>
+    <text x="615" y="158" text-anchor="middle" class="mono" style="fill:var(--ink)">pk1 pk2 pk5 pk10</text>
+    <text x="615" y="180" text-anchor="middle" style="fill:var(--muted)">pk6 · pk9 physically deleted</text>
+    <text x="615" y="226" text-anchor="middle" style="fill:var(--muted)">old A/B/C → marked dropped → GC reclaims</text>
+  </svg>
+  <div class="figcap"><b>Tidying fragments into cleanliness</b>: compaction does two things at once — <b>merges small binlogs/segments</b> into a larger, contiguous one, and <b>physically applies the tombstones</b> from delta (void rows <span class="mono">pk6, pk9</span> truly removed). The old segments are then marked <span class="mono">dropped</span> for GC. Classic <b>LSM</b>: append fast in front, merge-and-tidy in the background.</div>
 </div>
 
 <p>The payoff after tidying is <strong>real read efficiency</strong>: fewer segments to open, each larger and more contiguous (friendlier sequential I/O), tombstones already cleared (no more overlay-compare), and data better-suited to indexing.

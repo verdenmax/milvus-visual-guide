@@ -367,6 +367,23 @@ html[data-lang="zh"] .lang-en { display: none !important; }
   <tr><td><strong>index file</strong>（索引）</td><td>在 sealed 段上建的 ANN 索引结构（如 HNSW/IVF），单独建、单独存</td><td class="mono">index_files/</td></tr>
 </table>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="一个段在对象存储里对应四类产物：insert binlog 是真身，delete binlog 是叠加层，stats binlog 是加速卡，index file 是另一种视角">
+    <rect x="34" y="116" width="150" height="68" rx="11" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="109" y="146" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">一个段</text>
+    <text x="109" y="166" text-anchor="middle" style="fill:var(--muted)">→ 一族文件</text>
+    <line x1="184" y1="150" x2="296" y2="67" style="stroke:var(--line);stroke-width:1.5"/><path d="M296,67 l-11,2 l4,8 z" style="fill:var(--line)"/>
+    <line x1="184" y1="150" x2="296" y2="129" style="stroke:var(--line);stroke-width:1.5"/><path d="M296,129 l-11,0 l3,9 z" style="fill:var(--line)"/>
+    <line x1="184" y1="150" x2="296" y2="191" style="stroke:var(--line);stroke-width:1.5"/><path d="M296,191 l-11,-1 l2,9 z" style="fill:var(--line)"/>
+    <line x1="184" y1="150" x2="296" y2="253" style="stroke:var(--line);stroke-width:1.5"/><path d="M296,253 l-10,-4 l0,9 z" style="fill:var(--line)"/>
+    <rect x="300" y="42" width="440" height="50" rx="9" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="316" y="64" style="fill:var(--accent-ink);font-weight:700">insert binlog — 真身</text><text x="316" y="83" style="fill:var(--muted)">每个字段一份列式数据 · <tspan class="mono">insert_log/</tspan></text>
+    <rect x="300" y="104" width="440" height="50" rx="9" style="fill:var(--panel);stroke:var(--red);stroke-width:1.5"/><text x="316" y="126" style="fill:var(--red);font-weight:700">delete binlog — 叠加层</text><text x="316" y="145" style="fill:var(--muted)">墓碑：作废主键 + 时间戳 · <tspan class="mono">delta_log/</tspan></text>
+    <rect x="300" y="166" width="440" height="50" rx="9" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="316" y="188" style="fill:var(--amber);font-weight:700">stats binlog — 加速卡</text><text x="316" y="207" style="fill:var(--muted)">主键 min/max + 布隆过滤器 · <tspan class="mono">stats_log/</tspan></text>
+    <rect x="300" y="228" width="440" height="50" rx="9" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="316" y="250" style="fill:var(--teal);font-weight:700">index file — 另一种视角</text><text x="316" y="269" style="fill:var(--muted)">同一份向量的 ANN 索引 · <tspan class="mono">index_files/</tspan></text>
+  </svg>
+  <div class="figcap"><b>一个段，四类产物，各司其职</b>：<b>insert binlog</b> 是数据<b>真身</b>（只此一份、按列存）；<b>delete binlog</b> 是<b>叠加层</b>（只追加墓碑、不改真身）；<b>stats binlog</b> 是<b>加速卡</b>（min/max + 布隆，让查询学会跳过）；<b>index file</b> 是<b>另一种视角</b>（同一向量的 ANN 索引）。写得快与读得快，就这样被解耦。</div>
+</div>
+
 <p>这四类里，最值得先讲清的是它们的<strong>分工哲学</strong>：<strong>insert binlog 是"真身"</strong>——数据本体只此一份；<strong>delete binlog 是"叠加层"</strong>——它不修改 insert binlog，只在其上<strong>追加一层"这些主键作废了"的标记</strong>；
 <strong>stats binlog 是"加速卡"</strong>——它不含原始数据，只是从数据里提炼的摘要，让查询能<strong>跳过</strong>不相关的段；<strong>index file 是"另一种视角"</strong>——同一份向量数据，换一种为快速近邻查找优化的组织方式。
 这种"<strong>真身 + 叠加层 + 加速卡 + 另一种视角</strong>"的分层，正是 Milvus 把"写得快"和"读得快"解耦的微观体现：写入只管把真身和注销清单<strong>追加</strong>落盘（快），而把"整理真身、应用注销、建加速结构"留给后台慢慢做。</p>
@@ -447,6 +464,36 @@ html[data-lang="zh"] .lang-en { display: none !important; }
   <div class="layer l-part"><span class="badge">分区</span><span class="name">{partitionID}</span><span class="ld">属于哪个分区</span></div>
   <div class="layer l-core"><span class="badge">段</span><span class="name">{segmentID}</span><span class="ld">属于哪个段</span></div>
   <div class="layer l-core"><span class="badge">字段</span><span class="name">{fieldID}/{logID}</span><span class="ld">哪个字段的第几个 binlog（同段同字段可多个）</span></div>
+</div>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="对象存储里 binlog 的自描述路径：类别/集合/分区/段/字段/logID；对象存储本是扁平 key 到 value，斜杠前缀让它用得像目录树">
+    <text x="95" y="48" text-anchor="middle" style="fill:var(--muted)">类别</text>
+    <text x="200" y="48" text-anchor="middle" style="fill:var(--muted)">集合</text>
+    <text x="266" y="48" text-anchor="middle" style="fill:var(--muted)">分区</text>
+    <text x="345" y="48" text-anchor="middle" style="fill:var(--muted)">段</text>
+    <text x="445" y="48" text-anchor="middle" style="fill:var(--muted)">字段</text>
+    <text x="520" y="48" text-anchor="middle" style="fill:var(--muted)">logID</text>
+    <rect x="40" y="56" width="110" height="38" rx="7" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="95" y="80" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">insert_log</text>
+    <text x="156" y="80" style="fill:var(--muted)">/</text>
+    <rect x="168" y="56" width="64" height="38" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="200" y="80" text-anchor="middle" class="mono" style="fill:var(--ink)">445</text>
+    <text x="236" y="80" style="fill:var(--muted)">/</text>
+    <rect x="244" y="56" width="46" height="38" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="267" y="80" text-anchor="middle" class="mono" style="fill:var(--ink)">12</text>
+    <text x="294" y="80" style="fill:var(--muted)">/</text>
+    <rect x="304" y="56" width="84" height="38" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="346" y="80" text-anchor="middle" class="mono" style="fill:var(--ink)">seg_88</text>
+    <text x="392" y="80" style="fill:var(--muted)">/</text>
+    <rect x="402" y="56" width="84" height="38" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="444" y="80" text-anchor="middle" class="mono" style="fill:var(--ink)">field_3</text>
+    <text x="490" y="80" style="fill:var(--muted)">/</text>
+    <rect x="500" y="56" width="44" height="38" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="522" y="80" text-anchor="middle" class="mono" style="fill:var(--ink)">0</text>
+    <text x="386" y="138" text-anchor="middle" style="fill:var(--ink)">光看 key 就知道"<tspan style="fill:var(--accent-ink);font-weight:700">谁的、哪个段、哪个字段</tspan>"——不必查元数据</text>
+    <rect x="150" y="160" width="300" height="34" rx="7" style="fill:var(--accent-soft);opacity:.5"/>
+    <text x="160" y="183" class="mono" style="fill:var(--ink)">insert_log/445/12/seg_88/</text>
+    <text x="452" y="183" class="mono" style="fill:var(--muted)">field_3/0</text>
+    <path d="M150,200 L450,200 M150,200 l0,8 M450,200 l0,8" style="stroke:var(--accent);stroke-width:1.5"/>
+    <text x="300" y="224" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">段前缀：删它＝删掉整段所有文件（GC 靠它枚举孤儿）</text>
+    <text x="386" y="262" text-anchor="middle" style="fill:var(--muted)">对象存储本是扁平的 key → value，斜杠前缀让它"用得像目录树"</text>
+  </svg>
+  <div class="figcap"><b>路径即归属</b>：每个 binlog 的 key 形如 <span class="mono">类别/集合/分区/段/字段/logID</span>，<b>自描述</b>——不查元数据就能定位归类。对象存储其实是<b>扁平的 key→value</b>，靠 <span class="mono">/</span> 前缀"虚拟"出一棵目录树：删 <span class="mono">.../{segmentID}/</span> 前缀就清掉整段，GC 正是靠它枚举并清理孤儿对象。</div>
 </div>
 
 <p>把这条路径读一遍，你就懂了对象存储的"<strong>自描述</strong>"之美：<span class="mono">insert_log/{collectionID}/{partitionID}/{segmentID}/{fieldID}/{logID}</span>——
@@ -568,6 +615,23 @@ We'll see what each <strong>holds</strong>, why insert binlogs store by <strong>
   <tr><td><strong>index file</strong></td><td>the ANN index built on the sealed segment (e.g. HNSW/IVF), built and stored separately</td><td class="mono">index_files/</td></tr>
 </table>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="One segment maps to four kinds of product in object storage: insert binlog is the real body, delete binlog is an overlay, stats binlog is an acceleration card, index file is another viewpoint">
+    <rect x="34" y="116" width="150" height="68" rx="11" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="109" y="146" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">one segment</text>
+    <text x="109" y="166" text-anchor="middle" style="fill:var(--muted)">→ a family of files</text>
+    <line x1="184" y1="150" x2="296" y2="67" style="stroke:var(--line);stroke-width:1.5"/><path d="M296,67 l-11,2 l4,8 z" style="fill:var(--line)"/>
+    <line x1="184" y1="150" x2="296" y2="129" style="stroke:var(--line);stroke-width:1.5"/><path d="M296,129 l-11,0 l3,9 z" style="fill:var(--line)"/>
+    <line x1="184" y1="150" x2="296" y2="191" style="stroke:var(--line);stroke-width:1.5"/><path d="M296,191 l-11,-1 l2,9 z" style="fill:var(--line)"/>
+    <line x1="184" y1="150" x2="296" y2="253" style="stroke:var(--line);stroke-width:1.5"/><path d="M296,253 l-10,-4 l0,9 z" style="fill:var(--line)"/>
+    <rect x="300" y="42" width="440" height="50" rx="9" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="316" y="64" style="fill:var(--accent-ink);font-weight:700">insert binlog — the real body</text><text x="316" y="83" style="fill:var(--muted)">columnar data, one file per field · <tspan class="mono">insert_log/</tspan></text>
+    <rect x="300" y="104" width="440" height="50" rx="9" style="fill:var(--panel);stroke:var(--red);stroke-width:1.5"/><text x="316" y="126" style="fill:var(--red);font-weight:700">delete binlog — an overlay</text><text x="316" y="145" style="fill:var(--muted)">tombstones: void PK + timestamp · <tspan class="mono">delta_log/</tspan></text>
+    <rect x="300" y="166" width="440" height="50" rx="9" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="316" y="188" style="fill:var(--amber);font-weight:700">stats binlog — an accelerator</text><text x="316" y="207" style="fill:var(--muted)">PK min/max + Bloom filter · <tspan class="mono">stats_log/</tspan></text>
+    <rect x="300" y="228" width="440" height="50" rx="9" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="316" y="250" style="fill:var(--teal);font-weight:700">index file — another viewpoint</text><text x="316" y="269" style="fill:var(--muted)">ANN index of the same vectors · <tspan class="mono">index_files/</tspan></text>
+  </svg>
+  <div class="figcap"><b>One segment, four products, each with a job</b>: <b>insert binlog</b> is the data's <b>real body</b> (the only copy, columnar); <b>delete binlog</b> is an <b>overlay</b> (appends tombstones, never edits the body); <b>stats binlog</b> is an <b>accelerator</b> (min/max + Bloom, so queries learn to skip); <b>index file</b> is <b>another viewpoint</b> (an ANN index of the same vectors). Fast writes and fast reads, decoupled.</div>
+</div>
+
 <p>Among these four, the first thing to make clear is their <strong>division-of-labor philosophy</strong>: <strong>the insert binlog is the "real body"</strong> — the data itself, only one copy; <strong>the delete binlog is an "overlay"</strong> — it does not modify the insert binlog, only <strong>appends a layer of "these PKs are void" markers</strong> on top;
 <strong>the stats binlog is an "acceleration card"</strong> — it holds no raw data, just a summary distilled from the data so queries can <strong>skip</strong> irrelevant segments; <strong>the index file is "another viewpoint"</strong> — the same vector data, reorganized to optimize fast nearest-neighbor search.
 This layering of "<strong>real body + overlay + acceleration card + another viewpoint</strong>" is the micro-level embodiment of how Milvus decouples "writing fast" from "reading fast": writing only <strong>appends</strong> the real body and the cancellation list to disk (fast), leaving "tidying the body, applying cancellations, building accelerators" for the background to do slowly.</p>
@@ -648,6 +712,36 @@ Above it, the <strong>InsertCodec</strong> (<span class="mono">data_codec.go</sp
   <div class="layer l-part"><span class="badge">partition</span><span class="name">{partitionID}</span><span class="ld">which partition</span></div>
   <div class="layer l-core"><span class="badge">segment</span><span class="name">{segmentID}</span><span class="ld">which segment</span></div>
   <div class="layer l-core"><span class="badge">field</span><span class="name">{fieldID}/{logID}</span><span class="ld">which field's which binlog (same segment+field may have several)</span></div>
+</div>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="The self-describing path of a binlog in object storage: kind/collection/partition/segment/field/logID; object storage is really a flat key to value, the slash prefix makes it usable like a directory tree">
+    <text x="95" y="48" text-anchor="middle" style="fill:var(--muted)">kind</text>
+    <text x="200" y="48" text-anchor="middle" style="fill:var(--muted)">collection</text>
+    <text x="266" y="48" text-anchor="middle" style="fill:var(--muted)">partition</text>
+    <text x="345" y="48" text-anchor="middle" style="fill:var(--muted)">segment</text>
+    <text x="445" y="48" text-anchor="middle" style="fill:var(--muted)">field</text>
+    <text x="520" y="48" text-anchor="middle" style="fill:var(--muted)">logID</text>
+    <rect x="40" y="56" width="110" height="38" rx="7" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="95" y="80" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">insert_log</text>
+    <text x="156" y="80" style="fill:var(--muted)">/</text>
+    <rect x="168" y="56" width="64" height="38" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="200" y="80" text-anchor="middle" class="mono" style="fill:var(--ink)">445</text>
+    <text x="236" y="80" style="fill:var(--muted)">/</text>
+    <rect x="244" y="56" width="46" height="38" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="267" y="80" text-anchor="middle" class="mono" style="fill:var(--ink)">12</text>
+    <text x="294" y="80" style="fill:var(--muted)">/</text>
+    <rect x="304" y="56" width="84" height="38" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="346" y="80" text-anchor="middle" class="mono" style="fill:var(--ink)">seg_88</text>
+    <text x="392" y="80" style="fill:var(--muted)">/</text>
+    <rect x="402" y="56" width="84" height="38" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="444" y="80" text-anchor="middle" class="mono" style="fill:var(--ink)">field_3</text>
+    <text x="490" y="80" style="fill:var(--muted)">/</text>
+    <rect x="500" y="56" width="44" height="38" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="522" y="80" text-anchor="middle" class="mono" style="fill:var(--ink)">0</text>
+    <text x="380" y="138" text-anchor="middle" style="fill:var(--ink)">the key alone says "<tspan style="fill:var(--accent-ink);font-weight:700">whose, which segment, which field</tspan>" — no metadata lookup</text>
+    <rect x="150" y="160" width="300" height="34" rx="7" style="fill:var(--accent-soft);opacity:.5"/>
+    <text x="160" y="183" class="mono" style="fill:var(--ink)">insert_log/445/12/seg_88/</text>
+    <text x="452" y="183" class="mono" style="fill:var(--muted)">field_3/0</text>
+    <path d="M150,200 L450,200 M150,200 l0,8 M450,200 l0,8" style="stroke:var(--accent);stroke-width:1.5"/>
+    <text x="300" y="224" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">segment prefix: delete it = wipe the whole segment (GC enumerates orphans by it)</text>
+    <text x="380" y="262" text-anchor="middle" style="fill:var(--muted)">object storage is really a flat key → value; the slash prefix makes it "usable like a directory tree"</text>
+  </svg>
+  <div class="figcap"><b>The path is the ownership</b>: each binlog's key looks like <span class="mono">kind/collection/partition/segment/field/logID</span> — <b>self-describing</b>, locatable without a metadata lookup. Object storage is really a <b>flat key→value</b> table; the <span class="mono">/</span> prefix "virtualizes" a directory tree: delete the <span class="mono">.../{segmentID}/</span> prefix to wipe a whole segment — exactly how GC enumerates and clears orphans.</div>
 </div>
 
 <p>Read this path and you grasp the "<strong>self-describing</strong>" beauty of object storage: <span class="mono">insert_log/{collectionID}/{partitionID}/{segmentID}/{fieldID}/{logID}</span> —

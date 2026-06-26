@@ -507,6 +507,27 @@ it.result.Timestamp = resp.MaxTimeTick()</pre>
 <span class="mono">UnwrapFirstError()</span> 只要有一条失败就整批报错。这种"全有或全无"的语义，让客户端永远看不到"一半行进了、一半没进"的中间状态。
 把这一课记牢：<strong>Proxy 是写入的加工车间，WAL 是写入的终点线</strong>。下一课，我们就走进 WAL 本身。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="一次 insert 在 Proxy 里被加工成 WAL 能懂的语言：校验定主键、哈希定分片、打包定格式、追加定时序；整批原子进 WAL">
+    <path d="M132,92 L744,92 M132,92 l0,8 M744,92 l0,8" style="stroke:var(--accent);stroke-width:1.5"/>
+    <text x="438" y="84" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">原子批 · 整批进 / 整批失败（全有或全无）</text>
+    <rect x="20" y="108" width="100" height="64" rx="10" style="fill:var(--panel-2);stroke:var(--line)"/><text x="70" y="136" text-anchor="middle" style="fill:var(--ink)">一批 insert</text><text x="70" y="156" text-anchor="middle" style="fill:var(--muted)">N 行</text>
+    <rect x="132" y="108" width="112" height="64" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="188" y="144" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">① 校验主键</text>
+    <rect x="256" y="108" width="112" height="64" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="312" y="144" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">② 哈希分片</text>
+    <rect x="380" y="108" width="112" height="64" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="436" y="144" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">③ 打包消息</text>
+    <rect x="504" y="108" width="112" height="64" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="560" y="144" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">④ 追加日志</text>
+    <rect x="628" y="108" width="116" height="64" rx="10" style="fill:var(--amber-soft);stroke:var(--amber);stroke-width:1.5"/><text x="686" y="136" text-anchor="middle" style="fill:var(--amber);font-weight:700">WAL</text><text x="686" y="156" text-anchor="middle" style="fill:var(--muted)">单一事实来源</text>
+    <line x1="120" y1="140" x2="130" y2="140" style="stroke:var(--line);stroke-width:2"/><path d="M130,140 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <line x1="244" y1="140" x2="254" y2="140" style="stroke:var(--line);stroke-width:2"/><path d="M254,140 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <line x1="368" y1="140" x2="378" y2="140" style="stroke:var(--line);stroke-width:2"/><path d="M378,140 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <line x1="492" y1="140" x2="502" y2="140" style="stroke:var(--line);stroke-width:2"/><path d="M502,140 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <line x1="616" y1="140" x2="626" y2="140" style="stroke:var(--amber);stroke-width:2.5"/><path d="M626,140 l-10,-5 l0,10 z" style="fill:var(--amber)"/>
+    <rect x="150" y="200" width="240" height="34" rx="8" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="270" y="222" text-anchor="middle" style="fill:var(--teal);font-weight:700">✓ 写成功 = 已进 WAL</text>
+    <rect x="406" y="200" width="240" height="34" rx="8" style="fill:var(--panel-2);stroke:var(--line)"/><text x="526" y="222" text-anchor="middle" style="fill:var(--muted)">✗ ≠ 已落盘成段（后台异步）</text>
+  </svg>
+  <div class="figcap"><b>Proxy 把 insert 翻译成 WAL 的语言</b>：<b>校验定主键 → 哈希定分片 → 打包定格式 → 追加定时序</b>，整批<b>原子</b>地进入 WAL。所以 <b>"写成功" = 已可靠进入 WAL（单一事实来源）</b>，而<b>不是</b>已落盘成段——落盘是后台异步做的。</div>
+</div>
+
 <p>不过这里要诚实地补一句边界：当一批行被分到<strong>多个 vchannel</strong> 时，<span class="mono">AppendMessages</span> 是按 vchannel 分别追加的，跨 vchannel 之间并不保证严格的原子性——
 它的承诺是"属于同一 vchannel 的消息作为一个事务一起写"。真正需要跨多个物理通道<strong>原子生效</strong>的场景（比如某些 DDL/DCL），走的是另一条 <span class="mono">Broadcast</span> 路径（下一课会提到）。
 对绝大多数 insert 而言，一批行常常落在同一个或少数几个 vchannel，配合主键哈希的确定性，已经足以给客户端"这批写入整体成功"的体感。理解这条边界，
@@ -748,6 +769,27 @@ even if the StreamingNode crashes immediately, it can replay from the WAL on res
 <p>That is also the origin of the <strong>atomic batch</strong>: a batch of inserts either all enter the WAL and become visible together, or the whole batch fails. The Proxy decides this uniformly from
 <span class="mono">AppendMessages</span>'s return — <span class="mono">UnwrapFirstError()</span> fails the whole batch if any one message failed. This all-or-nothing semantics means the client never sees a
 half-applied state. Remember this lesson: <strong>the Proxy is the write's processing workshop; the WAL is the write's finish line</strong>. Next lesson we step into the WAL itself.</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="An insert is processed inside the Proxy into a language the WAL understands: validate the PK, hash to a shard, pack the format, append in order; the whole batch lands atomically in the WAL">
+    <path d="M132,92 L744,92 M132,92 l0,8 M744,92 l0,8" style="stroke:var(--accent);stroke-width:1.5"/>
+    <text x="438" y="84" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">atomic batch · all-in / all-fail</text>
+    <rect x="20" y="108" width="100" height="64" rx="10" style="fill:var(--panel-2);stroke:var(--line)"/><text x="70" y="136" text-anchor="middle" style="fill:var(--ink)">insert batch</text><text x="70" y="156" text-anchor="middle" style="fill:var(--muted)">N rows</text>
+    <rect x="132" y="108" width="112" height="64" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="188" y="144" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">① validate PK</text>
+    <rect x="256" y="108" width="112" height="64" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="312" y="144" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">② hash shard</text>
+    <rect x="380" y="108" width="112" height="64" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="436" y="144" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">③ pack msg</text>
+    <rect x="504" y="108" width="112" height="64" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="560" y="144" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">④ append</text>
+    <rect x="628" y="108" width="116" height="64" rx="10" style="fill:var(--amber-soft);stroke:var(--amber);stroke-width:1.5"/><text x="686" y="136" text-anchor="middle" style="fill:var(--amber);font-weight:700">WAL</text><text x="686" y="156" text-anchor="middle" style="fill:var(--muted)">single truth</text>
+    <line x1="120" y1="140" x2="130" y2="140" style="stroke:var(--line);stroke-width:2"/><path d="M130,140 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <line x1="244" y1="140" x2="254" y2="140" style="stroke:var(--line);stroke-width:2"/><path d="M254,140 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <line x1="368" y1="140" x2="378" y2="140" style="stroke:var(--line);stroke-width:2"/><path d="M378,140 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <line x1="492" y1="140" x2="502" y2="140" style="stroke:var(--line);stroke-width:2"/><path d="M502,140 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <line x1="616" y1="140" x2="626" y2="140" style="stroke:var(--amber);stroke-width:2.5"/><path d="M626,140 l-10,-5 l0,10 z" style="fill:var(--amber)"/>
+    <rect x="150" y="200" width="240" height="34" rx="8" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="270" y="222" text-anchor="middle" style="fill:var(--teal);font-weight:700">✓ success = landed in WAL</text>
+    <rect x="406" y="200" width="240" height="34" rx="8" style="fill:var(--panel-2);stroke:var(--line)"/><text x="526" y="222" text-anchor="middle" style="fill:var(--muted)">✗ ≠ flushed to a segment yet</text>
+  </svg>
+  <div class="figcap"><b>The Proxy translates insert into the WAL's language</b>: <b>validate PK → hash to shard → pack the format → append in order</b>, the whole batch entering the WAL <b>atomically</b>. So <b>"success" = reliably appended to the WAL (the single source of truth)</b>, <b>not</b> flushed to a segment — flushing happens asynchronously in the background.</div>
+</div>
 
 <p>Honesty about a boundary, though: when a batch is split across <strong>multiple vchannels</strong>, <span class="mono">AppendMessages</span> appends per vchannel, and strict atomicity is not guaranteed across vchannels —
 its promise is "messages belonging to the same vchannel are written together as one transaction." Scenarios that truly need <strong>atomic effect across multiple physical channels</strong> (certain DDL/DCL) take another path,

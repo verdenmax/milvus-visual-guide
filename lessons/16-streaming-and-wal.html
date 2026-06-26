@@ -505,6 +505,34 @@ StreamingNode 会周期性地往 WAL 里插入特殊的 <strong>TimeTick 消息<
 <p>临别再送你一句可以反复回味的话：<strong>在 Milvus 里，"写入"和"落盘"是两件被刻意分开的事</strong>。写入只对 WAL 负责，快而轻；落盘是后台消费者沿着 WAL 慢慢做的，稳而省。
 正是这条 WAL，把"必须立刻完成的"和"可以从容完成的"干净地切开——理解了它，你就握住了整个写入链路的总纲。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="WAL 把写入与落盘切开：写入只对 WAL 负责、快而轻；落盘建索引加载由后台消费者沿 WAL 回放、稳而省">
+    <text x="380" y="32" text-anchor="middle" style="fill:var(--ink);font-weight:700">WAL 把"必须立刻完成"与"可以从容完成"干净切开</text>
+    <rect x="346" y="58" width="76" height="200" rx="10" style="fill:var(--amber-soft);stroke:var(--amber);stroke-width:1.5"/>
+    <text x="384" y="84" text-anchor="middle" style="fill:var(--amber);font-weight:700">WAL</text>
+    <line x1="346" y1="98" x2="422" y2="98" style="stroke:var(--amber);stroke-width:1;opacity:.45"/>
+    <line x1="346" y1="130" x2="422" y2="130" style="stroke:var(--amber);stroke-width:1;opacity:.45"/>
+    <line x1="346" y1="162" x2="422" y2="162" style="stroke:var(--amber);stroke-width:1;opacity:.45"/>
+    <line x1="346" y1="194" x2="422" y2="194" style="stroke:var(--amber);stroke-width:1;opacity:.45"/>
+    <line x1="346" y1="226" x2="422" y2="226" style="stroke:var(--amber);stroke-width:1;opacity:.45"/>
+    <text x="384" y="276" text-anchor="middle" style="fill:var(--muted)">单一事实来源 · 有序追加</text>
+    <rect x="54" y="118" width="150" height="72" rx="11" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="129" y="150" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">insert（写入）</text><text x="129" y="172" text-anchor="middle" style="fill:var(--muted)">快而轻</text>
+    <line x1="204" y1="154" x2="344" y2="154" style="stroke:var(--accent);stroke-width:3"/><path d="M344,154 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <text x="274" y="144" text-anchor="middle" style="fill:var(--accent-ink)">只对 WAL 负责</text>
+    <text x="129" y="214" text-anchor="middle" style="fill:var(--muted)">必须立刻完成</text>
+    <line x1="424" y1="154" x2="500" y2="154" style="stroke:var(--teal);stroke-width:2.5;stroke-dasharray:5 4"/>
+    <line x1="500" y1="154" x2="540" y2="106" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/><path d="M540,106 l-11,2 l5,7 z" style="fill:var(--teal)"/>
+    <line x1="500" y1="154" x2="540" y2="158" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/><path d="M540,158 l-11,-3 l0,8 z" style="fill:var(--teal)"/>
+    <line x1="500" y1="154" x2="540" y2="210" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/><path d="M540,210 l-7,-9 l-3,10 z" style="fill:var(--teal)"/>
+    <text x="476" y="144" text-anchor="middle" style="fill:var(--teal)">回放</text>
+    <rect x="542" y="88" width="180" height="38" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="632" y="112" text-anchor="middle" style="fill:var(--ink)">growing/sealed 段</text>
+    <rect x="542" y="136" width="180" height="38" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="632" y="160" text-anchor="middle" style="fill:var(--ink)">binlog · 索引</text>
+    <rect x="542" y="184" width="180" height="38" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="632" y="208" text-anchor="middle" style="fill:var(--ink)">QueryNode 内存</text>
+    <text x="632" y="246" text-anchor="middle" style="fill:var(--muted)">稳而省 · 后台慢慢做，可从容</text>
+  </svg>
+  <div class="figcap"><b>一条 WAL，切开两种节奏</b>：<b>写入</b>只把消息可靠地追加进 WAL——<b>快而轻、必须立刻</b>；而<b>落盘成段、建索引、加载到内存</b>都是后台消费者<b>沿 WAL 回放</b>慢慢做的——<b>稳而省、可以从容</b>。段 / 索引 / 内存全是 WAL 的<b>投影</b>，这就是"日志即数据"。</div>
+</div>
+
 <div class="card macro">
   <div class="tag">🌍 宏观理解</div>
   一句话串起来：<strong>WAL 是单一事实来源；它由消息（内容）+ TimeTick（每条 PChannel 单调递增的顺序）构成；通道分 PChannel（物理 topic）/VChannel（逻辑分片，复用 PChannel）/CChannel（集群级控制）；StreamingClient 提供 Append/Broadcast/Read；StreamingNode 独占管理 PChannel（TimeTick、段分配、RecoveryStorage），StreamingCoord 单例跑在 RootCoord 里做通道分配与广播</strong>。
@@ -731,6 +759,34 @@ Next lesson we follow one of those consumers — the one that accumulates WAL in
 
 <p>A parting line worth savoring: <strong>in Milvus, "writing" and "persisting" are two deliberately separated things</strong>. Writing answers only to the WAL — fast and light; persisting is what background consumers do slowly along the WAL — steady and frugal.
 It is this WAL that cleanly cuts apart "what must be done at once" from "what can be done at leisure" — understand it and you hold the master outline of the whole write path.</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="The WAL splits writing from flushing: a write is only responsible to the WAL, fast and light; flushing, indexing, and loading are done by background consumers replaying the WAL, steady and cheap">
+    <text x="380" y="32" text-anchor="middle" style="fill:var(--ink);font-weight:700">the WAL cleanly cuts "must be done at once" from "can be done at leisure"</text>
+    <rect x="346" y="58" width="76" height="200" rx="10" style="fill:var(--amber-soft);stroke:var(--amber);stroke-width:1.5"/>
+    <text x="384" y="84" text-anchor="middle" style="fill:var(--amber);font-weight:700">WAL</text>
+    <line x1="346" y1="98" x2="422" y2="98" style="stroke:var(--amber);stroke-width:1;opacity:.45"/>
+    <line x1="346" y1="130" x2="422" y2="130" style="stroke:var(--amber);stroke-width:1;opacity:.45"/>
+    <line x1="346" y1="162" x2="422" y2="162" style="stroke:var(--amber);stroke-width:1;opacity:.45"/>
+    <line x1="346" y1="194" x2="422" y2="194" style="stroke:var(--amber);stroke-width:1;opacity:.45"/>
+    <line x1="346" y1="226" x2="422" y2="226" style="stroke:var(--amber);stroke-width:1;opacity:.45"/>
+    <text x="384" y="276" text-anchor="middle" style="fill:var(--muted)">single source of truth · ordered append</text>
+    <rect x="54" y="118" width="150" height="72" rx="11" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="129" y="150" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">insert (write)</text><text x="129" y="172" text-anchor="middle" style="fill:var(--muted)">fast &amp; light</text>
+    <line x1="204" y1="154" x2="344" y2="154" style="stroke:var(--accent);stroke-width:3"/><path d="M344,154 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <text x="274" y="144" text-anchor="middle" style="fill:var(--accent-ink)">only to the WAL</text>
+    <text x="129" y="214" text-anchor="middle" style="fill:var(--muted)">must finish now</text>
+    <line x1="424" y1="154" x2="500" y2="154" style="stroke:var(--teal);stroke-width:2.5;stroke-dasharray:5 4"/>
+    <line x1="500" y1="154" x2="540" y2="106" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/><path d="M540,106 l-11,2 l5,7 z" style="fill:var(--teal)"/>
+    <line x1="500" y1="154" x2="540" y2="158" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/><path d="M540,158 l-11,-3 l0,8 z" style="fill:var(--teal)"/>
+    <line x1="500" y1="154" x2="540" y2="210" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/><path d="M540,210 l-7,-9 l-3,10 z" style="fill:var(--teal)"/>
+    <text x="476" y="144" text-anchor="middle" style="fill:var(--teal)">replay</text>
+    <rect x="542" y="88" width="180" height="38" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="632" y="112" text-anchor="middle" style="fill:var(--ink)">growing/sealed segment</text>
+    <rect x="542" y="136" width="180" height="38" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="632" y="160" text-anchor="middle" style="fill:var(--ink)">binlog · index</text>
+    <rect x="542" y="184" width="180" height="38" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="632" y="208" text-anchor="middle" style="fill:var(--ink)">QueryNode memory</text>
+    <text x="632" y="246" text-anchor="middle" style="fill:var(--muted)">steady &amp; cheap · background, at leisure</text>
+  </svg>
+  <div class="figcap"><b>One WAL, two tempos</b>: a <b>write</b> only reliably appends to the WAL — <b>fast, light, must finish now</b>; while <b>flushing to segments, building indexes, loading into memory</b> are done by background consumers <b>replaying the WAL</b> — <b>steady, cheap, at leisure</b>. Segments / indexes / memory are all <b>projections</b> of the WAL — that is "log as data".</div>
+</div>
 
 <div class="card macro">
   <div class="tag">🌍 Big picture</div>

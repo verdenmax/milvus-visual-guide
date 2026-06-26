@@ -458,6 +458,34 @@ StreamingNode 内部有一个 <strong>flusher（落盘器）</strong>（<span cl
 <h2>一行数据落盘的全程</h2>
 <p>把这条路连成一条线，你就看完了"日志变成数据"的第一步，也看清了写入链路最后一个环节的全貌：</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="一行数据的落盘旅程：消费 WAL 攒进内存 growing 段，段满或超时触发封口，flush 成对象存储里的 binlog 文件">
+    <rect x="20" y="48" width="418" height="212" rx="12" style="fill:var(--blue-soft);opacity:.18"/>
+    <text x="36" y="70" style="fill:var(--blue);font-weight:700">内存 memory</text>
+    <rect x="448" y="48" width="296" height="212" rx="12" style="fill:var(--teal-soft);opacity:.18"/>
+    <text x="464" y="70" style="fill:var(--teal);font-weight:700">对象存储 object storage</text>
+    <rect x="34" y="150" width="64" height="40" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="66" y="175" text-anchor="middle" class="mono" style="fill:var(--ink)">row</text>
+    <text x="66" y="206" text-anchor="middle" style="fill:var(--muted)">消费 WAL</text>
+    <line x1="98" y1="170" x2="124" y2="170" style="stroke:var(--line);stroke-width:2"/><path d="M124,170 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+    <text x="221" y="90" text-anchor="middle" style="fill:var(--amber);font-weight:700">段满 / 超时 → seal（封口、只读）</text>
+    <rect x="128" y="98" width="186" height="116" rx="10" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/>
+    <text x="221" y="122" text-anchor="middle" style="fill:var(--blue);font-weight:700">growing 段</text>
+    <text x="221" y="140" text-anchor="middle" style="fill:var(--muted)">writebuffer · 按 vchannel 攒行</text>
+    <rect x="148" y="152" width="146" height="13" rx="3" style="fill:var(--blue-soft);stroke:var(--blue)"/>
+    <rect x="148" y="170" width="146" height="13" rx="3" style="fill:var(--blue-soft);stroke:var(--blue)"/>
+    <rect x="148" y="188" width="104" height="13" rx="3" style="fill:var(--blue-soft);stroke:var(--blue)"/>
+    <text x="298" y="199" text-anchor="end" style="fill:var(--amber);font-weight:700">满…</text>
+    <line x1="314" y1="156" x2="476" y2="156" style="stroke:var(--teal);stroke-width:3"/><path d="M476,156 l-12,-5 l0,10 z" style="fill:var(--teal)"/>
+    <text x="394" y="147" text-anchor="middle" style="fill:var(--teal);font-weight:700">flush · SyncTask</text>
+    <line x1="443" y1="84" x2="443" y2="252" style="stroke:var(--line);stroke-width:1.5;stroke-dasharray:4 5"/>
+    <rect x="490" y="98" width="210" height="36" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="595" y="121" text-anchor="middle" class="mono" style="fill:var(--ink)">insert binlog（列式）</text>
+    <rect x="490" y="140" width="210" height="36" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="595" y="163" text-anchor="middle" class="mono" style="fill:var(--ink)">stats binlog</text>
+    <rect x="490" y="182" width="210" height="36" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="595" y="205" text-anchor="middle" class="mono" style="fill:var(--ink)">delta binlog</text>
+    <text x="595" y="242" text-anchor="middle" style="fill:var(--muted)">回写元数据 + 推进检查点</text>
+  </svg>
+  <div class="figcap"><b>一行数据"从日志到磁盘"的一跃</b>：StreamingNode 的 flusher <b>消费 WAL</b>，把行攒进<b>内存里的 growing 段</b>；<b>段满或超时</b>就 seal、变只读，再 <b>flush</b> 成<b>对象存储里的 binlog</b>（insert / stats / delta），最后<b>登记元数据、推进检查点</b>——可靠性始终由背后的 WAL 兜底。</div>
+</div>
+
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>消费 WAL</h4><p>StreamingNode 的 flusher 沿自己负责的 PChannel 读 InsertMessage。</p></div></div>
   <div class="step"><div class="num">2</div><div class="sc"><h4>攒进 growing 段</h4><p class="mono">writebuffer</p><p>按 vchannel 把行追加进内存里的 growing 段（段 ID 已由 StreamingNode 分配）。</p></div></div>
@@ -665,6 +693,34 @@ That is also why this part (the write path) centers on the WAL and the Streaming
 
 <h2>The full journey of a row to disk</h2>
 <p>String the path into one line and you've seen the first step of "log becoming data":</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="A row's journey to disk: consume the WAL into an in-memory growing segment, full or timeout triggers sealing, then flush into binlog files in object storage">
+    <rect x="20" y="48" width="418" height="212" rx="12" style="fill:var(--blue-soft);opacity:.18"/>
+    <text x="36" y="70" style="fill:var(--blue);font-weight:700">memory</text>
+    <rect x="448" y="48" width="296" height="212" rx="12" style="fill:var(--teal-soft);opacity:.18"/>
+    <text x="464" y="70" style="fill:var(--teal);font-weight:700">object storage</text>
+    <rect x="34" y="150" width="64" height="40" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="66" y="175" text-anchor="middle" class="mono" style="fill:var(--ink)">row</text>
+    <text x="66" y="206" text-anchor="middle" style="fill:var(--muted)">consume WAL</text>
+    <line x1="98" y1="170" x2="124" y2="170" style="stroke:var(--line);stroke-width:2"/><path d="M124,170 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+    <text x="221" y="90" text-anchor="middle" style="fill:var(--amber);font-weight:700">full / timeout → seal (read-only)</text>
+    <rect x="128" y="98" width="186" height="116" rx="10" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/>
+    <text x="221" y="122" text-anchor="middle" style="fill:var(--blue);font-weight:700">growing segment</text>
+    <text x="221" y="140" text-anchor="middle" style="fill:var(--muted)">writebuffer · accrue rows</text>
+    <rect x="148" y="152" width="146" height="13" rx="3" style="fill:var(--blue-soft);stroke:var(--blue)"/>
+    <rect x="148" y="170" width="146" height="13" rx="3" style="fill:var(--blue-soft);stroke:var(--blue)"/>
+    <rect x="148" y="188" width="104" height="13" rx="3" style="fill:var(--blue-soft);stroke:var(--blue)"/>
+    <text x="298" y="199" text-anchor="end" style="fill:var(--amber);font-weight:700">full…</text>
+    <line x1="314" y1="156" x2="476" y2="156" style="stroke:var(--teal);stroke-width:3"/><path d="M476,156 l-12,-5 l0,10 z" style="fill:var(--teal)"/>
+    <text x="394" y="147" text-anchor="middle" style="fill:var(--teal);font-weight:700">flush · SyncTask</text>
+    <line x1="443" y1="84" x2="443" y2="252" style="stroke:var(--line);stroke-width:1.5;stroke-dasharray:4 5"/>
+    <rect x="490" y="98" width="210" height="36" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="595" y="121" text-anchor="middle" class="mono" style="fill:var(--ink)">insert binlog (columnar)</text>
+    <rect x="490" y="140" width="210" height="36" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="595" y="163" text-anchor="middle" class="mono" style="fill:var(--ink)">stats binlog</text>
+    <rect x="490" y="182" width="210" height="36" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="595" y="205" text-anchor="middle" class="mono" style="fill:var(--ink)">delta binlog</text>
+    <text x="595" y="242" text-anchor="middle" style="fill:var(--muted)">write back metadata + advance checkpoint</text>
+  </svg>
+  <div class="figcap"><b>A row's leap "from log to disk"</b>: the StreamingNode's flusher <b>consumes the WAL</b>, accruing rows into an <b>in-memory growing segment</b>; <b>full or timeout</b> seals it (read-only), then <b>flush</b> writes <b>binlogs in object storage</b> (insert / stats / delta), finally <b>recording metadata and advancing the checkpoint</b> — durability always backstopped by the WAL.</div>
+</div>
 
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>consume WAL</h4><p>the StreamingNode's flusher reads InsertMessages along the PChannels it owns.</p></div></div>

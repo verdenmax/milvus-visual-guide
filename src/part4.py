@@ -176,6 +176,27 @@ it.result.Timestamp = resp.MaxTimeTick()</pre>
 <span class="mono">UnwrapFirstError()</span> 只要有一条失败就整批报错。这种"全有或全无"的语义，让客户端永远看不到"一半行进了、一半没进"的中间状态。
 把这一课记牢：<strong>Proxy 是写入的加工车间，WAL 是写入的终点线</strong>。下一课，我们就走进 WAL 本身。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="一次 insert 在 Proxy 里被加工成 WAL 能懂的语言：校验定主键、哈希定分片、打包定格式、追加定时序；整批原子进 WAL">
+    <path d="M132,92 L744,92 M132,92 l0,8 M744,92 l0,8" style="stroke:var(--accent);stroke-width:1.5"/>
+    <text x="438" y="84" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">原子批 · 整批进 / 整批失败（全有或全无）</text>
+    <rect x="20" y="108" width="100" height="64" rx="10" style="fill:var(--panel-2);stroke:var(--line)"/><text x="70" y="136" text-anchor="middle" style="fill:var(--ink)">一批 insert</text><text x="70" y="156" text-anchor="middle" style="fill:var(--muted)">N 行</text>
+    <rect x="132" y="108" width="112" height="64" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="188" y="144" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">① 校验主键</text>
+    <rect x="256" y="108" width="112" height="64" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="312" y="144" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">② 哈希分片</text>
+    <rect x="380" y="108" width="112" height="64" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="436" y="144" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">③ 打包消息</text>
+    <rect x="504" y="108" width="112" height="64" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="560" y="144" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">④ 追加日志</text>
+    <rect x="628" y="108" width="116" height="64" rx="10" style="fill:var(--amber-soft);stroke:var(--amber);stroke-width:1.5"/><text x="686" y="136" text-anchor="middle" style="fill:var(--amber);font-weight:700">WAL</text><text x="686" y="156" text-anchor="middle" style="fill:var(--muted)">单一事实来源</text>
+    <line x1="120" y1="140" x2="130" y2="140" style="stroke:var(--line);stroke-width:2"/><path d="M130,140 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <line x1="244" y1="140" x2="254" y2="140" style="stroke:var(--line);stroke-width:2"/><path d="M254,140 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <line x1="368" y1="140" x2="378" y2="140" style="stroke:var(--line);stroke-width:2"/><path d="M378,140 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <line x1="492" y1="140" x2="502" y2="140" style="stroke:var(--line);stroke-width:2"/><path d="M502,140 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <line x1="616" y1="140" x2="626" y2="140" style="stroke:var(--amber);stroke-width:2.5"/><path d="M626,140 l-10,-5 l0,10 z" style="fill:var(--amber)"/>
+    <rect x="150" y="200" width="240" height="34" rx="8" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="270" y="222" text-anchor="middle" style="fill:var(--teal);font-weight:700">✓ 写成功 = 已进 WAL</text>
+    <rect x="406" y="200" width="240" height="34" rx="8" style="fill:var(--panel-2);stroke:var(--line)"/><text x="526" y="222" text-anchor="middle" style="fill:var(--muted)">✗ ≠ 已落盘成段（后台异步）</text>
+  </svg>
+  <div class="figcap"><b>Proxy 把 insert 翻译成 WAL 的语言</b>：<b>校验定主键 → 哈希定分片 → 打包定格式 → 追加定时序</b>，整批<b>原子</b>地进入 WAL。所以 <b>"写成功" = 已可靠进入 WAL（单一事实来源）</b>，而<b>不是</b>已落盘成段——落盘是后台异步做的。</div>
+</div>
+
 <p>不过这里要诚实地补一句边界：当一批行被分到<strong>多个 vchannel</strong> 时，<span class="mono">AppendMessages</span> 是按 vchannel 分别追加的，跨 vchannel 之间并不保证严格的原子性——
 它的承诺是"属于同一 vchannel 的消息作为一个事务一起写"。真正需要跨多个物理通道<strong>原子生效</strong>的场景（比如某些 DDL/DCL），走的是另一条 <span class="mono">Broadcast</span> 路径（下一课会提到）。
 对绝大多数 insert 而言，一批行常常落在同一个或少数几个 vchannel，配合主键哈希的确定性，已经足以给客户端"这批写入整体成功"的体感。理解这条边界，
@@ -371,6 +392,27 @@ even if the StreamingNode crashes immediately, it can replay from the WAL on res
 <span class="mono">AppendMessages</span>'s return — <span class="mono">UnwrapFirstError()</span> fails the whole batch if any one message failed. This all-or-nothing semantics means the client never sees a
 half-applied state. Remember this lesson: <strong>the Proxy is the write's processing workshop; the WAL is the write's finish line</strong>. Next lesson we step into the WAL itself.</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="An insert is processed inside the Proxy into a language the WAL understands: validate the PK, hash to a shard, pack the format, append in order; the whole batch lands atomically in the WAL">
+    <path d="M132,92 L744,92 M132,92 l0,8 M744,92 l0,8" style="stroke:var(--accent);stroke-width:1.5"/>
+    <text x="438" y="84" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">atomic batch · all-in / all-fail</text>
+    <rect x="20" y="108" width="100" height="64" rx="10" style="fill:var(--panel-2);stroke:var(--line)"/><text x="70" y="136" text-anchor="middle" style="fill:var(--ink)">insert batch</text><text x="70" y="156" text-anchor="middle" style="fill:var(--muted)">N rows</text>
+    <rect x="132" y="108" width="112" height="64" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="188" y="144" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">① validate PK</text>
+    <rect x="256" y="108" width="112" height="64" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="312" y="144" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">② hash shard</text>
+    <rect x="380" y="108" width="112" height="64" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="436" y="144" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">③ pack msg</text>
+    <rect x="504" y="108" width="112" height="64" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="560" y="144" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">④ append</text>
+    <rect x="628" y="108" width="116" height="64" rx="10" style="fill:var(--amber-soft);stroke:var(--amber);stroke-width:1.5"/><text x="686" y="136" text-anchor="middle" style="fill:var(--amber);font-weight:700">WAL</text><text x="686" y="156" text-anchor="middle" style="fill:var(--muted)">single truth</text>
+    <line x1="120" y1="140" x2="130" y2="140" style="stroke:var(--line);stroke-width:2"/><path d="M130,140 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <line x1="244" y1="140" x2="254" y2="140" style="stroke:var(--line);stroke-width:2"/><path d="M254,140 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <line x1="368" y1="140" x2="378" y2="140" style="stroke:var(--line);stroke-width:2"/><path d="M378,140 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <line x1="492" y1="140" x2="502" y2="140" style="stroke:var(--line);stroke-width:2"/><path d="M502,140 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <line x1="616" y1="140" x2="626" y2="140" style="stroke:var(--amber);stroke-width:2.5"/><path d="M626,140 l-10,-5 l0,10 z" style="fill:var(--amber)"/>
+    <rect x="150" y="200" width="240" height="34" rx="8" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="270" y="222" text-anchor="middle" style="fill:var(--teal);font-weight:700">✓ success = landed in WAL</text>
+    <rect x="406" y="200" width="240" height="34" rx="8" style="fill:var(--panel-2);stroke:var(--line)"/><text x="526" y="222" text-anchor="middle" style="fill:var(--muted)">✗ ≠ flushed to a segment yet</text>
+  </svg>
+  <div class="figcap"><b>The Proxy translates insert into the WAL's language</b>: <b>validate PK → hash to shard → pack the format → append in order</b>, the whole batch entering the WAL <b>atomically</b>. So <b>"success" = reliably appended to the WAL (the single source of truth)</b>, <b>not</b> flushed to a segment — flushing happens asynchronously in the background.</div>
+</div>
+
 <p>Honesty about a boundary, though: when a batch is split across <strong>multiple vchannels</strong>, <span class="mono">AppendMessages</span> appends per vchannel, and strict atomicity is not guaranteed across vchannels —
 its promise is "messages belonging to the same vchannel are written together as one transaction." Scenarios that truly need <strong>atomic effect across multiple physical channels</strong> (certain DDL/DCL) take another path,
 <span class="mono">Broadcast</span> (mentioned next lesson). For the vast majority of inserts a batch often lands on one or a few vchannels, and combined with the determinism of PK hashing that is already enough to give the client the
@@ -564,6 +606,34 @@ StreamingNode 会周期性地往 WAL 里插入特殊的 <strong>TimeTick 消息<
 <p>临别再送你一句可以反复回味的话：<strong>在 Milvus 里，"写入"和"落盘"是两件被刻意分开的事</strong>。写入只对 WAL 负责，快而轻；落盘是后台消费者沿着 WAL 慢慢做的，稳而省。
 正是这条 WAL，把"必须立刻完成的"和"可以从容完成的"干净地切开——理解了它，你就握住了整个写入链路的总纲。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="WAL 把写入与落盘切开：写入只对 WAL 负责、快而轻；落盘建索引加载由后台消费者沿 WAL 回放、稳而省">
+    <text x="380" y="32" text-anchor="middle" style="fill:var(--ink);font-weight:700">WAL 把"必须立刻完成"与"可以从容完成"干净切开</text>
+    <rect x="346" y="58" width="76" height="200" rx="10" style="fill:var(--amber-soft);stroke:var(--amber);stroke-width:1.5"/>
+    <text x="384" y="84" text-anchor="middle" style="fill:var(--amber);font-weight:700">WAL</text>
+    <line x1="346" y1="98" x2="422" y2="98" style="stroke:var(--amber);stroke-width:1;opacity:.45"/>
+    <line x1="346" y1="130" x2="422" y2="130" style="stroke:var(--amber);stroke-width:1;opacity:.45"/>
+    <line x1="346" y1="162" x2="422" y2="162" style="stroke:var(--amber);stroke-width:1;opacity:.45"/>
+    <line x1="346" y1="194" x2="422" y2="194" style="stroke:var(--amber);stroke-width:1;opacity:.45"/>
+    <line x1="346" y1="226" x2="422" y2="226" style="stroke:var(--amber);stroke-width:1;opacity:.45"/>
+    <text x="384" y="276" text-anchor="middle" style="fill:var(--muted)">单一事实来源 · 有序追加</text>
+    <rect x="54" y="118" width="150" height="72" rx="11" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="129" y="150" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">insert（写入）</text><text x="129" y="172" text-anchor="middle" style="fill:var(--muted)">快而轻</text>
+    <line x1="204" y1="154" x2="344" y2="154" style="stroke:var(--accent);stroke-width:3"/><path d="M344,154 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <text x="274" y="144" text-anchor="middle" style="fill:var(--accent-ink)">只对 WAL 负责</text>
+    <text x="129" y="214" text-anchor="middle" style="fill:var(--muted)">必须立刻完成</text>
+    <line x1="424" y1="154" x2="500" y2="154" style="stroke:var(--teal);stroke-width:2.5;stroke-dasharray:5 4"/>
+    <line x1="500" y1="154" x2="540" y2="106" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/><path d="M540,106 l-11,2 l5,7 z" style="fill:var(--teal)"/>
+    <line x1="500" y1="154" x2="540" y2="158" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/><path d="M540,158 l-11,-3 l0,8 z" style="fill:var(--teal)"/>
+    <line x1="500" y1="154" x2="540" y2="210" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/><path d="M540,210 l-7,-9 l-3,10 z" style="fill:var(--teal)"/>
+    <text x="476" y="144" text-anchor="middle" style="fill:var(--teal)">回放</text>
+    <rect x="542" y="88" width="180" height="38" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="632" y="112" text-anchor="middle" style="fill:var(--ink)">growing/sealed 段</text>
+    <rect x="542" y="136" width="180" height="38" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="632" y="160" text-anchor="middle" style="fill:var(--ink)">binlog · 索引</text>
+    <rect x="542" y="184" width="180" height="38" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="632" y="208" text-anchor="middle" style="fill:var(--ink)">QueryNode 内存</text>
+    <text x="632" y="246" text-anchor="middle" style="fill:var(--muted)">稳而省 · 后台慢慢做，可从容</text>
+  </svg>
+  <div class="figcap"><b>一条 WAL，切开两种节奏</b>：<b>写入</b>只把消息可靠地追加进 WAL——<b>快而轻、必须立刻</b>；而<b>落盘成段、建索引、加载到内存</b>都是后台消费者<b>沿 WAL 回放</b>慢慢做的——<b>稳而省、可以从容</b>。段 / 索引 / 内存全是 WAL 的<b>投影</b>，这就是"日志即数据"。</div>
+</div>
+
 <div class="card macro">
   <div class="tag">🌍 宏观理解</div>
   一句话串起来：<strong>WAL 是单一事实来源；它由消息（内容）+ TimeTick（每条 PChannel 单调递增的顺序）构成；通道分 PChannel（物理 topic）/VChannel（逻辑分片，复用 PChannel）/CChannel（集群级控制）；StreamingClient 提供 Append/Broadcast/Read；StreamingNode 独占管理 PChannel（TimeTick、段分配、RecoveryStorage），StreamingCoord 单例跑在 RootCoord 里做通道分配与广播</strong>。
@@ -744,6 +814,34 @@ Next lesson we follow one of those consumers — the one that accumulates WAL in
 <p>A parting line worth savoring: <strong>in Milvus, "writing" and "persisting" are two deliberately separated things</strong>. Writing answers only to the WAL — fast and light; persisting is what background consumers do slowly along the WAL — steady and frugal.
 It is this WAL that cleanly cuts apart "what must be done at once" from "what can be done at leisure" — understand it and you hold the master outline of the whole write path.</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="The WAL splits writing from flushing: a write is only responsible to the WAL, fast and light; flushing, indexing, and loading are done by background consumers replaying the WAL, steady and cheap">
+    <text x="380" y="32" text-anchor="middle" style="fill:var(--ink);font-weight:700">the WAL cleanly cuts "must be done at once" from "can be done at leisure"</text>
+    <rect x="346" y="58" width="76" height="200" rx="10" style="fill:var(--amber-soft);stroke:var(--amber);stroke-width:1.5"/>
+    <text x="384" y="84" text-anchor="middle" style="fill:var(--amber);font-weight:700">WAL</text>
+    <line x1="346" y1="98" x2="422" y2="98" style="stroke:var(--amber);stroke-width:1;opacity:.45"/>
+    <line x1="346" y1="130" x2="422" y2="130" style="stroke:var(--amber);stroke-width:1;opacity:.45"/>
+    <line x1="346" y1="162" x2="422" y2="162" style="stroke:var(--amber);stroke-width:1;opacity:.45"/>
+    <line x1="346" y1="194" x2="422" y2="194" style="stroke:var(--amber);stroke-width:1;opacity:.45"/>
+    <line x1="346" y1="226" x2="422" y2="226" style="stroke:var(--amber);stroke-width:1;opacity:.45"/>
+    <text x="384" y="276" text-anchor="middle" style="fill:var(--muted)">single source of truth · ordered append</text>
+    <rect x="54" y="118" width="150" height="72" rx="11" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="129" y="150" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">insert (write)</text><text x="129" y="172" text-anchor="middle" style="fill:var(--muted)">fast &amp; light</text>
+    <line x1="204" y1="154" x2="344" y2="154" style="stroke:var(--accent);stroke-width:3"/><path d="M344,154 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <text x="274" y="144" text-anchor="middle" style="fill:var(--accent-ink)">only to the WAL</text>
+    <text x="129" y="214" text-anchor="middle" style="fill:var(--muted)">must finish now</text>
+    <line x1="424" y1="154" x2="500" y2="154" style="stroke:var(--teal);stroke-width:2.5;stroke-dasharray:5 4"/>
+    <line x1="500" y1="154" x2="540" y2="106" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/><path d="M540,106 l-11,2 l5,7 z" style="fill:var(--teal)"/>
+    <line x1="500" y1="154" x2="540" y2="158" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/><path d="M540,158 l-11,-3 l0,8 z" style="fill:var(--teal)"/>
+    <line x1="500" y1="154" x2="540" y2="210" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/><path d="M540,210 l-7,-9 l-3,10 z" style="fill:var(--teal)"/>
+    <text x="476" y="144" text-anchor="middle" style="fill:var(--teal)">replay</text>
+    <rect x="542" y="88" width="180" height="38" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="632" y="112" text-anchor="middle" style="fill:var(--ink)">growing/sealed segment</text>
+    <rect x="542" y="136" width="180" height="38" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="632" y="160" text-anchor="middle" style="fill:var(--ink)">binlog · index</text>
+    <rect x="542" y="184" width="180" height="38" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="632" y="208" text-anchor="middle" style="fill:var(--ink)">QueryNode memory</text>
+    <text x="632" y="246" text-anchor="middle" style="fill:var(--muted)">steady &amp; cheap · background, at leisure</text>
+  </svg>
+  <div class="figcap"><b>One WAL, two tempos</b>: a <b>write</b> only reliably appends to the WAL — <b>fast, light, must finish now</b>; while <b>flushing to segments, building indexes, loading into memory</b> are done by background consumers <b>replaying the WAL</b> — <b>steady, cheap, at leisure</b>. Segments / indexes / memory are all <b>projections</b> of the WAL — that is "log as data".</div>
+</div>
+
 <div class="card macro">
   <div class="tag">🌍 Big picture</div>
   In one line: <strong>the WAL is the single source of truth; it is made of messages (content) + TimeTick (a per-PChannel monotonically increasing order); channels split into PChannel (physical topic) / VChannel (logical shard, multiplexing a PChannel) / CChannel (cluster-wide control); StreamingClient offers Append/Broadcast/Read; the StreamingNode exclusively manages PChannels (TimeTick, segment assignment, RecoveryStorage) and the StreamingCoord is a singleton running inside RootCoord doing channel assignment and broadcast</strong>.
@@ -880,6 +978,34 @@ StreamingNode 内部有一个 <strong>flusher（落盘器）</strong>（<span cl
 
 <h2>一行数据落盘的全程</h2>
 <p>把这条路连成一条线，你就看完了"日志变成数据"的第一步，也看清了写入链路最后一个环节的全貌：</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="一行数据的落盘旅程：消费 WAL 攒进内存 growing 段，段满或超时触发封口，flush 成对象存储里的 binlog 文件">
+    <rect x="20" y="48" width="418" height="212" rx="12" style="fill:var(--blue-soft);opacity:.18"/>
+    <text x="36" y="70" style="fill:var(--blue);font-weight:700">内存 memory</text>
+    <rect x="448" y="48" width="296" height="212" rx="12" style="fill:var(--teal-soft);opacity:.18"/>
+    <text x="464" y="70" style="fill:var(--teal);font-weight:700">对象存储 object storage</text>
+    <rect x="34" y="150" width="64" height="40" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="66" y="175" text-anchor="middle" class="mono" style="fill:var(--ink)">row</text>
+    <text x="66" y="206" text-anchor="middle" style="fill:var(--muted)">消费 WAL</text>
+    <line x1="98" y1="170" x2="124" y2="170" style="stroke:var(--line);stroke-width:2"/><path d="M124,170 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+    <text x="221" y="90" text-anchor="middle" style="fill:var(--amber);font-weight:700">段满 / 超时 → seal（封口、只读）</text>
+    <rect x="128" y="98" width="186" height="116" rx="10" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/>
+    <text x="221" y="122" text-anchor="middle" style="fill:var(--blue);font-weight:700">growing 段</text>
+    <text x="221" y="140" text-anchor="middle" style="fill:var(--muted)">writebuffer · 按 vchannel 攒行</text>
+    <rect x="148" y="152" width="146" height="13" rx="3" style="fill:var(--blue-soft);stroke:var(--blue)"/>
+    <rect x="148" y="170" width="146" height="13" rx="3" style="fill:var(--blue-soft);stroke:var(--blue)"/>
+    <rect x="148" y="188" width="104" height="13" rx="3" style="fill:var(--blue-soft);stroke:var(--blue)"/>
+    <text x="298" y="199" text-anchor="end" style="fill:var(--amber);font-weight:700">满…</text>
+    <line x1="314" y1="156" x2="476" y2="156" style="stroke:var(--teal);stroke-width:3"/><path d="M476,156 l-12,-5 l0,10 z" style="fill:var(--teal)"/>
+    <text x="394" y="147" text-anchor="middle" style="fill:var(--teal);font-weight:700">flush · SyncTask</text>
+    <line x1="443" y1="84" x2="443" y2="252" style="stroke:var(--line);stroke-width:1.5;stroke-dasharray:4 5"/>
+    <rect x="490" y="98" width="210" height="36" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="595" y="121" text-anchor="middle" class="mono" style="fill:var(--ink)">insert binlog（列式）</text>
+    <rect x="490" y="140" width="210" height="36" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="595" y="163" text-anchor="middle" class="mono" style="fill:var(--ink)">stats binlog</text>
+    <rect x="490" y="182" width="210" height="36" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="595" y="205" text-anchor="middle" class="mono" style="fill:var(--ink)">delta binlog</text>
+    <text x="595" y="242" text-anchor="middle" style="fill:var(--muted)">回写元数据 + 推进检查点</text>
+  </svg>
+  <div class="figcap"><b>一行数据"从日志到磁盘"的一跃</b>：StreamingNode 的 flusher <b>消费 WAL</b>，把行攒进<b>内存里的 growing 段</b>；<b>段满或超时</b>就 seal、变只读，再 <b>flush</b> 成<b>对象存储里的 binlog</b>（insert / stats / delta），最后<b>登记元数据、推进检查点</b>——可靠性始终由背后的 WAL 兜底。</div>
+</div>
 
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>消费 WAL</h4><p>StreamingNode 的 flusher 沿自己负责的 PChannel 读 InsertMessage。</p></div></div>
@@ -1042,6 +1168,34 @@ That is also why this part (the write path) centers on the WAL and the Streaming
 <h2>The full journey of a row to disk</h2>
 <p>String the path into one line and you've seen the first step of "log becoming data":</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="A row's journey to disk: consume the WAL into an in-memory growing segment, full or timeout triggers sealing, then flush into binlog files in object storage">
+    <rect x="20" y="48" width="418" height="212" rx="12" style="fill:var(--blue-soft);opacity:.18"/>
+    <text x="36" y="70" style="fill:var(--blue);font-weight:700">memory</text>
+    <rect x="448" y="48" width="296" height="212" rx="12" style="fill:var(--teal-soft);opacity:.18"/>
+    <text x="464" y="70" style="fill:var(--teal);font-weight:700">object storage</text>
+    <rect x="34" y="150" width="64" height="40" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="66" y="175" text-anchor="middle" class="mono" style="fill:var(--ink)">row</text>
+    <text x="66" y="206" text-anchor="middle" style="fill:var(--muted)">consume WAL</text>
+    <line x1="98" y1="170" x2="124" y2="170" style="stroke:var(--line);stroke-width:2"/><path d="M124,170 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+    <text x="221" y="90" text-anchor="middle" style="fill:var(--amber);font-weight:700">full / timeout → seal (read-only)</text>
+    <rect x="128" y="98" width="186" height="116" rx="10" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/>
+    <text x="221" y="122" text-anchor="middle" style="fill:var(--blue);font-weight:700">growing segment</text>
+    <text x="221" y="140" text-anchor="middle" style="fill:var(--muted)">writebuffer · accrue rows</text>
+    <rect x="148" y="152" width="146" height="13" rx="3" style="fill:var(--blue-soft);stroke:var(--blue)"/>
+    <rect x="148" y="170" width="146" height="13" rx="3" style="fill:var(--blue-soft);stroke:var(--blue)"/>
+    <rect x="148" y="188" width="104" height="13" rx="3" style="fill:var(--blue-soft);stroke:var(--blue)"/>
+    <text x="298" y="199" text-anchor="end" style="fill:var(--amber);font-weight:700">full…</text>
+    <line x1="314" y1="156" x2="476" y2="156" style="stroke:var(--teal);stroke-width:3"/><path d="M476,156 l-12,-5 l0,10 z" style="fill:var(--teal)"/>
+    <text x="394" y="147" text-anchor="middle" style="fill:var(--teal);font-weight:700">flush · SyncTask</text>
+    <line x1="443" y1="84" x2="443" y2="252" style="stroke:var(--line);stroke-width:1.5;stroke-dasharray:4 5"/>
+    <rect x="490" y="98" width="210" height="36" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="595" y="121" text-anchor="middle" class="mono" style="fill:var(--ink)">insert binlog (columnar)</text>
+    <rect x="490" y="140" width="210" height="36" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="595" y="163" text-anchor="middle" class="mono" style="fill:var(--ink)">stats binlog</text>
+    <rect x="490" y="182" width="210" height="36" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="595" y="205" text-anchor="middle" class="mono" style="fill:var(--ink)">delta binlog</text>
+    <text x="595" y="242" text-anchor="middle" style="fill:var(--muted)">write back metadata + advance checkpoint</text>
+  </svg>
+  <div class="figcap"><b>A row's leap "from log to disk"</b>: the StreamingNode's flusher <b>consumes the WAL</b>, accruing rows into an <b>in-memory growing segment</b>; <b>full or timeout</b> seals it (read-only), then <b>flush</b> writes <b>binlogs in object storage</b> (insert / stats / delta), finally <b>recording metadata and advancing the checkpoint</b> — durability always backstopped by the WAL.</div>
+</div>
+
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>consume WAL</h4><p>the StreamingNode's flusher reads InsertMessages along the PChannels it owns.</p></div></div>
   <div class="step"><div class="num">2</div><div class="sc"><h4>accumulate into a growing segment</h4><p class="mono">writebuffer</p><p>append rows per vchannel into the in-memory growing segment (segment ID already assigned by the StreamingNode).</p></div></div>
@@ -1115,6 +1269,23 @@ LESSON_18 = {
   <tr><td><strong>stats binlog</strong>（统计）</td><td>主键的 <strong>min/max</strong> 与<strong>布隆过滤器</strong>，用于快速排除"这段没有某主键"</td><td class="mono">stats_log/</td></tr>
   <tr><td><strong>index file</strong>（索引）</td><td>在 sealed 段上建的 ANN 索引结构（如 HNSW/IVF），单独建、单独存</td><td class="mono">index_files/</td></tr>
 </table>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="一个段在对象存储里对应四类产物：insert binlog 是真身，delete binlog 是叠加层，stats binlog 是加速卡，index file 是另一种视角">
+    <rect x="34" y="116" width="150" height="68" rx="11" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="109" y="146" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">一个段</text>
+    <text x="109" y="166" text-anchor="middle" style="fill:var(--muted)">→ 一族文件</text>
+    <line x1="184" y1="150" x2="296" y2="67" style="stroke:var(--line);stroke-width:1.5"/><path d="M296,67 l-11,2 l4,8 z" style="fill:var(--line)"/>
+    <line x1="184" y1="150" x2="296" y2="129" style="stroke:var(--line);stroke-width:1.5"/><path d="M296,129 l-11,0 l3,9 z" style="fill:var(--line)"/>
+    <line x1="184" y1="150" x2="296" y2="191" style="stroke:var(--line);stroke-width:1.5"/><path d="M296,191 l-11,-1 l2,9 z" style="fill:var(--line)"/>
+    <line x1="184" y1="150" x2="296" y2="253" style="stroke:var(--line);stroke-width:1.5"/><path d="M296,253 l-10,-4 l0,9 z" style="fill:var(--line)"/>
+    <rect x="300" y="42" width="440" height="50" rx="9" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="316" y="64" style="fill:var(--accent-ink);font-weight:700">insert binlog — 真身</text><text x="316" y="83" style="fill:var(--muted)">每个字段一份列式数据 · <tspan class="mono">insert_log/</tspan></text>
+    <rect x="300" y="104" width="440" height="50" rx="9" style="fill:var(--panel);stroke:var(--red);stroke-width:1.5"/><text x="316" y="126" style="fill:var(--red);font-weight:700">delete binlog — 叠加层</text><text x="316" y="145" style="fill:var(--muted)">墓碑：作废主键 + 时间戳 · <tspan class="mono">delta_log/</tspan></text>
+    <rect x="300" y="166" width="440" height="50" rx="9" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="316" y="188" style="fill:var(--amber);font-weight:700">stats binlog — 加速卡</text><text x="316" y="207" style="fill:var(--muted)">主键 min/max + 布隆过滤器 · <tspan class="mono">stats_log/</tspan></text>
+    <rect x="300" y="228" width="440" height="50" rx="9" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="316" y="250" style="fill:var(--teal);font-weight:700">index file — 另一种视角</text><text x="316" y="269" style="fill:var(--muted)">同一份向量的 ANN 索引 · <tspan class="mono">index_files/</tspan></text>
+  </svg>
+  <div class="figcap"><b>一个段，四类产物，各司其职</b>：<b>insert binlog</b> 是数据<b>真身</b>（只此一份、按列存）；<b>delete binlog</b> 是<b>叠加层</b>（只追加墓碑、不改真身）；<b>stats binlog</b> 是<b>加速卡</b>（min/max + 布隆，让查询学会跳过）；<b>index file</b> 是<b>另一种视角</b>（同一向量的 ANN 索引）。写得快与读得快，就这样被解耦。</div>
+</div>
 
 <p>这四类里，最值得先讲清的是它们的<strong>分工哲学</strong>：<strong>insert binlog 是"真身"</strong>——数据本体只此一份；<strong>delete binlog 是"叠加层"</strong>——它不修改 insert binlog，只在其上<strong>追加一层"这些主键作废了"的标记</strong>；
 <strong>stats binlog 是"加速卡"</strong>——它不含原始数据，只是从数据里提炼的摘要，让查询能<strong>跳过</strong>不相关的段；<strong>index file 是"另一种视角"</strong>——同一份向量数据，换一种为快速近邻查找优化的组织方式。
@@ -1198,6 +1369,36 @@ LESSON_18 = {
   <div class="layer l-core"><span class="badge">字段</span><span class="name">{fieldID}/{logID}</span><span class="ld">哪个字段的第几个 binlog（同段同字段可多个）</span></div>
 </div>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="对象存储里 binlog 的自描述路径：类别/集合/分区/段/字段/logID；对象存储本是扁平 key 到 value，斜杠前缀让它用得像目录树">
+    <text x="95" y="48" text-anchor="middle" style="fill:var(--muted)">类别</text>
+    <text x="200" y="48" text-anchor="middle" style="fill:var(--muted)">集合</text>
+    <text x="266" y="48" text-anchor="middle" style="fill:var(--muted)">分区</text>
+    <text x="345" y="48" text-anchor="middle" style="fill:var(--muted)">段</text>
+    <text x="445" y="48" text-anchor="middle" style="fill:var(--muted)">字段</text>
+    <text x="520" y="48" text-anchor="middle" style="fill:var(--muted)">logID</text>
+    <rect x="40" y="56" width="110" height="38" rx="7" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="95" y="80" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">insert_log</text>
+    <text x="156" y="80" style="fill:var(--muted)">/</text>
+    <rect x="168" y="56" width="64" height="38" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="200" y="80" text-anchor="middle" class="mono" style="fill:var(--ink)">445</text>
+    <text x="236" y="80" style="fill:var(--muted)">/</text>
+    <rect x="244" y="56" width="46" height="38" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="267" y="80" text-anchor="middle" class="mono" style="fill:var(--ink)">12</text>
+    <text x="294" y="80" style="fill:var(--muted)">/</text>
+    <rect x="304" y="56" width="84" height="38" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="346" y="80" text-anchor="middle" class="mono" style="fill:var(--ink)">seg_88</text>
+    <text x="392" y="80" style="fill:var(--muted)">/</text>
+    <rect x="402" y="56" width="84" height="38" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="444" y="80" text-anchor="middle" class="mono" style="fill:var(--ink)">field_3</text>
+    <text x="490" y="80" style="fill:var(--muted)">/</text>
+    <rect x="500" y="56" width="44" height="38" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="522" y="80" text-anchor="middle" class="mono" style="fill:var(--ink)">0</text>
+    <text x="386" y="138" text-anchor="middle" style="fill:var(--ink)">光看 key 就知道"<tspan style="fill:var(--accent-ink);font-weight:700">谁的、哪个段、哪个字段</tspan>"——不必查元数据</text>
+    <rect x="150" y="160" width="300" height="34" rx="7" style="fill:var(--accent-soft);opacity:.5"/>
+    <text x="160" y="183" class="mono" style="fill:var(--ink)">insert_log/445/12/seg_88/</text>
+    <text x="452" y="183" class="mono" style="fill:var(--muted)">field_3/0</text>
+    <path d="M150,200 L450,200 M150,200 l0,8 M450,200 l0,8" style="stroke:var(--accent);stroke-width:1.5"/>
+    <text x="300" y="224" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">段前缀：删它＝删掉整段所有文件（GC 靠它枚举孤儿）</text>
+    <text x="386" y="262" text-anchor="middle" style="fill:var(--muted)">对象存储本是扁平的 key → value，斜杠前缀让它"用得像目录树"</text>
+  </svg>
+  <div class="figcap"><b>路径即归属</b>：每个 binlog 的 key 形如 <span class="mono">类别/集合/分区/段/字段/logID</span>，<b>自描述</b>——不查元数据就能定位归类。对象存储其实是<b>扁平的 key→value</b>，靠 <span class="mono">/</span> 前缀"虚拟"出一棵目录树：删 <span class="mono">.../{segmentID}/</span> 前缀就清掉整段，GC 正是靠它枚举并清理孤儿对象。</div>
+</div>
+
 <p>把这条路径读一遍，你就懂了对象存储的"<strong>自描述</strong>"之美：<span class="mono">insert_log/{collectionID}/{partitionID}/{segmentID}/{fieldID}/{logID}</span>——
 光看 key 就知道"这是哪个集合、哪个分区、哪个段、哪个字段的第几个插入 binlog"，<strong>不必查元数据就能定位与归类</strong>。
 这些前缀常量定义在 <span class="mono">pkg/common</span>：<span class="inline">SegmentInsertLogPath="insert_log"</span>、<span class="inline">SegmentDeltaLogPath="delta_log"</span>、<span class="inline">SegmentStatslogPath="stats_log"</span>。
@@ -1269,6 +1470,23 @@ We'll see what each <strong>holds</strong>, why insert binlogs store by <strong>
   <tr><td><strong>stats binlog</strong></td><td>the PK <strong>min/max</strong> and a <strong>bloom filter</strong>, to quickly rule out "this segment lacks a given PK"</td><td class="mono">stats_log/</td></tr>
   <tr><td><strong>index file</strong></td><td>the ANN index built on the sealed segment (e.g. HNSW/IVF), built and stored separately</td><td class="mono">index_files/</td></tr>
 </table>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="One segment maps to four kinds of product in object storage: insert binlog is the real body, delete binlog is an overlay, stats binlog is an acceleration card, index file is another viewpoint">
+    <rect x="34" y="116" width="150" height="68" rx="11" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="109" y="146" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">one segment</text>
+    <text x="109" y="166" text-anchor="middle" style="fill:var(--muted)">→ a family of files</text>
+    <line x1="184" y1="150" x2="296" y2="67" style="stroke:var(--line);stroke-width:1.5"/><path d="M296,67 l-11,2 l4,8 z" style="fill:var(--line)"/>
+    <line x1="184" y1="150" x2="296" y2="129" style="stroke:var(--line);stroke-width:1.5"/><path d="M296,129 l-11,0 l3,9 z" style="fill:var(--line)"/>
+    <line x1="184" y1="150" x2="296" y2="191" style="stroke:var(--line);stroke-width:1.5"/><path d="M296,191 l-11,-1 l2,9 z" style="fill:var(--line)"/>
+    <line x1="184" y1="150" x2="296" y2="253" style="stroke:var(--line);stroke-width:1.5"/><path d="M296,253 l-10,-4 l0,9 z" style="fill:var(--line)"/>
+    <rect x="300" y="42" width="440" height="50" rx="9" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="316" y="64" style="fill:var(--accent-ink);font-weight:700">insert binlog — the real body</text><text x="316" y="83" style="fill:var(--muted)">columnar data, one file per field · <tspan class="mono">insert_log/</tspan></text>
+    <rect x="300" y="104" width="440" height="50" rx="9" style="fill:var(--panel);stroke:var(--red);stroke-width:1.5"/><text x="316" y="126" style="fill:var(--red);font-weight:700">delete binlog — an overlay</text><text x="316" y="145" style="fill:var(--muted)">tombstones: void PK + timestamp · <tspan class="mono">delta_log/</tspan></text>
+    <rect x="300" y="166" width="440" height="50" rx="9" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="316" y="188" style="fill:var(--amber);font-weight:700">stats binlog — an accelerator</text><text x="316" y="207" style="fill:var(--muted)">PK min/max + Bloom filter · <tspan class="mono">stats_log/</tspan></text>
+    <rect x="300" y="228" width="440" height="50" rx="9" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="316" y="250" style="fill:var(--teal);font-weight:700">index file — another viewpoint</text><text x="316" y="269" style="fill:var(--muted)">ANN index of the same vectors · <tspan class="mono">index_files/</tspan></text>
+  </svg>
+  <div class="figcap"><b>One segment, four products, each with a job</b>: <b>insert binlog</b> is the data's <b>real body</b> (the only copy, columnar); <b>delete binlog</b> is an <b>overlay</b> (appends tombstones, never edits the body); <b>stats binlog</b> is an <b>accelerator</b> (min/max + Bloom, so queries learn to skip); <b>index file</b> is <b>another viewpoint</b> (an ANN index of the same vectors). Fast writes and fast reads, decoupled.</div>
+</div>
 
 <p>Among these four, the first thing to make clear is their <strong>division-of-labor philosophy</strong>: <strong>the insert binlog is the "real body"</strong> — the data itself, only one copy; <strong>the delete binlog is an "overlay"</strong> — it does not modify the insert binlog, only <strong>appends a layer of "these PKs are void" markers</strong> on top;
 <strong>the stats binlog is an "acceleration card"</strong> — it holds no raw data, just a summary distilled from the data so queries can <strong>skip</strong> irrelevant segments; <strong>the index file is "another viewpoint"</strong> — the same vector data, reorganized to optimize fast nearest-neighbor search.
@@ -1352,6 +1570,36 @@ Above it, the <strong>InsertCodec</strong> (<span class="mono">data_codec.go</sp
   <div class="layer l-core"><span class="badge">field</span><span class="name">{fieldID}/{logID}</span><span class="ld">which field's which binlog (same segment+field may have several)</span></div>
 </div>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="The self-describing path of a binlog in object storage: kind/collection/partition/segment/field/logID; object storage is really a flat key to value, the slash prefix makes it usable like a directory tree">
+    <text x="95" y="48" text-anchor="middle" style="fill:var(--muted)">kind</text>
+    <text x="200" y="48" text-anchor="middle" style="fill:var(--muted)">collection</text>
+    <text x="266" y="48" text-anchor="middle" style="fill:var(--muted)">partition</text>
+    <text x="345" y="48" text-anchor="middle" style="fill:var(--muted)">segment</text>
+    <text x="445" y="48" text-anchor="middle" style="fill:var(--muted)">field</text>
+    <text x="520" y="48" text-anchor="middle" style="fill:var(--muted)">logID</text>
+    <rect x="40" y="56" width="110" height="38" rx="7" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="95" y="80" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">insert_log</text>
+    <text x="156" y="80" style="fill:var(--muted)">/</text>
+    <rect x="168" y="56" width="64" height="38" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="200" y="80" text-anchor="middle" class="mono" style="fill:var(--ink)">445</text>
+    <text x="236" y="80" style="fill:var(--muted)">/</text>
+    <rect x="244" y="56" width="46" height="38" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="267" y="80" text-anchor="middle" class="mono" style="fill:var(--ink)">12</text>
+    <text x="294" y="80" style="fill:var(--muted)">/</text>
+    <rect x="304" y="56" width="84" height="38" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="346" y="80" text-anchor="middle" class="mono" style="fill:var(--ink)">seg_88</text>
+    <text x="392" y="80" style="fill:var(--muted)">/</text>
+    <rect x="402" y="56" width="84" height="38" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="444" y="80" text-anchor="middle" class="mono" style="fill:var(--ink)">field_3</text>
+    <text x="490" y="80" style="fill:var(--muted)">/</text>
+    <rect x="500" y="56" width="44" height="38" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="522" y="80" text-anchor="middle" class="mono" style="fill:var(--ink)">0</text>
+    <text x="380" y="138" text-anchor="middle" style="fill:var(--ink)">the key alone says "<tspan style="fill:var(--accent-ink);font-weight:700">whose, which segment, which field</tspan>" — no metadata lookup</text>
+    <rect x="150" y="160" width="300" height="34" rx="7" style="fill:var(--accent-soft);opacity:.5"/>
+    <text x="160" y="183" class="mono" style="fill:var(--ink)">insert_log/445/12/seg_88/</text>
+    <text x="452" y="183" class="mono" style="fill:var(--muted)">field_3/0</text>
+    <path d="M150,200 L450,200 M150,200 l0,8 M450,200 l0,8" style="stroke:var(--accent);stroke-width:1.5"/>
+    <text x="300" y="224" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">segment prefix: delete it = wipe the whole segment (GC enumerates orphans by it)</text>
+    <text x="380" y="262" text-anchor="middle" style="fill:var(--muted)">object storage is really a flat key → value; the slash prefix makes it "usable like a directory tree"</text>
+  </svg>
+  <div class="figcap"><b>The path is the ownership</b>: each binlog's key looks like <span class="mono">kind/collection/partition/segment/field/logID</span> — <b>self-describing</b>, locatable without a metadata lookup. Object storage is really a <b>flat key→value</b> table; the <span class="mono">/</span> prefix "virtualizes" a directory tree: delete the <span class="mono">.../{segmentID}/</span> prefix to wipe a whole segment — exactly how GC enumerates and clears orphans.</div>
+</div>
+
 <p>Read this path and you grasp the "<strong>self-describing</strong>" beauty of object storage: <span class="mono">insert_log/{collectionID}/{partitionID}/{segmentID}/{fieldID}/{logID}</span> —
 the key alone tells you "which collection, partition, segment, and field, and which insert binlog of that field," so you can <strong>locate and classify it without consulting metadata</strong>.
 These prefix constants are defined in <span class="mono">pkg/common</span>: <span class="inline">SegmentInsertLogPath="insert_log"</span>, <span class="inline">SegmentDeltaLogPath="delta_log"</span>, <span class="inline">SegmentStatslogPath="stats_log"</span>.
@@ -1424,6 +1672,31 @@ LESSON_19 = {
   <div class="lane"><span class="lane-label">整理前</span><span class="tslot">段A（小）</span><span class="tslot">段B（小）</span><span class="tslot">段C（小）</span><span class="tslot span">+ 一堆 delta 墓碑</span></div>
   <div class="lane"><span class="lane-label">compaction</span><span class="tslot now">合并 + 物理删除作废行</span></div>
   <div class="lane"><span class="lane-label">整理后</span><span class="tslot now">段D（大·干净·无墓碑）</span></div>
+</div>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="compaction 把多个带墓碑的小段合并成一个大而干净的段：应用墓碑物理删除作废行，旧段标记 dropped 等 GC 回收">
+    <text x="120" y="42" text-anchor="middle" style="fill:var(--muted)">整理前：碎小段 + 墓碑</text>
+    <rect x="30" y="52" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="78" class="mono" style="fill:var(--ink)">段A · pk1 pk2</text>
+    <rect x="30" y="100" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="126" class="mono" style="fill:var(--ink)">段B · pk5 </text><text x="142" y="126" class="mono" style="fill:var(--red)">pk6✗</text>
+    <rect x="30" y="148" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="174" class="mono" style="fill:var(--red)">pk9✗</text><text x="98" y="174" class="mono" style="fill:var(--ink)"> pk10</text>
+    <rect x="30" y="200" width="200" height="40" rx="8" style="fill:var(--panel);stroke:var(--red);stroke-width:1.5"/><text x="44" y="225" class="mono" style="fill:var(--red)">delta 墓碑 {pk6, pk9}</text>
+    <line x1="210" y1="73" x2="288" y2="140" style="stroke:var(--line);stroke-width:1.5"/>
+    <line x1="210" y1="121" x2="288" y2="146" style="stroke:var(--line);stroke-width:1.5"/>
+    <line x1="210" y1="169" x2="288" y2="152" style="stroke:var(--line);stroke-width:1.5"/>
+    <line x1="230" y1="220" x2="288" y2="166" style="stroke:var(--red);stroke-width:1.5"/>
+    <rect x="290" y="110" width="158" height="86" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="369" y="142" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">compaction</text>
+    <text x="369" y="164" text-anchor="middle" style="fill:var(--muted)">合并碎片</text>
+    <text x="369" y="182" text-anchor="middle" style="fill:var(--muted)">+ 应用墓碑</text>
+    <line x1="448" y1="153" x2="486" y2="153" style="stroke:var(--accent);stroke-width:2.5"/><path d="M486,153 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <rect x="490" y="104" width="250" height="92" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:2"/>
+    <text x="615" y="132" text-anchor="middle" style="fill:var(--teal);font-weight:700">段D · 大 · 干净 · 已排序</text>
+    <text x="615" y="158" text-anchor="middle" class="mono" style="fill:var(--ink)">pk1 pk2 pk5 pk10</text>
+    <text x="615" y="180" text-anchor="middle" style="fill:var(--muted)">pk6 · pk9 已物理删除</text>
+    <text x="615" y="226" text-anchor="middle" style="fill:var(--muted)">旧段 A/B/C → 标记 dropped → GC 回收</text>
+  </svg>
+  <div class="figcap"><b>把碎片整理成整洁</b>：compaction 一并做两件事——把同字段的<b>小 binlog/小段合并</b>成更大更连续的段，并把 delta 里的<b>墓碑物理应用</b>（作废行 <span class="mono">pk6、pk9</span> 真正删掉）。旧段随即标记 <span class="mono">dropped</span> 交给 GC。这是典型的 <b>LSM 思路</b>：前台只管快追加，后台慢慢归并整理。</div>
 </div>
 
 <p>整理之后的收益是<strong>实打实的读效率</strong>：要打开的段更少、每段更大更连续（顺序 I/O 更友好）、墓碑已被清掉（不必再叠加比对）、数据更适合建索引。
@@ -1576,6 +1849,31 @@ Second, <strong>tombstone buildup</strong>: a delete only appends "PK X voided a
   <div class="lane"><span class="lane-label">before</span><span class="tslot">seg A (small)</span><span class="tslot">seg B (small)</span><span class="tslot">seg C (small)</span><span class="tslot span">+ a pile of delta tombstones</span></div>
   <div class="lane"><span class="lane-label">compaction</span><span class="tslot now">merge + physically delete void rows</span></div>
   <div class="lane"><span class="lane-label">after</span><span class="tslot now">seg D (large · clean · no tombstones)</span></div>
+</div>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="compaction merges several tombstoned small segments into one large clean segment: tombstones are physically applied to delete void rows, old segments are marked dropped and awaiting GC">
+    <text x="120" y="42" text-anchor="middle" style="fill:var(--muted)">before: fragmented + tombstones</text>
+    <rect x="30" y="52" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="78" class="mono" style="fill:var(--ink)">seg A · pk1 pk2</text>
+    <rect x="30" y="100" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="126" class="mono" style="fill:var(--ink)">seg B · pk5 </text><text x="150" y="126" class="mono" style="fill:var(--red)">pk6✗</text>
+    <rect x="30" y="148" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="174" class="mono" style="fill:var(--red)">pk9✗</text><text x="98" y="174" class="mono" style="fill:var(--ink)"> pk10</text>
+    <rect x="30" y="200" width="200" height="40" rx="8" style="fill:var(--panel);stroke:var(--red);stroke-width:1.5"/><text x="44" y="225" class="mono" style="fill:var(--red)">delta tombstones {pk6, pk9}</text>
+    <line x1="210" y1="73" x2="288" y2="140" style="stroke:var(--line);stroke-width:1.5"/>
+    <line x1="210" y1="121" x2="288" y2="146" style="stroke:var(--line);stroke-width:1.5"/>
+    <line x1="210" y1="169" x2="288" y2="152" style="stroke:var(--line);stroke-width:1.5"/>
+    <line x1="230" y1="220" x2="288" y2="166" style="stroke:var(--red);stroke-width:1.5"/>
+    <rect x="290" y="110" width="158" height="86" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="369" y="142" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">compaction</text>
+    <text x="369" y="164" text-anchor="middle" style="fill:var(--muted)">merge fragments</text>
+    <text x="369" y="182" text-anchor="middle" style="fill:var(--muted)">+ apply tombstones</text>
+    <line x1="448" y1="153" x2="486" y2="153" style="stroke:var(--accent);stroke-width:2.5"/><path d="M486,153 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <rect x="490" y="104" width="250" height="92" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:2"/>
+    <text x="615" y="132" text-anchor="middle" style="fill:var(--teal);font-weight:700">seg D · large · clean · sorted</text>
+    <text x="615" y="158" text-anchor="middle" class="mono" style="fill:var(--ink)">pk1 pk2 pk5 pk10</text>
+    <text x="615" y="180" text-anchor="middle" style="fill:var(--muted)">pk6 · pk9 physically deleted</text>
+    <text x="615" y="226" text-anchor="middle" style="fill:var(--muted)">old A/B/C → marked dropped → GC reclaims</text>
+  </svg>
+  <div class="figcap"><b>Tidying fragments into cleanliness</b>: compaction does two things at once — <b>merges small binlogs/segments</b> into a larger, contiguous one, and <b>physically applies the tombstones</b> from delta (void rows <span class="mono">pk6, pk9</span> truly removed). The old segments are then marked <span class="mono">dropped</span> for GC. Classic <b>LSM</b>: append fast in front, merge-and-tidy in the background.</div>
 </div>
 
 <p>The payoff after tidying is <strong>real read efficiency</strong>: fewer segments to open, each larger and more contiguous (friendlier sequential I/O), tombstones already cleared (no more overlay-compare), and data better-suited to indexing.
@@ -1753,6 +2051,29 @@ LESSON_20 = {
   </div>
 </div>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="布隆路由：一条删除拿待删主键逐段问布隆过滤器，肯定没有的段安全跳过，只有可能有的段才落墓碑">
+    <rect x="298" y="34" width="164" height="46" rx="9" style="fill:var(--panel);stroke:var(--red);stroke-width:1.5"/><text x="380" y="56" text-anchor="middle" style="fill:var(--red);font-weight:700">delete(pk = X)</text><text x="380" y="74" text-anchor="middle" style="fill:var(--muted)">该作废的主键</text>
+    <line x1="330" y1="80" x2="120" y2="116" style="stroke:var(--line);stroke-width:1.5"/><path d="M120,116 l9,-6 l2,9 z" style="fill:var(--line)"/>
+    <line x1="360" y1="80" x2="300" y2="116" style="stroke:var(--accent);stroke-width:1.5"/><path d="M300,116 l4,-10 l6,7 z" style="fill:var(--accent)"/>
+    <line x1="400" y1="80" x2="484" y2="116" style="stroke:var(--line);stroke-width:1.5"/><path d="M484,116 l-11,-1 l4,8 z" style="fill:var(--line)"/>
+    <line x1="430" y1="80" x2="652" y2="116" style="stroke:var(--accent);stroke-width:1.5"/><path d="M652,116 l-11,0 l3,9 z" style="fill:var(--accent)"/>
+    <rect x="24" y="118" width="166" height="150" rx="10" style="fill:var(--panel-2);stroke:var(--line)"/><text x="107" y="144" text-anchor="middle" style="fill:var(--muted);font-weight:700">段1 · BF</text>
+    <rect x="64" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/><rect x="78" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/><rect x="92" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/><rect x="106" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/><rect x="120" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/><rect x="134" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/>
+    <text x="107" y="204" text-anchor="middle" style="fill:var(--muted)">肯定没有</text><text x="107" y="238" text-anchor="middle" style="fill:var(--faint);font-weight:700">✗ 跳过</text>
+    <rect x="206" y="118" width="166" height="150" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="289" y="144" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">段2 · BF</text>
+    <rect x="246" y="158" width="11" height="14" rx="2" style="fill:var(--accent);stroke:var(--accent)"/><rect x="260" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/><rect x="274" y="158" width="11" height="14" rx="2" style="fill:var(--accent);stroke:var(--accent)"/><rect x="288" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/><rect x="302" y="158" width="11" height="14" rx="2" style="fill:var(--accent);stroke:var(--accent)"/><rect x="316" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/>
+    <text x="289" y="204" text-anchor="middle" style="fill:var(--accent-ink)">可能有</text><text x="289" y="238" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">✓ 应用墓碑</text>
+    <rect x="388" y="118" width="166" height="150" rx="10" style="fill:var(--panel-2);stroke:var(--line)"/><text x="471" y="144" text-anchor="middle" style="fill:var(--muted);font-weight:700">段3 · BF</text>
+    <rect x="428" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/><rect x="442" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/><rect x="456" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/><rect x="470" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/><rect x="484" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/><rect x="498" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/>
+    <text x="471" y="204" text-anchor="middle" style="fill:var(--muted)">肯定没有</text><text x="471" y="238" text-anchor="middle" style="fill:var(--faint);font-weight:700">✗ 跳过</text>
+    <rect x="570" y="118" width="166" height="150" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="653" y="144" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">段4 · BF</text>
+    <rect x="610" y="158" width="11" height="14" rx="2" style="fill:var(--accent);stroke:var(--accent)"/><rect x="624" y="158" width="11" height="14" rx="2" style="fill:var(--accent);stroke:var(--accent)"/><rect x="638" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/><rect x="652" y="158" width="11" height="14" rx="2" style="fill:var(--accent);stroke:var(--accent)"/><rect x="666" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/><rect x="680" y="158" width="11" height="14" rx="2" style="fill:var(--accent);stroke:var(--accent)"/>
+    <text x="653" y="204" text-anchor="middle" style="fill:var(--accent-ink)">可能有</text><text x="653" y="238" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">✓ 应用墓碑</text>
+  </svg>
+  <div class="figcap"><b>只把墓碑投给"可能有"的段</b>：删除拿主键 X <b>逐段问布隆过滤器</b>——答"<b>肯定没有</b>"的段<b>安全跳过</b>，只有答"<b>可能有</b>"的少数段才落墓碑。布隆<b>绝不漏报</b>（说没有就一定没有，跳过不会错删），偶尔误报顶多多查一点。于是删除从"广播给上千段"压成"精准投给几段"。</div>
+</div>
+
 <p>布隆过滤器"<strong>绝不漏报</strong>"的特性在这里是<strong>正确性的命脉</strong>：它说"肯定没有"就<strong>一定没有</strong>，所以被跳过的段绝不会冤枉地漏掉一个本该删的行；而它偶尔"误报"（说可能有、细查却没有）顶多<strong>多做一点无用功</strong>，绝不会错删。
 这种"<strong>宁可多查、绝不漏查</strong>"的非对称保证，恰恰是删除路由能放心剪枝的根基。Milvus 里这张布隆过滤器由 <span class="inline">PrimaryKeyStats</span>（<span class="mono">internal/storage/stats.go</span>）持有——它装着主键的上下界（<span class="inline">MaxPk</span>/<span class="inline">MinPk</span>）与那张 <span class="inline">BF</span>（<span class="inline">bloomfilter.BloomFilterInterface</span>），经 <span class="inline">BloomFilterSet</span>/<span class="inline">pkoracle</span> 暴露，是"删除该落到哪些段"这个问题的<strong>判定依据</strong>。</p>
 
@@ -1878,6 +2199,29 @@ The system takes PK X and <strong>asks each segment's bloom</strong>: "could thi
     <div class="cell dim"><span class="lab">seg3</span><span class="q">bloom: definitely not → skip</span></div>
     <div class="cell"><span class="lab">seg4</span><span class="q">bloom: maybe → apply tombstone</span></div>
   </div>
+</div>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Bloom routing: a delete asks each segment's bloom filter about the PK; segments that answer definitely-not are safely skipped, only maybe segments get the tombstone">
+    <rect x="298" y="34" width="164" height="46" rx="9" style="fill:var(--panel);stroke:var(--red);stroke-width:1.5"/><text x="380" y="56" text-anchor="middle" style="fill:var(--red);font-weight:700">delete(pk = X)</text><text x="380" y="74" text-anchor="middle" style="fill:var(--muted)">the PK to void</text>
+    <line x1="330" y1="80" x2="120" y2="116" style="stroke:var(--line);stroke-width:1.5"/><path d="M120,116 l9,-6 l2,9 z" style="fill:var(--line)"/>
+    <line x1="360" y1="80" x2="300" y2="116" style="stroke:var(--accent);stroke-width:1.5"/><path d="M300,116 l4,-10 l6,7 z" style="fill:var(--accent)"/>
+    <line x1="400" y1="80" x2="484" y2="116" style="stroke:var(--line);stroke-width:1.5"/><path d="M484,116 l-11,-1 l4,8 z" style="fill:var(--line)"/>
+    <line x1="430" y1="80" x2="652" y2="116" style="stroke:var(--accent);stroke-width:1.5"/><path d="M652,116 l-11,0 l3,9 z" style="fill:var(--accent)"/>
+    <rect x="24" y="118" width="166" height="150" rx="10" style="fill:var(--panel-2);stroke:var(--line)"/><text x="107" y="144" text-anchor="middle" style="fill:var(--muted);font-weight:700">seg1 · BF</text>
+    <rect x="64" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/><rect x="78" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/><rect x="92" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/><rect x="106" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/><rect x="120" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/><rect x="134" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/>
+    <text x="107" y="204" text-anchor="middle" style="fill:var(--muted)">definitely not</text><text x="107" y="238" text-anchor="middle" style="fill:var(--faint);font-weight:700">✗ skip</text>
+    <rect x="206" y="118" width="166" height="150" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="289" y="144" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">seg2 · BF</text>
+    <rect x="246" y="158" width="11" height="14" rx="2" style="fill:var(--accent);stroke:var(--accent)"/><rect x="260" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/><rect x="274" y="158" width="11" height="14" rx="2" style="fill:var(--accent);stroke:var(--accent)"/><rect x="288" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/><rect x="302" y="158" width="11" height="14" rx="2" style="fill:var(--accent);stroke:var(--accent)"/><rect x="316" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/>
+    <text x="289" y="204" text-anchor="middle" style="fill:var(--accent-ink)">maybe</text><text x="289" y="238" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">✓ apply tombstone</text>
+    <rect x="388" y="118" width="166" height="150" rx="10" style="fill:var(--panel-2);stroke:var(--line)"/><text x="471" y="144" text-anchor="middle" style="fill:var(--muted);font-weight:700">seg3 · BF</text>
+    <rect x="428" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/><rect x="442" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/><rect x="456" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/><rect x="470" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/><rect x="484" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/><rect x="498" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/>
+    <text x="471" y="204" text-anchor="middle" style="fill:var(--muted)">definitely not</text><text x="471" y="238" text-anchor="middle" style="fill:var(--faint);font-weight:700">✗ skip</text>
+    <rect x="570" y="118" width="166" height="150" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="653" y="144" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">seg4 · BF</text>
+    <rect x="610" y="158" width="11" height="14" rx="2" style="fill:var(--accent);stroke:var(--accent)"/><rect x="624" y="158" width="11" height="14" rx="2" style="fill:var(--accent);stroke:var(--accent)"/><rect x="638" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/><rect x="652" y="158" width="11" height="14" rx="2" style="fill:var(--accent);stroke:var(--accent)"/><rect x="666" y="158" width="11" height="14" rx="2" style="fill:var(--panel);stroke:var(--line)"/><rect x="680" y="158" width="11" height="14" rx="2" style="fill:var(--accent);stroke:var(--accent)"/>
+    <text x="653" y="204" text-anchor="middle" style="fill:var(--accent-ink)">maybe</text><text x="653" y="238" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">✓ apply tombstone</text>
+  </svg>
+  <div class="figcap"><b>Tombstone only the "maybe" segments</b>: the delete asks each segment's <b>bloom filter</b> about PK X — segments answering "<b>definitely not</b>" are <b>safely skipped</b>, only the few answering "<b>maybe</b>" get the tombstone. Bloom <b>never has a false negative</b> (says-not means truly not, so skipping never wrong-deletes); a rare false positive just wastes a little work. So a delete shrinks from "broadcast to thousands of segments" to "precise delivery to a few".</div>
 </div>
 
 <p>The bloom filter's "<strong>never a false negative</strong>" property is the <strong>lifeline of correctness</strong> here: if it says "definitely not," it <strong>truly isn't</strong>, so a skipped segment never wrongly misses a row that should be deleted; while its occasional "false positive" (says maybe, a closer look finds nothing) at most causes <strong>a little wasted work</strong>, never a wrong delete.
