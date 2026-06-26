@@ -92,7 +92,7 @@ def build_svg(lesson, lang, idx, tz, te, pal):
     fy = 170
     font = "-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif"
     return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">
-<style>text{{font-family:{font}}}.mono{{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}}</style>
+<style>text{{font-family:{font}}}svg svg text{{fill:{ink}}}.mono{{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}}</style>
 <rect width="{W}" height="{H}" fill="{bg}"/>
 <rect x="0" y="0" width="{W}" height="8" fill="{accent}"/>
 <text x="60" y="66" font-size="30" font-weight="700" fill="{ink}">🐦 Milvus 图解教程 · Milvus Visual Guide</text>

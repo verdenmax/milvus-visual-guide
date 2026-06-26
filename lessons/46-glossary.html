@@ -244,7 +244,7 @@ table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-s
 .toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
   color: var(--faint); font-size: .8rem; pointer-events: none; }
 .toc a.hide, .toc .toc-part.hide { display: none; }
-.t tr.hide { display: none; }
+.t tr.hide, table.t.hide, h2.hide { display: none; }
 .toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
 .toc-empty.show { display: block; }
 .hero.index h1 { font-size: 2.3rem; }
@@ -520,6 +520,7 @@ This is the guide's <strong>quick-reference glossary</strong>, gathering the key
     var q=document.getElementById(inputId); if(!q) return;
     var root=document.querySelector(scope); if(!root) return;
     var empty=document.getElementById(emptyId), count=document.getElementById(countId);
+    var tables=[].slice.call(root.querySelectorAll('table.t'));
     var rows=[].slice.call(root.querySelectorAll('table.t tr')).filter(function(tr){return tr.querySelector('td');});
     rows.forEach(function(tr){ tr.setAttribute('data-s',(tr.textContent||'').toLowerCase()); });
     function run(){
@@ -527,6 +528,14 @@ This is the guide's <strong>quick-reference glossary</strong>, gathering the key
       rows.forEach(function(tr){
         var hit=!t||tr.getAttribute('data-s').indexOf(t)>=0;
         tr.classList.toggle('hide',!hit); if(hit)n++;
+      });
+      tables.forEach(function(tb){
+        var any=[].slice.call(tb.querySelectorAll('tr')).some(function(tr){
+          return tr.querySelector('td') && !tr.classList.contains('hide');
+        });
+        tb.classList.toggle('hide', !any);
+        var h=tb.previousElementSibling;
+        if(h && h.tagName==='H2') h.classList.toggle('hide', !any);
       });
       if(empty) empty.classList.toggle('show', !!t && n===0);
       if(count) count.textContent = t ? String(n) : '';
