@@ -5464,7 +5464,7 @@ Second, <strong>tombstone buildup</strong>: a delete only appends "PK X voided a
     <text x="120" y="42" text-anchor="middle" style="fill:var(--muted)">before: fragmented + tombstones</text>
     <rect x="30" y="52" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="78" class="mono" style="fill:var(--ink)">seg A · pk1 pk2</text>
     <rect x="30" y="100" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="126" class="mono" style="fill:var(--ink)">seg B · pk5 </text><text x="150" y="126" class="mono" style="fill:var(--red)">pk6✗</text>
-    <rect x="30" y="148" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="174" class="mono" style="fill:var(--red)">pk9✗</text><text x="98" y="174" class="mono" style="fill:var(--ink)"> pk10</text>
+    <rect x="30" y="148" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="174" class="mono" style="fill:var(--ink)">seg C · </text><text x="100" y="174" class="mono" style="fill:var(--red)">pk9✗</text><text x="154" y="174" class="mono" style="fill:var(--ink)"> pk10</text>
     <rect x="30" y="200" width="200" height="40" rx="8" style="fill:var(--panel);stroke:var(--red);stroke-width:1.5"/><text x="44" y="225" class="mono" style="fill:var(--red)">delta tombstones {pk6, pk9}</text>
     <line x1="210" y1="73" x2="288" y2="140" style="stroke:var(--line);stroke-width:1.5"/>
     <line x1="210" y1="121" x2="288" y2="146" style="stroke:var(--line);stroke-width:1.5"/>
@@ -5942,6 +5942,31 @@ So "building an index" is not a one-shot action but a <strong>continuously-in-ef
   </div>
 </div>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Per-segment index build: each sealed segment becomes an independent build task — parallel, incremental, and a failure only retries that one segment; growing segments are not built and are brute-force scanned at query time">
+    <text x="40" y="40" style="fill:var(--muted)">segments of one collection —— scheduling granularity = segment (not collection / partition)</text>
+    <rect x="40" y="48" width="690" height="44" rx="9" style="fill:none;stroke:var(--accent);stroke-width:1.5"/>
+    <rect x="52" y="56" width="126" height="28" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="115" y="75" text-anchor="middle" style="fill:var(--ink)">seg #1</text>
+    <rect x="186" y="56" width="126" height="28" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="249" y="75" text-anchor="middle" style="fill:var(--ink)">seg #2</text>
+    <rect x="320" y="56" width="126" height="28" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="383" y="75" text-anchor="middle" style="fill:var(--ink)">seg #3</text>
+    <rect x="454" y="56" width="126" height="28" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="517" y="75" text-anchor="middle" style="fill:var(--ink)">seg #4</text>
+    <rect x="588" y="56" width="130" height="28" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="653" y="75" text-anchor="middle" style="fill:var(--muted)">growing</text>
+    <line x1="115" y1="92" x2="115" y2="156" style="stroke:var(--line);stroke-width:1.5"/><path d="M115,156 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <line x1="249" y1="92" x2="249" y2="156" style="stroke:var(--line);stroke-width:1.5"/><path d="M249,156 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <line x1="383" y1="92" x2="383" y2="156" style="stroke:var(--line);stroke-width:1.5"/><path d="M383,156 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <line x1="517" y1="92" x2="517" y2="156" style="stroke:var(--line);stroke-width:1.5"/><path d="M517,156 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <line x1="653" y1="92" x2="653" y2="156" style="stroke:var(--line);stroke-width:1.5;stroke-dasharray:4 3"/><path d="M653,156 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <rect x="52" y="160" width="126" height="56" rx="8" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="115" y="184" text-anchor="middle" style="fill:var(--teal);font-weight:700">✓ indexed</text><text x="115" y="204" text-anchor="middle" style="fill:var(--muted)">no rebuild</text>
+    <rect x="186" y="160" width="126" height="56" rx="8" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="249" y="184" text-anchor="middle" style="fill:var(--teal);font-weight:700">✓ indexed</text><text x="249" y="204" text-anchor="middle" style="fill:var(--muted)">no rebuild</text>
+    <rect x="320" y="160" width="126" height="56" rx="8" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="383" y="184" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">⚙ building</text><text x="383" y="204" text-anchor="middle" style="fill:var(--muted)">workers in parallel</text>
+    <rect x="454" y="160" width="126" height="56" rx="8" style="fill:var(--panel);stroke:var(--red);stroke-width:1.5"/><text x="517" y="184" text-anchor="middle" style="fill:var(--red);font-weight:700">✗ failed</text><text x="517" y="204" text-anchor="middle" style="fill:var(--red)">→ retry this one</text>
+    <rect x="588" y="160" width="130" height="56" rx="8" style="fill:var(--panel-2);stroke:var(--line)"/><text x="653" y="184" text-anchor="middle" style="fill:var(--muted);font-weight:700">no index</text><text x="653" y="204" text-anchor="middle" style="fill:var(--muted)">brute-force scan</text>
+    <path d="M580,188 C616,188 612,120 524,98" style="fill:none;stroke:var(--red);stroke-width:1.5;stroke-dasharray:5 4"/><path d="M524,98 l11,-1 l-5,-9 z" style="fill:var(--red)"/>
+    <text x="384" y="246" text-anchor="middle" style="fill:var(--muted)">per-segment tasks: parallel · incremental · failure-isolated</text>
+  </svg>
+  <div class="figcap"><b>The granularity is the "segment", not the collection</b>: each immutable <b>sealed segment</b> becomes one independent build task — hundreds are <b>independent and run in parallel</b>; a new segment just gets a new task (<b>incremental</b>); a failed task <b>retries only that segment</b>, not the others. <b>Growing segments aren't indexed</b> — a query brute-force scans them.</div>
+</div>
+
 <p>It is exactly this "<strong>per-segment task + state machine + retry</strong>" mechanism that lets the index service, in a distributed environment of <strong>continuous writes, crashing nodes, and flaky networks</strong>, steadily drive "every segment eventually gets indexed" to completion.
 This is also the root reason DataCoord must <strong>own the index metadata</strong>: it has to <strong>keep books</strong> for every segment — which step this segment reached, which index definition it uses, where its index files live, how many times it failed. Without this ledger, "gradual convergence" under distribution is impossible. Think of <span class="mono">index_meta.go</span> as that "<strong>index ledger</strong>," and <span class="mono">index_inspector.go</span> as the inspector who <strong>keeps reconciling and re-dispatches a task wherever a gap appears</strong>.</p>
 
@@ -6099,6 +6124,34 @@ HNSW takes the "<strong>build a net of neighbor shortcuts and hop edge-by-edge t
 <p>It helps to give each family a one-line "personality." <strong>FLAT</strong> is the honest plodder: it never approximates, so its recall is always 100% — invaluable as a <strong>ground-truth baseline</strong> when you want to measure how much recall another index actually loses, but hopeless at scale. <strong>IVF</strong> is the zoning planner: cluster once, then at query time visit only the nearest zones; simple, predictable, and its accuracy is tuned almost entirely by nprobe. <strong>HNSW</strong> is the well-connected navigator: by building a multi-layer shortcut graph it reaches the right neighborhood in just a few hops, delivering the best latency-recall combo most workloads want — at the price of holding the whole graph (and raw vectors) in memory.
 <strong>DiskANN</strong> is the warehouse-on-disk: when even quantization can't squeeze the data into RAM, it puts the graph on SSD and keeps only a navigating skeleton in memory, trading a bit of latency for the ability to serve datasets far larger than memory. <strong>The quantized IVFs (SQ8/PQ)</strong> are the space-savers: SQ8 squashes each dimension to a byte, PQ chops a vector into sub-vectors and replaces each with a codebook entry, shrinking footprint dramatically while accepting some recall loss that a re-rank step can partly recover.</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Product quantization PQ: chop a vector into sub-vectors, find the nearest codeword in each sub-codebook, and replace each with that codeword id, compressing the whole vector into a short code">
+    <text x="40" y="40" style="fill:var(--muted)">original vector v (8 dims · 32 bytes) → chopped into 4 sub-vectors</text>
+    <rect x="48" y="50" width="156" height="40" rx="8" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="126" y="75" text-anchor="middle" class="mono" style="fill:var(--blue)">[0.2, 0.9]</text>
+    <rect x="212" y="50" width="156" height="40" rx="8" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="290" y="75" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">[0.1, 0.3]</text>
+    <rect x="376" y="50" width="156" height="40" rx="8" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="454" y="75" text-anchor="middle" class="mono" style="fill:var(--teal)">[0.8, 0.7]</text>
+    <rect x="540" y="50" width="156" height="40" rx="8" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="618" y="75" text-anchor="middle" class="mono" style="fill:var(--amber)">[0.5, 0.4]</text>
+    <line x1="126" y1="90" x2="126" y2="122" style="stroke:var(--line);stroke-width:1.5"/><path d="M126,122 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <line x1="290" y1="90" x2="290" y2="122" style="stroke:var(--line);stroke-width:1.5"/><path d="M290,122 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <line x1="454" y1="90" x2="454" y2="122" style="stroke:var(--line);stroke-width:1.5"/><path d="M454,122 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <line x1="618" y1="90" x2="618" y2="122" style="stroke:var(--line);stroke-width:1.5"/><path d="M618,122 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <rect x="48" y="124" width="156" height="44" rx="8" style="fill:var(--panel);stroke:var(--blue)"/><text x="126" y="151" text-anchor="middle" style="fill:var(--ink)">codebook① · nearest</text>
+    <rect x="212" y="124" width="156" height="44" rx="8" style="fill:var(--panel);stroke:var(--accent)"/><text x="290" y="151" text-anchor="middle" style="fill:var(--ink)">codebook② · nearest</text>
+    <rect x="376" y="124" width="156" height="44" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="454" y="151" text-anchor="middle" style="fill:var(--ink)">codebook③ · nearest</text>
+    <rect x="540" y="124" width="156" height="44" rx="8" style="fill:var(--panel);stroke:var(--amber)"/><text x="618" y="151" text-anchor="middle" style="fill:var(--ink)">codebook④ · nearest</text>
+    <line x1="126" y1="168" x2="126" y2="194" style="stroke:var(--line);stroke-width:1.5"/><path d="M126,194 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <line x1="290" y1="168" x2="290" y2="194" style="stroke:var(--line);stroke-width:1.5"/><path d="M290,194 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <line x1="454" y1="168" x2="454" y2="194" style="stroke:var(--line);stroke-width:1.5"/><path d="M454,194 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <line x1="618" y1="168" x2="618" y2="194" style="stroke:var(--line);stroke-width:1.5"/><path d="M618,194 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <rect x="86" y="196" width="80" height="34" rx="7" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="126" y="219" text-anchor="middle" class="mono" style="fill:var(--blue)">12</text>
+    <rect x="250" y="196" width="80" height="34" rx="7" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="290" y="219" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">7</text>
+    <rect x="414" y="196" width="80" height="34" rx="7" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="454" y="219" text-anchor="middle" class="mono" style="fill:var(--teal)">30</text>
+    <rect x="578" y="196" width="80" height="34" rx="7" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="618" y="219" text-anchor="middle" class="mono" style="fill:var(--amber)">3</text>
+    <text x="380" y="266" text-anchor="middle" style="fill:var(--ink)"><tspan style="font-weight:700">PQ code = [12, 7, 30, 3]</tspan> · 32 bytes → 4 bytes (8× smaller, approx. for memory)</text>
+  </svg>
+  <div class="figcap"><b>Compress a vector into a short code</b>: PQ chops a vector into M <b>sub-vectors</b>; each finds the <b>nearest codeword</b> in its own <b>small codebook</b> and is replaced by that <b>codeword id</b>. A 32-byte vector becomes a 4-byte code — <b>dramatically smaller</b>, at the cost of a little recall (a re-rank can partly recover it).</div>
+</div>
+
 <div class="cols">
   <div class="col"><h4>"I want max recall &amp; low latency, RAM is fine"</h4><p>Reach for <strong>HNSW</strong>. The graph gives near-exhaustive recall at a few-hop cost; tune <span class="inline">ef</span> up if recall must be higher. This is the default sweet spot for most production vector search.</p></div>
   <div class="col"><h4>"My data won't fit in RAM"</h4><p>Quantize with <strong>IVF_PQ/SQ8</strong> to shrink it, or go <strong>DiskANN</strong> to put the bulk on SSD. You trade a little recall (quantization) or a little latency (disk) for the capacity to serve far more vectors per node.</p></div>
@@ -6119,6 +6172,24 @@ HNSW takes the "<strong>build a net of neighbor shortcuts and hop edge-by-edge t
 <p>The core message of this hierarchy is a <strong>triangle tradeoff</strong>: <strong>speed, memory (cost), recall</strong> — you can usually prioritize only two.
 HNSW maxes out "speed + recall" at the cost of <strong>memory</strong>; IVF_PQ/SQ8 <strong>save memory via quantization</strong> at the cost of <strong>recall</strong>; DiskANN <strong>trades disk for capacity</strong> at the cost of <strong>slightly higher latency</strong>; GPU <strong>trades hardware for throughput</strong> at the cost of <strong>GPU expense</strong>.
 No index wins all three corners at once — choosing an index is, in essence, <strong>picking a landing point in this triangle per your data scale, latency target, memory budget, and recall floor</strong>. This echoes the refrain from Lesson 5 on ANN: <strong>approximate search is an engineering tradeoff among "fast enough, cheap enough, accurate enough."</strong></p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="The triangle tradeoff of vector indexes: speed, low memory, and recall — usually you can keep only two; HNSW keeps speed and recall, IVF_PQ keeps speed and low memory, DiskANN keeps recall and capacity">
+    <polygon points="380,58 124,256 636,256" style="fill:var(--accent-soft);opacity:.16"/>
+    <polygon points="380,58 124,256 636,256" style="fill:none;stroke:var(--accent);stroke-width:1.5"/>
+    <circle cx="380" cy="58" r="5" style="fill:var(--accent)"/><text x="380" y="44" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">recall</text>
+    <circle cx="124" cy="256" r="5" style="fill:var(--accent)"/><text x="100" y="276" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">speed</text>
+    <circle cx="636" cy="256" r="5" style="fill:var(--accent)"/><text x="660" y="276" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">low-memory</text>
+    <text x="380" y="166" text-anchor="middle" style="fill:var(--muted)">usually keep only two corners</text>
+    <rect x="158" y="138" width="118" height="34" rx="7" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="217" y="160" text-anchor="middle" style="fill:var(--blue);font-weight:700">HNSW</text>
+    <text x="217" y="186" text-anchor="middle" style="fill:var(--muted)">gives up: memory</text>
+    <rect x="320" y="216" width="120" height="34" rx="7" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="380" y="238" text-anchor="middle" style="fill:var(--amber);font-weight:700">IVF_PQ / SQ8</text>
+    <text x="380" y="206" text-anchor="middle" style="fill:var(--muted)">gives up: recall</text>
+    <rect x="484" y="138" width="118" height="34" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="543" y="160" text-anchor="middle" style="fill:var(--teal);font-weight:700">DiskANN</text>
+    <text x="543" y="186" text-anchor="middle" style="fill:var(--muted)">gives up: latency</text>
+  </svg>
+  <div class="figcap"><b>Triangle tradeoff: speed · low-memory · recall — usually keep only two</b>. <b>HNSW</b> keeps <b>speed+recall</b> (costs memory); <b>IVF_PQ/SQ8</b> keeps <b>speed+low-memory</b> (costs recall); <b>DiskANN</b> keeps <b>recall+capacity</b> (costs a little latency); GPU trades hardware for throughput, FLAT trades speed for 100% recall. Choosing an index = picking a landing point by your scale / latency / memory / recall floor.</div>
+</div>
 
 <h2>How one IVF search skips most of the data</h2>
 <p>Making "bucket pruning" concrete best conveys why an index is fast. Take IVF: suppose the build clustered the segment's vectors into 4 buckets (<span class="inline">nlist=4</span>) and the query sets <span class="inline">nprobe=2</span>:</p>
@@ -6303,6 +6374,28 @@ That is the job of <span class="mono">internal/datacoord/index_engine_version_ma
 <p>Behind this version negotiation is a real constraint every distributed system faces: <strong>upgrades aren't instantaneous — they roll out gradually</strong>. You can't switch dozens or hundreds of nodes to a new Knowhere version all at once; in practice there's always a window of <strong>mixed old/new nodes</strong>. If a worker that already upgraded builds an index in the latest format, while some not-yet-upgraded old QueryNodes <strong>can't read</strong> that new format, that segment <strong>fails to load and can't serve</strong> on those nodes.
 The version manager's "<strong>take the minimal compatible version</strong>" policy is, in essence, a plain compatibility rule: <strong>the format of a product must align with the most conservative consumer in the cluster</strong>. Only once all nodes have upgraded and the minimal-version watermark rises overall does the new format naturally take effect. This "<strong>defer to the weakest node</strong>" conservative negotiation is everywhere in online database upgrades — it trades "temporarily not using a new feature" for <strong>uninterrupted service during the upgrade</strong>. It is a microcosm of the distributed-systems principle "<strong>compatibility over new features</strong>": whether you get the newest, fastest format is secondary; what comes first is that <strong>the whole cluster stays available throughout the upgrade, losing no service</strong>.</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Index engine version negotiation: during a rolling upgrade old and new QueryNodes coexist; DataCoord has the worker build at the minimal compatible version so even the oldest node can load it">
+    <rect x="30" y="58" width="196" height="92" rx="11" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="128" y="84" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">DataCoord version mgr</text>
+    <text x="128" y="110" text-anchor="middle" class="mono" style="fill:var(--muted)">current = v3</text>
+    <text x="128" y="132" text-anchor="middle" class="mono" style="fill:var(--teal)">min compat = v2</text>
+    <line x1="226" y1="104" x2="260" y2="104" style="stroke:var(--accent);stroke-width:2"/><path d="M260,104 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <rect x="262" y="82" width="150" height="46" rx="9" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="337" y="102" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">worker builds</text><text x="337" y="120" text-anchor="middle" style="fill:var(--muted)">at min = v2</text>
+    <line x1="412" y1="104" x2="446" y2="104" style="stroke:var(--teal);stroke-width:2"/><path d="M446,104 l-11,-5 l0,10 z" style="fill:var(--teal)"/>
+    <rect x="448" y="84" width="96" height="42" rx="8" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="496" y="110" text-anchor="middle" class="mono" style="fill:var(--teal);font-weight:700">index v2</text>
+    <line x1="544" y1="98" x2="586" y2="66" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,66 l-11,1 l4,8 z" style="fill:var(--teal)"/>
+    <line x1="544" y1="105" x2="586" y2="109" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,109 l-11,-2 l1,8 z" style="fill:var(--teal)"/>
+    <line x1="544" y1="112" x2="586" y2="152" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,152 l-10,-4 l-1,9 z" style="fill:var(--teal)"/>
+    <rect x="588" y="48" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="72" text-anchor="middle" style="fill:var(--ink)">QueryNode v3 ✓</text>
+    <rect x="588" y="92" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="116" text-anchor="middle" style="fill:var(--ink)">QueryNode v3 ✓</text>
+    <rect x="588" y="136" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="664" y="160" text-anchor="middle" style="fill:var(--ink)">QueryNode v2 (old) ✓</text>
+    <text x="385" y="212" text-anchor="middle" style="fill:var(--red);font-weight:700">✗ if built at the newest v3 → the v2 old node can't read it, load fails</text>
+    <text x="385" y="244" text-anchor="middle" style="fill:var(--muted)">∴ align the output format with the most conservative (oldest) consumer —— no service lost while upgrading</text>
+  </svg>
+  <div class="figcap"><b>Build to the weakest consumer</b>: upgrades are <b>rolling</b>, so old and new QueryNodes always coexist for a while. DataCoord's version manager tracks each node's version and yields the <b>minimal compatible version</b>; the worker <b>builds at that min version</b>, so even the oldest node can load it. That is "<b>compatibility over new features</b>" — no service lost during the upgrade.</div>
+</div>
+
 <p>To wrap up: along the <strong>data flow</strong>, we walked the index's full physical journey "from raw vectors to searchable" — the build side's worker turns a sealed segment into index files in object storage, the load side's QueryNode brings those files into memory or mmap, brute force covers segments not yet indexed in between, plus versioning ensures old and new indexes recognize each other.
 With that, the <strong>vector-index</strong> thread is complete: Lesson 21 "who builds," Lesson 22 "what to build," Lesson 23 "how it flows and loads." But remember, real queries are often not just "find the most similar vector" — they frequently carry <strong>scalar filters</strong> ("price &lt; 100 and category = electronics") and <strong>full-text search</strong> ("contains keyword X"). For these <strong>non-vector</strong> lookups to be fast, they too need indexes — the subject of the next lesson, <strong>scalar and full-text indexes</strong>.</p>
 
@@ -6468,6 +6561,29 @@ In other words, you can have Milvus do full-text search <strong>directly on text
   <div class="step"><div class="num">1</div><div class="sc"><h4>Scalar filter (shrink candidates)</h4><p>Use <strong>scalar indexes</strong> (bitmap/sort/inverted) to quickly compute the row set "<strong>satisfying category=electronics and price&lt;100</strong>" — a <strong>bitmap (bitset)</strong>. The vast majority of non-qualifying data is <strong>excluded wholesale</strong> at this step.</p></div></div>
   <div class="step"><div class="num">2</div><div class="sc"><h4>Vector ANN (filtered search)</h4><p>Hand this bitset as a <strong>filter mask</strong> to vector search: during ANN (HNSW/IVF), find nearest neighbors <strong>only among rows that pass the filter</strong>, wasting no compute on already-excluded data.</p></div></div>
   <div class="step"><div class="num">3</div><div class="sc"><h4>Merge for topK</h4><p>Each segment computes local results, merged into the global <strong>10 most alike</strong> — they <strong>both satisfy the scalar condition and are vector-nearest</strong>.</p></div></div>
+</div>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="A hybrid query is filter-then-search: the scalar index computes a bitset mask, pushed down into vector ANN so ANN searches only the rows that pass the filter, keeping recall stable">
+    <rect x="150" y="34" width="460" height="40" rx="9" style="fill:var(--panel-2);stroke:var(--line)"/><text x="380" y="59" text-anchor="middle" style="fill:var(--ink)">query: category=electronics ∧ price&lt;100 → find top10 most alike</text>
+    <rect x="36" y="100" width="170" height="50" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="121" y="122" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">scalar index</text><text x="121" y="140" text-anchor="middle" style="fill:var(--muted)">bitmap / sort / inverted</text>
+    <text x="36" y="174" style="fill:var(--muted)">bitset mask (pass=1)</text>
+    <rect x="40" y="182" width="24" height="26" rx="4" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="52" y="200" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">1</text>
+    <rect x="66" y="182" width="24" height="26" rx="4" style="fill:var(--panel-2);stroke:var(--line)"/><text x="78" y="200" text-anchor="middle" class="mono" style="fill:var(--faint)">0</text>
+    <rect x="92" y="182" width="24" height="26" rx="4" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="104" y="200" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">1</text>
+    <rect x="118" y="182" width="24" height="26" rx="4" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="130" y="200" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">1</text>
+    <rect x="144" y="182" width="24" height="26" rx="4" style="fill:var(--panel-2);stroke:var(--line)"/><text x="156" y="200" text-anchor="middle" class="mono" style="fill:var(--faint)">0</text>
+    <rect x="170" y="182" width="24" height="26" rx="4" style="fill:var(--panel-2);stroke:var(--line)"/><text x="182" y="200" text-anchor="middle" class="mono" style="fill:var(--faint)">0</text>
+    <rect x="196" y="182" width="24" height="26" rx="4" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="208" y="200" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">1</text>
+    <rect x="222" y="182" width="24" height="26" rx="4" style="fill:var(--panel-2);stroke:var(--line)"/><text x="234" y="200" text-anchor="middle" class="mono" style="fill:var(--faint)">0</text>
+    <line x1="258" y1="125" x2="354" y2="125" style="stroke:var(--accent);stroke-width:2;stroke-dasharray:5 4"/><path d="M354,125 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <text x="306" y="115" text-anchor="middle" style="fill:var(--accent-ink)">push down</text>
+    <rect x="356" y="100" width="210" height="66" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="461" y="128" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">vector ANN (HNSW/IVF)</text><text x="461" y="150" text-anchor="middle" style="fill:var(--muted)">search nearest only among "pass" rows</text>
+    <line x1="566" y1="133" x2="600" y2="133" style="stroke:var(--teal);stroke-width:2"/><path d="M600,133 l-11,-5 l0,10 z" style="fill:var(--teal)"/>
+    <rect x="602" y="108" width="150" height="52" rx="10" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="677" y="130" text-anchor="middle" style="fill:var(--teal);font-weight:700">top10</text><text x="677" y="150" text-anchor="middle" style="fill:var(--muted)">qualified + nearest</text>
+    <text x="380" y="246" text-anchor="middle" style="fill:var(--muted)"><tspan style="fill:var(--teal);font-weight:700">filter-then-search (pushdown) → stable recall ✓</tspan>　|　search-then-filter → may filter the whole topK away ✗</text>
+  </svg>
+  <div class="figcap"><b>Filter-then-search: push the mask down into ANN</b>: the scalar index first computes a <span class="mono">bitset</span> (which rows pass <span class="mono">category=electronics ∧ price&lt;100</span>), then <b>pushes it down</b> into vector ANN — which searches nearest neighbors <b>only among passing rows</b>. That is <b>predicate pushdown</b>: far more stable recall than "run full ANN then discard" (which, under a selective filter, can wipe out the whole topK).</div>
 </div>
 
 <p>The key design here: <strong>the scalar filter's result (a bitset) is "fed into" vector search so ANN runs over the filtered subset</strong>, rather than "run full ANN first, then discard non-qualifying afterward." The latter (search-then-filter) has a fatal flaw: if the filter is selective (say only 1% of data qualifies), the topK first searched out may be <strong>entirely filtered away</strong>, collapsing recall or even returning nothing. <strong>Filter-then-search</strong> (pushing the filter mask down into ANN) guarantees the topK is chosen <strong>within the qualifying set</strong>, with stable recall. As an aside: this "<strong>push the filter condition as low as possible</strong>" idea has a general name in databases — <strong>predicate pushdown</strong> — eliminate non-qualifying data as early and as low as you can, rather than letting it flow into more expensive downstream operators. Milvus pushing the scalar-filter bitset down into vector ANN is precisely predicate pushdown in the "vector search" context.

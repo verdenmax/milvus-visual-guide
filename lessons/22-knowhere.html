@@ -400,6 +400,34 @@ HNSW 走的是"<strong>建一张近邻跳板网、顺边跳到目标区</strong>
 <p>给每个家族安一句"人设"会更好记。<strong>FLAT</strong> 是老实的笨小孩：它从不近似，召回永远 100%——当你想<strong>量一量别的索引到底损了多少召回</strong>时，它就是那把"<strong>真值标尺</strong>"，但规模一大就力不从心。<strong>IVF</strong> 是分区规划师：聚一次类，查询时只走最近的几个区；简单、可预测，精度几乎全靠 nprobe 调。<strong>HNSW</strong> 是人脉广的领路人：靠一张多层跳板图，几跳就到对的邻域，给出大多数业务最想要的"低延迟 + 高召回"组合——代价是要把整张图（连同原始向量）<strong>都放进内存</strong>。
 <strong>DiskANN</strong> 是磁盘上的大仓库：当连量化都塞不进内存时，它把图放上 SSD、内存只留一副导航骨架，用一点延迟换"<strong>服务远超内存的数据量</strong>"的能力。<strong>量化版 IVF（SQ8/PQ）</strong>是省空间的能手：SQ8 把每一维压成一个字节，PQ 把向量切成若干子向量、各用码本里的一个码字替代，体积大幅缩水，代价是接受一点召回损失（可用重排步骤部分找回）。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="乘积量化 PQ：把向量切成若干子向量，每段在自己的码本里找最近码字，用码字编号替代，整条向量压成一串短码">
+    <text x="40" y="40" style="fill:var(--muted)">原始向量 v（8 维 · 32 字节）→ 切成 4 段子向量</text>
+    <rect x="48" y="50" width="156" height="40" rx="8" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="126" y="75" text-anchor="middle" class="mono" style="fill:var(--blue)">[0.2, 0.9]</text>
+    <rect x="212" y="50" width="156" height="40" rx="8" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="290" y="75" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">[0.1, 0.3]</text>
+    <rect x="376" y="50" width="156" height="40" rx="8" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="454" y="75" text-anchor="middle" class="mono" style="fill:var(--teal)">[0.8, 0.7]</text>
+    <rect x="540" y="50" width="156" height="40" rx="8" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="618" y="75" text-anchor="middle" class="mono" style="fill:var(--amber)">[0.5, 0.4]</text>
+    <line x1="126" y1="90" x2="126" y2="122" style="stroke:var(--line);stroke-width:1.5"/><path d="M126,122 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <line x1="290" y1="90" x2="290" y2="122" style="stroke:var(--line);stroke-width:1.5"/><path d="M290,122 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <line x1="454" y1="90" x2="454" y2="122" style="stroke:var(--line);stroke-width:1.5"/><path d="M454,122 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <line x1="618" y1="90" x2="618" y2="122" style="stroke:var(--line);stroke-width:1.5"/><path d="M618,122 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <rect x="48" y="124" width="156" height="44" rx="8" style="fill:var(--panel);stroke:var(--blue)"/><text x="126" y="151" text-anchor="middle" style="fill:var(--ink)">码本① · 最近码字</text>
+    <rect x="212" y="124" width="156" height="44" rx="8" style="fill:var(--panel);stroke:var(--accent)"/><text x="290" y="151" text-anchor="middle" style="fill:var(--ink)">码本② · 最近码字</text>
+    <rect x="376" y="124" width="156" height="44" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="454" y="151" text-anchor="middle" style="fill:var(--ink)">码本③ · 最近码字</text>
+    <rect x="540" y="124" width="156" height="44" rx="8" style="fill:var(--panel);stroke:var(--amber)"/><text x="618" y="151" text-anchor="middle" style="fill:var(--ink)">码本④ · 最近码字</text>
+    <line x1="126" y1="168" x2="126" y2="194" style="stroke:var(--line);stroke-width:1.5"/><path d="M126,194 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <line x1="290" y1="168" x2="290" y2="194" style="stroke:var(--line);stroke-width:1.5"/><path d="M290,194 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <line x1="454" y1="168" x2="454" y2="194" style="stroke:var(--line);stroke-width:1.5"/><path d="M454,194 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <line x1="618" y1="168" x2="618" y2="194" style="stroke:var(--line);stroke-width:1.5"/><path d="M618,194 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <rect x="86" y="196" width="80" height="34" rx="7" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="126" y="219" text-anchor="middle" class="mono" style="fill:var(--blue)">12</text>
+    <rect x="250" y="196" width="80" height="34" rx="7" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="290" y="219" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">7</text>
+    <rect x="414" y="196" width="80" height="34" rx="7" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="454" y="219" text-anchor="middle" class="mono" style="fill:var(--teal)">30</text>
+    <rect x="578" y="196" width="80" height="34" rx="7" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="618" y="219" text-anchor="middle" class="mono" style="fill:var(--amber)">3</text>
+    <text x="380" y="266" text-anchor="middle" style="fill:var(--ink)"><tspan style="font-weight:700">PQ code = [12, 7, 30, 3]</tspan> · 32 字节 → 4 字节（缩到 1/8，近似换内存）</text>
+  </svg>
+  <div class="figcap"><b>把向量"压成一串短码"</b>：PQ 把向量切成 M 段<b>子向量</b>，每段在自己的<b>小码本</b>里找<b>最近的码字</b>，用那个<b>码字编号</b>替代整段。一条原本 32 字节的向量就变成 4 个字节的码——<b>体积大幅缩水</b>，代价是一点召回（可用重排部分找回）。</div>
+</div>
+
 <div class="cols">
   <div class="col"><h4>"要召回高、延迟低，内存够"</h4><p>直接上 <strong>HNSW</strong>。图索引几跳就拿到接近穷举的召回；召回还要更高就把 <span class="inline">ef</span> 调大。这是大多数线上向量检索的默认甜点区。</p></div>
   <div class="col"><h4>"我的数据放不进内存"</h4><p>用 <strong>IVF_PQ/SQ8</strong> 量化压缩，或上 <strong>DiskANN</strong> 把主体落 SSD。用一点召回（量化）或一点延迟（磁盘），换"<strong>每节点能服务多得多的向量</strong>"的容量。</p></div>
@@ -421,6 +449,24 @@ HNSW 走的是"<strong>建一张近邻跳板网、顺边跳到目标区</strong>
 <p>这一层次图想说的核心是一个<strong>三角取舍</strong>：<strong>速度、内存（成本）、召回</strong>，三者通常只能优先保两个。
 HNSW 把"速度 + 召回"拉满，代价是<strong>吃内存</strong>；IVF_PQ/SQ8 用<strong>量化省内存</strong>，代价是<strong>损召回</strong>；DiskANN 用<strong>磁盘换容量</strong>，代价是<strong>延迟略升</strong>；GPU 用<strong>硬件换吞吐</strong>，代价是<strong>需要 GPU 成本</strong>。
 没有一个索引能在三个角上同时夺冠——选型的本质，就是<strong>根据你的数据规模、延迟要求、内存预算、召回底线，在这个三角里挑一个落点</strong>。这也呼应了第 5 课讲 ANN 时反复出现的那句话：<strong>近似检索，是在"够快、够省、够准"之间做工程权衡。</strong></p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="向量索引的三角取舍：速度、省内存、召回通常只能优先保两个；HNSW 保速度与召回、IVF_PQ 保速度与省内存、DiskANN 保召回与容量">
+    <polygon points="380,58 124,256 636,256" style="fill:var(--accent-soft);opacity:.16"/>
+    <polygon points="380,58 124,256 636,256" style="fill:none;stroke:var(--accent);stroke-width:1.5"/>
+    <circle cx="380" cy="58" r="5" style="fill:var(--accent)"/><text x="380" y="44" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">召回 recall</text>
+    <circle cx="124" cy="256" r="5" style="fill:var(--accent)"/><text x="96" y="276" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">速度 speed</text>
+    <circle cx="636" cy="256" r="5" style="fill:var(--accent)"/><text x="664" y="276" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">省内存 low-mem</text>
+    <text x="380" y="166" text-anchor="middle" style="fill:var(--muted)">通常只能优先保两角</text>
+    <rect x="158" y="138" width="118" height="34" rx="7" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="217" y="160" text-anchor="middle" style="fill:var(--blue);font-weight:700">HNSW</text>
+    <text x="217" y="186" text-anchor="middle" style="fill:var(--muted)">舍：吃内存</text>
+    <rect x="320" y="216" width="120" height="34" rx="7" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="380" y="238" text-anchor="middle" style="fill:var(--amber);font-weight:700">IVF_PQ / SQ8</text>
+    <text x="380" y="206" text-anchor="middle" style="fill:var(--muted)">舍：损召回</text>
+    <rect x="484" y="138" width="118" height="34" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="543" y="160" text-anchor="middle" style="fill:var(--teal);font-weight:700">DiskANN</text>
+    <text x="543" y="186" text-anchor="middle" style="fill:var(--muted)">舍：延迟略升</text>
+  </svg>
+  <div class="figcap"><b>三角取舍：速度 · 省内存 · 召回，通常只能保两角</b>。<b>HNSW</b> 保<b>速度+召回</b>（代价是吃内存）；<b>IVF_PQ/SQ8</b> 保<b>速度+省内存</b>（代价是损召回）；<b>DiskANN</b> 保<b>召回+容量</b>（代价是延迟略升）；GPU 用硬件换吞吐、FLAT 用慢换 100% 召回。选型，就是按数据规模/延迟/内存/召回底线在三角里挑一个落点。</div>
+</div>
 
 <h2>一次 IVF 检索是怎么跳过大半数据的</h2>
 <p>把"分桶剪枝"这件事看具体，最能体会索引为什么快。以 IVF 为例，假设建索引时把全段向量聚成了 4 个桶（<span class="inline">nlist=4</span>），查询设 <span class="inline">nprobe=2</span>：</p>
@@ -577,6 +623,34 @@ HNSW takes the "<strong>build a net of neighbor shortcuts and hop edge-by-edge t
 <p>It helps to give each family a one-line "personality." <strong>FLAT</strong> is the honest plodder: it never approximates, so its recall is always 100% — invaluable as a <strong>ground-truth baseline</strong> when you want to measure how much recall another index actually loses, but hopeless at scale. <strong>IVF</strong> is the zoning planner: cluster once, then at query time visit only the nearest zones; simple, predictable, and its accuracy is tuned almost entirely by nprobe. <strong>HNSW</strong> is the well-connected navigator: by building a multi-layer shortcut graph it reaches the right neighborhood in just a few hops, delivering the best latency-recall combo most workloads want — at the price of holding the whole graph (and raw vectors) in memory.
 <strong>DiskANN</strong> is the warehouse-on-disk: when even quantization can't squeeze the data into RAM, it puts the graph on SSD and keeps only a navigating skeleton in memory, trading a bit of latency for the ability to serve datasets far larger than memory. <strong>The quantized IVFs (SQ8/PQ)</strong> are the space-savers: SQ8 squashes each dimension to a byte, PQ chops a vector into sub-vectors and replaces each with a codebook entry, shrinking footprint dramatically while accepting some recall loss that a re-rank step can partly recover.</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Product quantization PQ: chop a vector into sub-vectors, find the nearest codeword in each sub-codebook, and replace each with that codeword id, compressing the whole vector into a short code">
+    <text x="40" y="40" style="fill:var(--muted)">original vector v (8 dims · 32 bytes) → chopped into 4 sub-vectors</text>
+    <rect x="48" y="50" width="156" height="40" rx="8" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="126" y="75" text-anchor="middle" class="mono" style="fill:var(--blue)">[0.2, 0.9]</text>
+    <rect x="212" y="50" width="156" height="40" rx="8" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="290" y="75" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">[0.1, 0.3]</text>
+    <rect x="376" y="50" width="156" height="40" rx="8" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="454" y="75" text-anchor="middle" class="mono" style="fill:var(--teal)">[0.8, 0.7]</text>
+    <rect x="540" y="50" width="156" height="40" rx="8" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="618" y="75" text-anchor="middle" class="mono" style="fill:var(--amber)">[0.5, 0.4]</text>
+    <line x1="126" y1="90" x2="126" y2="122" style="stroke:var(--line);stroke-width:1.5"/><path d="M126,122 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <line x1="290" y1="90" x2="290" y2="122" style="stroke:var(--line);stroke-width:1.5"/><path d="M290,122 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <line x1="454" y1="90" x2="454" y2="122" style="stroke:var(--line);stroke-width:1.5"/><path d="M454,122 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <line x1="618" y1="90" x2="618" y2="122" style="stroke:var(--line);stroke-width:1.5"/><path d="M618,122 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <rect x="48" y="124" width="156" height="44" rx="8" style="fill:var(--panel);stroke:var(--blue)"/><text x="126" y="151" text-anchor="middle" style="fill:var(--ink)">codebook① · nearest</text>
+    <rect x="212" y="124" width="156" height="44" rx="8" style="fill:var(--panel);stroke:var(--accent)"/><text x="290" y="151" text-anchor="middle" style="fill:var(--ink)">codebook② · nearest</text>
+    <rect x="376" y="124" width="156" height="44" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="454" y="151" text-anchor="middle" style="fill:var(--ink)">codebook③ · nearest</text>
+    <rect x="540" y="124" width="156" height="44" rx="8" style="fill:var(--panel);stroke:var(--amber)"/><text x="618" y="151" text-anchor="middle" style="fill:var(--ink)">codebook④ · nearest</text>
+    <line x1="126" y1="168" x2="126" y2="194" style="stroke:var(--line);stroke-width:1.5"/><path d="M126,194 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <line x1="290" y1="168" x2="290" y2="194" style="stroke:var(--line);stroke-width:1.5"/><path d="M290,194 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <line x1="454" y1="168" x2="454" y2="194" style="stroke:var(--line);stroke-width:1.5"/><path d="M454,194 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <line x1="618" y1="168" x2="618" y2="194" style="stroke:var(--line);stroke-width:1.5"/><path d="M618,194 l-4,-10 l8,0 z" style="fill:var(--line)"/>
+    <rect x="86" y="196" width="80" height="34" rx="7" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="126" y="219" text-anchor="middle" class="mono" style="fill:var(--blue)">12</text>
+    <rect x="250" y="196" width="80" height="34" rx="7" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="290" y="219" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">7</text>
+    <rect x="414" y="196" width="80" height="34" rx="7" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="454" y="219" text-anchor="middle" class="mono" style="fill:var(--teal)">30</text>
+    <rect x="578" y="196" width="80" height="34" rx="7" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="618" y="219" text-anchor="middle" class="mono" style="fill:var(--amber)">3</text>
+    <text x="380" y="266" text-anchor="middle" style="fill:var(--ink)"><tspan style="font-weight:700">PQ code = [12, 7, 30, 3]</tspan> · 32 bytes → 4 bytes (8× smaller, approx. for memory)</text>
+  </svg>
+  <div class="figcap"><b>Compress a vector into a short code</b>: PQ chops a vector into M <b>sub-vectors</b>; each finds the <b>nearest codeword</b> in its own <b>small codebook</b> and is replaced by that <b>codeword id</b>. A 32-byte vector becomes a 4-byte code — <b>dramatically smaller</b>, at the cost of a little recall (a re-rank can partly recover it).</div>
+</div>
+
 <div class="cols">
   <div class="col"><h4>"I want max recall &amp; low latency, RAM is fine"</h4><p>Reach for <strong>HNSW</strong>. The graph gives near-exhaustive recall at a few-hop cost; tune <span class="inline">ef</span> up if recall must be higher. This is the default sweet spot for most production vector search.</p></div>
   <div class="col"><h4>"My data won't fit in RAM"</h4><p>Quantize with <strong>IVF_PQ/SQ8</strong> to shrink it, or go <strong>DiskANN</strong> to put the bulk on SSD. You trade a little recall (quantization) or a little latency (disk) for the capacity to serve far more vectors per node.</p></div>
@@ -597,6 +671,24 @@ HNSW takes the "<strong>build a net of neighbor shortcuts and hop edge-by-edge t
 <p>The core message of this hierarchy is a <strong>triangle tradeoff</strong>: <strong>speed, memory (cost), recall</strong> — you can usually prioritize only two.
 HNSW maxes out "speed + recall" at the cost of <strong>memory</strong>; IVF_PQ/SQ8 <strong>save memory via quantization</strong> at the cost of <strong>recall</strong>; DiskANN <strong>trades disk for capacity</strong> at the cost of <strong>slightly higher latency</strong>; GPU <strong>trades hardware for throughput</strong> at the cost of <strong>GPU expense</strong>.
 No index wins all three corners at once — choosing an index is, in essence, <strong>picking a landing point in this triangle per your data scale, latency target, memory budget, and recall floor</strong>. This echoes the refrain from Lesson 5 on ANN: <strong>approximate search is an engineering tradeoff among "fast enough, cheap enough, accurate enough."</strong></p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="The triangle tradeoff of vector indexes: speed, low memory, and recall — usually you can keep only two; HNSW keeps speed and recall, IVF_PQ keeps speed and low memory, DiskANN keeps recall and capacity">
+    <polygon points="380,58 124,256 636,256" style="fill:var(--accent-soft);opacity:.16"/>
+    <polygon points="380,58 124,256 636,256" style="fill:none;stroke:var(--accent);stroke-width:1.5"/>
+    <circle cx="380" cy="58" r="5" style="fill:var(--accent)"/><text x="380" y="44" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">recall</text>
+    <circle cx="124" cy="256" r="5" style="fill:var(--accent)"/><text x="100" y="276" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">speed</text>
+    <circle cx="636" cy="256" r="5" style="fill:var(--accent)"/><text x="660" y="276" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">low-memory</text>
+    <text x="380" y="166" text-anchor="middle" style="fill:var(--muted)">usually keep only two corners</text>
+    <rect x="158" y="138" width="118" height="34" rx="7" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="217" y="160" text-anchor="middle" style="fill:var(--blue);font-weight:700">HNSW</text>
+    <text x="217" y="186" text-anchor="middle" style="fill:var(--muted)">gives up: memory</text>
+    <rect x="320" y="216" width="120" height="34" rx="7" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="380" y="238" text-anchor="middle" style="fill:var(--amber);font-weight:700">IVF_PQ / SQ8</text>
+    <text x="380" y="206" text-anchor="middle" style="fill:var(--muted)">gives up: recall</text>
+    <rect x="484" y="138" width="118" height="34" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="543" y="160" text-anchor="middle" style="fill:var(--teal);font-weight:700">DiskANN</text>
+    <text x="543" y="186" text-anchor="middle" style="fill:var(--muted)">gives up: latency</text>
+  </svg>
+  <div class="figcap"><b>Triangle tradeoff: speed · low-memory · recall — usually keep only two</b>. <b>HNSW</b> keeps <b>speed+recall</b> (costs memory); <b>IVF_PQ/SQ8</b> keeps <b>speed+low-memory</b> (costs recall); <b>DiskANN</b> keeps <b>recall+capacity</b> (costs a little latency); GPU trades hardware for throughput, FLAT trades speed for 100% recall. Choosing an index = picking a landing point by your scale / latency / memory / recall floor.</div>
+</div>
 
 <h2>How one IVF search skips most of the data</h2>
 <p>Making "bucket pruning" concrete best conveys why an index is fast. Take IVF: suppose the build clustered the segment's vectors into 4 buckets (<span class="inline">nlist=4</span>) and the query sets <span class="inline">nprobe=2</span>:</p>

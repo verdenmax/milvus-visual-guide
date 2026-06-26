@@ -1679,7 +1679,7 @@ LESSON_19 = {
     <text x="120" y="42" text-anchor="middle" style="fill:var(--muted)">整理前：碎小段 + 墓碑</text>
     <rect x="30" y="52" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="78" class="mono" style="fill:var(--ink)">段A · pk1 pk2</text>
     <rect x="30" y="100" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="126" class="mono" style="fill:var(--ink)">段B · pk5 </text><text x="142" y="126" class="mono" style="fill:var(--red)">pk6✗</text>
-    <rect x="30" y="148" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="174" class="mono" style="fill:var(--red)">pk9✗</text><text x="98" y="174" class="mono" style="fill:var(--ink)"> pk10</text>
+    <rect x="30" y="148" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="174" class="mono" style="fill:var(--ink)">段C · </text><text x="92" y="174" class="mono" style="fill:var(--red)">pk9✗</text><text x="146" y="174" class="mono" style="fill:var(--ink)"> pk10</text>
     <rect x="30" y="200" width="200" height="40" rx="8" style="fill:var(--panel);stroke:var(--red);stroke-width:1.5"/><text x="44" y="225" class="mono" style="fill:var(--red)">delta 墓碑 {pk6, pk9}</text>
     <line x1="210" y1="73" x2="288" y2="140" style="stroke:var(--line);stroke-width:1.5"/>
     <line x1="210" y1="121" x2="288" y2="146" style="stroke:var(--line);stroke-width:1.5"/>
@@ -1856,7 +1856,7 @@ Second, <strong>tombstone buildup</strong>: a delete only appends "PK X voided a
     <text x="120" y="42" text-anchor="middle" style="fill:var(--muted)">before: fragmented + tombstones</text>
     <rect x="30" y="52" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="78" class="mono" style="fill:var(--ink)">seg A · pk1 pk2</text>
     <rect x="30" y="100" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="126" class="mono" style="fill:var(--ink)">seg B · pk5 </text><text x="150" y="126" class="mono" style="fill:var(--red)">pk6✗</text>
-    <rect x="30" y="148" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="174" class="mono" style="fill:var(--red)">pk9✗</text><text x="98" y="174" class="mono" style="fill:var(--ink)"> pk10</text>
+    <rect x="30" y="148" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="174" class="mono" style="fill:var(--ink)">seg C · </text><text x="100" y="174" class="mono" style="fill:var(--red)">pk9✗</text><text x="154" y="174" class="mono" style="fill:var(--ink)"> pk10</text>
     <rect x="30" y="200" width="200" height="40" rx="8" style="fill:var(--panel);stroke:var(--red);stroke-width:1.5"/><text x="44" y="225" class="mono" style="fill:var(--red)">delta tombstones {pk6, pk9}</text>
     <line x1="210" y1="73" x2="288" y2="140" style="stroke:var(--line);stroke-width:1.5"/>
     <line x1="210" y1="121" x2="288" y2="146" style="stroke:var(--line);stroke-width:1.5"/>

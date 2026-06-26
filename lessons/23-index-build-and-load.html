@@ -424,6 +424,28 @@ Milvus 允许按字段、按场景<strong>精细配置</strong>哪些数据走 m
 <p>这套版本协商，背后是一个分布式系统都会遇到的现实约束：<strong>升级不是一瞬间、而是滚动进行的</strong>。你不可能让全集群几十上百个节点同时换成新版 Knowhere；现实里总有一段时间<strong>新老节点并存</strong>。如果建索引的 worker 已经升级、却按最新格式建了索引，而某些还没升级的老 QueryNode <strong>读不懂</strong>这个新格式，那个段就在这些节点上<strong>加载失败、无法服务</strong>。
 版本管理器的"<strong>取最低兼容版本</strong>"策略，本质就是一条朴素的兼容性铁律：<strong>产出物的格式，要向集群里最保守的消费者看齐</strong>。等所有节点都升级完、最低版本水位整体抬高了，新格式才会自然启用。这种"<strong>以最弱节点为准</strong>"的保守协商，在数据库的在线升级里随处可见——它用一点"暂时用不上新特性"的代价，换来了<strong>升级期间服务不中断</strong>。这也是分布式系统"<strong>兼容性优先于新特性</strong>"原则的一个缩影：能不能用上最新最快的格式是其次，<strong>整个集群在升级过程中始终可用、不丢服务</strong>才是第一位的。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="索引引擎版本协商：滚动升级期新老 QueryNode 并存，DataCoord 让 worker 按最低兼容版本建索引，最老的节点也能加载">
+    <rect x="30" y="58" width="196" height="92" rx="11" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="128" y="84" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">DataCoord 版本管理器</text>
+    <text x="128" y="110" text-anchor="middle" class="mono" style="fill:var(--muted)">current = v3</text>
+    <text x="128" y="132" text-anchor="middle" class="mono" style="fill:var(--teal)">min 兼容 = v2</text>
+    <line x1="226" y1="104" x2="260" y2="104" style="stroke:var(--accent);stroke-width:2"/><path d="M260,104 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <rect x="262" y="82" width="150" height="46" rx="9" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="337" y="102" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">worker 建索引</text><text x="337" y="120" text-anchor="middle" style="fill:var(--muted)">按 min = v2 产出</text>
+    <line x1="412" y1="104" x2="446" y2="104" style="stroke:var(--teal);stroke-width:2"/><path d="M446,104 l-11,-5 l0,10 z" style="fill:var(--teal)"/>
+    <rect x="448" y="84" width="96" height="42" rx="8" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="496" y="110" text-anchor="middle" class="mono" style="fill:var(--teal);font-weight:700">index v2</text>
+    <line x1="544" y1="98" x2="586" y2="66" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,66 l-11,1 l4,8 z" style="fill:var(--teal)"/>
+    <line x1="544" y1="105" x2="586" y2="109" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,109 l-11,-2 l1,8 z" style="fill:var(--teal)"/>
+    <line x1="544" y1="112" x2="586" y2="152" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,152 l-10,-4 l-1,9 z" style="fill:var(--teal)"/>
+    <rect x="588" y="48" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="72" text-anchor="middle" style="fill:var(--ink)">QueryNode v3 ✓</text>
+    <rect x="588" y="92" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="116" text-anchor="middle" style="fill:var(--ink)">QueryNode v3 ✓</text>
+    <rect x="588" y="136" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="664" y="160" text-anchor="middle" style="fill:var(--ink)">QueryNode v2（老）✓</text>
+    <text x="385" y="212" text-anchor="middle" style="fill:var(--red);font-weight:700">✗ 若按最新 v3 建 → v2 老节点读不懂、加载失败</text>
+    <text x="385" y="244" text-anchor="middle" style="fill:var(--muted)">∴ 产出格式向最保守（最老）的消费者看齐 —— 滚动升级期服务不中断</text>
+  </svg>
+  <div class="figcap"><b>建索引，向最弱的消费者看齐</b>：升级是<b>滚动</b>的，新老 QueryNode 总会并存一段时间。DataCoord 的版本管理器跟踪各节点版本，给出<b>最低兼容版本</b>；worker 就<b>按 min 版本建索引</b>，于是连最老的节点也能加载。这正是"<b>兼容性优先于新特性</b>"——升级期始终不丢服务。</div>
+</div>
+
 <p>把这一课收束一下：我们沿着<strong>数据流</strong>，走完了索引"从原始向量到可被检索"的物理全程——构建侧 worker 把 sealed 段读成索引文件落对象存储，加载侧 QueryNode 把索引文件搬进内存或 mmap，中间用暴力扫描兜住还没建好索引的段，外加版本管理保证新老索引互认。
 至此，<strong>向量索引</strong>这条线就讲透了：第 21 课"谁建"、第 22 课"建什么"、第 23 课"怎么流动与加载"。但别忘了，真实的查询往往不只是"找最像的向量"，还常常带着<strong>标量过滤条件</strong>（"价格 &lt; 100 且类别 = 数码"）和<strong>全文检索</strong>（"包含关键词 X"）。这些<strong>非向量</strong>的检索要快，同样得靠索引——那就是下一课<strong>标量与全文索引</strong>的主题。</p>
 
@@ -592,6 +614,28 @@ That is the job of <span class="mono">internal/datacoord/index_engine_version_ma
 
 <p>Behind this version negotiation is a real constraint every distributed system faces: <strong>upgrades aren't instantaneous — they roll out gradually</strong>. You can't switch dozens or hundreds of nodes to a new Knowhere version all at once; in practice there's always a window of <strong>mixed old/new nodes</strong>. If a worker that already upgraded builds an index in the latest format, while some not-yet-upgraded old QueryNodes <strong>can't read</strong> that new format, that segment <strong>fails to load and can't serve</strong> on those nodes.
 The version manager's "<strong>take the minimal compatible version</strong>" policy is, in essence, a plain compatibility rule: <strong>the format of a product must align with the most conservative consumer in the cluster</strong>. Only once all nodes have upgraded and the minimal-version watermark rises overall does the new format naturally take effect. This "<strong>defer to the weakest node</strong>" conservative negotiation is everywhere in online database upgrades — it trades "temporarily not using a new feature" for <strong>uninterrupted service during the upgrade</strong>. It is a microcosm of the distributed-systems principle "<strong>compatibility over new features</strong>": whether you get the newest, fastest format is secondary; what comes first is that <strong>the whole cluster stays available throughout the upgrade, losing no service</strong>.</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Index engine version negotiation: during a rolling upgrade old and new QueryNodes coexist; DataCoord has the worker build at the minimal compatible version so even the oldest node can load it">
+    <rect x="30" y="58" width="196" height="92" rx="11" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="128" y="84" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">DataCoord version mgr</text>
+    <text x="128" y="110" text-anchor="middle" class="mono" style="fill:var(--muted)">current = v3</text>
+    <text x="128" y="132" text-anchor="middle" class="mono" style="fill:var(--teal)">min compat = v2</text>
+    <line x1="226" y1="104" x2="260" y2="104" style="stroke:var(--accent);stroke-width:2"/><path d="M260,104 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <rect x="262" y="82" width="150" height="46" rx="9" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="337" y="102" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">worker builds</text><text x="337" y="120" text-anchor="middle" style="fill:var(--muted)">at min = v2</text>
+    <line x1="412" y1="104" x2="446" y2="104" style="stroke:var(--teal);stroke-width:2"/><path d="M446,104 l-11,-5 l0,10 z" style="fill:var(--teal)"/>
+    <rect x="448" y="84" width="96" height="42" rx="8" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="496" y="110" text-anchor="middle" class="mono" style="fill:var(--teal);font-weight:700">index v2</text>
+    <line x1="544" y1="98" x2="586" y2="66" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,66 l-11,1 l4,8 z" style="fill:var(--teal)"/>
+    <line x1="544" y1="105" x2="586" y2="109" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,109 l-11,-2 l1,8 z" style="fill:var(--teal)"/>
+    <line x1="544" y1="112" x2="586" y2="152" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,152 l-10,-4 l-1,9 z" style="fill:var(--teal)"/>
+    <rect x="588" y="48" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="72" text-anchor="middle" style="fill:var(--ink)">QueryNode v3 ✓</text>
+    <rect x="588" y="92" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="116" text-anchor="middle" style="fill:var(--ink)">QueryNode v3 ✓</text>
+    <rect x="588" y="136" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="664" y="160" text-anchor="middle" style="fill:var(--ink)">QueryNode v2 (old) ✓</text>
+    <text x="385" y="212" text-anchor="middle" style="fill:var(--red);font-weight:700">✗ if built at the newest v3 → the v2 old node can't read it, load fails</text>
+    <text x="385" y="244" text-anchor="middle" style="fill:var(--muted)">∴ align the output format with the most conservative (oldest) consumer —— no service lost while upgrading</text>
+  </svg>
+  <div class="figcap"><b>Build to the weakest consumer</b>: upgrades are <b>rolling</b>, so old and new QueryNodes always coexist for a while. DataCoord's version manager tracks each node's version and yields the <b>minimal compatible version</b>; the worker <b>builds at that min version</b>, so even the oldest node can load it. That is "<b>compatibility over new features</b>" — no service lost during the upgrade.</div>
+</div>
 
 <p>To wrap up: along the <strong>data flow</strong>, we walked the index's full physical journey "from raw vectors to searchable" — the build side's worker turns a sealed segment into index files in object storage, the load side's QueryNode brings those files into memory or mmap, brute force covers segments not yet indexed in between, plus versioning ensures old and new indexes recognize each other.
 With that, the <strong>vector-index</strong> thread is complete: Lesson 21 "who builds," Lesson 22 "what to build," Lesson 23 "how it flows and loads." But remember, real queries are often not just "find the most similar vector" — they frequently carry <strong>scalar filters</strong> ("price &lt; 100 and category = electronics") and <strong>full-text search</strong> ("contains keyword X"). For these <strong>non-vector</strong> lookups to be fast, they too need indexes — the subject of the next lesson, <strong>scalar and full-text indexes</strong>.</p>

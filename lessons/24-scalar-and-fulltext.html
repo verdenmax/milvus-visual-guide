@@ -418,6 +418,29 @@ Milvus 的 C++ core 通过 <span class="mono">internal/core/src/index/InvertedIn
   <div class="step"><div class="num">3</div><div class="sc"><h4>归并取 topK</h4><p>各段算出局部结果，归并出全局<strong>最像的 10 件</strong>——它们<strong>既满足标量条件、又向量最相近</strong>。</p></div></div>
 </div>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="混合查询先筛后搜：标量索引算出 bitset 过滤掩码，下推给向量 ANN，让 ANN 只在通过过滤的行里找最近邻，召回稳定">
+    <rect x="170" y="34" width="420" height="40" rx="9" style="fill:var(--panel-2);stroke:var(--line)"/><text x="380" y="59" text-anchor="middle" style="fill:var(--ink)">查询：类别=数码 ∧ 价格&lt;100 → 找最像 top10</text>
+    <rect x="36" y="100" width="170" height="50" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="121" y="122" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">标量索引</text><text x="121" y="140" text-anchor="middle" style="fill:var(--muted)">bitmap / 排序 / 倒排</text>
+    <text x="36" y="174" style="fill:var(--muted)">bitset 掩码（通过=1）</text>
+    <rect x="40" y="182" width="24" height="26" rx="4" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="52" y="200" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">1</text>
+    <rect x="66" y="182" width="24" height="26" rx="4" style="fill:var(--panel-2);stroke:var(--line)"/><text x="78" y="200" text-anchor="middle" class="mono" style="fill:var(--faint)">0</text>
+    <rect x="92" y="182" width="24" height="26" rx="4" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="104" y="200" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">1</text>
+    <rect x="118" y="182" width="24" height="26" rx="4" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="130" y="200" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">1</text>
+    <rect x="144" y="182" width="24" height="26" rx="4" style="fill:var(--panel-2);stroke:var(--line)"/><text x="156" y="200" text-anchor="middle" class="mono" style="fill:var(--faint)">0</text>
+    <rect x="170" y="182" width="24" height="26" rx="4" style="fill:var(--panel-2);stroke:var(--line)"/><text x="182" y="200" text-anchor="middle" class="mono" style="fill:var(--faint)">0</text>
+    <rect x="196" y="182" width="24" height="26" rx="4" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="208" y="200" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">1</text>
+    <rect x="222" y="182" width="24" height="26" rx="4" style="fill:var(--panel-2);stroke:var(--line)"/><text x="234" y="200" text-anchor="middle" class="mono" style="fill:var(--faint)">0</text>
+    <line x1="258" y1="125" x2="354" y2="125" style="stroke:var(--accent);stroke-width:2;stroke-dasharray:5 4"/><path d="M354,125 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <text x="306" y="115" text-anchor="middle" style="fill:var(--accent-ink)">掩码下推</text>
+    <rect x="356" y="100" width="210" height="66" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="461" y="128" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">向量 ANN（HNSW/IVF）</text><text x="461" y="150" text-anchor="middle" style="fill:var(--muted)">只在"通过"的行里找最近邻</text>
+    <line x1="566" y1="133" x2="600" y2="133" style="stroke:var(--teal);stroke-width:2"/><path d="M600,133 l-11,-5 l0,10 z" style="fill:var(--teal)"/>
+    <rect x="602" y="108" width="150" height="52" rx="10" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="677" y="130" text-anchor="middle" style="fill:var(--teal);font-weight:700">top10</text><text x="677" y="150" text-anchor="middle" style="fill:var(--muted)">合格 + 最像</text>
+    <text x="380" y="246" text-anchor="middle" style="fill:var(--muted)"><tspan style="fill:var(--teal);font-weight:700">先筛后搜（谓词下推）→ 召回稳定 ✓</tspan>　｜　先搜后筛 → 严过滤时 topK 可能全被筛光 ✗</text>
+  </svg>
+  <div class="figcap"><b>先筛后搜：把过滤掩码下推给 ANN</b>：标量索引先算出一张 <span class="mono">bitset</span>（哪些行通过 <span class="mono">类别=数码 ∧ 价格&lt;100</span>），再把它<b>下推</b>给向量 ANN——ANN <b>只在通过过滤的行里</b>找最近邻。这就是<b>谓词下推</b>：比"先搜完整 ANN、再事后筛掉"召回稳得多（严过滤时后者可能把 topK 全筛光）。</div>
+</div>
+
 <p>这里的关键设计是：<strong>标量过滤的结果（bitset）会"喂进"向量检索，让 ANN 在过滤后的子集上跑</strong>，而不是"先做完整 ANN、再事后筛掉不合格的"。后者（先搜后筛）有个致命问题：如果过滤条件很严（比如只有 1% 数据合格），先搜出来的 topK 可能<strong>全被筛光</strong>，导致召回骤降甚至空结果。<strong>先筛后搜</strong>（把过滤掩码下推进 ANN）则保证 topK 是<strong>在合格集合里</strong>选出来的，召回稳定。顺带说一句：这种"<strong>把过滤条件尽量往底层推</strong>"的思路，在数据库里有个通用名字叫<strong>谓词下推（predicate pushdown）</strong>——能在更早、更底层把不合格数据剔除，就别让它流到更贵的后续算子里。Milvus 把标量过滤的 bitset 下推进向量 ANN，正是谓词下推在"向量检索"语境下的体现。
 这正是标量索引<strong>不可或缺</strong>的原因：它让"过滤"这一步<strong>足够快、且能把结果以 bitset 形式精确地交给向量检索</strong>。没有标量索引，过滤要逐行扫；有了它，过滤变成位运算，再把掩码下推给 ANN——标量与向量两套索引，就这样在一次查询里<strong>分工协同</strong>，共同把"带条件的相似检索"做快、做准。</p>
 
@@ -574,6 +597,29 @@ In other words, you can have Milvus do full-text search <strong>directly on text
   <div class="step"><div class="num">1</div><div class="sc"><h4>Scalar filter (shrink candidates)</h4><p>Use <strong>scalar indexes</strong> (bitmap/sort/inverted) to quickly compute the row set "<strong>satisfying category=electronics and price&lt;100</strong>" — a <strong>bitmap (bitset)</strong>. The vast majority of non-qualifying data is <strong>excluded wholesale</strong> at this step.</p></div></div>
   <div class="step"><div class="num">2</div><div class="sc"><h4>Vector ANN (filtered search)</h4><p>Hand this bitset as a <strong>filter mask</strong> to vector search: during ANN (HNSW/IVF), find nearest neighbors <strong>only among rows that pass the filter</strong>, wasting no compute on already-excluded data.</p></div></div>
   <div class="step"><div class="num">3</div><div class="sc"><h4>Merge for topK</h4><p>Each segment computes local results, merged into the global <strong>10 most alike</strong> — they <strong>both satisfy the scalar condition and are vector-nearest</strong>.</p></div></div>
+</div>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="A hybrid query is filter-then-search: the scalar index computes a bitset mask, pushed down into vector ANN so ANN searches only the rows that pass the filter, keeping recall stable">
+    <rect x="150" y="34" width="460" height="40" rx="9" style="fill:var(--panel-2);stroke:var(--line)"/><text x="380" y="59" text-anchor="middle" style="fill:var(--ink)">query: category=electronics ∧ price&lt;100 → find top10 most alike</text>
+    <rect x="36" y="100" width="170" height="50" rx="10" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="121" y="122" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">scalar index</text><text x="121" y="140" text-anchor="middle" style="fill:var(--muted)">bitmap / sort / inverted</text>
+    <text x="36" y="174" style="fill:var(--muted)">bitset mask (pass=1)</text>
+    <rect x="40" y="182" width="24" height="26" rx="4" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="52" y="200" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">1</text>
+    <rect x="66" y="182" width="24" height="26" rx="4" style="fill:var(--panel-2);stroke:var(--line)"/><text x="78" y="200" text-anchor="middle" class="mono" style="fill:var(--faint)">0</text>
+    <rect x="92" y="182" width="24" height="26" rx="4" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="104" y="200" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">1</text>
+    <rect x="118" y="182" width="24" height="26" rx="4" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="130" y="200" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">1</text>
+    <rect x="144" y="182" width="24" height="26" rx="4" style="fill:var(--panel-2);stroke:var(--line)"/><text x="156" y="200" text-anchor="middle" class="mono" style="fill:var(--faint)">0</text>
+    <rect x="170" y="182" width="24" height="26" rx="4" style="fill:var(--panel-2);stroke:var(--line)"/><text x="182" y="200" text-anchor="middle" class="mono" style="fill:var(--faint)">0</text>
+    <rect x="196" y="182" width="24" height="26" rx="4" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="208" y="200" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">1</text>
+    <rect x="222" y="182" width="24" height="26" rx="4" style="fill:var(--panel-2);stroke:var(--line)"/><text x="234" y="200" text-anchor="middle" class="mono" style="fill:var(--faint)">0</text>
+    <line x1="258" y1="125" x2="354" y2="125" style="stroke:var(--accent);stroke-width:2;stroke-dasharray:5 4"/><path d="M354,125 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <text x="306" y="115" text-anchor="middle" style="fill:var(--accent-ink)">push down</text>
+    <rect x="356" y="100" width="210" height="66" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="461" y="128" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">vector ANN (HNSW/IVF)</text><text x="461" y="150" text-anchor="middle" style="fill:var(--muted)">search nearest only among "pass" rows</text>
+    <line x1="566" y1="133" x2="600" y2="133" style="stroke:var(--teal);stroke-width:2"/><path d="M600,133 l-11,-5 l0,10 z" style="fill:var(--teal)"/>
+    <rect x="602" y="108" width="150" height="52" rx="10" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="677" y="130" text-anchor="middle" style="fill:var(--teal);font-weight:700">top10</text><text x="677" y="150" text-anchor="middle" style="fill:var(--muted)">qualified + nearest</text>
+    <text x="380" y="246" text-anchor="middle" style="fill:var(--muted)"><tspan style="fill:var(--teal);font-weight:700">filter-then-search (pushdown) → stable recall ✓</tspan>　|　search-then-filter → may filter the whole topK away ✗</text>
+  </svg>
+  <div class="figcap"><b>Filter-then-search: push the mask down into ANN</b>: the scalar index first computes a <span class="mono">bitset</span> (which rows pass <span class="mono">category=electronics ∧ price&lt;100</span>), then <b>pushes it down</b> into vector ANN — which searches nearest neighbors <b>only among passing rows</b>. That is <b>predicate pushdown</b>: far more stable recall than "run full ANN then discard" (which, under a selective filter, can wipe out the whole topK).</div>
 </div>
 
 <p>The key design here: <strong>the scalar filter's result (a bitset) is "fed into" vector search so ANN runs over the filtered subset</strong>, rather than "run full ANN first, then discard non-qualifying afterward." The latter (search-then-filter) has a fatal flaw: if the filter is selective (say only 1% of data qualifies), the topK first searched out may be <strong>entirely filtered away</strong>, collapsing recall or even returning nothing. <strong>Filter-then-search</strong> (pushing the filter mask down into ANN) guarantees the topK is chosen <strong>within the qualifying set</strong>, with stable recall. As an aside: this "<strong>push the filter condition as low as possible</strong>" idea has a general name in databases — <strong>predicate pushdown</strong> — eliminate non-qualifying data as early and as low as you can, rather than letting it flow into more expensive downstream operators. Milvus pushing the scalar-filter bitset down into vector ANN is precisely predicate pushdown in the "vector search" context.
