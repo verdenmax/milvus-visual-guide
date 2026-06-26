@@ -738,7 +738,7 @@ Above it, the <strong>InsertCodec</strong> (<span class="mono">data_codec.go</sp
     <text x="160" y="183" class="mono" style="fill:var(--ink)">insert_log/445/12/seg_88/</text>
     <text x="452" y="183" class="mono" style="fill:var(--muted)">field_3/0</text>
     <path d="M150,200 L450,200 M150,200 l0,8 M450,200 l0,8" style="stroke:var(--accent);stroke-width:1.5"/>
-    <text x="300" y="224" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">segment prefix: delete it = wipe the whole segment (GC enumerates orphans by it)</text>
+    <text x="385" y="224" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">segment prefix: delete it = wipe the whole segment (GC enumerates orphans by it)</text>
     <text x="380" y="262" text-anchor="middle" style="fill:var(--muted)">object storage is really a flat key → value; the slash prefix makes it "usable like a directory tree"</text>
   </svg>
   <div class="figcap"><b>The path is the ownership</b>: each binlog's key looks like <span class="mono">kind/collection/partition/segment/field/logID</span> — <b>self-describing</b>, locatable without a metadata lookup. Object storage is really a <b>flat key→value</b> table; the <span class="mono">/</span> prefix "virtualizes" a directory tree: delete the <span class="mono">.../{segmentID}/</span> prefix to wipe a whole segment — exactly how GC enumerates and clears orphans.</div>

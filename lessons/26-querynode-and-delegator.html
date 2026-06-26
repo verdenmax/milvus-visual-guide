@@ -414,6 +414,28 @@ html[data-lang="zh"] .lang-en { display: none !important; }
   <tr><td><strong>tsafe</strong></td><td>delegator 维护的一个时间戳</td><td>已消费 WAL 到的进度；&lt; guarantee ts 就等（第 30 课）</td></tr>
 </table>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="delegator 是分片读的唯一入口：消费 WAL 尾部保鲜 growing 段、扇出到持有 sealed 段的 worker QueryNode、再归并；维护 tsafe">
+    <rect x="24" y="62" width="130" height="50" rx="9" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="89" y="84" text-anchor="middle" style="fill:var(--amber);font-weight:700">WAL 尾部</text><text x="89" y="103" text-anchor="middle" style="fill:var(--muted)">流式日志</text>
+    <line x1="154" y1="87" x2="226" y2="87" style="stroke:var(--amber);stroke-width:2"/><path d="M226,87 l-11,-5 l0,10 z" style="fill:var(--amber)"/>
+    <text x="190" y="79" text-anchor="middle" style="fill:var(--amber)">Tail 保鲜</text>
+    <rect x="230" y="46" width="300" height="92" rx="11" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="380" y="70" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">delegator · shard leader（唯一入口）</text>
+    <text x="380" y="90" text-anchor="middle" style="fill:var(--muted)">扇出 scatter · 归并 reduce · 维护 tsafe</text>
+    <rect x="252" y="102" width="256" height="28" rx="6" style="fill:var(--panel);stroke:var(--blue)"/><text x="380" y="121" text-anchor="middle" style="fill:var(--blue)">growing 段（本地 · 暴力搜 · 最新）</text>
+    <text x="380" y="172" text-anchor="middle" style="fill:var(--muted)">扇出 ↓　局部结果 ↑</text>
+    <rect x="60" y="204" width="200" height="68" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="160" y="232" text-anchor="middle" style="fill:var(--teal);font-weight:700">worker QueryNode</text><text x="160" y="254" text-anchor="middle" style="fill:var(--muted)">sealed 段 · segcore 检索</text>
+    <rect x="280" y="204" width="200" height="68" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="380" y="232" text-anchor="middle" style="fill:var(--teal);font-weight:700">worker QueryNode</text><text x="380" y="254" text-anchor="middle" style="fill:var(--muted)">sealed 段 · segcore 检索</text>
+    <rect x="500" y="204" width="200" height="68" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="600" y="232" text-anchor="middle" style="fill:var(--teal);font-weight:700">worker QueryNode</text><text x="600" y="254" text-anchor="middle" style="fill:var(--muted)">sealed 段 · segcore 检索</text>
+    <line x1="320" y1="138" x2="180" y2="202" style="stroke:var(--accent);stroke-width:1.5"/><path d="M180,202 l3,-11 l7,7 z" style="fill:var(--accent)"/>
+    <line x1="380" y1="138" x2="380" y2="202" style="stroke:var(--accent);stroke-width:1.5"/><path d="M380,202 l-5,-10 l10,0 z" style="fill:var(--accent)"/>
+    <line x1="440" y1="138" x2="580" y2="202" style="stroke:var(--accent);stroke-width:1.5"/><path d="M580,202 l-10,-4 l0,10 z" style="fill:var(--accent)"/>
+    <line x1="210" y1="204" x2="338" y2="140" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/>
+    <line x1="552" y1="204" x2="422" y2="140" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/>
+  </svg>
+  <div class="figcap"><b>分片读的唯一入口</b>：<b>delegator</b>（shard leader）只<b>协调</b>——扇出到各 worker、把局部结果<b>归并</b>、并维护 <span class="mono">tsafe</span>；它还亲自<b>消费 WAL 尾部</b>保鲜本地的 <b>growing 段</b>（最新数据）。真正在 <b>sealed 段</b>上<b>算距离</b>的是各 worker 的 <b>segcore</b>——和 Proxy"只协调不算"同构，只是下沉了一层。</div>
+</div>
+
 <p>这张表里藏着 delegator 设计的两条主线。<strong>第一条是"协调 vs 计算"的再次分离</strong>：delegator 只<strong>协调</strong>（路由、归并、维护分布与 tsafe），真正在段上<strong>算距离</strong>的是 worker 上的 segcore——这和第 25 课"Proxy 只协调、不算"是同一种分层思想，只是下沉了一层。<strong>第二条是"新鲜度的责任在 leader"</strong>：sealed 段是别人加载的、稳定的；唯独 growing 这条"<strong>保鲜</strong>"的活，是 delegator 亲自消费 WAL 完成的。这也解释了 leader 为什么特殊——它不只是个调度员，还<strong>背着这个分片"看到最新写入"的责任</strong>。换个角度说：sealed 这一侧的"加载与分布"是 QueryCoord 在<strong>控制面</strong>统筹的（第 13 课），delegator 只是被动地<strong>知道</strong>结果；而 growing 这一侧的"消费与保鲜"则完全是 delegator 在<strong>数据面</strong>主动完成的。一个分片的"全貌"，正是这两股力量——上面控制面安排的稳定主体、与本地数据面追上来的最新尾巴——在 delegator 这个点上<strong>汇合</strong>而成。</p>
 
 <h2>新鲜从哪来：消费 WAL 尾部 + tsafe</h2>
@@ -579,6 +601,28 @@ If Lesson 25's Proxy is "<strong>the courier that brings the request to the door
   <tr><td><strong>growing segment</strong></td><td>local to the delegator (from consuming the WAL tail)</td><td>no index, brute-force search; guarantees latest writes are visible</td></tr>
   <tr><td><strong>tsafe</strong></td><td>a timestamp the delegator maintains</td><td>how far the WAL is consumed; &lt; guarantee ts → wait (Lesson 30)</td></tr>
 </table>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="The delegator is the shard's single read entry: it tails the WAL to keep the local growing segment fresh, scatters to worker QueryNodes holding sealed segments, then merges; it maintains tsafe">
+    <rect x="24" y="62" width="130" height="50" rx="9" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="89" y="84" text-anchor="middle" style="fill:var(--amber);font-weight:700">WAL tail</text><text x="89" y="103" text-anchor="middle" style="fill:var(--muted)">stream log</text>
+    <line x1="154" y1="87" x2="226" y2="87" style="stroke:var(--amber);stroke-width:2"/><path d="M226,87 l-11,-5 l0,10 z" style="fill:var(--amber)"/>
+    <text x="190" y="79" text-anchor="middle" style="fill:var(--amber)">tail→fresh</text>
+    <rect x="230" y="46" width="300" height="92" rx="11" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="380" y="70" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">delegator · shard leader (sole entry)</text>
+    <text x="380" y="90" text-anchor="middle" style="fill:var(--muted)">scatter · reduce · maintain tsafe</text>
+    <rect x="252" y="102" width="256" height="28" rx="6" style="fill:var(--panel);stroke:var(--blue)"/><text x="380" y="121" text-anchor="middle" style="fill:var(--blue)">growing segment (local · brute · newest)</text>
+    <text x="380" y="172" text-anchor="middle" style="fill:var(--muted)">scatter ↓　partials ↑</text>
+    <rect x="60" y="204" width="200" height="68" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="160" y="232" text-anchor="middle" style="fill:var(--teal);font-weight:700">worker QueryNode</text><text x="160" y="254" text-anchor="middle" style="fill:var(--muted)">sealed segs · segcore search</text>
+    <rect x="280" y="204" width="200" height="68" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="380" y="232" text-anchor="middle" style="fill:var(--teal);font-weight:700">worker QueryNode</text><text x="380" y="254" text-anchor="middle" style="fill:var(--muted)">sealed segs · segcore search</text>
+    <rect x="500" y="204" width="200" height="68" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="600" y="232" text-anchor="middle" style="fill:var(--teal);font-weight:700">worker QueryNode</text><text x="600" y="254" text-anchor="middle" style="fill:var(--muted)">sealed segs · segcore search</text>
+    <line x1="320" y1="138" x2="180" y2="202" style="stroke:var(--accent);stroke-width:1.5"/><path d="M180,202 l3,-11 l7,7 z" style="fill:var(--accent)"/>
+    <line x1="380" y1="138" x2="380" y2="202" style="stroke:var(--accent);stroke-width:1.5"/><path d="M380,202 l-5,-10 l10,0 z" style="fill:var(--accent)"/>
+    <line x1="440" y1="138" x2="580" y2="202" style="stroke:var(--accent);stroke-width:1.5"/><path d="M580,202 l-10,-4 l0,10 z" style="fill:var(--accent)"/>
+    <line x1="210" y1="204" x2="338" y2="140" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/>
+    <line x1="552" y1="204" x2="422" y2="140" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/>
+  </svg>
+  <div class="figcap"><b>The shard's single read entry</b>: the <b>delegator</b> (shard leader) only <b>coordinates</b> — scatters to workers, <b>merges</b> partials, maintains <span class="mono">tsafe</span>; and it personally <b>tails the WAL</b> to keep the local <b>growing segment</b> fresh (newest data). What actually <b>computes distances</b> on <b>sealed segments</b> is each worker's <b>segcore</b> — same shape as Proxy "coordinate, don't compute," one level lower.</div>
+</div>
 
 <p>This table hides two through-lines of the delegator's design. <strong>One is the re-separation of "coordinate vs compute"</strong>: the delegator only <strong>coordinates</strong> (route, merge, maintain distribution and tsafe); what actually <strong>computes distances</strong> on segments is segcore on the workers — the same layering as Lesson 25's "Proxy only coordinates, never computes," just one level lower. <strong>The other is "freshness is the leader's responsibility"</strong>: sealed segments are loaded by others and stable; only the growing "<strong>keep-fresh</strong>" job is done by the delegator itself consuming the WAL. That explains why the leader is special — it is not just a dispatcher, it also <strong>bears this shard's responsibility for "seeing the latest writes."</strong> Put another way: the "load and distribute" of the sealed side is orchestrated by QueryCoord on the <strong>control plane</strong> (Lesson 13), and the delegator merely passively <strong>knows</strong> the result; whereas the "consume and keep fresh" of the growing side is done entirely by the delegator on the <strong>data plane</strong>. A shard's "whole picture" is precisely these two forces — the stable bulk arranged by the control plane above, and the latest tail caught up by the local data plane — <strong>converging</strong> at the single point of the delegator.</p>
 

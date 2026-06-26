@@ -425,25 +425,25 @@ Milvus 允许按字段、按场景<strong>精细配置</strong>哪些数据走 m
 版本管理器的"<strong>取最低兼容版本</strong>"策略，本质就是一条朴素的兼容性铁律：<strong>产出物的格式，要向集群里最保守的消费者看齐</strong>。等所有节点都升级完、最低版本水位整体抬高了，新格式才会自然启用。这种"<strong>以最弱节点为准</strong>"的保守协商，在数据库的在线升级里随处可见——它用一点"暂时用不上新特性"的代价，换来了<strong>升级期间服务不中断</strong>。这也是分布式系统"<strong>兼容性优先于新特性</strong>"原则的一个缩影：能不能用上最新最快的格式是其次，<strong>整个集群在升级过程中始终可用、不丢服务</strong>才是第一位的。</p>
 
 <div class="fig">
-  <svg viewBox="0 0 760 300" role="img" aria-label="索引引擎版本协商：滚动升级期新老 QueryNode 并存，DataCoord 让 worker 按最低兼容版本建索引，最老的节点也能加载">
+  <svg viewBox="0 0 760 300" role="img" aria-label="索引引擎版本协商：建索引版本取各节点支持版本的最小值，即所有节点都能加载的最高格式，最老的节点也能加载">
     <rect x="30" y="58" width="196" height="92" rx="11" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/>
     <text x="128" y="84" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">DataCoord 版本管理器</text>
-    <text x="128" y="110" text-anchor="middle" class="mono" style="fill:var(--muted)">current = v3</text>
-    <text x="128" y="132" text-anchor="middle" class="mono" style="fill:var(--teal)">min 兼容 = v2</text>
+    <text x="128" y="108" text-anchor="middle" style="fill:var(--muted)">各节点支持: v3·v3·v2</text>
+    <text x="128" y="132" text-anchor="middle" style="fill:var(--teal);font-weight:700">建索引 = 取最小 = v2</text>
     <line x1="226" y1="104" x2="260" y2="104" style="stroke:var(--accent);stroke-width:2"/><path d="M260,104 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
-    <rect x="262" y="82" width="150" height="46" rx="9" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="337" y="102" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">worker 建索引</text><text x="337" y="120" text-anchor="middle" style="fill:var(--muted)">按 min = v2 产出</text>
+    <rect x="262" y="82" width="150" height="46" rx="9" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="337" y="102" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">worker 建索引</text><text x="337" y="120" text-anchor="middle" style="fill:var(--muted)">按 v2 产出</text>
     <line x1="412" y1="104" x2="446" y2="104" style="stroke:var(--teal);stroke-width:2"/><path d="M446,104 l-11,-5 l0,10 z" style="fill:var(--teal)"/>
     <rect x="448" y="84" width="96" height="42" rx="8" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="496" y="110" text-anchor="middle" class="mono" style="fill:var(--teal);font-weight:700">index v2</text>
     <line x1="544" y1="98" x2="586" y2="66" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,66 l-11,1 l4,8 z" style="fill:var(--teal)"/>
     <line x1="544" y1="105" x2="586" y2="109" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,109 l-11,-2 l1,8 z" style="fill:var(--teal)"/>
     <line x1="544" y1="112" x2="586" y2="152" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,152 l-10,-4 l-1,9 z" style="fill:var(--teal)"/>
-    <rect x="588" y="48" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="72" text-anchor="middle" style="fill:var(--ink)">QueryNode v3 ✓</text>
-    <rect x="588" y="92" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="116" text-anchor="middle" style="fill:var(--ink)">QueryNode v3 ✓</text>
-    <rect x="588" y="136" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="664" y="160" text-anchor="middle" style="fill:var(--ink)">QueryNode v2（老）✓</text>
-    <text x="385" y="212" text-anchor="middle" style="fill:var(--red);font-weight:700">✗ 若按最新 v3 建 → v2 老节点读不懂、加载失败</text>
-    <text x="385" y="244" text-anchor="middle" style="fill:var(--muted)">∴ 产出格式向最保守（最老）的消费者看齐 —— 滚动升级期服务不中断</text>
+    <rect x="588" y="48" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="72" text-anchor="middle" style="fill:var(--ink)">QueryNode 支持 v3 ✓</text>
+    <rect x="588" y="92" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="116" text-anchor="middle" style="fill:var(--ink)">QueryNode 支持 v3 ✓</text>
+    <rect x="588" y="136" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="664" y="160" text-anchor="middle" style="fill:var(--ink)">QueryNode 支持 v2 ✓</text>
+    <text x="385" y="212" text-anchor="middle" style="fill:var(--red);font-weight:700">✗ 若按 v3 建 → 只支持 v2 的老节点加载失败</text>
+    <text x="385" y="244" text-anchor="middle" style="fill:var(--muted)">∴ 建索引版本 = 各节点支持版本的最小值 = 所有节点都能加载的最高格式</text>
   </svg>
-  <div class="figcap"><b>建索引，向最弱的消费者看齐</b>：升级是<b>滚动</b>的，新老 QueryNode 总会并存一段时间。DataCoord 的版本管理器跟踪各节点版本，给出<b>最低兼容版本</b>；worker 就<b>按 min 版本建索引</b>，于是连最老的节点也能加载。这正是"<b>兼容性优先于新特性</b>"——升级期始终不丢服务。</div>
+  <div class="figcap"><b>建索引，向最弱的消费者看齐</b>：升级是<b>滚动</b>的，新老 QueryNode 总会并存。DataCoord 把建索引版本取成<b>各节点支持版本的最小值</b>（源码 <span class="mono">GetCurrentIndexEngineVersion</span>，即<b>所有节点都能加载的最高格式</b>）：本例 <span class="mono">min(v3,v3,v2)=v2</span>，连最老的 v2 节点也能加载；若按更高的 v3 建，v2 老节点就读不懂。这正是"<b>兼容性优先于新特性</b>"。</div>
 </div>
 
 <p>把这一课收束一下：我们沿着<strong>数据流</strong>，走完了索引"从原始向量到可被检索"的物理全程——构建侧 worker 把 sealed 段读成索引文件落对象存储，加载侧 QueryNode 把索引文件搬进内存或 mmap，中间用暴力扫描兜住还没建好索引的段，外加版本管理保证新老索引互认。
@@ -616,25 +616,25 @@ That is the job of <span class="mono">internal/datacoord/index_engine_version_ma
 The version manager's "<strong>take the minimal compatible version</strong>" policy is, in essence, a plain compatibility rule: <strong>the format of a product must align with the most conservative consumer in the cluster</strong>. Only once all nodes have upgraded and the minimal-version watermark rises overall does the new format naturally take effect. This "<strong>defer to the weakest node</strong>" conservative negotiation is everywhere in online database upgrades — it trades "temporarily not using a new feature" for <strong>uninterrupted service during the upgrade</strong>. It is a microcosm of the distributed-systems principle "<strong>compatibility over new features</strong>": whether you get the newest, fastest format is secondary; what comes first is that <strong>the whole cluster stays available throughout the upgrade, losing no service</strong>.</p>
 
 <div class="fig">
-  <svg viewBox="0 0 760 300" role="img" aria-label="Index engine version negotiation: during a rolling upgrade old and new QueryNodes coexist; DataCoord has the worker build at the minimal compatible version so even the oldest node can load it">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Index engine version negotiation: the build version is the minimum of all nodes' supported versions, i.e. the highest format every node can load, so even the oldest node can load it">
     <rect x="30" y="58" width="196" height="92" rx="11" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/>
     <text x="128" y="84" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">DataCoord version mgr</text>
-    <text x="128" y="110" text-anchor="middle" class="mono" style="fill:var(--muted)">current = v3</text>
-    <text x="128" y="132" text-anchor="middle" class="mono" style="fill:var(--teal)">min compat = v2</text>
+    <text x="128" y="108" text-anchor="middle" style="fill:var(--muted)">nodes support: v3·v3·v2</text>
+    <text x="128" y="132" text-anchor="middle" style="fill:var(--teal);font-weight:700">build = take the min = v2</text>
     <line x1="226" y1="104" x2="260" y2="104" style="stroke:var(--accent);stroke-width:2"/><path d="M260,104 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
-    <rect x="262" y="82" width="150" height="46" rx="9" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="337" y="102" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">worker builds</text><text x="337" y="120" text-anchor="middle" style="fill:var(--muted)">at min = v2</text>
+    <rect x="262" y="82" width="150" height="46" rx="9" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="337" y="102" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">worker builds</text><text x="337" y="120" text-anchor="middle" style="fill:var(--muted)">at v2</text>
     <line x1="412" y1="104" x2="446" y2="104" style="stroke:var(--teal);stroke-width:2"/><path d="M446,104 l-11,-5 l0,10 z" style="fill:var(--teal)"/>
     <rect x="448" y="84" width="96" height="42" rx="8" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="496" y="110" text-anchor="middle" class="mono" style="fill:var(--teal);font-weight:700">index v2</text>
     <line x1="544" y1="98" x2="586" y2="66" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,66 l-11,1 l4,8 z" style="fill:var(--teal)"/>
     <line x1="544" y1="105" x2="586" y2="109" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,109 l-11,-2 l1,8 z" style="fill:var(--teal)"/>
     <line x1="544" y1="112" x2="586" y2="152" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,152 l-10,-4 l-1,9 z" style="fill:var(--teal)"/>
-    <rect x="588" y="48" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="72" text-anchor="middle" style="fill:var(--ink)">QueryNode v3 ✓</text>
-    <rect x="588" y="92" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="116" text-anchor="middle" style="fill:var(--ink)">QueryNode v3 ✓</text>
-    <rect x="588" y="136" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="664" y="160" text-anchor="middle" style="fill:var(--ink)">QueryNode v2 (old) ✓</text>
-    <text x="385" y="212" text-anchor="middle" style="fill:var(--red);font-weight:700">✗ if built at the newest v3 → the v2 old node can't read it, load fails</text>
-    <text x="385" y="244" text-anchor="middle" style="fill:var(--muted)">∴ align the output format with the most conservative (oldest) consumer —— no service lost while upgrading</text>
+    <rect x="588" y="48" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="72" text-anchor="middle" style="fill:var(--ink)">QueryNode supports v3 ✓</text>
+    <rect x="588" y="92" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="116" text-anchor="middle" style="fill:var(--ink)">QueryNode supports v3 ✓</text>
+    <rect x="588" y="136" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="664" y="160" text-anchor="middle" style="fill:var(--ink)">QueryNode supports v2 ✓</text>
+    <text x="385" y="212" text-anchor="middle" style="fill:var(--red);font-weight:700">✗ if built at v3 → the node that only supports v2 fails to load</text>
+    <text x="385" y="244" text-anchor="middle" style="fill:var(--muted)">∴ build version = the minimum of nodes' versions = the highest format all can load</text>
   </svg>
-  <div class="figcap"><b>Build to the weakest consumer</b>: upgrades are <b>rolling</b>, so old and new QueryNodes always coexist for a while. DataCoord's version manager tracks each node's version and yields the <b>minimal compatible version</b>; the worker <b>builds at that min version</b>, so even the oldest node can load it. That is "<b>compatibility over new features</b>" — no service lost during the upgrade.</div>
+  <div class="figcap"><b>Build to the weakest consumer</b>: upgrades are <b>rolling</b>, so old and new QueryNodes coexist. DataCoord sets the build version to the <b>minimum of all nodes' supported versions</b> (source <span class="mono">GetCurrentIndexEngineVersion</span> — the <b>highest format every node can load</b>): here <span class="mono">min(v3,v3,v2)=v2</span>, so even the oldest v2 node can load it; built at the higher v3, the v2 node couldn't. That is "<b>compatibility over new features</b>".</div>
 </div>
 
 <p>To wrap up: along the <strong>data flow</strong>, we walked the index's full physical journey "from raw vectors to searchable" — the build side's worker turns a sealed segment into index files in object storage, the load side's QueryNode brings those files into memory or mmap, brute force covers segments not yet indexed in between, plus versioning ensures old and new indexes recognize each other.

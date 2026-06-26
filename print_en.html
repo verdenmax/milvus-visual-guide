@@ -4868,7 +4868,7 @@ It is this WAL that cleanly cuts apart "what must be done at once" from "what ca
     <rect x="542" y="88" width="180" height="38" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="632" y="112" text-anchor="middle" style="fill:var(--ink)">growing/sealed segment</text>
     <rect x="542" y="136" width="180" height="38" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="632" y="160" text-anchor="middle" style="fill:var(--ink)">binlog · index</text>
     <rect x="542" y="184" width="180" height="38" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="632" y="208" text-anchor="middle" style="fill:var(--ink)">QueryNode memory</text>
-    <text x="632" y="246" text-anchor="middle" style="fill:var(--muted)">steady &amp; cheap · background, at leisure</text>
+    <text x="632" y="246" text-anchor="middle" style="fill:var(--muted)">steady &amp; cheap · background</text>
   </svg>
   <div class="figcap"><b>One WAL, two tempos</b>: a <b>write</b> only reliably appends to the WAL — <b>fast, light, must finish now</b>; while <b>flushing to segments, building indexes, loading into memory</b> are done by background consumers <b>replaying the WAL</b> — <b>steady, cheap, at leisure</b>. Segments / indexes / memory are all <b>projections</b> of the WAL — that is "log as data".</div>
 </div>
@@ -5331,7 +5331,7 @@ Above it, the <strong>InsertCodec</strong> (<span class="mono">data_codec.go</sp
     <text x="160" y="183" class="mono" style="fill:var(--ink)">insert_log/445/12/seg_88/</text>
     <text x="452" y="183" class="mono" style="fill:var(--muted)">field_3/0</text>
     <path d="M150,200 L450,200 M150,200 l0,8 M450,200 l0,8" style="stroke:var(--accent);stroke-width:1.5"/>
-    <text x="300" y="224" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">segment prefix: delete it = wipe the whole segment (GC enumerates orphans by it)</text>
+    <text x="385" y="224" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">segment prefix: delete it = wipe the whole segment (GC enumerates orphans by it)</text>
     <text x="380" y="262" text-anchor="middle" style="fill:var(--muted)">object storage is really a flat key → value; the slash prefix makes it "usable like a directory tree"</text>
   </svg>
   <div class="figcap"><b>The path is the ownership</b>: each binlog's key looks like <span class="mono">kind/collection/partition/segment/field/logID</span> — <b>self-describing</b>, locatable without a metadata lookup. Object storage is really a <b>flat key→value</b> table; the <span class="mono">/</span> prefix "virtualizes" a directory tree: delete the <span class="mono">.../{segmentID}/</span> prefix to wipe a whole segment — exactly how GC enumerates and clears orphans.</div>
@@ -5463,9 +5463,9 @@ Second, <strong>tombstone buildup</strong>: a delete only appends "PK X voided a
   <svg viewBox="0 0 760 300" role="img" aria-label="compaction merges several tombstoned small segments into one large clean segment: tombstones are physically applied to delete void rows, old segments are marked dropped and awaiting GC">
     <text x="120" y="42" text-anchor="middle" style="fill:var(--muted)">before: fragmented + tombstones</text>
     <rect x="30" y="52" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="78" class="mono" style="fill:var(--ink)">seg A · pk1 pk2</text>
-    <rect x="30" y="100" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="126" class="mono" style="fill:var(--ink)">seg B · pk5 </text><text x="150" y="126" class="mono" style="fill:var(--red)">pk6✗</text>
+    <rect x="30" y="100" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="126" class="mono" style="fill:var(--ink)">seg B · pk5 </text><text x="158" y="126" class="mono" style="fill:var(--red)">pk6✗</text>
     <rect x="30" y="148" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="174" class="mono" style="fill:var(--ink)">seg C · </text><text x="100" y="174" class="mono" style="fill:var(--red)">pk9✗</text><text x="154" y="174" class="mono" style="fill:var(--ink)"> pk10</text>
-    <rect x="30" y="200" width="200" height="40" rx="8" style="fill:var(--panel);stroke:var(--red);stroke-width:1.5"/><text x="44" y="225" class="mono" style="fill:var(--red)">delta tombstones {pk6, pk9}</text>
+    <rect x="30" y="200" width="200" height="40" rx="8" style="fill:var(--panel);stroke:var(--red);stroke-width:1.5"/><text x="44" y="225" class="mono" style="fill:var(--red)">delta {pk6, pk9}</text>
     <line x1="210" y1="73" x2="288" y2="140" style="stroke:var(--line);stroke-width:1.5"/>
     <line x1="210" y1="121" x2="288" y2="146" style="stroke:var(--line);stroke-width:1.5"/>
     <line x1="210" y1="169" x2="288" y2="152" style="stroke:var(--line);stroke-width:1.5"/>
@@ -5479,7 +5479,7 @@ Second, <strong>tombstone buildup</strong>: a delete only appends "PK X voided a
     <text x="615" y="132" text-anchor="middle" style="fill:var(--teal);font-weight:700">seg D · large · clean · sorted</text>
     <text x="615" y="158" text-anchor="middle" class="mono" style="fill:var(--ink)">pk1 pk2 pk5 pk10</text>
     <text x="615" y="180" text-anchor="middle" style="fill:var(--muted)">pk6 · pk9 physically deleted</text>
-    <text x="615" y="226" text-anchor="middle" style="fill:var(--muted)">old A/B/C → marked dropped → GC reclaims</text>
+    <text x="600" y="226" text-anchor="middle" style="fill:var(--muted)">old A/B/C → dropped → GC reclaims</text>
   </svg>
   <div class="figcap"><b>Tidying fragments into cleanliness</b>: compaction does two things at once — <b>merges small binlogs/segments</b> into a larger, contiguous one, and <b>physically applies the tombstones</b> from delta (void rows <span class="mono">pk6, pk9</span> truly removed). The old segments are then marked <span class="mono">dropped</span> for GC. Classic <b>LSM</b>: append fast in front, merge-and-tidy in the background.</div>
 </div>
@@ -6375,25 +6375,25 @@ That is the job of <span class="mono">internal/datacoord/index_engine_version_ma
 The version manager's "<strong>take the minimal compatible version</strong>" policy is, in essence, a plain compatibility rule: <strong>the format of a product must align with the most conservative consumer in the cluster</strong>. Only once all nodes have upgraded and the minimal-version watermark rises overall does the new format naturally take effect. This "<strong>defer to the weakest node</strong>" conservative negotiation is everywhere in online database upgrades — it trades "temporarily not using a new feature" for <strong>uninterrupted service during the upgrade</strong>. It is a microcosm of the distributed-systems principle "<strong>compatibility over new features</strong>": whether you get the newest, fastest format is secondary; what comes first is that <strong>the whole cluster stays available throughout the upgrade, losing no service</strong>.</p>
 
 <div class="fig">
-  <svg viewBox="0 0 760 300" role="img" aria-label="Index engine version negotiation: during a rolling upgrade old and new QueryNodes coexist; DataCoord has the worker build at the minimal compatible version so even the oldest node can load it">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Index engine version negotiation: the build version is the minimum of all nodes' supported versions, i.e. the highest format every node can load, so even the oldest node can load it">
     <rect x="30" y="58" width="196" height="92" rx="11" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/>
     <text x="128" y="84" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">DataCoord version mgr</text>
-    <text x="128" y="110" text-anchor="middle" class="mono" style="fill:var(--muted)">current = v3</text>
-    <text x="128" y="132" text-anchor="middle" class="mono" style="fill:var(--teal)">min compat = v2</text>
+    <text x="128" y="108" text-anchor="middle" style="fill:var(--muted)">nodes support: v3·v3·v2</text>
+    <text x="128" y="132" text-anchor="middle" style="fill:var(--teal);font-weight:700">build = take the min = v2</text>
     <line x1="226" y1="104" x2="260" y2="104" style="stroke:var(--accent);stroke-width:2"/><path d="M260,104 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
-    <rect x="262" y="82" width="150" height="46" rx="9" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="337" y="102" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">worker builds</text><text x="337" y="120" text-anchor="middle" style="fill:var(--muted)">at min = v2</text>
+    <rect x="262" y="82" width="150" height="46" rx="9" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="337" y="102" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">worker builds</text><text x="337" y="120" text-anchor="middle" style="fill:var(--muted)">at v2</text>
     <line x1="412" y1="104" x2="446" y2="104" style="stroke:var(--teal);stroke-width:2"/><path d="M446,104 l-11,-5 l0,10 z" style="fill:var(--teal)"/>
     <rect x="448" y="84" width="96" height="42" rx="8" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="496" y="110" text-anchor="middle" class="mono" style="fill:var(--teal);font-weight:700">index v2</text>
     <line x1="544" y1="98" x2="586" y2="66" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,66 l-11,1 l4,8 z" style="fill:var(--teal)"/>
     <line x1="544" y1="105" x2="586" y2="109" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,109 l-11,-2 l1,8 z" style="fill:var(--teal)"/>
     <line x1="544" y1="112" x2="586" y2="152" style="stroke:var(--teal);stroke-width:1.5"/><path d="M586,152 l-10,-4 l-1,9 z" style="fill:var(--teal)"/>
-    <rect x="588" y="48" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="72" text-anchor="middle" style="fill:var(--ink)">QueryNode v3 ✓</text>
-    <rect x="588" y="92" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="116" text-anchor="middle" style="fill:var(--ink)">QueryNode v3 ✓</text>
-    <rect x="588" y="136" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="664" y="160" text-anchor="middle" style="fill:var(--ink)">QueryNode v2 (old) ✓</text>
-    <text x="385" y="212" text-anchor="middle" style="fill:var(--red);font-weight:700">✗ if built at the newest v3 → the v2 old node can't read it, load fails</text>
-    <text x="385" y="244" text-anchor="middle" style="fill:var(--muted)">∴ align the output format with the most conservative (oldest) consumer —— no service lost while upgrading</text>
+    <rect x="588" y="48" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="72" text-anchor="middle" style="fill:var(--ink)">QueryNode supports v3 ✓</text>
+    <rect x="588" y="92" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal)"/><text x="664" y="116" text-anchor="middle" style="fill:var(--ink)">QueryNode supports v3 ✓</text>
+    <rect x="588" y="136" width="152" height="38" rx="7" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="664" y="160" text-anchor="middle" style="fill:var(--ink)">QueryNode supports v2 ✓</text>
+    <text x="385" y="212" text-anchor="middle" style="fill:var(--red);font-weight:700">✗ if built at v3 → the node that only supports v2 fails to load</text>
+    <text x="385" y="244" text-anchor="middle" style="fill:var(--muted)">∴ build version = the minimum of nodes' versions = the highest format all can load</text>
   </svg>
-  <div class="figcap"><b>Build to the weakest consumer</b>: upgrades are <b>rolling</b>, so old and new QueryNodes always coexist for a while. DataCoord's version manager tracks each node's version and yields the <b>minimal compatible version</b>; the worker <b>builds at that min version</b>, so even the oldest node can load it. That is "<b>compatibility over new features</b>" — no service lost during the upgrade.</div>
+  <div class="figcap"><b>Build to the weakest consumer</b>: upgrades are <b>rolling</b>, so old and new QueryNodes coexist. DataCoord sets the build version to the <b>minimum of all nodes' supported versions</b> (source <span class="mono">GetCurrentIndexEngineVersion</span> — the <b>highest format every node can load</b>): here <span class="mono">min(v3,v3,v2)=v2</span>, so even the oldest v2 node can load it; built at the higher v3, the v2 node couldn't. That is "<b>compatibility over new features</b>".</div>
 </div>
 
 <p>To wrap up: along the <strong>data flow</strong>, we walked the index's full physical journey "from raw vectors to searchable" — the build side's worker turns a sealed segment into index files in object storage, the load side's QueryNode brings those files into memory or mmap, brute force covers segments not yet indexed in between, plus versioning ensures old and new indexes recognize each other.
@@ -6581,7 +6581,7 @@ In other words, you can have Milvus do full-text search <strong>directly on text
     <rect x="356" y="100" width="210" height="66" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="461" y="128" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">vector ANN (HNSW/IVF)</text><text x="461" y="150" text-anchor="middle" style="fill:var(--muted)">search nearest only among "pass" rows</text>
     <line x1="566" y1="133" x2="600" y2="133" style="stroke:var(--teal);stroke-width:2"/><path d="M600,133 l-11,-5 l0,10 z" style="fill:var(--teal)"/>
     <rect x="602" y="108" width="150" height="52" rx="10" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="677" y="130" text-anchor="middle" style="fill:var(--teal);font-weight:700">top10</text><text x="677" y="150" text-anchor="middle" style="fill:var(--muted)">qualified + nearest</text>
-    <text x="380" y="246" text-anchor="middle" style="fill:var(--muted)"><tspan style="fill:var(--teal);font-weight:700">filter-then-search (pushdown) → stable recall ✓</tspan>　|　search-then-filter → may filter the whole topK away ✗</text>
+    <text x="380" y="246" text-anchor="middle" style="fill:var(--muted)"><tspan style="fill:var(--teal);font-weight:700">filter-then-search (pushdown) → stable recall ✓</tspan> | search-then-filter → may filter the whole topK away ✗</text>
   </svg>
   <div class="figcap"><b>Filter-then-search: push the mask down into ANN</b>: the scalar index first computes a <span class="mono">bitset</span> (which rows pass <span class="mono">category=electronics ∧ price&lt;100</span>), then <b>pushes it down</b> into vector ANN — which searches nearest neighbors <b>only among passing rows</b>. That is <b>predicate pushdown</b>: far more stable recall than "run full ANN then discard" (which, under a selective filter, can wipe out the whole topK).</div>
 </div>
@@ -6738,6 +6738,32 @@ This part is the <strong>mirror</strong> of the write path, and it descends all 
   <div class="node"><div class="nt">delegator B</div><div class="nd">shard 2 local topK</div></div>
   <div class="arrow">→</div>
   <div class="node hl"><div class="nt">reduce</div><div class="nd">merge into global topK</div></div>
+</div>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="A search round-trip: the SDK sends a request, the Proxy's searchTask parses and builds a plan and timestamp, scatters to the shards, then reduces, and the result returns to the SDK">
+    <rect x="22" y="116" width="92" height="60" rx="10" style="fill:var(--panel);stroke:var(--line)"/><text x="68" y="142" text-anchor="middle" style="fill:var(--ink);font-weight:700">SDK</text><text x="68" y="162" text-anchor="middle" style="fill:var(--muted)">vec+topK+expr</text>
+    <rect x="146" y="74" width="234" height="142" rx="11" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="263" y="96" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">Proxy · searchTask</text>
+    <rect x="160" y="106" width="206" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="263" y="126" text-anchor="middle" style="fill:var(--ink)">① PreExecute · plan + ts</text>
+    <rect x="160" y="140" width="206" height="30" rx="6" style="fill:var(--panel);stroke:var(--accent)"/><text x="263" y="160" text-anchor="middle" style="fill:var(--accent-ink)">② Execute · scatter</text>
+    <rect x="160" y="174" width="206" height="30" rx="6" style="fill:var(--panel);stroke:var(--teal)"/><text x="263" y="194" text-anchor="middle" style="fill:var(--teal)">③ PostExecute · reduce</text>
+    <line x1="114" y1="132" x2="144" y2="132" style="stroke:var(--line);stroke-width:2"/><path d="M144,132 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+    <text x="129" y="124" text-anchor="middle" style="fill:var(--muted)">RPC</text>
+    <path d="M146,206 C110,206 92,194 92,178" style="fill:none;stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/><path d="M92,178 l-5,11 l10,0 z" style="fill:var(--teal)"/>
+    <text x="96" y="206" style="fill:var(--teal)">result</text>
+    <rect x="440" y="72" width="170" height="40" rx="8" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="525" y="97" text-anchor="middle" style="fill:var(--ink)">delegator A · local topK</text>
+    <rect x="440" y="120" width="170" height="40" rx="8" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="525" y="145" text-anchor="middle" style="fill:var(--ink)">delegator B · local topK</text>
+    <rect x="440" y="168" width="170" height="40" rx="8" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="525" y="193" text-anchor="middle" style="fill:var(--ink)">delegator C · local topK</text>
+    <line x1="380" y1="151" x2="438" y2="92" style="stroke:var(--accent);stroke-width:1.5"/><path d="M438,92 l-11,2 l4,8 z" style="fill:var(--accent)"/>
+    <line x1="380" y1="153" x2="438" y2="140" style="stroke:var(--accent);stroke-width:1.5"/><path d="M438,140 l-11,-1 l3,9 z" style="fill:var(--accent)"/>
+    <line x1="380" y1="155" x2="438" y2="188" style="stroke:var(--accent);stroke-width:1.5"/><path d="M438,188 l-10,-4 l-1,9 z" style="fill:var(--accent)"/>
+    <line x1="438" y1="108" x2="382" y2="186" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/>
+    <line x1="438" y1="156" x2="382" y2="189" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/>
+    <line x1="620" y1="92" x2="700" y2="92" style="stroke:var(--line);stroke-width:1;stroke-dasharray:3 3"/><text x="708" y="96" style="fill:var(--faint)">↘ seg</text>
+    <text x="380" y="232" text-anchor="middle" style="fill:var(--muted)">two-layer fan-out (Proxy→shards, shards→segments · L26) · concurrent: the slowest shard sets latency</text>
+  </svg>
+  <div class="figcap"><b>A search round-trip with two-layer fan-out</b>: the Proxy wraps the request into a <span class="mono">searchTask</span> — <b>① parse, build the plan, set the guarantee ts → ② scatter to each shard's delegator → ③ reduce into the global topK</b>, returned to the SDK. The fan-out is <b>two layers</b> (Proxy→shards, shards→segments) and runs <b>concurrently</b> — latency is set by the <b>slowest shard</b>, not the sum.</div>
 </div>
 
 <p>This flow has two "<strong>one-to-many</strong>" spread points, the key to understanding distributed search. The first is at <strong>Proxy → delegator</strong>: a collection is cut into several shards and the request must hit each shard <strong>simultaneously</strong> (scatter). The second is inside each delegator: it further fans the search out to the several segments and worker QueryNodes it manages (that is Lesson 26's content).
@@ -6926,6 +6952,28 @@ If Lesson 25's Proxy is "<strong>the courier that brings the request to the door
   <tr><td><strong>tsafe</strong></td><td>a timestamp the delegator maintains</td><td>how far the WAL is consumed; &lt; guarantee ts → wait (Lesson 30)</td></tr>
 </table>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="The delegator is the shard's single read entry: it tails the WAL to keep the local growing segment fresh, scatters to worker QueryNodes holding sealed segments, then merges; it maintains tsafe">
+    <rect x="24" y="62" width="130" height="50" rx="9" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="89" y="84" text-anchor="middle" style="fill:var(--amber);font-weight:700">WAL tail</text><text x="89" y="103" text-anchor="middle" style="fill:var(--muted)">stream log</text>
+    <line x1="154" y1="87" x2="226" y2="87" style="stroke:var(--amber);stroke-width:2"/><path d="M226,87 l-11,-5 l0,10 z" style="fill:var(--amber)"/>
+    <text x="190" y="79" text-anchor="middle" style="fill:var(--amber)">tail→fresh</text>
+    <rect x="230" y="46" width="300" height="92" rx="11" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="380" y="70" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">delegator · shard leader (sole entry)</text>
+    <text x="380" y="90" text-anchor="middle" style="fill:var(--muted)">scatter · reduce · maintain tsafe</text>
+    <rect x="252" y="102" width="256" height="28" rx="6" style="fill:var(--panel);stroke:var(--blue)"/><text x="380" y="121" text-anchor="middle" style="fill:var(--blue)">growing segment (local · brute · newest)</text>
+    <text x="380" y="172" text-anchor="middle" style="fill:var(--muted)">scatter ↓　partials ↑</text>
+    <rect x="60" y="204" width="200" height="68" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="160" y="232" text-anchor="middle" style="fill:var(--teal);font-weight:700">worker QueryNode</text><text x="160" y="254" text-anchor="middle" style="fill:var(--muted)">sealed segs · segcore search</text>
+    <rect x="280" y="204" width="200" height="68" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="380" y="232" text-anchor="middle" style="fill:var(--teal);font-weight:700">worker QueryNode</text><text x="380" y="254" text-anchor="middle" style="fill:var(--muted)">sealed segs · segcore search</text>
+    <rect x="500" y="204" width="200" height="68" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="600" y="232" text-anchor="middle" style="fill:var(--teal);font-weight:700">worker QueryNode</text><text x="600" y="254" text-anchor="middle" style="fill:var(--muted)">sealed segs · segcore search</text>
+    <line x1="320" y1="138" x2="180" y2="202" style="stroke:var(--accent);stroke-width:1.5"/><path d="M180,202 l3,-11 l7,7 z" style="fill:var(--accent)"/>
+    <line x1="380" y1="138" x2="380" y2="202" style="stroke:var(--accent);stroke-width:1.5"/><path d="M380,202 l-5,-10 l10,0 z" style="fill:var(--accent)"/>
+    <line x1="440" y1="138" x2="580" y2="202" style="stroke:var(--accent);stroke-width:1.5"/><path d="M580,202 l-10,-4 l0,10 z" style="fill:var(--accent)"/>
+    <line x1="210" y1="204" x2="338" y2="140" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/>
+    <line x1="552" y1="204" x2="422" y2="140" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/>
+  </svg>
+  <div class="figcap"><b>The shard's single read entry</b>: the <b>delegator</b> (shard leader) only <b>coordinates</b> — scatters to workers, <b>merges</b> partials, maintains <span class="mono">tsafe</span>; and it personally <b>tails the WAL</b> to keep the local <b>growing segment</b> fresh (newest data). What actually <b>computes distances</b> on <b>sealed segments</b> is each worker's <b>segcore</b> — same shape as Proxy "coordinate, don't compute," one level lower.</div>
+</div>
+
 <p>This table hides two through-lines of the delegator's design. <strong>One is the re-separation of "coordinate vs compute"</strong>: the delegator only <strong>coordinates</strong> (route, merge, maintain distribution and tsafe); what actually <strong>computes distances</strong> on segments is segcore on the workers — the same layering as Lesson 25's "Proxy only coordinates, never computes," just one level lower. <strong>The other is "freshness is the leader's responsibility"</strong>: sealed segments are loaded by others and stable; only the growing "<strong>keep-fresh</strong>" job is done by the delegator itself consuming the WAL. That explains why the leader is special — it is not just a dispatcher, it also <strong>bears this shard's responsibility for "seeing the latest writes."</strong> Put another way: the "load and distribute" of the sealed side is orchestrated by QueryCoord on the <strong>control plane</strong> (Lesson 13), and the delegator merely passively <strong>knows</strong> the result; whereas the "consume and keep fresh" of the growing side is done entirely by the delegator on the <strong>data plane</strong>. A shard's "whole picture" is precisely these two forces — the stable bulk arranged by the control plane above, and the latest tail caught up by the local data plane — <strong>converging</strong> at the single point of the delegator.</p>
 
 <h2>Where freshness comes from: consuming the WAL tail + tsafe</h2>
@@ -7076,6 +7124,22 @@ This is the <strong>deepest layer</strong> of the whole query path and the <stro
   <div class="col"><h4>🔥 SegmentGrowing → brute force</h4><p>A growing segment has <strong>no index yet</strong> (data changes every moment, no time to index). Search can only go <strong>brute force</strong>: compute distance between the query vector and <strong>every</strong> vector in the segment, then sort and take topK. Since growing segments are <strong>small</strong> and local, this brute-force cost is acceptable — in return for the freshness of "<strong>searchable right after writing</strong>."</p></div>
 </div>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="segcore abstracts a segment with one SegmentInterface and two implementations: sealed goes through the index, growing brute-forces; it filters by the delete bitmap and timestamp before returning the in-segment topK">
+    <text x="380" y="32" text-anchor="middle" style="fill:var(--muted)">the upper layer calls the same Search(segment, plan) on every segment</text>
+    <rect x="248" y="42" width="264" height="44" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="380" y="69" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">SegmentInterface · Search (one contract)</text>
+    <text x="380" y="108" text-anchor="middle" style="fill:var(--muted)">polymorphic by segment type ↓</text>
+    <rect x="56" y="118" width="310" height="64" rx="10" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="211" y="144" text-anchor="middle" style="fill:var(--teal);font-weight:700">SegmentSealed → via index</text><text x="211" y="166" text-anchor="middle" style="fill:var(--muted)">Knowhere HNSW/IVF · skip most (fast)</text>
+    <rect x="394" y="118" width="310" height="64" rx="10" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="549" y="144" text-anchor="middle" style="fill:var(--amber);font-weight:700">SegmentGrowing → brute force</text><text x="549" y="166" text-anchor="middle" style="fill:var(--muted)">scan every vector · small, freshest</text>
+    <line x1="318" y1="86" x2="226" y2="116" style="stroke:var(--accent);stroke-width:1.5"/><path d="M226,116 l2,-11 l7,7 z" style="fill:var(--accent)"/>
+    <line x1="442" y1="86" x2="534" y2="116" style="stroke:var(--accent);stroke-width:1.5"/><path d="M534,116 l-9,-7 l-1,11 z" style="fill:var(--accent)"/>
+    <line x1="211" y1="182" x2="330" y2="210" style="stroke:var(--line);stroke-width:1.5"/><path d="M330,210 l-11,-1 l3,9 z" style="fill:var(--line)"/>
+    <line x1="549" y1="182" x2="430" y2="210" style="stroke:var(--line);stroke-width:1.5"/><path d="M430,210 l-3,-11 l9,3 z" style="fill:var(--line)"/>
+    <rect x="196" y="212" width="368" height="60" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="380" y="238" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">in-segment topK (filtered)</text><text x="380" y="260" text-anchor="middle" style="fill:var(--muted)">drop deleted rows + only ts ≤ guarantee (MVCC lands here)</text>
+  </svg>
+  <div class="figcap"><b>One interface, two implementations (polymorphism)</b>: segcore abstracts "a segment" with one <span class="mono">SegmentInterface</span> — upper layers just call the same <span class="mono">Search</span>, and it picks the <b>fast path (sealed via index, skip most)</b> or <b>slow path (growing brute force, freshest)</b> by type. It also lands <b>MVCC</b> in-segment: a <b>delete bitmap</b> drops deleted rows and the <b>guarantee ts</b> admits only that version — so you never find a just-deleted or too-new row.</div>
+</div>
+
 <p>What makes this "<strong>one interface, two implementations</strong>" design clever? It lets <strong>the upper layers (the delegator's and worker's scheduling code) be wholly unconcerned with whether a segment has an index</strong> — they just call the same <span class="inline">Search</span> on each segment, and segcore internally <strong>picks the fast path (index) or slow path (brute force) by the segment's actual type</strong>. This is the classic use of object-oriented "<strong>polymorphism</strong>" in systems design: seal "<strong>what varies</strong>" (how to search) inside the implementations and expose only "<strong>the unchanging contract</strong>" (give me a segment and a plan, get back the segment's topK). Precisely because of this, Lesson 26's delegator could airily say "merge the sealed and growing results" — in its eyes the two look alike, the difference <strong>quietly absorbed</strong> by the segcore layer.</p>
 
 <p>There's one more thing segcore silently does for you inside a segment, often overlooked yet crucial: <strong>excluding "rows you shouldn't see."</strong> A segment's data isn't only "inserts" — there are also <strong>deletes</strong> (Lesson 20) and <strong>timestamps</strong> (Lesson 11). When searching, segcore <strong>applies two filters</strong>: one, a <strong>delete bitmap</strong> marking out already-deleted rows so they don't count as candidates; two, the <strong>time filter</strong> brought by the <strong>guarantee ts</strong>, making visible only the version with ts ≤ guarantee. In other words, <strong>the execution point where MVCC (multi-version visibility) finally lands is this segcore layer</strong>: upper layers pass the guarantee ts all the way down, and the actual judgment of "per this snapshot, is each row visible" happens in the segment, hugging the data. So you won't search up "just-deleted" rows or rows "written later than your snapshot" — this correctness is, beyond sealed/growing, the other half of segcore's in-segment logic (full consistency and MVCC are tied up in Lesson 30).</p>
@@ -7211,6 +7275,27 @@ tree lets the engine evaluate it node-by-node by type, and enables optimizations
 
 <p>Why turn a perfectly readable string into a tree at all? Because a <strong>tree is something a machine can reason about</strong>, whereas a string is just characters. Once the condition is a typed tree, the engine can <strong>type-check</strong> it (is <span class="mono">price</span> really numeric? does <span class="mono">==</span> make sense for these operands?), <strong>rewrite</strong> it for speed (drop an always-true branch, evaluate the most selective condition first), and <strong>compile</strong> each node into a concrete executable operator. It's the same reason compilers parse source into an abstract syntax tree rather than executing text directly: structure unlocks analysis. So this first step — string → typed tree — is not bureaucratic ceremony; it's the move that turns "what the user wants" into "something the engine can optimize and run fast". Keep that in mind as you watch the tree become physical operators in the next step.</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="The filter price less than 500 and category equals shoes becomes an expression tree: an AND root, two comparison nodes, leaves are columns and constants; evaluated bottom-up, AND bitwise-ANDs the masks">
+    <text x="380" y="28" text-anchor="middle" style="fill:var(--muted)">price &lt; 500 &amp;&amp; category == "shoes"　→　expression tree</text>
+    <line x1="362" y1="80" x2="250" y2="112" style="stroke:var(--line);stroke-width:1.5"/>
+    <line x1="398" y1="80" x2="512" y2="112" style="stroke:var(--line);stroke-width:1.5"/>
+    <line x1="212" y1="156" x2="172" y2="194" style="stroke:var(--line);stroke-width:1.5"/>
+    <line x1="280" y1="156" x2="276" y2="194" style="stroke:var(--line);stroke-width:1.5"/>
+    <line x1="490" y1="156" x2="490" y2="194" style="stroke:var(--line);stroke-width:1.5"/>
+    <line x1="552" y1="156" x2="612" y2="194" style="stroke:var(--line);stroke-width:1.5"/>
+    <rect x="338" y="40" width="84" height="40" rx="9" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="380" y="65" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">AND</text>
+    <rect x="168" y="114" width="156" height="42" rx="9" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="246" y="140" text-anchor="middle" style="fill:var(--blue);font-weight:700">Compare ( &lt; )</text>
+    <rect x="438" y="114" width="156" height="42" rx="9" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="516" y="140" text-anchor="middle" style="fill:var(--blue);font-weight:700">Compare ( == )</text>
+    <rect x="112" y="196" width="118" height="40" rx="8" style="fill:var(--panel-2);stroke:var(--teal)"/><text x="171" y="221" text-anchor="middle" class="mono" style="fill:var(--teal)">col price</text>
+    <rect x="240" y="196" width="74" height="40" rx="8" style="fill:var(--panel-2);stroke:var(--amber)"/><text x="277" y="221" text-anchor="middle" class="mono" style="fill:var(--amber)">500</text>
+    <rect x="428" y="196" width="124" height="40" rx="8" style="fill:var(--panel-2);stroke:var(--teal)"/><text x="490" y="221" text-anchor="middle" class="mono" style="fill:var(--teal)">col category</text>
+    <rect x="560" y="196" width="118" height="40" rx="8" style="fill:var(--panel-2);stroke:var(--amber)"/><text x="619" y="221" text-anchor="middle" class="mono" style="fill:var(--amber)">"shoes"</text>
+    <text x="380" y="270" text-anchor="middle" style="fill:var(--muted)">bottom-up: each Compare → a bool column; AND <tspan style="fill:var(--accent-ink);font-weight:700">bitwise-ANDs</tspan> the two → the final bitset mask</text>
+  </svg>
+  <div class="figcap"><b>Turn "a sentence of filter" into a tree</b>: the root is the logical <b>AND</b>, its children are <b>Compare(&lt;)</b> and <b>Compare(==)</b>, and the leaves are <b>column refs</b> (<span class="mono">price/category</span>) and <b>constants</b> (<span class="mono">500/"shoes"</span>). Evaluation is <b>bottom-up</b>: each compare yields a bool column, then AND <b>bitwise-ANDs</b> them. Parsed once, reused on every segment and chunk — step one to running a filter over a billion rows.</div>
+</div>
+
 <div class="layers">
   <div class="layer l-app"><div class="lh"><span class="badge">string</span><span class="name">price &lt; 500 &amp;&amp; category == "shoes"</span></div><div class="ld">the user's filter expression (DSL)</div></div>
   <div class="layer l-part"><div class="lh"><span class="badge">parse</span><span class="name">parse</span></div><div class="ld">parse + bind fields / type-check</div></div>
@@ -7236,6 +7321,25 @@ tree lets the engine evaluate it node-by-node by type, and enables optimizations
 under <span class="mono">exec/expression</span>), then evaluates them over columnar <strong>chunks</strong> in a <strong>batched, vectorized</strong>
 way — not row by row but <strong>chunk by chunk</strong>, SIMD-friendly. The output is a <strong>bitset</strong>: one bit per row marking whether
 it <strong>passes / fails</strong> the whole filter.</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Vectorized execution: columnar data is processed chunk by chunk, running one operation over a whole chunk of same-column values (SIMD), producing a bitset mask; not row by row">
+    <text x="40" y="38" style="fill:var(--muted)">price column (columnar · split into chunks)</text>
+    <rect x="40" y="48" width="180" height="40" rx="7" style="fill:var(--panel-2);stroke:var(--line)"/><text x="56" y="73" class="mono" style="fill:var(--muted)">chunk0 · 88 12 …</text>
+    <rect x="40" y="96" width="180" height="46" rx="7" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:2"/><text x="130" y="114" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">chunk1 (processing)</text><text x="130" y="133" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">300 910 450 1200</text>
+    <rect x="40" y="150" width="180" height="40" rx="7" style="fill:var(--panel-2);stroke:var(--line)"/><text x="56" y="175" class="mono" style="fill:var(--muted)">chunk2 · 7 60 …</text>
+    <line x1="220" y1="119" x2="264" y2="119" style="stroke:var(--accent);stroke-width:2.5"/><path d="M264,119 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <rect x="266" y="94" width="220" height="50" rx="9" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="376" y="115" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">vectorized op · price &lt; 500</text><text x="376" y="133" text-anchor="middle" style="fill:var(--muted)">SIMD · one op, many values</text>
+    <line x1="486" y1="119" x2="520" y2="119" style="stroke:var(--teal);stroke-width:2.5"/><path d="M520,119 l-11,-5 l0,10 z" style="fill:var(--teal)"/>
+    <rect x="524" y="104" width="32" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="540" y="125" text-anchor="middle" class="mono" style="fill:var(--teal)">1</text>
+    <rect x="558" y="104" width="32" height="30" rx="5" style="fill:var(--panel-2);stroke:var(--line)"/><text x="574" y="125" text-anchor="middle" class="mono" style="fill:var(--faint)">0</text>
+    <rect x="592" y="104" width="32" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="608" y="125" text-anchor="middle" class="mono" style="fill:var(--teal)">1</text>
+    <rect x="626" y="104" width="32" height="30" rx="5" style="fill:var(--panel-2);stroke:var(--line)"/><text x="642" y="125" text-anchor="middle" class="mono" style="fill:var(--faint)">0</text>
+    <text x="591" y="156" text-anchor="middle" style="fill:var(--muted)">chunk bitset</text>
+    <text x="380" y="220" text-anchor="middle" style="fill:var(--muted)">one chunk at a time → assembled into the column's bitset (cache-friendly)</text>
+  </svg>
+  <div class="figcap"><b>Not row by row, but chunk by chunk</b>: data is stored <b>columnar, in chunks</b>; the engine runs one operation (here <span class="mono">price&lt;500</span>) over <b>hundreds-to-thousands of same-column values in a whole chunk</b> at once — <span class="mono">SIMD</span> does many per instruction, cache-friendly, almost no branch mispredicts. Each chunk yields a piece of <b>bitset</b>; stitched together they form the column's filter mask — the engine floor that keeps a filter fast over a billion rows.</div>
+</div>
 
 <p>It's worth pausing on why "<strong>chunk by chunk</strong>" matters so much. A naive engine evaluates a predicate <strong>one row at a time</strong>: fetch a row, run the comparison, branch, store the result, repeat — and every one of those steps carries fixed overhead (a function call, a bounds check, a possibly-mispredicted branch). Over a segment of hundreds of thousands of rows, that overhead dominates. A vectorized engine flips it: it grabs a <strong>whole chunk of a column at once</strong> — say tens of thousands of contiguous values of the same type — and runs the comparison over the entire slab in a tight loop the CPU can accelerate with <strong>SIMD</strong> (one instruction comparing 8 or 16 values at a time). The per-row overhead is <strong>amortized to near zero</strong>, and contiguous same-typed data is exactly what the CPU's cache and prefetcher love. This is the same "batch, don't drip" philosophy you'll meet again in the C++ core (Lesson 36): the engine you see here is, in fact, the very same expr/exec machinery that lesson dissects — only viewed from the query path rather than from inside the kernel.</p>
 
@@ -7445,6 +7549,26 @@ underlying data</strong>. That is exactly why distributed topK can be both corre
 narrowed the candidates, Lesson 27 found the topK inside a segment, and <strong>this lesson merges the scattered topKs into the final answer</strong>;
 the next lesson (30) supplies the last piece — exactly <strong>which moment's</strong> data these segments and nodes searched, i.e. consistency and timestamps.</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="A concrete walk-through of the three-level reduce: 6 segments each yield top3, two shards each merge to top3, and the Proxy merges to the global top3; each level passes only K rows up">
+    <rect x="250" y="44" width="260" height="56" rx="11" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:2"/><text x="380" y="68" text-anchor="middle" style="fill:var(--teal);font-weight:700">Proxy · global top3</text><text x="380" y="89" text-anchor="middle" class="mono" style="fill:var(--ink)">0.05 · 0.08 · 0.12</text>
+    <rect x="84" y="134" width="212" height="54" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="190" y="157" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">shard A · top3</text><text x="190" y="178" text-anchor="middle" class="mono" style="fill:var(--ink)">0.05 · 0.12 · 0.31</text>
+    <rect x="464" y="134" width="212" height="54" rx="10" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="570" y="157" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">shard B · top3</text><text x="570" y="178" text-anchor="middle" class="mono" style="fill:var(--ink)">0.08 · 0.20 · 0.40</text>
+    <rect x="40" y="214" width="96" height="40" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="88" y="239" text-anchor="middle" style="fill:var(--muted)">seg1 · top3</text>
+    <rect x="142" y="214" width="96" height="40" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="190" y="239" text-anchor="middle" style="fill:var(--muted)">seg2 · top3</text>
+    <rect x="244" y="214" width="96" height="40" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="292" y="239" text-anchor="middle" style="fill:var(--muted)">seg3 · top3</text>
+    <rect x="420" y="214" width="96" height="40" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="468" y="239" text-anchor="middle" style="fill:var(--muted)">seg4 · top3</text>
+    <rect x="522" y="214" width="96" height="40" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="570" y="239" text-anchor="middle" style="fill:var(--muted)">seg5 · top3</text>
+    <rect x="624" y="214" width="96" height="40" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="672" y="239" text-anchor="middle" style="fill:var(--muted)">seg6 · top3</text>
+    <line x1="88" y1="214" x2="160" y2="190" style="stroke:var(--line);stroke-width:1.5"/><line x1="190" y1="214" x2="190" y2="190" style="stroke:var(--line);stroke-width:1.5"/><line x1="292" y1="214" x2="220" y2="190" style="stroke:var(--line);stroke-width:1.5"/>
+    <line x1="468" y1="214" x2="540" y2="190" style="stroke:var(--line);stroke-width:1.5"/><line x1="570" y1="214" x2="570" y2="190" style="stroke:var(--line);stroke-width:1.5"/><line x1="672" y1="214" x2="600" y2="190" style="stroke:var(--line);stroke-width:1.5"/>
+    <line x1="190" y1="134" x2="330" y2="102" style="stroke:var(--accent);stroke-width:2"/><path d="M330,102 l-11,1 l4,9 z" style="fill:var(--accent)"/>
+    <line x1="570" y1="134" x2="430" y2="102" style="stroke:var(--accent);stroke-width:2"/><path d="M430,102 l-4,-10 l9,2 z" style="fill:var(--accent)"/>
+    <text x="380" y="282" text-anchor="middle" style="fill:var(--muted)">each level keeps only top K=3 — the network always carries O(K)</text>
+  </svg>
+  <div class="figcap"><b>The three-level reduce, walked once</b>: 6 segments each yield <b>top3</b> → shard A merges seg1-3 to <span class="mono">[0.05,0.12,0.31]</span>, shard B to <span class="mono">[0.08,0.20,0.40]</span> → the Proxy merges, dedups, and sorts those 6 into the <b>global top3</b> <span class="mono">[0.05, 0.08, 0.12]</span>. Every level passes only <b>K rows</b> up — the network always carries <b>O(K)</b>, no matter how many billions sit underneath.</div>
+</div>
+
 <p>Step back and notice the <strong>shape</strong> of this pattern, because you'll meet it far beyond Milvus. "<strong>Compute locally, send up a small summary, merge upward</strong>" is the same skeleton as MapReduce, as a SQL <span class="mono">GROUP BY</span> executed across shards, as aggregating metrics from a fleet of servers. The three-level reduce here — segment → node → Proxy — is just that skeleton fitted to topK: each tier does as much work as it can <strong>where the data already is</strong> (avoiding moving raw data), and passes upward only a result that is <strong>tiny and already half-merged</strong>. The payoff is twofold: the <strong>network</strong> never carries more than O(K) per source, and the <strong>final merger</strong> (the Proxy) never faces more than "K × number of children", no matter how many billions of vectors sit underneath. Whenever you design a distributed query of your own, ask the same question Milvus answered here: <strong>can I push work down to the data and only float a small summary up?</strong> If yes, you've found your reduce.</p>
 
 <div class="card key">
@@ -7622,6 +7746,26 @@ guarantees you <strong>at least read your own writes</strong>, friendly to "writ
 you. Recall Lesson 1's "<strong>query while you write</strong>": that works precisely because growing segments + the tsafe mechanism make "freshly written data
 immediately visible to some Tg" — whether you see it, and whether you wait, is set by the level you choose. <strong>There is no one-size-fits-all answer, only a
 trade-off matched to the scenario</strong>: want strong consistency, accept a possible wait; want low latency, accept possible staleness.</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="The five consistency levels are a knob between freshness and latency: Strong is freshest but may wait, Bounded is the default and barely waits, Eventually never waits and may be stale, Session reads your own writes, Customized picks a moment">
+    <text x="380" y="28" text-anchor="middle" style="fill:var(--ink);font-weight:700">a read carries a guarantee ts (Tg)</text>
+    <text x="380" y="48" text-anchor="middle" style="fill:var(--ink);font-weight:700">node compares tsafe: ≥Tg → answer now ｜ &lt;Tg → wait</text>
+    <line x1="80" y1="158" x2="700" y2="158" style="stroke:var(--line);stroke-width:3"/>
+    <path d="M80,158 l14,-6 l0,12 z" style="fill:var(--blue)"/><path d="M700,158 l-14,-6 l0,12 z" style="fill:var(--amber)"/>
+    <line x1="130" y1="150" x2="130" y2="166" style="stroke:var(--accent);stroke-width:2"/><circle cx="130" cy="158" r="5" style="fill:var(--accent)"/>
+    <text x="130" y="112" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">Strong</text><text x="130" y="132" text-anchor="middle" class="mono" style="fill:var(--muted)">Tg=tMax</text><text x="130" y="186" text-anchor="middle" style="fill:var(--muted)">freshest·may wait</text>
+    <line x1="300" y1="150" x2="300" y2="166" style="stroke:var(--accent);stroke-width:2"/><circle cx="300" cy="158" r="5" style="fill:var(--accent)"/>
+    <text x="300" y="112" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">Session</text><text x="300" y="132" text-anchor="middle" style="fill:var(--muted)">read your own writes</text>
+    <line x1="470" y1="148" x2="470" y2="168" style="stroke:var(--teal);stroke-width:2"/><circle cx="470" cy="158" r="6" style="fill:var(--teal)"/>
+    <text x="470" y="112" text-anchor="middle" style="fill:var(--teal);font-weight:700">Bounded ★default</text><text x="470" y="132" text-anchor="middle" class="mono" style="fill:var(--muted)">tMax−gracefulTime</text><text x="470" y="186" text-anchor="middle" style="fill:var(--muted)">barely waits</text>
+    <line x1="650" y1="150" x2="650" y2="166" style="stroke:var(--accent);stroke-width:2"/><circle cx="650" cy="158" r="5" style="fill:var(--accent)"/>
+    <text x="650" y="112" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">Eventually</text><text x="650" y="132" text-anchor="middle" class="mono" style="fill:var(--muted)">Tg≈1</text><text x="650" y="186" text-anchor="middle" style="fill:var(--muted)">never waits·instant</text>
+    <text x="380" y="214" text-anchor="middle" style="fill:var(--muted)">← lefter = fresher, more likely to wait　｜　righter = faster, more likely stale →</text>
+    <rect x="186" y="236" width="388" height="40" rx="9" style="fill:var(--panel);stroke:var(--purple)"/><text x="380" y="261" text-anchor="middle" style="fill:var(--purple);font-weight:700">Customized · pick a ts → time-travel (snapshot at a past moment)</text>
+  </svg>
+  <div class="figcap"><b>Consistency level = the freshness ↔ latency knob</b>: a read carries a <b>guarantee ts (Tg)</b>; the node compares its <span class="mono">tsafe</span> — <b>tsafe ≥ Tg answers now, otherwise it waits</b>. <b>Strong</b>(Tg=tMax) sees the newest but may wait; <b>Bounded</b>(default, rolled back by gracefulTime) barely waits; <b>Eventually</b>(Tg≈1) never waits, may be slightly stale; <b>Session</b> guarantees you read your own writes; <b>Customized</b> time-travels to a moment you pick.</div>
+</div>
 
 <div class="cols">
   <div class="col"><h4>Toward freshness (Strong)</h4><p>see all committed writes so far; for correctness-critical scenarios. Cost: must wait when the node hasn't caught up; latency may rise.</p></div>

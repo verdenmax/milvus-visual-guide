@@ -594,9 +594,9 @@ Second, <strong>tombstone buildup</strong>: a delete only appends "PK X voided a
   <svg viewBox="0 0 760 300" role="img" aria-label="compaction merges several tombstoned small segments into one large clean segment: tombstones are physically applied to delete void rows, old segments are marked dropped and awaiting GC">
     <text x="120" y="42" text-anchor="middle" style="fill:var(--muted)">before: fragmented + tombstones</text>
     <rect x="30" y="52" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="78" class="mono" style="fill:var(--ink)">seg A · pk1 pk2</text>
-    <rect x="30" y="100" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="126" class="mono" style="fill:var(--ink)">seg B · pk5 </text><text x="150" y="126" class="mono" style="fill:var(--red)">pk6✗</text>
+    <rect x="30" y="100" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="126" class="mono" style="fill:var(--ink)">seg B · pk5 </text><text x="158" y="126" class="mono" style="fill:var(--red)">pk6✗</text>
     <rect x="30" y="148" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="174" class="mono" style="fill:var(--ink)">seg C · </text><text x="100" y="174" class="mono" style="fill:var(--red)">pk9✗</text><text x="154" y="174" class="mono" style="fill:var(--ink)"> pk10</text>
-    <rect x="30" y="200" width="200" height="40" rx="8" style="fill:var(--panel);stroke:var(--red);stroke-width:1.5"/><text x="44" y="225" class="mono" style="fill:var(--red)">delta tombstones {pk6, pk9}</text>
+    <rect x="30" y="200" width="200" height="40" rx="8" style="fill:var(--panel);stroke:var(--red);stroke-width:1.5"/><text x="44" y="225" class="mono" style="fill:var(--red)">delta {pk6, pk9}</text>
     <line x1="210" y1="73" x2="288" y2="140" style="stroke:var(--line);stroke-width:1.5"/>
     <line x1="210" y1="121" x2="288" y2="146" style="stroke:var(--line);stroke-width:1.5"/>
     <line x1="210" y1="169" x2="288" y2="152" style="stroke:var(--line);stroke-width:1.5"/>
@@ -610,7 +610,7 @@ Second, <strong>tombstone buildup</strong>: a delete only appends "PK X voided a
     <text x="615" y="132" text-anchor="middle" style="fill:var(--teal);font-weight:700">seg D · large · clean · sorted</text>
     <text x="615" y="158" text-anchor="middle" class="mono" style="fill:var(--ink)">pk1 pk2 pk5 pk10</text>
     <text x="615" y="180" text-anchor="middle" style="fill:var(--muted)">pk6 · pk9 physically deleted</text>
-    <text x="615" y="226" text-anchor="middle" style="fill:var(--muted)">old A/B/C → marked dropped → GC reclaims</text>
+    <text x="600" y="226" text-anchor="middle" style="fill:var(--muted)">old A/B/C → dropped → GC reclaims</text>
   </svg>
   <div class="figcap"><b>Tidying fragments into cleanliness</b>: compaction does two things at once — <b>merges small binlogs/segments</b> into a larger, contiguous one, and <b>physically applies the tombstones</b> from delta (void rows <span class="mono">pk6, pk9</span> truly removed). The old segments are then marked <span class="mono">dropped</span> for GC. Classic <b>LSM</b>: append fast in front, merge-and-tidy in the background.</div>
 </div>

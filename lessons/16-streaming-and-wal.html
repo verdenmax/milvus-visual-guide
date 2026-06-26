@@ -783,7 +783,7 @@ It is this WAL that cleanly cuts apart "what must be done at once" from "what ca
     <rect x="542" y="88" width="180" height="38" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="632" y="112" text-anchor="middle" style="fill:var(--ink)">growing/sealed segment</text>
     <rect x="542" y="136" width="180" height="38" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="632" y="160" text-anchor="middle" style="fill:var(--ink)">binlog · index</text>
     <rect x="542" y="184" width="180" height="38" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="632" y="208" text-anchor="middle" style="fill:var(--ink)">QueryNode memory</text>
-    <text x="632" y="246" text-anchor="middle" style="fill:var(--muted)">steady &amp; cheap · background, at leisure</text>
+    <text x="632" y="246" text-anchor="middle" style="fill:var(--muted)">steady &amp; cheap · background</text>
   </svg>
   <div class="figcap"><b>One WAL, two tempos</b>: a <b>write</b> only reliably appends to the WAL — <b>fast, light, must finish now</b>; while <b>flushing to segments, building indexes, loading into memory</b> are done by background consumers <b>replaying the WAL</b> — <b>steady, cheap, at leisure</b>. Segments / indexes / memory are all <b>projections</b> of the WAL — that is "log as data".</div>
 </div>

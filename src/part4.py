@@ -837,7 +837,7 @@ It is this WAL that cleanly cuts apart "what must be done at once" from "what ca
     <rect x="542" y="88" width="180" height="38" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="632" y="112" text-anchor="middle" style="fill:var(--ink)">growing/sealed segment</text>
     <rect x="542" y="136" width="180" height="38" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="632" y="160" text-anchor="middle" style="fill:var(--ink)">binlog · index</text>
     <rect x="542" y="184" width="180" height="38" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="632" y="208" text-anchor="middle" style="fill:var(--ink)">QueryNode memory</text>
-    <text x="632" y="246" text-anchor="middle" style="fill:var(--muted)">steady &amp; cheap · background, at leisure</text>
+    <text x="632" y="246" text-anchor="middle" style="fill:var(--muted)">steady &amp; cheap · background</text>
   </svg>
   <div class="figcap"><b>One WAL, two tempos</b>: a <b>write</b> only reliably appends to the WAL — <b>fast, light, must finish now</b>; while <b>flushing to segments, building indexes, loading into memory</b> are done by background consumers <b>replaying the WAL</b> — <b>steady, cheap, at leisure</b>. Segments / indexes / memory are all <b>projections</b> of the WAL — that is "log as data".</div>
 </div>
@@ -1594,7 +1594,7 @@ Above it, the <strong>InsertCodec</strong> (<span class="mono">data_codec.go</sp
     <text x="160" y="183" class="mono" style="fill:var(--ink)">insert_log/445/12/seg_88/</text>
     <text x="452" y="183" class="mono" style="fill:var(--muted)">field_3/0</text>
     <path d="M150,200 L450,200 M150,200 l0,8 M450,200 l0,8" style="stroke:var(--accent);stroke-width:1.5"/>
-    <text x="300" y="224" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">segment prefix: delete it = wipe the whole segment (GC enumerates orphans by it)</text>
+    <text x="385" y="224" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">segment prefix: delete it = wipe the whole segment (GC enumerates orphans by it)</text>
     <text x="380" y="262" text-anchor="middle" style="fill:var(--muted)">object storage is really a flat key → value; the slash prefix makes it "usable like a directory tree"</text>
   </svg>
   <div class="figcap"><b>The path is the ownership</b>: each binlog's key looks like <span class="mono">kind/collection/partition/segment/field/logID</span> — <b>self-describing</b>, locatable without a metadata lookup. Object storage is really a <b>flat key→value</b> table; the <span class="mono">/</span> prefix "virtualizes" a directory tree: delete the <span class="mono">.../{segmentID}/</span> prefix to wipe a whole segment — exactly how GC enumerates and clears orphans.</div>
@@ -1855,9 +1855,9 @@ Second, <strong>tombstone buildup</strong>: a delete only appends "PK X voided a
   <svg viewBox="0 0 760 300" role="img" aria-label="compaction merges several tombstoned small segments into one large clean segment: tombstones are physically applied to delete void rows, old segments are marked dropped and awaiting GC">
     <text x="120" y="42" text-anchor="middle" style="fill:var(--muted)">before: fragmented + tombstones</text>
     <rect x="30" y="52" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="78" class="mono" style="fill:var(--ink)">seg A · pk1 pk2</text>
-    <rect x="30" y="100" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="126" class="mono" style="fill:var(--ink)">seg B · pk5 </text><text x="150" y="126" class="mono" style="fill:var(--red)">pk6✗</text>
+    <rect x="30" y="100" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="126" class="mono" style="fill:var(--ink)">seg B · pk5 </text><text x="158" y="126" class="mono" style="fill:var(--red)">pk6✗</text>
     <rect x="30" y="148" width="180" height="42" rx="8" style="fill:var(--panel);stroke:var(--line)"/><text x="44" y="174" class="mono" style="fill:var(--ink)">seg C · </text><text x="100" y="174" class="mono" style="fill:var(--red)">pk9✗</text><text x="154" y="174" class="mono" style="fill:var(--ink)"> pk10</text>
-    <rect x="30" y="200" width="200" height="40" rx="8" style="fill:var(--panel);stroke:var(--red);stroke-width:1.5"/><text x="44" y="225" class="mono" style="fill:var(--red)">delta tombstones {pk6, pk9}</text>
+    <rect x="30" y="200" width="200" height="40" rx="8" style="fill:var(--panel);stroke:var(--red);stroke-width:1.5"/><text x="44" y="225" class="mono" style="fill:var(--red)">delta {pk6, pk9}</text>
     <line x1="210" y1="73" x2="288" y2="140" style="stroke:var(--line);stroke-width:1.5"/>
     <line x1="210" y1="121" x2="288" y2="146" style="stroke:var(--line);stroke-width:1.5"/>
     <line x1="210" y1="169" x2="288" y2="152" style="stroke:var(--line);stroke-width:1.5"/>
@@ -1871,7 +1871,7 @@ Second, <strong>tombstone buildup</strong>: a delete only appends "PK X voided a
     <text x="615" y="132" text-anchor="middle" style="fill:var(--teal);font-weight:700">seg D · large · clean · sorted</text>
     <text x="615" y="158" text-anchor="middle" class="mono" style="fill:var(--ink)">pk1 pk2 pk5 pk10</text>
     <text x="615" y="180" text-anchor="middle" style="fill:var(--muted)">pk6 · pk9 physically deleted</text>
-    <text x="615" y="226" text-anchor="middle" style="fill:var(--muted)">old A/B/C → marked dropped → GC reclaims</text>
+    <text x="600" y="226" text-anchor="middle" style="fill:var(--muted)">old A/B/C → dropped → GC reclaims</text>
   </svg>
   <div class="figcap"><b>Tidying fragments into cleanliness</b>: compaction does two things at once — <b>merges small binlogs/segments</b> into a larger, contiguous one, and <b>physically applies the tombstones</b> from delta (void rows <span class="mono">pk6, pk9</span> truly removed). The old segments are then marked <span class="mono">dropped</span> for GC. Classic <b>LSM</b>: append fast in front, merge-and-tidy in the background.</div>
 </div>

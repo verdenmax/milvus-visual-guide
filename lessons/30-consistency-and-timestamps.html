@@ -457,6 +457,25 @@ Bounded 把 Tg 往回挪一点点（<span class="mono">tMax − gracefulTime</sp
 Session 保证你<strong>至少能读到自己刚写的</strong>，对"写完马上查"的交互很友好。Customized 则把"读哪一刻"完全交给你。回忆第 1 课说的"<strong>边写边查</strong>"：能做到这一点，正是因为 growing 段 + tsafe 机制让"新写的数据立刻可被某个 Tg 看见"——
 而看不看得见、要不要等，由你选的级别决定。<strong>没有放之四海皆准的答案，只有适配场景的取舍</strong>：要强一致就接受可能的等待，要低延迟就接受可能的陈旧。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="五种一致性级别是新鲜度与延迟之间的旋钮：Strong 最新但可能等，Bounded 默认几乎不等，Eventually 从不等可能略旧，Session 读自己刚写，Customized 指定时刻">
+    <text x="380" y="34" text-anchor="middle" style="fill:var(--ink);font-weight:700">读带 guarantee ts（Tg）→ 节点比较 tsafe：≥Tg 立即答 ｜ &lt;Tg 就等到追上</text>
+    <line x1="80" y1="158" x2="700" y2="158" style="stroke:var(--line);stroke-width:3"/>
+    <path d="M80,158 l14,-6 l0,12 z" style="fill:var(--blue)"/><path d="M700,158 l-14,-6 l0,12 z" style="fill:var(--amber)"/>
+    <line x1="130" y1="150" x2="130" y2="166" style="stroke:var(--accent);stroke-width:2"/><circle cx="130" cy="158" r="5" style="fill:var(--accent)"/>
+    <text x="130" y="112" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">Strong</text><text x="130" y="132" text-anchor="middle" class="mono" style="fill:var(--muted)">Tg=tMax</text><text x="130" y="186" text-anchor="middle" style="fill:var(--muted)">最新·可能等</text>
+    <line x1="300" y1="150" x2="300" y2="166" style="stroke:var(--accent);stroke-width:2"/><circle cx="300" cy="158" r="5" style="fill:var(--accent)"/>
+    <text x="300" y="112" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">Session</text><text x="300" y="132" text-anchor="middle" style="fill:var(--muted)">读到自己刚写</text>
+    <line x1="470" y1="148" x2="470" y2="168" style="stroke:var(--teal);stroke-width:2"/><circle cx="470" cy="158" r="6" style="fill:var(--teal)"/>
+    <text x="470" y="112" text-anchor="middle" style="fill:var(--teal);font-weight:700">Bounded ★默认</text><text x="470" y="132" text-anchor="middle" class="mono" style="fill:var(--muted)">tMax−gracefulTime</text><text x="470" y="186" text-anchor="middle" style="fill:var(--muted)">几乎不用等</text>
+    <line x1="650" y1="150" x2="650" y2="166" style="stroke:var(--accent);stroke-width:2"/><circle cx="650" cy="158" r="5" style="fill:var(--accent)"/>
+    <text x="650" y="112" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">Eventually</text><text x="650" y="132" text-anchor="middle" class="mono" style="fill:var(--muted)">Tg≈1</text><text x="650" y="186" text-anchor="middle" style="fill:var(--muted)">从不等·秒回</text>
+    <text x="380" y="214" text-anchor="middle" style="fill:var(--muted)">← 越左越新鲜、越可能等待　｜　越右越快、越可能略旧 →</text>
+    <rect x="196" y="236" width="368" height="40" rx="9" style="fill:var(--panel);stroke:var(--purple)"/><text x="380" y="261" text-anchor="middle" style="fill:var(--purple);font-weight:700">Customized · 指定 ts → 时间旅行（看某历史时刻的快照）</text>
+  </svg>
+  <div class="figcap"><b>一致性级别 = 新鲜度 ↔ 延迟 的旋钮</b>：读带一个 <b>guarantee ts (Tg)</b>，节点比较自己的 <span class="mono">tsafe</span>——<b>tsafe ≥ Tg 就立即答，否则等到追上</b>。<b>Strong</b>(Tg=tMax) 看最新但可能等；<b>Bounded</b>(默认，回挪 gracefulTime) 几乎不等；<b>Eventually</b>(Tg≈1) 从不等、可能略旧；<b>Session</b> 保证读到自己刚写；<b>Customized</b> 指定时刻做时间旅行。</div>
+</div>
+
 <div class="cols">
   <div class="col"><h4>偏新鲜（Strong）</h4><p>看到此刻全部已提交写入；适合对正确性极敏感的场景。代价：节点未追上时要等，延迟可能更高。</p></div>
   <div class="col"><h4>偏低延迟（Bounded / Eventually）</h4><p>容忍一点点陈旧，几乎不等待、响应快；适合推荐、检索增强等"差几条无伤大雅"的高并发场景。</p></div>
@@ -643,6 +662,26 @@ guarantees you <strong>at least read your own writes</strong>, friendly to "writ
 you. Recall Lesson 1's "<strong>query while you write</strong>": that works precisely because growing segments + the tsafe mechanism make "freshly written data
 immediately visible to some Tg" — whether you see it, and whether you wait, is set by the level you choose. <strong>There is no one-size-fits-all answer, only a
 trade-off matched to the scenario</strong>: want strong consistency, accept a possible wait; want low latency, accept possible staleness.</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="The five consistency levels are a knob between freshness and latency: Strong is freshest but may wait, Bounded is the default and barely waits, Eventually never waits and may be stale, Session reads your own writes, Customized picks a moment">
+    <text x="380" y="28" text-anchor="middle" style="fill:var(--ink);font-weight:700">a read carries a guarantee ts (Tg)</text>
+    <text x="380" y="48" text-anchor="middle" style="fill:var(--ink);font-weight:700">node compares tsafe: ≥Tg → answer now ｜ &lt;Tg → wait</text>
+    <line x1="80" y1="158" x2="700" y2="158" style="stroke:var(--line);stroke-width:3"/>
+    <path d="M80,158 l14,-6 l0,12 z" style="fill:var(--blue)"/><path d="M700,158 l-14,-6 l0,12 z" style="fill:var(--amber)"/>
+    <line x1="130" y1="150" x2="130" y2="166" style="stroke:var(--accent);stroke-width:2"/><circle cx="130" cy="158" r="5" style="fill:var(--accent)"/>
+    <text x="130" y="112" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">Strong</text><text x="130" y="132" text-anchor="middle" class="mono" style="fill:var(--muted)">Tg=tMax</text><text x="130" y="186" text-anchor="middle" style="fill:var(--muted)">freshest·may wait</text>
+    <line x1="300" y1="150" x2="300" y2="166" style="stroke:var(--accent);stroke-width:2"/><circle cx="300" cy="158" r="5" style="fill:var(--accent)"/>
+    <text x="300" y="112" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">Session</text><text x="300" y="132" text-anchor="middle" style="fill:var(--muted)">read your own writes</text>
+    <line x1="470" y1="148" x2="470" y2="168" style="stroke:var(--teal);stroke-width:2"/><circle cx="470" cy="158" r="6" style="fill:var(--teal)"/>
+    <text x="470" y="112" text-anchor="middle" style="fill:var(--teal);font-weight:700">Bounded ★default</text><text x="470" y="132" text-anchor="middle" class="mono" style="fill:var(--muted)">tMax−gracefulTime</text><text x="470" y="186" text-anchor="middle" style="fill:var(--muted)">barely waits</text>
+    <line x1="650" y1="150" x2="650" y2="166" style="stroke:var(--accent);stroke-width:2"/><circle cx="650" cy="158" r="5" style="fill:var(--accent)"/>
+    <text x="650" y="112" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">Eventually</text><text x="650" y="132" text-anchor="middle" class="mono" style="fill:var(--muted)">Tg≈1</text><text x="650" y="186" text-anchor="middle" style="fill:var(--muted)">never waits·instant</text>
+    <text x="380" y="214" text-anchor="middle" style="fill:var(--muted)">← lefter = fresher, more likely to wait　｜　righter = faster, more likely stale →</text>
+    <rect x="186" y="236" width="388" height="40" rx="9" style="fill:var(--panel);stroke:var(--purple)"/><text x="380" y="261" text-anchor="middle" style="fill:var(--purple);font-weight:700">Customized · pick a ts → time-travel (snapshot at a past moment)</text>
+  </svg>
+  <div class="figcap"><b>Consistency level = the freshness ↔ latency knob</b>: a read carries a <b>guarantee ts (Tg)</b>; the node compares its <span class="mono">tsafe</span> — <b>tsafe ≥ Tg answers now, otherwise it waits</b>. <b>Strong</b>(Tg=tMax) sees the newest but may wait; <b>Bounded</b>(default, rolled back by gracefulTime) barely waits; <b>Eventually</b>(Tg≈1) never waits, may be slightly stale; <b>Session</b> guarantees you read your own writes; <b>Customized</b> time-travels to a moment you pick.</div>
+</div>
 
 <div class="cols">
   <div class="col"><h4>Toward freshness (Strong)</h4><p>see all committed writes so far; for correctness-critical scenarios. Cost: must wait when the node hasn't caught up; latency may rise.</p></div>

@@ -410,6 +410,32 @@ html[data-lang="zh"] .lang-en { display: none !important; }
   <div class="node hl"><div class="nt">reduce</div><div class="nd">归并出全局 topK</div></div>
 </div>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="一次 search 的往返：SDK 发请求，Proxy 的 searchTask 解析建计划定时间戳、扇出到各分片、再归并，结果返回 SDK">
+    <rect x="22" y="116" width="92" height="60" rx="10" style="fill:var(--panel);stroke:var(--line)"/><text x="68" y="142" text-anchor="middle" style="fill:var(--ink);font-weight:700">SDK</text><text x="68" y="162" text-anchor="middle" style="fill:var(--muted)">向量+topK+expr</text>
+    <rect x="146" y="74" width="234" height="142" rx="11" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="263" y="96" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">Proxy · searchTask</text>
+    <rect x="160" y="106" width="206" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="263" y="126" text-anchor="middle" style="fill:var(--ink)">① PreExecute · plan + ts</text>
+    <rect x="160" y="140" width="206" height="30" rx="6" style="fill:var(--panel);stroke:var(--accent)"/><text x="263" y="160" text-anchor="middle" style="fill:var(--accent-ink)">② Execute · 扇出 scatter</text>
+    <rect x="160" y="174" width="206" height="30" rx="6" style="fill:var(--panel);stroke:var(--teal)"/><text x="263" y="194" text-anchor="middle" style="fill:var(--teal)">③ PostExecute · 归并 reduce</text>
+    <line x1="114" y1="132" x2="144" y2="132" style="stroke:var(--line);stroke-width:2"/><path d="M144,132 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+    <text x="129" y="124" text-anchor="middle" style="fill:var(--muted)">RPC</text>
+    <path d="M146,206 C110,206 92,194 92,178" style="fill:none;stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/><path d="M92,178 l-5,11 l10,0 z" style="fill:var(--teal)"/>
+    <text x="96" y="206" style="fill:var(--teal)">结果返回</text>
+    <rect x="440" y="72" width="170" height="40" rx="8" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="525" y="97" text-anchor="middle" style="fill:var(--ink)">delegator A · 局部 topK</text>
+    <rect x="440" y="120" width="170" height="40" rx="8" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="525" y="145" text-anchor="middle" style="fill:var(--ink)">delegator B · 局部 topK</text>
+    <rect x="440" y="168" width="170" height="40" rx="8" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="525" y="193" text-anchor="middle" style="fill:var(--ink)">delegator C · 局部 topK</text>
+    <line x1="380" y1="151" x2="438" y2="92" style="stroke:var(--accent);stroke-width:1.5"/><path d="M438,92 l-11,2 l4,8 z" style="fill:var(--accent)"/>
+    <line x1="380" y1="153" x2="438" y2="140" style="stroke:var(--accent);stroke-width:1.5"/><path d="M438,140 l-11,-1 l3,9 z" style="fill:var(--accent)"/>
+    <line x1="380" y1="155" x2="438" y2="188" style="stroke:var(--accent);stroke-width:1.5"/><path d="M438,188 l-10,-4 l-1,9 z" style="fill:var(--accent)"/>
+    <line x1="438" y1="108" x2="382" y2="186" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/>
+    <line x1="438" y1="156" x2="382" y2="189" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/>
+    <line x1="620" y1="92" x2="700" y2="92" style="stroke:var(--line);stroke-width:1;stroke-dasharray:3 3"/><text x="708" y="96" style="fill:var(--faint)">↘ 段</text>
+    <text x="380" y="232" text-anchor="middle" style="fill:var(--muted)">外层：Proxy 扇到分片；内层：分片再扇到段（第26课）· 并发，最慢分片定延迟</text>
+  </svg>
+  <div class="figcap"><b>一次 search 的往返与两层扇出</b>：Proxy 把请求封成 <span class="mono">searchTask</span>——<b>① 解析建 plan、定 guarantee ts → ② 扇出到各分片 delegator → ③ 归并出全局 topK</b> 返回 SDK。扇出是<b>两层</b>的（Proxy→分片，分片→段），且<b>并发</b>进行——一次搜索的延迟取决于<b>最慢的那个分片</b>，而非所有分片之和。</div>
+</div>
+
 <p>这条流里有两个"<strong>一对多</strong>"的扩散点，是理解分布式检索的关键。第一个在 <strong>Proxy → delegator</strong>：一个 collection 被切成多个分片，请求要<strong>同时</strong>打到每个分片（scatter）。第二个在每个 delegator 内部：它还要把搜索继续扇到自己管的多个段与多个 worker QueryNode 上（这是第 26 课的内容）。
 所以一次 search 是<strong>两层扇出</strong>：Proxy 扇到分片、分片再扇到段。对应地，归并也是<strong>分层</strong>的：段内取 topK、节点内合并、Proxy 跨分片再合并——这"<strong>三级 reduce</strong>"留到第 29 课系统讲。本课你只要记住<strong>最外层</strong>这一对：Proxy 扇出、Proxy 归并。</p>
 
@@ -586,6 +612,32 @@ This part is the <strong>mirror</strong> of the write path, and it descends all 
   <div class="node"><div class="nt">delegator B</div><div class="nd">shard 2 local topK</div></div>
   <div class="arrow">→</div>
   <div class="node hl"><div class="nt">reduce</div><div class="nd">merge into global topK</div></div>
+</div>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="A search round-trip: the SDK sends a request, the Proxy's searchTask parses and builds a plan and timestamp, scatters to the shards, then reduces, and the result returns to the SDK">
+    <rect x="22" y="116" width="92" height="60" rx="10" style="fill:var(--panel);stroke:var(--line)"/><text x="68" y="142" text-anchor="middle" style="fill:var(--ink);font-weight:700">SDK</text><text x="68" y="162" text-anchor="middle" style="fill:var(--muted)">vec+topK+expr</text>
+    <rect x="146" y="74" width="234" height="142" rx="11" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/>
+    <text x="263" y="96" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">Proxy · searchTask</text>
+    <rect x="160" y="106" width="206" height="30" rx="6" style="fill:var(--panel);stroke:var(--line)"/><text x="263" y="126" text-anchor="middle" style="fill:var(--ink)">① PreExecute · plan + ts</text>
+    <rect x="160" y="140" width="206" height="30" rx="6" style="fill:var(--panel);stroke:var(--accent)"/><text x="263" y="160" text-anchor="middle" style="fill:var(--accent-ink)">② Execute · scatter</text>
+    <rect x="160" y="174" width="206" height="30" rx="6" style="fill:var(--panel);stroke:var(--teal)"/><text x="263" y="194" text-anchor="middle" style="fill:var(--teal)">③ PostExecute · reduce</text>
+    <line x1="114" y1="132" x2="144" y2="132" style="stroke:var(--line);stroke-width:2"/><path d="M144,132 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+    <text x="129" y="124" text-anchor="middle" style="fill:var(--muted)">RPC</text>
+    <path d="M146,206 C110,206 92,194 92,178" style="fill:none;stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/><path d="M92,178 l-5,11 l10,0 z" style="fill:var(--teal)"/>
+    <text x="96" y="206" style="fill:var(--teal)">result</text>
+    <rect x="440" y="72" width="170" height="40" rx="8" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="525" y="97" text-anchor="middle" style="fill:var(--ink)">delegator A · local topK</text>
+    <rect x="440" y="120" width="170" height="40" rx="8" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="525" y="145" text-anchor="middle" style="fill:var(--ink)">delegator B · local topK</text>
+    <rect x="440" y="168" width="170" height="40" rx="8" style="fill:var(--panel);stroke:var(--accent);stroke-width:1.5"/><text x="525" y="193" text-anchor="middle" style="fill:var(--ink)">delegator C · local topK</text>
+    <line x1="380" y1="151" x2="438" y2="92" style="stroke:var(--accent);stroke-width:1.5"/><path d="M438,92 l-11,2 l4,8 z" style="fill:var(--accent)"/>
+    <line x1="380" y1="153" x2="438" y2="140" style="stroke:var(--accent);stroke-width:1.5"/><path d="M438,140 l-11,-1 l3,9 z" style="fill:var(--accent)"/>
+    <line x1="380" y1="155" x2="438" y2="188" style="stroke:var(--accent);stroke-width:1.5"/><path d="M438,188 l-10,-4 l-1,9 z" style="fill:var(--accent)"/>
+    <line x1="438" y1="108" x2="382" y2="186" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/>
+    <line x1="438" y1="156" x2="382" y2="189" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/>
+    <line x1="620" y1="92" x2="700" y2="92" style="stroke:var(--line);stroke-width:1;stroke-dasharray:3 3"/><text x="708" y="96" style="fill:var(--faint)">↘ seg</text>
+    <text x="380" y="232" text-anchor="middle" style="fill:var(--muted)">two-layer fan-out (Proxy→shards, shards→segments · L26) · concurrent: the slowest shard sets latency</text>
+  </svg>
+  <div class="figcap"><b>A search round-trip with two-layer fan-out</b>: the Proxy wraps the request into a <span class="mono">searchTask</span> — <b>① parse, build the plan, set the guarantee ts → ② scatter to each shard's delegator → ③ reduce into the global topK</b>, returned to the SDK. The fan-out is <b>two layers</b> (Proxy→shards, shards→segments) and runs <b>concurrently</b> — latency is set by the <b>slowest shard</b>, not the sum.</div>
 </div>
 
 <p>This flow has two "<strong>one-to-many</strong>" spread points, the key to understanding distributed search. The first is at <strong>Proxy → delegator</strong>: a collection is cut into several shards and the request must hit each shard <strong>simultaneously</strong> (scatter). The second is inside each delegator: it further fans the search out to the several segments and worker QueryNodes it manages (that is Lesson 26's content).
