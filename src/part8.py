@@ -646,7 +646,7 @@ LESSON_36 = {
 <div class="layers">
   <div class="layer l-main"><div class="lh"><span class="badge">任务</span><span class="name">Task（exec/Task.h，一次完整执行）</span></div><div class="ld">持有状态机 TaskState：kRunning/kFinished/kCanceled/kAborted/kFailed</div></div>
   <div class="layer l-part"><div class="lh"><span class="badge">传动</span><span class="name">Driver（exec/Driver.h，推数据过算子链）</span></div><div class="ld">像传送带一批批推；用 BlockingReason/StopReason 表达暂停与恢复</div></div>
-  <div class="layer l-core"><div class="lh"><span class="badge">工位</span><span class="name">Operator × N（exec/operator/*）</span></div><div class="ld">FilterBitsNode(过滤→bitset) / VectorSearchNode(检索) / MvccNode / GroupByNode …</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">工位</span><span class="name">Operator × N（exec/operator/*）</span></div><div class="ld">FilterBitsNode(过滤→bitset) / VectorSearchNode(检索) / MvccNode / SearchGroupByNode …</div></div>
 </div>
 
 <h2>一条查询在流水线里怎么流</h2>
@@ -763,7 +763,7 @@ Lesson 28 followed one query as it turned a filter string into an expression tre
 <div class="layers">
   <div class="layer l-main"><div class="lh"><span class="badge">task</span><span class="name">Task (exec/Task.h, one complete execution)</span></div><div class="ld">holds state machine TaskState: kRunning/kFinished/kCanceled/kAborted/kFailed</div></div>
   <div class="layer l-part"><div class="lh"><span class="badge">drive</span><span class="name">Driver (exec/Driver.h, pushes data through the chain)</span></div><div class="ld">conveyor pushing batches; BlockingReason/StopReason for pause &amp; resume</div></div>
-  <div class="layer l-core"><div class="lh"><span class="badge">station</span><span class="name">Operator × N (exec/operator/*)</span></div><div class="ld">FilterBitsNode(filter→bitset) / VectorSearchNode(search) / MvccNode / GroupByNode …</div></div>
+  <div class="layer l-core"><div class="lh"><span class="badge">station</span><span class="name">Operator × N (exec/operator/*)</span></div><div class="ld">FilterBitsNode(filter→bitset) / VectorSearchNode(search) / MvccNode / SearchGroupByNode …</div></div>
 </div>
 
 <h2>How one query flows through the pipeline</h2>
