@@ -10628,16 +10628,16 @@ Every system has a <strong>capacity ceiling</strong>. If writes outrun flushing,
     <rect x="60" y="56" width="400" height="30" rx="6" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="260" y="76" text-anchor="middle" style="fill:var(--teal);font-weight:700">normal · full speed</text>
     <rect x="460" y="56" width="140" height="30" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="530" y="76" text-anchor="middle" style="fill:var(--amber);font-weight:700">throttle</text>
     <rect x="600" y="56" width="100" height="30" rx="6" style="fill:var(--red-soft);stroke:var(--red);stroke-width:2"/><text x="650" y="76" text-anchor="middle" style="fill:var(--red);font-weight:700">deny</text>
-    <line x1="460" y1="50" x2="460" y2="92" style="stroke:var(--amber);stroke-dasharray:3 3"/><text x="460" y="104" text-anchor="middle" style="fill:var(--muted)">≈80% watermark</text>
-    <line x1="600" y1="50" x2="600" y2="92" style="stroke:var(--red);stroke-dasharray:3 3"/><text x="600" y="104" text-anchor="middle" style="fill:var(--red)">hard limit 100%</text>
+    <line x1="460" y1="50" x2="460" y2="92" style="stroke:var(--amber);stroke-dasharray:3 3"/><text x="460" y="104" text-anchor="middle" style="fill:var(--muted)">≈85% watermark</text>
+    <line x1="600" y1="50" x2="600" y2="92" style="stroke:var(--red);stroke-dasharray:3 3"/><text x="600" y="104" text-anchor="middle" style="fill:var(--red)">hard limit ≈95%</text>
     <rect x="40" y="120" width="156" height="36" rx="8" style="fill:var(--amber-soft);stroke:var(--amber);stroke-width:1.5"/><text x="118" y="143" text-anchor="middle" style="fill:var(--amber);font-weight:700">① throttle</text>
-    <text x="206" y="143" style="fill:var(--muted)">near ~80%: lower the rate, requests queue and slow (still in, just slower)</text>
+    <text x="206" y="143" style="fill:var(--muted)">near ~85%: lower the rate, requests queue and slow (still in, just slower)</text>
     <rect x="40" y="164" width="156" height="36" rx="8" style="fill:var(--red-soft);stroke:var(--red);stroke-width:1.5"/><text x="118" y="187" text-anchor="middle" style="fill:var(--red);font-weight:700">② force-deny</text>
     <text x="206" y="187" style="fill:var(--muted)">hard limit hit: forceDeny writes/reads, rate→0, deny all (save the existing)</text>
     <text x="380" y="232" text-anchor="middle" style="fill:var(--ink);font-weight:700">gradual pressure + extreme backstop: throttle gently, hard-deny only at the wall</text>
     <text x="380" y="254" text-anchor="middle" style="fill:var(--muted)">writes and reads managed separately: under pressure deny writes first (the resource hog)</text>
   </svg>
-  <div class="figcap"><b>Two brakes = gradual throttle + extreme deny</b>: <span class="mono">QuotaCenter</span> doesn't slow with one switch. As memory/disk usage and TT delay climb — <b>① throttle</b>: near the watermark (memory ~80%) it <b>gradually lowers the rate</b>, requests queue and slow (still get in, just slower — a gentle brake); <b>② force-deny</b>: hitting the hard limit calls <span class="mono">forceDenyWriting/forceDenyReading</span> to drop the rate <b>to 0 and reject the whole class</b> (an emergency brake — save the existing, avoid OOM / a full disk). Deny-only would thrash at the threshold; throttle-only can't hold a flood — <b>the two together are both smooth and safe</b>. Writes and reads are governed separately; under pressure, writes are denied first.</div>
+  <div class="figcap"><b>Two brakes = gradual throttle + extreme deny</b>: <span class="mono">QuotaCenter</span> doesn't slow with one switch. As memory/disk usage and TT delay climb — <b>① throttle</b>: near the watermark (memory ~85%) it <b>gradually lowers the rate</b>, requests queue and slow (still get in, just slower — a gentle brake); <b>② force-deny</b>: hitting the hard limit calls <span class="mono">forceDenyWriting/forceDenyReading</span> to drop the rate <b>to 0 and reject the whole class</b> (an emergency brake — save the existing, avoid OOM / a full disk). Deny-only would thrash at the threshold; throttle-only can't hold a flood — <b>the two together are both smooth and safe</b>. Writes and reads are governed separately; under pressure, writes are denied first.</div>
 </div>
 
 <div class="cols">
@@ -10757,7 +10757,7 @@ To close Part 11, this lesson is a <strong>quick tour</strong> of several featur
     <rect x="30" y="58" width="78" height="40" rx="8" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:1.5"/><text x="69" y="83" text-anchor="middle" style="fill:var(--teal);font-weight:700">tenant A</text>
     <line x1="108" y1="78" x2="124" y2="78" style="stroke:var(--teal);stroke-width:2"/><path d="M124,78 l-9,-4 l0,8 z" style="fill:var(--teal)"/>
     <rect x="126" y="58" width="138" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="195" y="76" text-anchor="middle" style="fill:var(--ink)">Database A</text><text x="195" y="92" text-anchor="middle" style="fill:var(--muted)">naming / data iso</text>
-    <rect x="276" y="58" width="458" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="290" y="83" style="fill:var(--teal);font-weight:700">Resource Group A</text>
+    <rect x="276" y="58" width="458" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="290" y="76" style="fill:var(--teal);font-weight:700">Resource Group A</text><text x="290" y="92" style="fill:var(--muted)">compute iso</text>
     <rect x="470" y="64" width="66" height="28" rx="6" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="503" y="83" text-anchor="middle" class="mono" style="fill:var(--teal)">n1</text>
     <rect x="544" y="64" width="66" height="28" rx="6" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="577" y="83" text-anchor="middle" class="mono" style="fill:var(--teal)">n2</text>
     <text x="676" y="83" text-anchor="middle" style="fill:var(--faint)">exclusive</text>
@@ -10765,7 +10765,7 @@ To close Part 11, this lesson is a <strong>quick tour</strong> of several featur
     <rect x="30" y="152" width="78" height="40" rx="8" style="fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5"/><text x="69" y="177" text-anchor="middle" style="fill:var(--purple);font-weight:700">tenant B</text>
     <line x1="108" y1="172" x2="124" y2="172" style="stroke:var(--purple);stroke-width:2"/><path d="M124,172 l-9,-4 l0,8 z" style="fill:var(--purple)"/>
     <rect x="126" y="152" width="138" height="40" rx="8" style="fill:var(--panel);stroke:var(--purple)"/><text x="195" y="170" text-anchor="middle" style="fill:var(--ink)">Database B</text><text x="195" y="186" text-anchor="middle" style="fill:var(--muted)">naming / data iso</text>
-    <rect x="276" y="152" width="458" height="40" rx="8" style="fill:var(--panel);stroke:var(--purple)"/><text x="290" y="177" style="fill:var(--purple);font-weight:700">Resource Group B</text>
+    <rect x="276" y="152" width="458" height="40" rx="8" style="fill:var(--panel);stroke:var(--purple)"/><text x="290" y="170" style="fill:var(--purple);font-weight:700">Resource Group B</text><text x="290" y="186" style="fill:var(--muted)">compute iso</text>
     <rect x="470" y="158" width="66" height="28" rx="6" style="fill:var(--purple-soft);stroke:var(--purple)"/><text x="503" y="177" text-anchor="middle" class="mono" style="fill:var(--purple)">n3</text>
     <rect x="544" y="158" width="66" height="28" rx="6" style="fill:var(--purple-soft);stroke:var(--purple)"/><text x="577" y="177" text-anchor="middle" class="mono" style="fill:var(--purple)">n4</text>
     <text x="676" y="177" text-anchor="middle" style="fill:var(--faint)">exclusive</text>

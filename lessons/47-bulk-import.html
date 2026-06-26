@@ -420,7 +420,7 @@ html[data-lang="zh"] .lang-en { display: none !important; }
     <text x="430" y="128" text-anchor="middle" style="fill:var(--teal);font-weight:700">殊途同归</text>
     <rect x="474" y="100" width="220" height="56" rx="11" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:2"/><text x="584" y="124" text-anchor="middle" style="fill:var(--teal);font-weight:700">同规格 binlog 段</text><text x="584" y="144" text-anchor="middle" style="fill:var(--muted)">对象存储 · 同一张图纸</text>
     <line x1="584" y1="156" x2="584" y2="174" style="stroke:var(--teal);stroke-width:2"/><path d="M584,174 l-4,-10 l8,0 z" style="fill:var(--teal)"/>
-    <rect x="474" y="176" width="220" height="40" rx="9" style="fill:var(--panel);stroke:var(--line)"/><text x="584" y="201" text-anchor="middle" style="fill:var(--ink)">QueryNode 一视同仁加载、检索</text>
+    <rect x="474" y="176" width="220" height="40" rx="9" style="fill:var(--panel);stroke:var(--line)"/><text x="584" y="201" text-anchor="middle" style="fill:var(--ink)">QueryNode 一视同仁加载</text>
     <text x="380" y="256" text-anchor="middle" style="fill:var(--muted)">两条生产路径、同一种产物：上游细水长流或整车卸货，交付下游的都是同规格的段</text>
   </svg>
   <div class="figcap"><b>两条写入路径，殊途同归</b>：<b>① 流式写入</b>（在线、实时可见）走 <span class="mono">实时 insert → WAL → growing → flush 成段</span>；<b>② 批量导入</b>（离线、一次写定）走 <span class="mono">批量文件 → ImportV2 作业 → 直接建段</span>。两条路<b>最终都产出同规格的 binlog 段</b>落到对象存储——就像"不管哪条产线，下线的零件都符合同一张图纸"，于是 <b>QueryNode 一视同仁</b>地加载、检索，不必认两种段。把"多样的生产"收敛到"统一的产物接口"，正是系统能容纳多路径却不失控的关键。</div>

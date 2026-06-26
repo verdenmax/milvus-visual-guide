@@ -390,16 +390,16 @@ html[data-lang="zh"] .lang-en { display: none !important; }
     <rect x="60" y="56" width="400" height="30" rx="6" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="260" y="76" text-anchor="middle" style="fill:var(--teal);font-weight:700">正常 · 满速放行</text>
     <rect x="460" y="56" width="140" height="30" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="530" y="76" text-anchor="middle" style="fill:var(--amber);font-weight:700">限速</text>
     <rect x="600" y="56" width="100" height="30" rx="6" style="fill:var(--red-soft);stroke:var(--red);stroke-width:2"/><text x="650" y="76" text-anchor="middle" style="fill:var(--red);font-weight:700">拒绝</text>
-    <line x1="460" y1="50" x2="460" y2="92" style="stroke:var(--amber);stroke-dasharray:3 3"/><text x="460" y="104" text-anchor="middle" style="fill:var(--muted)">≈80% 警戒线</text>
-    <line x1="600" y1="50" x2="600" y2="92" style="stroke:var(--red);stroke-dasharray:3 3"/><text x="600" y="104" text-anchor="middle" style="fill:var(--red)">硬上限 100%</text>
+    <line x1="460" y1="50" x2="460" y2="92" style="stroke:var(--amber);stroke-dasharray:3 3"/><text x="460" y="104" text-anchor="middle" style="fill:var(--muted)">≈85% 警戒线</text>
+    <line x1="600" y1="50" x2="600" y2="92" style="stroke:var(--red);stroke-dasharray:3 3"/><text x="600" y="104" text-anchor="middle" style="fill:var(--red)">硬上限 ≈95%</text>
     <rect x="40" y="120" width="156" height="36" rx="8" style="fill:var(--amber-soft);stroke:var(--amber);stroke-width:1.5"/><text x="118" y="143" text-anchor="middle" style="fill:var(--amber);font-weight:700">① 限速 throttle</text>
-    <text x="206" y="143" style="fill:var(--muted)">接近警戒线(~80%)：逐步调低速率、请求排队慢来——还能进，只是变慢</text>
+    <text x="206" y="143" style="fill:var(--muted)">接近警戒线(~85%)：逐步调低速率、请求排队慢来——还能进，只是变慢</text>
     <rect x="40" y="164" width="156" height="36" rx="8" style="fill:var(--red-soft);stroke:var(--red);stroke-width:1.5"/><text x="118" y="187" text-anchor="middle" style="fill:var(--red);font-weight:700">② 强制拒绝 deny</text>
     <text x="206" y="187" style="fill:var(--muted)">撞穿硬上限：forceDeny 写/读、速率→0、整类拒绝——保住已有</text>
     <text x="380" y="232" text-anchor="middle" style="fill:var(--ink);font-weight:700">渐进施压 + 极端兜底：平时柔和限速控压，真要撞墙才急刹拒绝</text>
     <text x="380" y="254" text-anchor="middle" style="fill:var(--muted)">写和读分开管：压力大时先 deny 写（写占资源大头），读可能还能继续</text>
   </svg>
-  <div class="figcap"><b>两档刹车 = 渐进限速 + 极端拒绝</b>：<span class="mono">QuotaCenter</span> 的减速不是一刀切。随着内存/磁盘用量、TT 延迟上升——<b>① 限速 throttle</b>：接近警戒线（如内存 ~80%）就<b>逐步调低速率</b>、让请求排队慢来（还能进，只是变慢，温和刹车）；<b>② 强制拒绝 force-deny</b>：撞穿硬上限就调 <span class="mono">forceDenyWriting/forceDenyReading</span> 把速率<b>压到 0、整类拒绝</b>（紧急刹车，保住已有，避免 OOM/写满盘）。只有"拒绝"一档会在临界点剧烈抖动，只有"限速"又压不住洪峰——<b>两档配合才既平滑又托底</b>。写读分开管，压力大先 deny 写。</div>
+  <div class="figcap"><b>两档刹车 = 渐进限速 + 极端拒绝</b>：<span class="mono">QuotaCenter</span> 的减速不是一刀切。随着内存/磁盘用量、TT 延迟上升——<b>① 限速 throttle</b>：接近警戒线（如内存 ~85%）就<b>逐步调低速率</b>、让请求排队慢来（还能进，只是变慢，温和刹车）；<b>② 强制拒绝 force-deny</b>：撞穿硬上限就调 <span class="mono">forceDenyWriting/forceDenyReading</span> 把速率<b>压到 0、整类拒绝</b>（紧急刹车，保住已有，避免 OOM/写满盘）。只有"拒绝"一档会在临界点剧烈抖动，只有"限速"又压不住洪峰——<b>两档配合才既平滑又托底</b>。写读分开管，压力大先 deny 写。</div>
 </div>
 
 <p>这"两档刹车"的设计，藏着一个很重要的<strong>分级响应</strong>思想，值得点透。如果只有"<strong>拒绝</strong>"一档会怎样？那系统就成了"<strong>要么全放、要么全关</strong>"的开关——在临界点附近<strong>剧烈抖动</strong>：刚一拒绝、压力降了又全放，放完又爆、又全拒……用户体验是"<strong>时好时坏、忽快忽停</strong>"。反过来，如果只有"<strong>限速</strong>"一档、没有硬性拒绝，那遇到极端洪峰时，温和的限速可能<strong>压不住</strong>，系统还是会被缓慢地推向崩溃。<strong>两档配合，才能既平滑又托底</strong>：平时用限速<strong>柔和地</strong>把压力维持在安全区（像汽车轻点刹车控速），只有在真要撞墙的瞬间才动用强制拒绝这记<strong>急刹</strong>。这种"<strong>渐进施压 + 极端兜底</strong>"的分级策略，在工程上随处可见——从网络拥塞控制（慢启动→拥塞避免→快速重传）到操作系统的内存回收（轻度回收→OOM kill）。Milvus 的配额限流，正是这套成熟智慧在向量数据库上的落地。看懂了"<strong>为什么要两档、而不是一档</strong>"，你对系统稳定性设计的理解就深了一层：<strong>好的自我保护，不是一道生硬的墙，而是一条有弹性的、能随压力平滑收紧的缰绳</strong>。</p>
@@ -523,16 +523,16 @@ Every system has a <strong>capacity ceiling</strong>. If writes outrun flushing,
     <rect x="60" y="56" width="400" height="30" rx="6" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="260" y="76" text-anchor="middle" style="fill:var(--teal);font-weight:700">normal · full speed</text>
     <rect x="460" y="56" width="140" height="30" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="530" y="76" text-anchor="middle" style="fill:var(--amber);font-weight:700">throttle</text>
     <rect x="600" y="56" width="100" height="30" rx="6" style="fill:var(--red-soft);stroke:var(--red);stroke-width:2"/><text x="650" y="76" text-anchor="middle" style="fill:var(--red);font-weight:700">deny</text>
-    <line x1="460" y1="50" x2="460" y2="92" style="stroke:var(--amber);stroke-dasharray:3 3"/><text x="460" y="104" text-anchor="middle" style="fill:var(--muted)">≈80% watermark</text>
-    <line x1="600" y1="50" x2="600" y2="92" style="stroke:var(--red);stroke-dasharray:3 3"/><text x="600" y="104" text-anchor="middle" style="fill:var(--red)">hard limit 100%</text>
+    <line x1="460" y1="50" x2="460" y2="92" style="stroke:var(--amber);stroke-dasharray:3 3"/><text x="460" y="104" text-anchor="middle" style="fill:var(--muted)">≈85% watermark</text>
+    <line x1="600" y1="50" x2="600" y2="92" style="stroke:var(--red);stroke-dasharray:3 3"/><text x="600" y="104" text-anchor="middle" style="fill:var(--red)">hard limit ≈95%</text>
     <rect x="40" y="120" width="156" height="36" rx="8" style="fill:var(--amber-soft);stroke:var(--amber);stroke-width:1.5"/><text x="118" y="143" text-anchor="middle" style="fill:var(--amber);font-weight:700">① throttle</text>
-    <text x="206" y="143" style="fill:var(--muted)">near ~80%: lower the rate, requests queue and slow (still in, just slower)</text>
+    <text x="206" y="143" style="fill:var(--muted)">near ~85%: lower the rate, requests queue and slow (still in, just slower)</text>
     <rect x="40" y="164" width="156" height="36" rx="8" style="fill:var(--red-soft);stroke:var(--red);stroke-width:1.5"/><text x="118" y="187" text-anchor="middle" style="fill:var(--red);font-weight:700">② force-deny</text>
     <text x="206" y="187" style="fill:var(--muted)">hard limit hit: forceDeny writes/reads, rate→0, deny all (save the existing)</text>
     <text x="380" y="232" text-anchor="middle" style="fill:var(--ink);font-weight:700">gradual pressure + extreme backstop: throttle gently, hard-deny only at the wall</text>
     <text x="380" y="254" text-anchor="middle" style="fill:var(--muted)">writes and reads managed separately: under pressure deny writes first (the resource hog)</text>
   </svg>
-  <div class="figcap"><b>Two brakes = gradual throttle + extreme deny</b>: <span class="mono">QuotaCenter</span> doesn't slow with one switch. As memory/disk usage and TT delay climb — <b>① throttle</b>: near the watermark (memory ~80%) it <b>gradually lowers the rate</b>, requests queue and slow (still get in, just slower — a gentle brake); <b>② force-deny</b>: hitting the hard limit calls <span class="mono">forceDenyWriting/forceDenyReading</span> to drop the rate <b>to 0 and reject the whole class</b> (an emergency brake — save the existing, avoid OOM / a full disk). Deny-only would thrash at the threshold; throttle-only can't hold a flood — <b>the two together are both smooth and safe</b>. Writes and reads are governed separately; under pressure, writes are denied first.</div>
+  <div class="figcap"><b>Two brakes = gradual throttle + extreme deny</b>: <span class="mono">QuotaCenter</span> doesn't slow with one switch. As memory/disk usage and TT delay climb — <b>① throttle</b>: near the watermark (memory ~85%) it <b>gradually lowers the rate</b>, requests queue and slow (still get in, just slower — a gentle brake); <b>② force-deny</b>: hitting the hard limit calls <span class="mono">forceDenyWriting/forceDenyReading</span> to drop the rate <b>to 0 and reject the whole class</b> (an emergency brake — save the existing, avoid OOM / a full disk). Deny-only would thrash at the threshold; throttle-only can't hold a flood — <b>the two together are both smooth and safe</b>. Writes and reads are governed separately; under pressure, writes are denied first.</div>
 </div>
 
 <div class="cols">

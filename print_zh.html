@@ -10276,7 +10276,7 @@ Go 这边则有对应的封装（如第 2、27 课的 <span class="mono">LocalSe
     <text x="430" y="128" text-anchor="middle" style="fill:var(--teal);font-weight:700">殊途同归</text>
     <rect x="474" y="100" width="220" height="56" rx="11" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:2"/><text x="584" y="124" text-anchor="middle" style="fill:var(--teal);font-weight:700">同规格 binlog 段</text><text x="584" y="144" text-anchor="middle" style="fill:var(--muted)">对象存储 · 同一张图纸</text>
     <line x1="584" y1="156" x2="584" y2="174" style="stroke:var(--teal);stroke-width:2"/><path d="M584,174 l-4,-10 l8,0 z" style="fill:var(--teal)"/>
-    <rect x="474" y="176" width="220" height="40" rx="9" style="fill:var(--panel);stroke:var(--line)"/><text x="584" y="201" text-anchor="middle" style="fill:var(--ink)">QueryNode 一视同仁加载、检索</text>
+    <rect x="474" y="176" width="220" height="40" rx="9" style="fill:var(--panel);stroke:var(--line)"/><text x="584" y="201" text-anchor="middle" style="fill:var(--ink)">QueryNode 一视同仁加载</text>
     <text x="380" y="256" text-anchor="middle" style="fill:var(--muted)">两条生产路径、同一种产物：上游细水长流或整车卸货，交付下游的都是同规格的段</text>
   </svg>
   <div class="figcap"><b>两条写入路径，殊途同归</b>：<b>① 流式写入</b>（在线、实时可见）走 <span class="mono">实时 insert → WAL → growing → flush 成段</span>；<b>② 批量导入</b>（离线、一次写定）走 <span class="mono">批量文件 → ImportV2 作业 → 直接建段</span>。两条路<b>最终都产出同规格的 binlog 段</b>落到对象存储——就像"不管哪条产线，下线的零件都符合同一张图纸"，于是 <b>QueryNode 一视同仁</b>地加载、检索，不必认两种段。把"多样的生产"收敛到"统一的产物接口"，正是系统能容纳多路径却不失控的关键。</div>
@@ -10546,16 +10546,16 @@ Go 这边则有对应的封装（如第 2、27 课的 <span class="mono">LocalSe
     <rect x="60" y="56" width="400" height="30" rx="6" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="260" y="76" text-anchor="middle" style="fill:var(--teal);font-weight:700">正常 · 满速放行</text>
     <rect x="460" y="56" width="140" height="30" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="530" y="76" text-anchor="middle" style="fill:var(--amber);font-weight:700">限速</text>
     <rect x="600" y="56" width="100" height="30" rx="6" style="fill:var(--red-soft);stroke:var(--red);stroke-width:2"/><text x="650" y="76" text-anchor="middle" style="fill:var(--red);font-weight:700">拒绝</text>
-    <line x1="460" y1="50" x2="460" y2="92" style="stroke:var(--amber);stroke-dasharray:3 3"/><text x="460" y="104" text-anchor="middle" style="fill:var(--muted)">≈80% 警戒线</text>
-    <line x1="600" y1="50" x2="600" y2="92" style="stroke:var(--red);stroke-dasharray:3 3"/><text x="600" y="104" text-anchor="middle" style="fill:var(--red)">硬上限 100%</text>
+    <line x1="460" y1="50" x2="460" y2="92" style="stroke:var(--amber);stroke-dasharray:3 3"/><text x="460" y="104" text-anchor="middle" style="fill:var(--muted)">≈85% 警戒线</text>
+    <line x1="600" y1="50" x2="600" y2="92" style="stroke:var(--red);stroke-dasharray:3 3"/><text x="600" y="104" text-anchor="middle" style="fill:var(--red)">硬上限 ≈95%</text>
     <rect x="40" y="120" width="156" height="36" rx="8" style="fill:var(--amber-soft);stroke:var(--amber);stroke-width:1.5"/><text x="118" y="143" text-anchor="middle" style="fill:var(--amber);font-weight:700">① 限速 throttle</text>
-    <text x="206" y="143" style="fill:var(--muted)">接近警戒线(~80%)：逐步调低速率、请求排队慢来——还能进，只是变慢</text>
+    <text x="206" y="143" style="fill:var(--muted)">接近警戒线(~85%)：逐步调低速率、请求排队慢来——还能进，只是变慢</text>
     <rect x="40" y="164" width="156" height="36" rx="8" style="fill:var(--red-soft);stroke:var(--red);stroke-width:1.5"/><text x="118" y="187" text-anchor="middle" style="fill:var(--red);font-weight:700">② 强制拒绝 deny</text>
     <text x="206" y="187" style="fill:var(--muted)">撞穿硬上限：forceDeny 写/读、速率→0、整类拒绝——保住已有</text>
     <text x="380" y="232" text-anchor="middle" style="fill:var(--ink);font-weight:700">渐进施压 + 极端兜底：平时柔和限速控压，真要撞墙才急刹拒绝</text>
     <text x="380" y="254" text-anchor="middle" style="fill:var(--muted)">写和读分开管：压力大时先 deny 写（写占资源大头），读可能还能继续</text>
   </svg>
-  <div class="figcap"><b>两档刹车 = 渐进限速 + 极端拒绝</b>：<span class="mono">QuotaCenter</span> 的减速不是一刀切。随着内存/磁盘用量、TT 延迟上升——<b>① 限速 throttle</b>：接近警戒线（如内存 ~80%）就<b>逐步调低速率</b>、让请求排队慢来（还能进，只是变慢，温和刹车）；<b>② 强制拒绝 force-deny</b>：撞穿硬上限就调 <span class="mono">forceDenyWriting/forceDenyReading</span> 把速率<b>压到 0、整类拒绝</b>（紧急刹车，保住已有，避免 OOM/写满盘）。只有"拒绝"一档会在临界点剧烈抖动，只有"限速"又压不住洪峰——<b>两档配合才既平滑又托底</b>。写读分开管，压力大先 deny 写。</div>
+  <div class="figcap"><b>两档刹车 = 渐进限速 + 极端拒绝</b>：<span class="mono">QuotaCenter</span> 的减速不是一刀切。随着内存/磁盘用量、TT 延迟上升——<b>① 限速 throttle</b>：接近警戒线（如内存 ~85%）就<b>逐步调低速率</b>、让请求排队慢来（还能进，只是变慢，温和刹车）；<b>② 强制拒绝 force-deny</b>：撞穿硬上限就调 <span class="mono">forceDenyWriting/forceDenyReading</span> 把速率<b>压到 0、整类拒绝</b>（紧急刹车，保住已有，避免 OOM/写满盘）。只有"拒绝"一档会在临界点剧烈抖动，只有"限速"又压不住洪峰——<b>两档配合才既平滑又托底</b>。写读分开管，压力大先 deny 写。</div>
 </div>
 
 <p>这"两档刹车"的设计，藏着一个很重要的<strong>分级响应</strong>思想，值得点透。如果只有"<strong>拒绝</strong>"一档会怎样？那系统就成了"<strong>要么全放、要么全关</strong>"的开关——在临界点附近<strong>剧烈抖动</strong>：刚一拒绝、压力降了又全放，放完又爆、又全拒……用户体验是"<strong>时好时坏、忽快忽停</strong>"。反过来，如果只有"<strong>限速</strong>"一档、没有硬性拒绝，那遇到极端洪峰时，温和的限速可能<strong>压不住</strong>，系统还是会被缓慢地推向崩溃。<strong>两档配合，才能既平滑又托底</strong>：平时用限速<strong>柔和地</strong>把压力维持在安全区（像汽车轻点刹车控速），只有在真要撞墙的瞬间才动用强制拒绝这记<strong>急刹</strong>。这种"<strong>渐进施压 + 极端兜底</strong>"的分级策略，在工程上随处可见——从网络拥塞控制（慢启动→拥塞避免→快速重传）到操作系统的内存回收（轻度回收→OOM kill）。Milvus 的配额限流，正是这套成熟智慧在向量数据库上的落地。看懂了"<strong>为什么要两档、而不是一档</strong>"，你对系统稳定性设计的理解就深了一层：<strong>好的自我保护，不是一道生硬的墙，而是一条有弹性的、能随压力平滑收紧的缰绳</strong>。</p>
@@ -10679,7 +10679,7 @@ Go 这边则有对应的封装（如第 2、27 课的 <span class="mono">LocalSe
     <rect x="30" y="58" width="78" height="40" rx="8" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:1.5"/><text x="69" y="83" text-anchor="middle" style="fill:var(--teal);font-weight:700">租户 A</text>
     <line x1="108" y1="78" x2="124" y2="78" style="stroke:var(--teal);stroke-width:2"/><path d="M124,78 l-9,-4 l0,8 z" style="fill:var(--teal)"/>
     <rect x="126" y="58" width="138" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="195" y="76" text-anchor="middle" style="fill:var(--ink)">Database A</text><text x="195" y="92" text-anchor="middle" style="fill:var(--muted)">命名 / 数据隔离</text>
-    <rect x="276" y="58" width="458" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="290" y="83" style="fill:var(--teal);font-weight:700">资源组 A · 算力隔离</text>
+    <rect x="276" y="58" width="458" height="40" rx="8" style="fill:var(--panel);stroke:var(--teal)"/><text x="290" y="76" style="fill:var(--teal);font-weight:700">资源组 A</text><text x="290" y="92" style="fill:var(--muted)">算力隔离</text>
     <rect x="470" y="64" width="66" height="28" rx="6" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="503" y="83" text-anchor="middle" class="mono" style="fill:var(--teal)">n1</text>
     <rect x="544" y="64" width="66" height="28" rx="6" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="577" y="83" text-anchor="middle" class="mono" style="fill:var(--teal)">n2</text>
     <text x="676" y="83" text-anchor="middle" style="fill:var(--faint)">专属</text>
@@ -10687,7 +10687,7 @@ Go 这边则有对应的封装（如第 2、27 课的 <span class="mono">LocalSe
     <rect x="30" y="152" width="78" height="40" rx="8" style="fill:var(--purple-soft);stroke:var(--purple);stroke-width:1.5"/><text x="69" y="177" text-anchor="middle" style="fill:var(--purple);font-weight:700">租户 B</text>
     <line x1="108" y1="172" x2="124" y2="172" style="stroke:var(--purple);stroke-width:2"/><path d="M124,172 l-9,-4 l0,8 z" style="fill:var(--purple)"/>
     <rect x="126" y="152" width="138" height="40" rx="8" style="fill:var(--panel);stroke:var(--purple)"/><text x="195" y="170" text-anchor="middle" style="fill:var(--ink)">Database B</text><text x="195" y="186" text-anchor="middle" style="fill:var(--muted)">命名 / 数据隔离</text>
-    <rect x="276" y="152" width="458" height="40" rx="8" style="fill:var(--panel);stroke:var(--purple)"/><text x="290" y="177" style="fill:var(--purple);font-weight:700">资源组 B · 算力隔离</text>
+    <rect x="276" y="152" width="458" height="40" rx="8" style="fill:var(--panel);stroke:var(--purple)"/><text x="290" y="170" style="fill:var(--purple);font-weight:700">资源组 B</text><text x="290" y="186" style="fill:var(--muted)">算力隔离</text>
     <rect x="470" y="158" width="66" height="28" rx="6" style="fill:var(--purple-soft);stroke:var(--purple)"/><text x="503" y="177" text-anchor="middle" class="mono" style="fill:var(--purple)">n3</text>
     <rect x="544" y="158" width="66" height="28" rx="6" style="fill:var(--purple-soft);stroke:var(--purple)"/><text x="577" y="177" text-anchor="middle" class="mono" style="fill:var(--purple)">n4</text>
     <text x="676" y="177" text-anchor="middle" style="fill:var(--faint)">专属</text>
