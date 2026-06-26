@@ -1644,7 +1644,7 @@ Session 保证你<strong>至少能读到自己刚写的</strong>，对"写完马
     <line x1="650" y1="150" x2="650" y2="166" style="stroke:var(--accent);stroke-width:2"/><circle cx="650" cy="158" r="5" style="fill:var(--accent)"/>
     <text x="650" y="112" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">Eventually</text><text x="650" y="132" text-anchor="middle" class="mono" style="fill:var(--muted)">Tg≈1</text><text x="650" y="186" text-anchor="middle" style="fill:var(--muted)">从不等·秒回</text>
     <text x="380" y="214" text-anchor="middle" style="fill:var(--muted)">← 越左越新鲜、越可能等待　｜　越右越快、越可能略旧 →</text>
-    <rect x="196" y="236" width="368" height="40" rx="9" style="fill:var(--panel);stroke:var(--purple)"/><text x="380" y="261" text-anchor="middle" style="fill:var(--purple);font-weight:700">Customized · 指定 ts → 时间旅行（看某历史时刻的快照）</text>
+    <rect x="150" y="236" width="460" height="40" rx="9" style="fill:var(--panel);stroke:var(--purple)"/><text x="380" y="261" text-anchor="middle" style="fill:var(--purple);font-weight:700">Customized · 指定 ts → 时间旅行（看某历史时刻的快照）</text>
   </svg>
   <div class="figcap"><b>一致性级别 = 新鲜度 ↔ 延迟 的旋钮</b>：读带一个 <b>guarantee ts (Tg)</b>，节点比较自己的 <span class="mono">tsafe</span>——<b>tsafe ≥ Tg 就立即答，否则等到追上</b>。<b>Strong</b>(Tg=tMax) 看最新但可能等；<b>Bounded</b>(默认，回挪 gracefulTime) 几乎不等；<b>Eventually</b>(Tg≈1) 从不等、可能略旧；<b>Session</b> 保证读到自己刚写；<b>Customized</b> 指定时刻做时间旅行。</div>
 </div>
@@ -1804,7 +1804,7 @@ trade-off matched to the scenario</strong>: want strong consistency, accept a po
     <line x1="650" y1="150" x2="650" y2="166" style="stroke:var(--accent);stroke-width:2"/><circle cx="650" cy="158" r="5" style="fill:var(--accent)"/>
     <text x="650" y="112" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">Eventually</text><text x="650" y="132" text-anchor="middle" class="mono" style="fill:var(--muted)">Tg≈1</text><text x="650" y="186" text-anchor="middle" style="fill:var(--muted)">never waits·instant</text>
     <text x="380" y="214" text-anchor="middle" style="fill:var(--muted)">← lefter = fresher, more likely to wait　｜　righter = faster, more likely stale →</text>
-    <rect x="186" y="236" width="388" height="40" rx="9" style="fill:var(--panel);stroke:var(--purple)"/><text x="380" y="261" text-anchor="middle" style="fill:var(--purple);font-weight:700">Customized · pick a ts → time-travel (snapshot at a past moment)</text>
+    <rect x="150" y="236" width="460" height="40" rx="9" style="fill:var(--panel);stroke:var(--purple)"/><text x="380" y="261" text-anchor="middle" style="fill:var(--purple);font-weight:700">Customized · pick a ts → time-travel (a past snapshot)</text>
   </svg>
   <div class="figcap"><b>Consistency level = the freshness ↔ latency knob</b>: a read carries a <b>guarantee ts (Tg)</b>; the node compares its <span class="mono">tsafe</span> — <b>tsafe ≥ Tg answers now, otherwise it waits</b>. <b>Strong</b>(Tg=tMax) sees the newest but may wait; <b>Bounded</b>(default, rolled back by gracefulTime) barely waits; <b>Eventually</b>(Tg≈1) never waits, may be slightly stale; <b>Session</b> guarantees you read your own writes; <b>Customized</b> time-travels to a moment you pick.</div>
 </div>

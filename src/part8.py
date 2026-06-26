@@ -96,6 +96,26 @@ Go 这边则有对应的封装（如第 2、27 课的 <span class="mono">LocalSe
 
 <p>还有一点容易被忽略：cgo 这道桥不仅传<strong>数据</strong>，也传<strong>上下文</strong>。比如一次搜索的 trace 信息（第 27 课提过的链路追踪）、超时控制、以及出错时的错误码，都要顺着这道桥来回带——Go 侧发起调用时把 trace 上下文塞进去，C++ 算完把耗时、命中数等指标带回来，这样一次跨语言的搜索在<strong>可观测性</strong>上才不会“断片”。理解了这点，你就明白为什么内核的 C 接口里，除了“查询”“结果”这些主角，往往还夹着一堆看似不起眼的句柄、缓冲区、状态码——它们正是让两套运行时<strong>协同得既快又可控</strong>的黏合剂。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="cgo 桥：Go 侧 QueryNode 把整次段内搜索打包成一次粗粒度 cgo 调用，跨过 *_c.h 边界进入 C++ 内核 internal/core/src（segcore 为 cgo 入口，下含 exec、expr、index、mmap、storage、common 等子模块），算完一次性返回；mmap 数据由 C++ 直接读映射内存，零拷贝">
+    <text x="150" y="44" text-anchor="middle" style="fill:var(--muted)">Go 侧（控制面）</text>
+    <text x="528" y="44" text-anchor="middle" style="fill:var(--muted)">C++ 内核 · internal/core/src（计算面）</text>
+    <line x1="290" y1="56" x2="290" y2="252" style="stroke:var(--line);stroke-width:2;stroke-dasharray:5 4"/><text x="290" y="270" text-anchor="middle" style="fill:var(--faint)">cgo 边界 · *_c.h</text>
+    <rect x="20" y="108" width="196" height="66" rx="10" style="fill:var(--blue-soft);stroke:var(--blue);stroke-width:2"/><text x="118" y="136" text-anchor="middle" style="fill:var(--blue);font-weight:700">QueryNode</text><text x="118" y="157" text-anchor="middle" style="fill:var(--muted)">打包整次段内搜索</text>
+    <line x1="216" y1="128" x2="318" y2="128" style="stroke:var(--accent);stroke-width:3"/><path d="M318,128 l-12,-5 l0,10 z" style="fill:var(--accent)"/><text x="266" y="120" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">1 次调用</text>
+    <line x1="318" y1="156" x2="218" y2="156" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/><path d="M218,156 l12,-5 l0,10 z" style="fill:var(--teal)"/><text x="268" y="172" text-anchor="middle" style="fill:var(--muted)">一次性返回</text>
+    <rect x="318" y="64" width="424" height="34" rx="8" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="530" y="86" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">segcore · 段内引擎（cgo 入口）</text>
+    <rect x="318" y="108" width="134" height="44" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="385" y="128" text-anchor="middle" class="mono" style="fill:var(--ink)">exec</text><text x="385" y="144" text-anchor="middle" style="fill:var(--muted)">向量化执行</text>
+    <rect x="463" y="108" width="134" height="44" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="530" y="128" text-anchor="middle" class="mono" style="fill:var(--ink)">expr</text><text x="530" y="144" text-anchor="middle" style="fill:var(--muted)">表达式树</text>
+    <rect x="608" y="108" width="134" height="44" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="675" y="128" text-anchor="middle" class="mono" style="fill:var(--ink)">index</text><text x="675" y="144" text-anchor="middle" style="fill:var(--muted)">索引检索</text>
+    <rect x="318" y="160" width="134" height="44" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="385" y="180" text-anchor="middle" class="mono" style="fill:var(--ink)">mmap</text><text x="385" y="196" text-anchor="middle" style="fill:var(--muted)">列式分块</text>
+    <rect x="463" y="160" width="134" height="44" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="530" y="180" text-anchor="middle" class="mono" style="fill:var(--ink)">storage</text><text x="530" y="196" text-anchor="middle" style="fill:var(--muted)">binlog I/O</text>
+    <rect x="608" y="160" width="134" height="44" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="675" y="180" text-anchor="middle" class="mono" style="fill:var(--ink)">common</text><text x="675" y="196" text-anchor="middle" style="fill:var(--muted)">公共类型</text>
+    <text x="380" y="232" text-anchor="middle" style="fill:var(--muted)">粗粒度·零拷贝：一次过桥算完上万条向量，C++ 直读 mmap 映射内存</text>
+  </svg>
+  <div class="figcap"><b>cgo 桥 = 粗粒度调用 + 零拷贝</b>：Go 侧 <span class="mono">QueryNode</span> 把<b>整次段内搜索打包成一次 cgo 调用</b>，跨过 <span class="mono">*_c.h</span> 这道 C ABI 边界进入 C++ 内核。<b>segcore</b> 是 cgo 入口（"车间主任"），下面编排 <span class="mono">exec / expr / index / mmap / storage / common</span> 等子模块。每次过桥固定开销大，所以"<b>少过桥、每次搬一大批</b>"——算完上万条向量再一次性返回，mmap 数据更是由 C++ <b>直接读映射内存</b>、不拷贝。</div>
+</div>
+
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>Go 侧封装</h4><p>如 <span class="mono">LocalSegment.Search</span>：准备好查询、缓冲区、trace。</p></div></div>
   <div class="step"><div class="num">2</div><div class="sc"><h4>过 cgo 调 C 函数</h4><p>调 <span class="mono">segment_c.h</span> 暴露的 C 接口，把指针/参数传进 C++。</p></div></div>
@@ -216,6 +236,26 @@ functions</strong>: create a segment, load data, search, release… On the Go si
 <p>This cross-language bridge <strong>isn't free</strong>, and grasping its cost explains a lot of Milvus's performance design. Every cgo call carries a <strong>fixed overhead</strong> (stack switching, argument marshaling), and Go's memory and C++'s memory <strong>don't recognize each other</strong> — C++ can't safely hold a Go pointer for long, nor vice versa. So Milvus's rule is "<strong>coarse-grained calls, zero-copy data</strong>": don't make one cgo call per row; <strong>pack an entire in-segment search into a single call</strong> and let C++ crunch thousands of vectors before returning once, while data is passed by <strong>shared memory or direct pointers</strong> to avoid copying back and forth (mmap'd data, for instance, is read straight from the mapped region by C++). Keeping the number of crossings low and the payload per crossing large is the key to using cgo well. This is also why Lesson 29 stresses that <strong>batched search (large nq) pays off</strong> — the bigger the batch, the thinner the fixed per-call cost is amortized. <strong>The design at the boundary is often performance's hidden battlefield.</strong></p>
 <p>One thing that's easy to miss: this bridge carries not just <strong>data</strong> but <strong>context</strong>. A search's trace information (the link tracing from Lesson 27), its timeout control, and its error codes on failure all have to travel back and forth across it — the Go side tucks the trace context in on the way in, and C++ brings back metrics like elapsed time and hit counts on the way out, so a cross-language search doesn't "go dark" on <strong>observability</strong>. Understand this and you'll see why the kernel's C interfaces, besides the obvious "query" and "results", are often dotted with unassuming handles, buffers, and status codes — they're the glue that lets the two runtimes cooperate both fast and under control.</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="The cgo bridge: the Go-side QueryNode packs an entire in-segment search into one coarse-grained cgo call across the *_c.h boundary into the C++ core internal/core/src (segcore is the cgo entry, holding exec, expr, index, mmap, storage, common submodules), and gets one batched return; mmap data is read directly from mapped memory, zero-copy">
+    <text x="150" y="44" text-anchor="middle" style="fill:var(--muted)">Go side · control plane</text>
+    <text x="528" y="44" text-anchor="middle" style="fill:var(--muted)">C++ core · internal/core/src</text>
+    <line x1="290" y1="56" x2="290" y2="252" style="stroke:var(--line);stroke-width:2;stroke-dasharray:5 4"/><text x="290" y="270" text-anchor="middle" style="fill:var(--faint)">cgo boundary · *_c.h</text>
+    <rect x="20" y="108" width="196" height="66" rx="10" style="fill:var(--blue-soft);stroke:var(--blue);stroke-width:2"/><text x="118" y="136" text-anchor="middle" style="fill:var(--blue);font-weight:700">QueryNode</text><text x="118" y="157" text-anchor="middle" style="fill:var(--muted)">packs one whole search</text>
+    <line x1="216" y1="128" x2="318" y2="128" style="stroke:var(--accent);stroke-width:3"/><path d="M318,128 l-12,-5 l0,10 z" style="fill:var(--accent)"/><text x="266" y="120" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">1 call</text>
+    <line x1="318" y1="156" x2="218" y2="156" style="stroke:var(--teal);stroke-width:1.5;stroke-dasharray:4 3"/><path d="M218,156 l12,-5 l0,10 z" style="fill:var(--teal)"/><text x="268" y="172" text-anchor="middle" style="fill:var(--muted)">returns once</text>
+    <rect x="318" y="64" width="424" height="34" rx="8" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="530" y="86" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">segcore · in-segment engine (cgo entry)</text>
+    <rect x="318" y="108" width="134" height="44" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="385" y="128" text-anchor="middle" class="mono" style="fill:var(--ink)">exec</text><text x="385" y="144" text-anchor="middle" style="fill:var(--muted)">vectorized</text>
+    <rect x="463" y="108" width="134" height="44" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="530" y="128" text-anchor="middle" class="mono" style="fill:var(--ink)">expr</text><text x="530" y="144" text-anchor="middle" style="fill:var(--muted)">expr tree</text>
+    <rect x="608" y="108" width="134" height="44" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="675" y="128" text-anchor="middle" class="mono" style="fill:var(--ink)">index</text><text x="675" y="144" text-anchor="middle" style="fill:var(--muted)">index search</text>
+    <rect x="318" y="160" width="134" height="44" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="385" y="180" text-anchor="middle" class="mono" style="fill:var(--ink)">mmap</text><text x="385" y="196" text-anchor="middle" style="fill:var(--muted)">columnar chunks</text>
+    <rect x="463" y="160" width="134" height="44" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="530" y="180" text-anchor="middle" class="mono" style="fill:var(--ink)">storage</text><text x="530" y="196" text-anchor="middle" style="fill:var(--muted)">binlog I/O</text>
+    <rect x="608" y="160" width="134" height="44" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="675" y="180" text-anchor="middle" class="mono" style="fill:var(--ink)">common</text><text x="675" y="196" text-anchor="middle" style="fill:var(--muted)">shared types</text>
+    <text x="380" y="232" text-anchor="middle" style="fill:var(--muted)">coarse-grained · zero-copy: one crossing crunches thousands of vectors; C++ reads mmap directly</text>
+  </svg>
+  <div class="figcap"><b>The cgo bridge = coarse-grained calls + zero-copy</b>: the Go-side <span class="mono">QueryNode</span> <b>packs an entire in-segment search into one cgo call</b> across the <span class="mono">*_c.h</span> C-ABI boundary into the C++ core. <b>segcore</b> is the cgo entry (the "shop foreman"), orchestrating <span class="mono">exec / expr / index / mmap / storage / common</span> below it. Each crossing has a fixed cost, so the rule is "<b>few crossings, big payload each</b>" — crunch thousands of vectors then return once; mmap'd data is read <b>straight from the mapped region</b>, no copy.</div>
+</div>
+
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>Go-side wrapper</h4><p>e.g. <span class="mono">LocalSegment.Search</span>: prepare the query, buffers, trace.</p></div></div>
   <div class="step"><div class="num">2</div><div class="sc"><h4>Call the C function via cgo</h4><p>call the C interface exposed by <span class="mono">segment_c.h</span>, passing pointers/args into C++.</p></div></div>
@@ -274,6 +314,37 @@ LESSON_35 = {
 
 <p>不妨用一个具体数字感受差距。设想一个段有 100 万行、每行 50 个字段，而一次过滤只需读 1 个标量列。按行存时，为了扫这一列，CPU 要在内存里以"每行一大步"的方式跳 100 万次，每步还把同行另外 49 个字段的数据一并拉进缓存行——真正有用的不到 <strong>1/50</strong>，其余全是被白白搬运又立刻丢弃的"过路数据"。按列存时，这一列的 100 万个值<strong>紧挨成一条</strong>，CPU 顺序扫过、缓存行里装的<strong>全是有用数据</strong>，还能让向量化指令一次吞下一大把。两种布局读的是同样的逻辑数据，物理上的代价却可能差出<strong>一个数量级</strong>。这也是为什么"列式"不是锦上添花的小优化，而是向量检索系统的<strong>地基性选择</strong>——它从根上决定了热路径能跑多快。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="同样 3 条记录、字段 id/vec/age：按行存时 vec 散落在 3 处、扫描要跳读并顺带拉进无关字段；按列存时 vec 连成一整片、顺序扫且 SIMD 友好">
+    <text x="24" y="52" style="fill:var(--muted)">① 按行存 row-major：一条记录的字段挨在一起</text>
+    <rect x="24" y="62" width="70" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="59" y="84" text-anchor="middle" style="fill:var(--faint)">id0</text>
+    <rect x="98" y="62" width="70" height="34" rx="6" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="133" y="84" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">vec0</text>
+    <rect x="172" y="62" width="70" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="207" y="84" text-anchor="middle" style="fill:var(--faint)">age0</text>
+    <rect x="268" y="62" width="70" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="303" y="84" text-anchor="middle" style="fill:var(--faint)">id1</text>
+    <rect x="342" y="62" width="70" height="34" rx="6" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="377" y="84" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">vec1</text>
+    <rect x="416" y="62" width="70" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="451" y="84" text-anchor="middle" style="fill:var(--faint)">age1</text>
+    <rect x="512" y="62" width="70" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="547" y="84" text-anchor="middle" style="fill:var(--faint)">id2</text>
+    <rect x="586" y="62" width="70" height="34" rx="6" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="621" y="84" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">vec2</text>
+    <rect x="660" y="62" width="70" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="695" y="84" text-anchor="middle" style="fill:var(--faint)">age2</text>
+    <line x1="101" y1="102" x2="165" y2="102" style="stroke:var(--red);stroke-width:2.5"/><line x1="345" y1="102" x2="409" y2="102" style="stroke:var(--red);stroke-width:2.5"/><line x1="589" y1="102" x2="653" y2="102" style="stroke:var(--red);stroke-width:2.5"/>
+    <text x="380" y="124" text-anchor="middle" style="fill:var(--muted)">扫 vec 字段 → 跳着读 3 处，每步顺带拉进 id/age（污染缓存）</text>
+    <line x1="24" y1="146" x2="736" y2="146" style="stroke:var(--line);stroke-dasharray:2 4"/>
+    <text x="24" y="172" style="fill:var(--muted)">② 按列存 column-major（Milvus 段）：同一字段的取值挨在一起</text>
+    <rect x="24" y="182" width="70" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="59" y="204" text-anchor="middle" style="fill:var(--faint)">id0</text>
+    <rect x="98" y="182" width="70" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="133" y="204" text-anchor="middle" style="fill:var(--faint)">id1</text>
+    <rect x="172" y="182" width="70" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="207" y="204" text-anchor="middle" style="fill:var(--faint)">id2</text>
+    <rect x="268" y="182" width="70" height="34" rx="6" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="303" y="204" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">vec0</text>
+    <rect x="342" y="182" width="70" height="34" rx="6" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="377" y="204" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">vec1</text>
+    <rect x="416" y="182" width="70" height="34" rx="6" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="451" y="204" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">vec2</text>
+    <rect x="512" y="182" width="70" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="547" y="204" text-anchor="middle" style="fill:var(--faint)">age0</text>
+    <rect x="586" y="182" width="70" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="621" y="204" text-anchor="middle" style="fill:var(--faint)">age1</text>
+    <rect x="660" y="182" width="70" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="695" y="204" text-anchor="middle" style="fill:var(--faint)">age2</text>
+    <line x1="268" y1="222" x2="486" y2="222" style="stroke:var(--teal);stroke-width:2.5"/>
+    <text x="380" y="244" text-anchor="middle" style="fill:var(--muted)">扫 vec 字段 → 连续一整片，顺序扫、缓存全是有用数据、SIMD 一次吞</text>
+  </svg>
+  <div class="figcap"><b>为什么按列存</b>：同样 3 条记录、字段 <span class="mono">id / vec / age</span>。<b>按行存</b>时一行的字段挨在一起，要扫 <span class="mono">vec</span> 这一列就得<b>跳着读 3 处</b>，每步还把同行的 id/age 拉进缓存行——有用的不到 1/3。<b>按列存</b>时同字段的值<b>连成一整片</b>，顺序扫过、缓存里全是有用数据，还能让 SIMD 一条指令吞一大把。向量检索正是"对少数列做大量同质运算"，所以列式是<b>地基性选择</b>。</div>
+</div>
+
 <table class="t">
   <tr><th>维度</th><th>按行存（row-oriented）</th><th>按列存（column-oriented，Milvus 段）</th></tr>
   <tr><td>组织方式</td><td>一条记录的所有字段挨在一起，逐行排列</td><td>同一字段的所有取值挨在一起，逐列排列</td></tr>
@@ -307,6 +378,39 @@ LESSON_35 = {
 <p>这一下就打破了"数据必须 ≤ 内存"的枷锁：一个节点可以加载<strong>总量远超物理内存</strong>的段——冷数据安静地躺在磁盘上不占内存，只有真正被查到的热数据才占用页缓存，换入换出全由操作系统这位"老管家"自动打理，Milvus 自己<strong>一行换页逻辑都不用写</strong>。代价当然有：访问冷页要等一次磁盘 I/O（缺页的延迟），所以 mmap 适合<strong>冷热分明、内存放不下全部</strong>的场景，是一种"用一点点延迟换巨大容量"的划算交易。要不要对某个字段启用 mmap，是<strong>可配置</strong>的——cgo 入口 <span class="inline">internal/core/src/segcore/load_field_data_c.h</span> 的 <span class="mono">EnableMmap(...)</span> 就是 Go 侧在加载字段数据时拨动的那个开关。下面用一条流程把"带 mmap 加载并访问一列"走一遍。</p>
 
 <p>值得停下来体会一下这套设计的"<strong>四两拨千斤</strong>"：mmap 之所以优雅，是因为它把"<strong>什么数据该在内存、什么该在磁盘</strong>"这个极难的决策，整个<strong>外包给了操作系统</strong>。操作系统几十年来在页缓存、预读、换出算法上的积累，比任何应用自己写一套缓存都更成熟、更省心。Milvus 只需说一句"把这个文件映射进来"，剩下的冷热判断、换入换出、内存压力下的取舍，全由内核按全局视角自动完成。这也解释了一个实践要点：mmap 模式下，<strong>第一次查询某个冷段往往偏慢</strong>（要把页从磁盘缺页调进来），而<strong>反复查询的热段则几乎和纯内存一样快</strong>（页都在缓存里）——这就是所谓的"<strong>预热</strong>"现象。对运维而言，这意味着可以用<strong>较小的内存</strong>扛住<strong>大得多的数据集</strong>，代价是接受冷数据首次访问的延迟抖动；要不要这笔交易，取决于数据的冷热分布与延迟要求。回到第 34 课说的"中央厨房"：mmap 就像厨房不必把所有食材都堆在操作台上，而是大部分放冷库（磁盘）、要用时才取到台面（页缓存）——台面虽小，能做的菜却不受台面大小的限制。</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="mmap 把磁盘上的 binlog 文件按页映射进虚拟地址空间，看似普通内存；只有被访问到的页（p1、p4）才缺页调入物理内存的页缓存，未访问的冷页留在磁盘，于是数据可远大于内存">
+    <text x="20" y="40" style="fill:var(--muted)">磁盘 · binlog 文件（按页）</text>
+    <rect x="20" y="50" width="176" height="196" rx="10" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <rect x="34" y="62" width="148" height="24" rx="5" style="fill:var(--panel);stroke:var(--line)"/><text x="108" y="79" text-anchor="middle" class="mono" style="fill:var(--faint)">p0</text>
+    <rect x="34" y="90" width="148" height="24" rx="5" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="108" y="107" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">p1 ←查到</text>
+    <rect x="34" y="118" width="148" height="24" rx="5" style="fill:var(--panel);stroke:var(--line)"/><text x="108" y="135" text-anchor="middle" class="mono" style="fill:var(--faint)">p2</text>
+    <rect x="34" y="146" width="148" height="24" rx="5" style="fill:var(--panel);stroke:var(--line)"/><text x="108" y="163" text-anchor="middle" class="mono" style="fill:var(--faint)">p3</text>
+    <rect x="34" y="174" width="148" height="24" rx="5" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="108" y="191" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">p4 ←查到</text>
+    <rect x="34" y="202" width="148" height="24" rx="5" style="fill:var(--panel);stroke:var(--line)"/><text x="108" y="219" text-anchor="middle" class="mono" style="fill:var(--faint)">p5</text>
+    <line x1="198" y1="148" x2="286" y2="148" style="stroke:var(--blue);stroke-width:2"/><path d="M286,148 l-11,-5 l0,10 z" style="fill:var(--blue)"/><text x="242" y="140" text-anchor="middle" style="fill:var(--blue);font-weight:700">mmap</text><text x="242" y="168" text-anchor="middle" style="fill:var(--muted)">映射·不搬数据</text>
+    <text x="290" y="40" style="fill:var(--muted)">虚拟地址空间（看似普通内存）</text>
+    <rect x="290" y="50" width="170" height="196" rx="10" style="fill:none;stroke:var(--blue);stroke-dasharray:5 4"/>
+    <rect x="304" y="62" width="142" height="24" rx="5" style="fill:var(--panel);stroke:var(--line)"/><text x="375" y="79" text-anchor="middle" class="mono" style="fill:var(--muted)">addr p0</text>
+    <rect x="304" y="90" width="142" height="24" rx="5" style="fill:var(--panel);stroke:var(--accent)"/><text x="375" y="107" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">addr p1</text>
+    <rect x="304" y="118" width="142" height="24" rx="5" style="fill:var(--panel);stroke:var(--line)"/><text x="375" y="135" text-anchor="middle" class="mono" style="fill:var(--muted)">addr p2</text>
+    <rect x="304" y="146" width="142" height="24" rx="5" style="fill:var(--panel);stroke:var(--line)"/><text x="375" y="163" text-anchor="middle" class="mono" style="fill:var(--muted)">addr p3</text>
+    <rect x="304" y="174" width="142" height="24" rx="5" style="fill:var(--panel);stroke:var(--accent)"/><text x="375" y="191" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">addr p4</text>
+    <rect x="304" y="202" width="142" height="24" rx="5" style="fill:var(--panel);stroke:var(--line)"/><text x="375" y="219" text-anchor="middle" class="mono" style="fill:var(--muted)">addr p5</text>
+    <line x1="462" y1="102" x2="556" y2="102" style="stroke:var(--accent);stroke-width:2"/><path d="M556,102 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <line x1="462" y1="186" x2="556" y2="186" style="stroke:var(--accent);stroke-width:2"/><path d="M556,186 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <text x="510" y="138" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">缺页调入</text>
+    <text x="510" y="156" text-anchor="middle" style="fill:var(--muted)">仅热页</text>
+    <text x="560" y="40" style="fill:var(--muted)">物理内存 · 页缓存（RAM）</text>
+    <rect x="560" y="50" width="180" height="196" rx="10" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <rect x="574" y="90" width="152" height="24" rx="5" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="650" y="107" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">p1 已驻留</text>
+    <rect x="574" y="174" width="152" height="24" rx="5" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="650" y="191" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">p4 已驻留</text>
+    <text x="650" y="135" text-anchor="middle" style="fill:var(--faint)">p0/p2/p3/p5</text><text x="650" y="153" text-anchor="middle" style="fill:var(--faint)">未调入·留在磁盘</text>
+    <text x="380" y="272" text-anchor="middle" style="fill:var(--muted)">映射整个文件几乎免费；只有访问到的页缺页调入页缓存，冷页留在磁盘 → 数据可远大于内存</text>
+  </svg>
+  <div class="figcap"><b>mmap = 把磁盘文件映射成"虚拟内存"，按需缺页</b>：binlog 文件按页躺在磁盘上，<span class="mono">mmap</span> 把整份文件<b>映射进虚拟地址空间</b>（几乎免费、不搬数据），这段地址<b>看起来就是普通内存</b>。但只有当代码<b>真正访问</b>到某页（如 <span class="mono">p1、p4</span>）时，CPU 才触发<b>缺页中断</b>，OS 把那页从磁盘读进<b>页缓存（RAM）</b>；没碰过的冷页 <span class="mono">p0/p2/p3/p5</span> 安静留在磁盘、不占内存。于是一个节点能装下<b>远大于物理内存</b>的数据，换入换出全由内核打理。</div>
+</div>
 
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>加载字段（EnableMmap）</h4><p>Go 经 cgo 调 <span class="mono">load_field_data_c.h</span>，对该字段开启 mmap，而非整份读进堆。</p></div></div>
@@ -350,6 +454,37 @@ Last lesson handed us the whole map of the C++ core. Now we zoom into one piece 
 <p>Contrast <strong>row storage</strong>: a record's fields sit together, row after row. Great for "read a whole record", but bad for vector search — to pull out one column's values you must <strong>stride through memory</strong>, and each step drags dozens of unused same-row fields into the CPU cache, wasting bandwidth. Yet vector search is the textbook case of "<strong>do the same operation thousands of times over one column</strong>": compute distance, compare thresholds, (de)compress…</p>
 <p>Columnar layout takes this to the limit: a column's values share one type and sit adjacent, so you can <strong>load a big slab at once and compute with SIMD</strong> (one instruction over 8 or 16 floats), with far better cache hit rates. That's why nearly every analytics- and search-oriented system — from columnar databases to vector stores — converges on column storage. A Milvus segment makes each field its own "column", carried by the <span class="mono">ChunkedColumn</span> family under <span class="inline">internal/core/src/mmap</span>. The table below puts the two layouts side by side.</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="The same 3 records with fields id/vec/age: row-major scatters vec across 3 spots so a scan must stride and drag in unused fields; column-major lays vec as one contiguous slab, sequential and SIMD-friendly">
+    <text x="24" y="52" style="fill:var(--muted)">① Row-major: a record's fields sit together</text>
+    <rect x="24" y="62" width="70" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="59" y="84" text-anchor="middle" style="fill:var(--faint)">id0</text>
+    <rect x="98" y="62" width="70" height="34" rx="6" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="133" y="84" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">vec0</text>
+    <rect x="172" y="62" width="70" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="207" y="84" text-anchor="middle" style="fill:var(--faint)">age0</text>
+    <rect x="268" y="62" width="70" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="303" y="84" text-anchor="middle" style="fill:var(--faint)">id1</text>
+    <rect x="342" y="62" width="70" height="34" rx="6" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="377" y="84" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">vec1</text>
+    <rect x="416" y="62" width="70" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="451" y="84" text-anchor="middle" style="fill:var(--faint)">age1</text>
+    <rect x="512" y="62" width="70" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="547" y="84" text-anchor="middle" style="fill:var(--faint)">id2</text>
+    <rect x="586" y="62" width="70" height="34" rx="6" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="621" y="84" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">vec2</text>
+    <rect x="660" y="62" width="70" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="695" y="84" text-anchor="middle" style="fill:var(--faint)">age2</text>
+    <line x1="101" y1="102" x2="165" y2="102" style="stroke:var(--red);stroke-width:2.5"/><line x1="345" y1="102" x2="409" y2="102" style="stroke:var(--red);stroke-width:2.5"/><line x1="589" y1="102" x2="653" y2="102" style="stroke:var(--red);stroke-width:2.5"/>
+    <text x="380" y="124" text-anchor="middle" style="fill:var(--muted)">scan vec → stride to 3 scattered spots, dragging in id/age (pollutes cache)</text>
+    <line x1="24" y1="146" x2="736" y2="146" style="stroke:var(--line);stroke-dasharray:2 4"/>
+    <text x="24" y="172" style="fill:var(--muted)">② Column-major (Milvus segment): a field's values sit together</text>
+    <rect x="24" y="182" width="70" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="59" y="204" text-anchor="middle" style="fill:var(--faint)">id0</text>
+    <rect x="98" y="182" width="70" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="133" y="204" text-anchor="middle" style="fill:var(--faint)">id1</text>
+    <rect x="172" y="182" width="70" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="207" y="204" text-anchor="middle" style="fill:var(--faint)">id2</text>
+    <rect x="268" y="182" width="70" height="34" rx="6" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="303" y="204" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">vec0</text>
+    <rect x="342" y="182" width="70" height="34" rx="6" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="377" y="204" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">vec1</text>
+    <rect x="416" y="182" width="70" height="34" rx="6" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="451" y="204" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">vec2</text>
+    <rect x="512" y="182" width="70" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="547" y="204" text-anchor="middle" style="fill:var(--faint)">age0</text>
+    <rect x="586" y="182" width="70" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="621" y="204" text-anchor="middle" style="fill:var(--faint)">age1</text>
+    <rect x="660" y="182" width="70" height="34" rx="6" style="fill:var(--panel-2);stroke:var(--line)"/><text x="695" y="204" text-anchor="middle" style="fill:var(--faint)">age2</text>
+    <line x1="268" y1="222" x2="486" y2="222" style="stroke:var(--teal);stroke-width:2.5"/>
+    <text x="380" y="244" text-anchor="middle" style="fill:var(--muted)">scan vec → one contiguous slab, sequential, cache-friendly, SIMD-friendly</text>
+  </svg>
+  <div class="figcap"><b>Why columnar</b>: the same 3 records, fields <span class="mono">id / vec / age</span>. <b>Row-major</b> keeps a row's fields together, so scanning the <span class="mono">vec</span> column means <b>striding to 3 scattered spots</b>, dragging each row's id/age into the cache line — under 1/3 useful. <b>Column-major</b> lays a field's values as <b>one contiguous slab</b>: sequential scan, the cache holds only useful data, and SIMD swallows a batch per instruction. Vector search is exactly "lots of identical ops over a few columns", so columnar is the <b>bedrock choice</b>.</div>
+</div>
+
 <table class="t">
   <tr><th>Dimension</th><th>Row-oriented</th><th>Column-oriented (Milvus segment)</th></tr>
   <tr><td>Organization</td><td>all fields of one record together, row by row</td><td>all values of one field together, column by column</td></tr>
@@ -379,6 +514,39 @@ Last lesson handed us the whole map of the C++ core. Now we zoom into one piece 
 </div>
 <p>The second is <strong>mmap</strong>: don't copy; <strong>map</strong> the binlog file into the process's <strong>virtual address space</strong>. Once mapped, the data looks like ordinary memory and C++ accesses it by address as usual — but <strong>the real data isn't in physical RAM yet</strong>. Only when code first touches a page does the CPU raise a <strong>page fault</strong>, and the OS reads that page from disk into the <strong>page cache</strong>. Hot pages already touched stay cached and hit next time; cold pages long untouched get <strong>quietly evicted</strong> when memory is tight.</p>
 <p>This breaks the "data must be ≤ RAM" shackle: a node can load segments whose <strong>total far exceeds physical RAM</strong> — cold data rests on disk taking no memory, only the hot data actually queried occupies page cache, and all swap-in/out is handled automatically by the OS, that seasoned housekeeper, with Milvus writing <strong>not one line of paging logic</strong>. The cost, of course: touching a cold page waits one disk I/O (page-fault latency), so mmap suits <strong>clearly hot/cold, doesn't-fit-in-RAM</strong> workloads — a shrewd trade of "a little latency for huge capacity". Whether to mmap a given field is <strong>configurable</strong> — the cgo entry <span class="mono">EnableMmap(...)</span> in <span class="inline">internal/core/src/segcore/load_field_data_c.h</span> is the switch the Go side flips when loading field data. The flow below walks "load a column with mmap and access it".</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="mmap maps the on-disk binlog file by page into virtual address space, which looks like ordinary memory; only touched pages (p1, p4) fault into the physical RAM page cache, untouched cold pages stay on disk, so data can far exceed RAM">
+    <text x="20" y="40" style="fill:var(--muted)">Disk · binlog file (by page)</text>
+    <rect x="20" y="50" width="176" height="196" rx="10" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <rect x="34" y="62" width="148" height="24" rx="5" style="fill:var(--panel);stroke:var(--line)"/><text x="108" y="79" text-anchor="middle" class="mono" style="fill:var(--faint)">p0</text>
+    <rect x="34" y="90" width="148" height="24" rx="5" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="108" y="107" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">p1 ←hit</text>
+    <rect x="34" y="118" width="148" height="24" rx="5" style="fill:var(--panel);stroke:var(--line)"/><text x="108" y="135" text-anchor="middle" class="mono" style="fill:var(--faint)">p2</text>
+    <rect x="34" y="146" width="148" height="24" rx="5" style="fill:var(--panel);stroke:var(--line)"/><text x="108" y="163" text-anchor="middle" class="mono" style="fill:var(--faint)">p3</text>
+    <rect x="34" y="174" width="148" height="24" rx="5" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="108" y="191" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">p4 ←hit</text>
+    <rect x="34" y="202" width="148" height="24" rx="5" style="fill:var(--panel);stroke:var(--line)"/><text x="108" y="219" text-anchor="middle" class="mono" style="fill:var(--faint)">p5</text>
+    <line x1="198" y1="148" x2="286" y2="148" style="stroke:var(--blue);stroke-width:2"/><path d="M286,148 l-11,-5 l0,10 z" style="fill:var(--blue)"/><text x="242" y="140" text-anchor="middle" style="fill:var(--blue);font-weight:700">mmap</text><text x="242" y="168" text-anchor="middle" style="fill:var(--muted)">map · no copy</text>
+    <text x="290" y="40" style="fill:var(--muted)">Virtual space (looks like RAM)</text>
+    <rect x="290" y="50" width="170" height="196" rx="10" style="fill:none;stroke:var(--blue);stroke-dasharray:5 4"/>
+    <rect x="304" y="62" width="142" height="24" rx="5" style="fill:var(--panel);stroke:var(--line)"/><text x="375" y="79" text-anchor="middle" class="mono" style="fill:var(--muted)">addr p0</text>
+    <rect x="304" y="90" width="142" height="24" rx="5" style="fill:var(--panel);stroke:var(--accent)"/><text x="375" y="107" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">addr p1</text>
+    <rect x="304" y="118" width="142" height="24" rx="5" style="fill:var(--panel);stroke:var(--line)"/><text x="375" y="135" text-anchor="middle" class="mono" style="fill:var(--muted)">addr p2</text>
+    <rect x="304" y="146" width="142" height="24" rx="5" style="fill:var(--panel);stroke:var(--line)"/><text x="375" y="163" text-anchor="middle" class="mono" style="fill:var(--muted)">addr p3</text>
+    <rect x="304" y="174" width="142" height="24" rx="5" style="fill:var(--panel);stroke:var(--accent)"/><text x="375" y="191" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">addr p4</text>
+    <rect x="304" y="202" width="142" height="24" rx="5" style="fill:var(--panel);stroke:var(--line)"/><text x="375" y="219" text-anchor="middle" class="mono" style="fill:var(--muted)">addr p5</text>
+    <line x1="462" y1="102" x2="556" y2="102" style="stroke:var(--accent);stroke-width:2"/><path d="M556,102 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <line x1="462" y1="186" x2="556" y2="186" style="stroke:var(--accent);stroke-width:2"/><path d="M556,186 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <text x="509" y="138" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">page-fault in</text>
+    <text x="509" y="156" text-anchor="middle" style="fill:var(--muted)">hot only</text>
+    <text x="560" y="40" style="fill:var(--muted)">Physical RAM · page cache</text>
+    <rect x="560" y="50" width="180" height="196" rx="10" style="fill:var(--panel-2);stroke:var(--line)"/>
+    <rect x="574" y="90" width="152" height="24" rx="5" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="650" y="107" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">p1 resident</text>
+    <rect x="574" y="174" width="152" height="24" rx="5" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="650" y="191" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">p4 resident</text>
+    <text x="650" y="135" text-anchor="middle" style="fill:var(--faint)">p0/p2/p3/p5</text><text x="650" y="153" text-anchor="middle" style="fill:var(--faint)">not loaded · on disk</text>
+    <text x="380" y="272" text-anchor="middle" style="fill:var(--muted)">map the file ~free; only touched pages fault into RAM, cold pages stay on disk → data ≫ RAM</text>
+  </svg>
+  <div class="figcap"><b>mmap = map a disk file as "virtual memory", fault in on demand</b>: the binlog file sits by page on disk; <span class="mono">mmap</span> <b>maps the whole file into virtual address space</b> (nearly free, no copy), and that range <b>looks like ordinary memory</b>. But only when code <b>actually touches</b> a page (e.g. <span class="mono">p1, p4</span>) does the CPU raise a <b>page fault</b> and the OS read that page from disk into the <b>page cache (RAM)</b>; untouched cold pages <span class="mono">p0/p2/p3/p5</span> rest quietly on disk, costing no memory. So a node can hold data <b>far larger than physical RAM</b>, with the kernel handling all swap-in/out.</div>
+</div>
 
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>Load field (EnableMmap)</h4><p>Go calls <span class="mono">load_field_data_c.h</span> via cgo, enabling mmap for the field rather than reading it wholesale into heap.</p></div></div>
@@ -423,6 +591,38 @@ LESSON_36 = {
 <h2>逻辑表达式 vs 物理表达式：计划如何被"降级"成可执行码</h2>
 <p>第 28 课说过，一条过滤字符串（如 <span class="mono">age &gt; 30 and city == "NY"</span>）会被解析成一棵<strong>表达式树</strong>。但这里其实有<strong>两棵树、两个层次</strong>，分得很清楚。第一层是<strong>逻辑表达式</strong>，住在 <span class="inline">internal/core/src/expr/ITypeExpr.h</span>：基类 <span class="mono">ITypeExpr</span>，下面有 <span class="mono">ITypeFilterExpr</span>（过滤）、<span class="mono">ColumnExpr</span>（引用某一列）、<span class="mono">ValueExpr</span>（常量）、<span class="mono">FieldAccessTypeExpr</span> 等。它表达的是"<strong>要算什么</strong>"——是一棵<strong>带类型、可校验</strong>的声明式树，但它本身<strong>不知道怎么跑</strong>。</p>
 <p>第二层是<strong>物理表达式</strong>，住在 <span class="inline">internal/core/src/exec/expression/</span>，核心是 <span class="mono">Expr</span> 基类，关键方法是 <span class="mono">Eval(EvalCtx&amp; context, VectorPtr&amp; result)</span>。注意这个签名里的两个细节：入参带一个 <span class="mono">EvalCtx</span>（执行上下文：当前算到哪、段的数据在哪），出参是一个 <span class="mono">VectorPtr</span>——<strong>一整列结果</strong>，而不是一个值。也就是说，物理表达式的 <span class="mono">Eval</span> <strong>一次求值就吞下一大批行</strong>。每个逻辑节点都会被"<strong>降级（lower）</strong>"成对应的物理表达式：<span class="mono">BinaryRangeExpr</span>（范围比较）、<span class="mono">CompareExpr</span>（列与列/列与值比较）、<span class="mono">ConjunctExpr</span>（AND/OR 合取）、<span class="mono">ColumnExpr</span>（取列）……逻辑节点说"我要做大于比较"，物理节点则是"<strong>真正会跑的那段向量化代码</strong>"。</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="一次查询的两层与流水线：expr 的逻辑表达式树 ITypeExpr 声明算什么，被降级 lower 成 exec 的物理表达式 Expr::Eval（一次吞一整批行），再由 Task/Driver 把 FilterBitsNode 到 VectorSearchNode 的算子串成流水线、一批批推着算">
+    <text x="18" y="54" style="fill:var(--muted)">① 逻辑 ITypeExpr · expr/</text>
+    <rect x="18" y="62" width="212" height="156" rx="10" style="fill:var(--panel);stroke:var(--line)"/>
+    <rect x="94" y="76" width="64" height="26" rx="6" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="126" y="94" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">AND</text>
+    <line x1="126" y1="102" x2="72" y2="126" style="stroke:var(--line)"/><line x1="126" y1="102" x2="178" y2="126" style="stroke:var(--line)"/>
+    <rect x="28" y="126" width="88" height="26" rx="6" style="fill:var(--panel-2);stroke:var(--blue)"/><text x="72" y="144" text-anchor="middle" style="fill:var(--blue)">Compare(&lt;)</text>
+    <rect x="132" y="126" width="88" height="26" rx="6" style="fill:var(--panel-2);stroke:var(--blue)"/><text x="176" y="144" text-anchor="middle" style="fill:var(--blue)">Range(&gt;)</text>
+    <text x="124" y="200" text-anchor="middle" style="fill:var(--muted)">声明"算什么" · 可校验</text>
+    <line x1="232" y1="140" x2="296" y2="140" style="stroke:var(--accent);stroke-width:3"/><path d="M296,140 l-12,-5 l0,10 z" style="fill:var(--accent)"/><text x="262" y="132" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">降级</text>
+    <text x="300" y="54" style="fill:var(--muted)">② 物理 Expr::Eval · exec/</text>
+    <rect x="300" y="62" width="212" height="156" rx="10" style="fill:var(--panel);stroke:var(--line)"/>
+    <rect x="304" y="78" width="204" height="30" rx="6" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:1.5"/><text x="406" y="98" text-anchor="middle" class="mono" style="fill:var(--teal);font-size:12px">Eval(EvalCtx&amp;, VectorPtr&amp;)</text>
+    <text x="406" y="128" text-anchor="middle" style="fill:var(--muted)">一次求值 = 吞下一整批行</text>
+    <text x="406" y="156" text-anchor="middle" class="mono" style="fill:var(--ink);font-size:12px">ConjunctExpr · CompareExpr</text>
+    <text x="406" y="174" text-anchor="middle" class="mono" style="fill:var(--ink);font-size:12px">BinaryRangeExpr · ColumnExpr</text>
+    <text x="406" y="200" text-anchor="middle" style="fill:var(--muted)">真正会跑的向量化代码</text>
+    <line x1="514" y1="140" x2="544" y2="140" style="stroke:var(--accent);stroke-width:3"/><path d="M544,140 l-12,-5 l0,10 z" style="fill:var(--accent)"/><text x="529" y="132" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">入</text>
+    <text x="548" y="54" style="fill:var(--muted)">③ Task / Driver / 算子</text>
+    <rect x="548" y="62" width="194" height="156" rx="10" style="fill:var(--panel);stroke:var(--line)"/>
+    <rect x="566" y="76" width="160" height="24" rx="6" style="fill:var(--panel-2);stroke:var(--purple)"/><text x="646" y="93" text-anchor="middle" style="fill:var(--purple);font-weight:700">Driver 驱动</text>
+    <line x1="646" y1="100" x2="646" y2="114" style="stroke:var(--line)"/><path d="M646,114 l-4,-9 l8,0 z" style="fill:var(--line)"/>
+    <rect x="566" y="114" width="160" height="28" rx="6" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="646" y="133" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">FilterBitsNode</text>
+    <line x1="646" y1="142" x2="646" y2="156" style="stroke:var(--accent)"/><path d="M646,156 l-4,-9 l8,0 z" style="fill:var(--accent)"/>
+    <rect x="566" y="156" width="160" height="28" rx="6" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:1.5"/><text x="646" y="175" text-anchor="middle" class="mono" style="fill:var(--teal)">VectorSearchNode</text>
+    <text x="646" y="204" text-anchor="middle" style="fill:var(--muted)">按序流 · 一批批推</text>
+    <text x="380" y="240" text-anchor="middle" style="fill:var(--muted)">逻辑层「算什么」→ 降级成物理层「怎么算得快」（Eval 一次一批）→ Task/Driver 推着算子流水线跑</text>
+  </svg>
+  <div class="figcap"><b>计划如何被"降级"成可执行码</b>：<b>① 逻辑表达式树</b>（<span class="mono">expr/ITypeExpr</span>）只声明"<b>算什么</b>"、带类型可校验，但不知道怎么跑；每个逻辑节点被<b>降级（lower）</b>成 <b>② 物理表达式</b>（<span class="mono">exec/expression/Expr::Eval</span>），签名 <span class="mono">Eval(EvalCtx&amp;, VectorPtr&amp;)</span> 意味着<b>一次求值吞下一整批行</b>（向量化）；最后 <b>③ Task/Driver</b> 把 <span class="mono">FilterBitsNode → VectorSearchNode</span> 等算子串成<b>流水线</b>，一批批推着算（先过滤、再检索）。逻辑/物理分离，给了引擎"先想清楚再动手"的优化空间。</div>
+</div>
+
 <p>为什么要分两层？因为"<strong>表达意图</strong>"和"<strong>高效执行</strong>"是两件事，硬塞在一起会互相牵绊。逻辑层只关心语义正确、类型匹配，便于校验、优化、改写（比如把恒真条件 <span class="mono">AlwaysTrueExpr</span> 直接短路掉）；物理层只关心怎么在列式分块上把这批数据算得最快，可以针对数据类型、是否有标量索引等做特化。这种"<strong>逻辑/物理分离</strong>"是成熟查询引擎的通用套路——先有一棵干净的语义树，再把它编译成一串贴着硬件的执行码。下面这张表把两层摆在一起对照。</p>
 
 <p>这种分层还藏着一个常被忽视的好处：<strong>优化的空间</strong>。当条件停留在"逻辑树"这一层、还没被翻译成执行码时，引擎有机会对它做各种<strong>等价改写</strong>，让最终要跑的活更少。最直观的例子是<strong>常量折叠与短路</strong>：如果某个子条件恒为真（<span class="mono">AlwaysTrueExpr</span>），它在合取里就可以直接抹掉、根本不必生成对应的执行算子；如果恒为假，整条过滤甚至可以提前判空。再比如<strong>条件重排</strong>：把"<strong>最容易刷掉大批行</strong>"的条件排到前面先算，后面的条件就只需在更小的候选集上判断，省下大量计算。还有<strong>能否借力索引</strong>：逻辑层看到 <span class="mono">age &gt; 30</span> 这种范围条件，若该字段建了标量索引（第 24 课），就可以把"逐行算"换成"<strong>查索引直接拿到通过的行</strong>"。这些优化之所以做得动，正是因为有"逻辑层"这一步缓冲——它把"<strong>意图</strong>"和"<strong>执行</strong>"解耦，给了引擎一个"<strong>先想清楚再动手</strong>"的机会。如果一上来就把过滤编成死板的逐行代码，这些重写就无从谈起了。</p>
@@ -508,6 +708,38 @@ Lesson 28 followed one query as it turned a filter string into an expression tre
 <h2>Logical vs physical expression: how a plan is "lowered" to executable code</h2>
 <p>Lesson 28 said a filter string (e.g. <span class="mono">age &gt; 30 and city == "NY"</span>) is parsed into an <strong>expression tree</strong>. But there are really <strong>two trees, two layers</strong>, cleanly separated. The first is the <strong>logical expression</strong> in <span class="inline">internal/core/src/expr/ITypeExpr.h</span>: base <span class="mono">ITypeExpr</span> with <span class="mono">ITypeFilterExpr</span> (filter), <span class="mono">ColumnExpr</span> (reference a column), <span class="mono">ValueExpr</span> (constant), <span class="mono">FieldAccessTypeExpr</span>, etc. It expresses "<strong>what to compute</strong>" — a <strong>typed, checkable</strong> declarative tree that itself <strong>doesn't know how to run</strong>.</p>
 <p>The second is the <strong>physical expression</strong> in <span class="inline">internal/core/src/exec/expression/</span>, centered on the <span class="mono">Expr</span> base with key method <span class="mono">Eval(EvalCtx&amp; context, VectorPtr&amp; result)</span>. Note two details in that signature: an input <span class="mono">EvalCtx</span> (execution context: where we are, where the segment's data is) and an output <span class="mono">VectorPtr</span> — a <strong>whole column of results</strong>, not one value. So a physical expression's <span class="mono">Eval</span> <strong>swallows a big batch of rows per call</strong>. Each logical node is "<strong>lowered</strong>" into a matching physical expression: <span class="mono">BinaryRangeExpr</span> (range compare), <span class="mono">CompareExpr</span> (column vs column/value), <span class="mono">ConjunctExpr</span> (AND/OR), <span class="mono">ColumnExpr</span> (fetch a column)… The logical node says "I do a greater-than"; the physical node is "<strong>the vectorized code that actually runs</strong>".</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="A query's two layers and pipeline: expr's logical tree ITypeExpr declares what to compute; it is lowered into exec's physical Expr::Eval (one call swallows a whole batch of rows); then Task/Driver string FilterBitsNode to VectorSearchNode into a pipeline pushing batches through">
+    <text x="18" y="54" style="fill:var(--muted)">① logical ITypeExpr · expr/</text>
+    <rect x="18" y="62" width="212" height="156" rx="10" style="fill:var(--panel);stroke:var(--line)"/>
+    <rect x="94" y="76" width="64" height="26" rx="6" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="126" y="94" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">AND</text>
+    <line x1="126" y1="102" x2="72" y2="126" style="stroke:var(--line)"/><line x1="126" y1="102" x2="178" y2="126" style="stroke:var(--line)"/>
+    <rect x="28" y="126" width="88" height="26" rx="6" style="fill:var(--panel-2);stroke:var(--blue)"/><text x="72" y="144" text-anchor="middle" style="fill:var(--blue)">Compare(&lt;)</text>
+    <rect x="132" y="126" width="88" height="26" rx="6" style="fill:var(--panel-2);stroke:var(--blue)"/><text x="176" y="144" text-anchor="middle" style="fill:var(--blue)">Range(&gt;)</text>
+    <text x="124" y="200" text-anchor="middle" style="fill:var(--muted)">declares "WHAT" · checkable</text>
+    <line x1="232" y1="140" x2="296" y2="140" style="stroke:var(--accent);stroke-width:3"/><path d="M296,140 l-12,-5 l0,10 z" style="fill:var(--accent)"/><text x="264" y="132" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">lower</text>
+    <text x="300" y="54" style="fill:var(--muted)">② physical Expr::Eval · exec/</text>
+    <rect x="300" y="62" width="212" height="156" rx="10" style="fill:var(--panel);stroke:var(--line)"/>
+    <rect x="304" y="78" width="204" height="30" rx="6" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:1.5"/><text x="406" y="98" text-anchor="middle" class="mono" style="fill:var(--teal);font-size:12px">Eval(EvalCtx&amp;, VectorPtr&amp;)</text>
+    <text x="406" y="128" text-anchor="middle" style="fill:var(--muted)">one Eval = a whole batch</text>
+    <text x="406" y="156" text-anchor="middle" class="mono" style="fill:var(--ink);font-size:12px">ConjunctExpr · CompareExpr</text>
+    <text x="406" y="174" text-anchor="middle" class="mono" style="fill:var(--ink);font-size:12px">BinaryRangeExpr · ColumnExpr</text>
+    <text x="406" y="200" text-anchor="middle" style="fill:var(--muted)">the vectorized code that runs</text>
+    <line x1="514" y1="140" x2="544" y2="140" style="stroke:var(--accent);stroke-width:3"/><path d="M544,140 l-12,-5 l0,10 z" style="fill:var(--accent)"/><text x="529" y="132" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">into</text>
+    <text x="548" y="54" style="fill:var(--muted)">③ Task / Driver / operators</text>
+    <rect x="548" y="62" width="194" height="156" rx="10" style="fill:var(--panel);stroke:var(--line)"/>
+    <rect x="566" y="76" width="160" height="24" rx="6" style="fill:var(--panel-2);stroke:var(--purple)"/><text x="646" y="93" text-anchor="middle" style="fill:var(--purple);font-weight:700">Driver</text>
+    <line x1="646" y1="100" x2="646" y2="114" style="stroke:var(--line)"/><path d="M646,114 l-4,-9 l8,0 z" style="fill:var(--line)"/>
+    <rect x="566" y="114" width="160" height="28" rx="6" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="646" y="133" text-anchor="middle" class="mono" style="fill:var(--accent-ink)">FilterBitsNode</text>
+    <line x1="646" y1="142" x2="646" y2="156" style="stroke:var(--accent)"/><path d="M646,156 l-4,-9 l8,0 z" style="fill:var(--accent)"/>
+    <rect x="566" y="156" width="160" height="28" rx="6" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:1.5"/><text x="646" y="175" text-anchor="middle" class="mono" style="fill:var(--teal)">VectorSearchNode</text>
+    <text x="646" y="204" text-anchor="middle" style="fill:var(--muted)">in order · batch by batch</text>
+    <text x="380" y="240" text-anchor="middle" style="fill:var(--muted)">logical "what" → lower → physical "how fast" (Eval per batch) → Task/Driver pipeline</text>
+  </svg>
+  <div class="figcap"><b>How a plan is "lowered" to executable code</b>: <b>① the logical tree</b> (<span class="mono">expr/ITypeExpr</span>) only declares "<b>what</b>" — typed and checkable, but doesn't know how to run; each logical node is <b>lowered</b> into <b>② a physical expression</b> (<span class="mono">exec/expression/Expr::Eval</span>), whose signature <span class="mono">Eval(EvalCtx&amp;, VectorPtr&amp;)</span> means <b>one call swallows a whole batch of rows</b> (vectorized); finally <b>③ Task/Driver</b> string <span class="mono">FilterBitsNode → VectorSearchNode</span> into a <b>pipeline</b> pushed batch by batch (filter then search). The logical/physical split gives the engine room to "think before acting".</div>
+</div>
+
 <p>Why two layers? Because "<strong>expressing intent</strong>" and "<strong>executing efficiently</strong>" are different jobs that obstruct each other if fused. The logical layer cares only about correct semantics and type matching — easy to validate, optimize, rewrite (e.g. short-circuit an always-true <span class="mono">AlwaysTrueExpr</span>); the physical layer cares only about computing this batch fastest over columnar chunks, specializing by data type, scalar-index presence, etc. This "<strong>logical/physical split</strong>" is the standard play of mature query engines — first a clean semantic tree, then compile it into hardware-hugging execution code. The table contrasts the two layers.</p>
 
 <p>This split hides an often-overlooked benefit: <strong>room to optimize</strong>. While a condition still lives at the "logical tree" layer, not yet compiled to execution code, the engine can apply various <strong>equivalence rewrites</strong> so the final work is smaller. The clearest example is <strong>constant folding and short-circuiting</strong>: an always-true subcondition (<span class="mono">AlwaysTrueExpr</span>) can be dropped from a conjunction outright, never generating an operator; an always-false one can null the whole filter early. Or <strong>reordering</strong>: put the condition that <strong>rejects the most rows</strong> first, so later conditions test only a smaller survivor set. Or <strong>using indexes</strong>: seeing a range like <span class="mono">age &gt; 30</span>, if that field has a scalar index (Lesson 24), the engine can swap "evaluate per row" for "<strong>look up the index to get passing rows directly</strong>". These optimizations are possible precisely because the logical layer buffers between "<strong>intent</strong>" and "<strong>execution</strong>", giving the engine a chance to "<strong>think before it acts</strong>". Compile straight to rigid row-by-row code and none of these rewrites would be on the table.</p>
@@ -593,6 +825,31 @@ LESSON_37 = {
 <p>要理解 GPU 的价值，先想清楚 CPU 和 GPU 的"性格差异"。CPU 是<strong>少而精</strong>：几个到几十个强大的核，每个核都有复杂的分支预测、乱序执行、大缓存，擅长跑<strong>逻辑复杂、分支多变</strong>的串行任务。GPU 反过来是<strong>多而简</strong>：成千上万个相对简单的核，没那么聪明，但胜在<strong>数量碾压</strong>，特别擅长"<strong>同一段运算、同时套在海量数据上</strong>"（业界叫 SIMT：单指令、多线程）。</p>
 <p>向量检索的内核运算，简直是为 GPU 量身定做的。算一次相似度，本质就是两个向量的<strong>点积或欧氏距离</strong>——一串乘加。而一次搜索要把查询向量和<strong>成千上万条候选</strong>逐一算距离：同一个公式，重复成千上万遍，彼此<strong>互不依赖</strong>。这种"<strong>大批量、同质、天然可并行</strong>"的负载，正是 GPU 上千核最饿、最能吃下的那口饭。当数据规模大到一定程度、或要求的吞吐（QPS）足够高时，GPU 相对 CPU 往往能带来<strong>数量级</strong>的提升。第 36 课的 CPU 向量化（SIMD：一条指令算 8/16 个浮点）已经是"并行"的一种；GPU 只是把这种并行<strong>推到极致</strong>——从"一次几十个"跳到"一次成千上万个"。下面把两者的性格摆在一起看。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="为什么向量检索适合 GPU：一个查询向量 q 要和成千上万条候选向量逐一算同一个距离公式 dist(q,vi)，彼此互不依赖；这些独立计算被映射到 GPU 上千个 SIMT 线程上同时开火，一次并行算完一大批">
+    <rect x="20" y="116" width="120" height="44" rx="9" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:2"/><text x="80" y="138" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">查询向量 q</text><text x="80" y="154" text-anchor="middle" style="fill:var(--muted)">一条</text>
+    <text x="158" y="50" style="fill:var(--muted)">候选向量（成千上万条）</text>
+    <rect x="158" y="58" width="104" height="22" rx="5" style="fill:var(--panel-2);stroke:var(--line)"/><text x="210" y="74" text-anchor="middle" class="mono" style="fill:var(--muted)">v0</text>
+    <rect x="158" y="84" width="104" height="22" rx="5" style="fill:var(--panel-2);stroke:var(--line)"/><text x="210" y="100" text-anchor="middle" class="mono" style="fill:var(--muted)">v1</text>
+    <rect x="158" y="110" width="104" height="22" rx="5" style="fill:var(--panel-2);stroke:var(--line)"/><text x="210" y="126" text-anchor="middle" class="mono" style="fill:var(--muted)">v2</text>
+    <rect x="158" y="136" width="104" height="22" rx="5" style="fill:var(--panel-2);stroke:var(--line)"/><text x="210" y="152" text-anchor="middle" class="mono" style="fill:var(--muted)">v3</text>
+    <rect x="158" y="162" width="104" height="22" rx="5" style="fill:var(--panel-2);stroke:var(--line)"/><text x="210" y="178" text-anchor="middle" class="mono" style="fill:var(--muted)">v4</text>
+    <text x="210" y="200" text-anchor="middle" class="mono" style="fill:var(--faint)">… vN</text>
+    <text x="350" y="92" text-anchor="middle" class="mono" style="fill:var(--ink);font-weight:700">dist(q, vi)</text>
+    <text x="350" y="112" text-anchor="middle" style="fill:var(--muted)">同一公式 · 点积/欧氏</text>
+    <text x="350" y="130" text-anchor="middle" style="fill:var(--muted)">彼此互不依赖</text>
+    <line x1="280" y1="150" x2="424" y2="150" style="stroke:var(--teal);stroke-width:2.5"/><path d="M424,150 l-12,-5 l0,10 z" style="fill:var(--teal)"/><text x="352" y="168" text-anchor="middle" style="fill:var(--teal);font-weight:700">每条 → 一个线程</text>
+    <text x="430" y="50" style="fill:var(--muted)">GPU · SIMT：上千线程，全部同时开火</text>
+    <rect x="430" y="58" width="312" height="184" rx="10" style="fill:none;stroke:var(--teal);stroke-dasharray:5 4"/>
+    <rect x="444" y="74" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="494" y="74" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="544" y="74" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="594" y="74" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="644" y="74" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="694" y="74" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/>
+    <rect x="444" y="112" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="494" y="112" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="544" y="112" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="594" y="112" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="644" y="112" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="694" y="112" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/>
+    <rect x="444" y="150" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="494" y="150" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="544" y="150" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="594" y="150" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="644" y="150" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="694" y="150" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/>
+    <text x="586" y="204" text-anchor="middle" style="fill:var(--teal);font-weight:700">每格 = 一个 dist 线程</text><text x="586" y="224" text-anchor="middle" style="fill:var(--muted)">…同时 ×上千，一次并行算完一大批</text>
+    <text x="380" y="278" text-anchor="middle" style="fill:var(--muted)">向量检索 = 对海量候选重复同一距离公式、彼此独立 → 正中 GPU 上千核(SIMT)下怀</text>
+  </svg>
+  <div class="figcap"><b>为什么向量检索特别适合 GPU</b>：一次搜索把<b>一条查询 q</b> 和<b>成千上万条候选 vi</b> 逐一算同一个距离公式 <span class="mono">dist(q, vi)</span>（点积/欧氏，一串乘加），而且每条<b>彼此互不依赖</b>。这种"<b>大批量、同质、天然可并行</b>"的负载，正中 GPU <b>上千个 SIMT 线程</b>（单指令·多线程）下怀——每条候选映射到一个线程、全部同时开火，一次并行吃下一大批，大规模/高吞吐时常快出<b>数量级</b>。</div>
+</div>
+
 <p>不过要诚实地说一句：<strong>GPU 不是一键加速的银弹</strong>，它有自己的"门票"和"水土"。第一道坎是<strong>数据搬运</strong>：向量要先从主机内存拷进显存，算完再把结果拷回来——这趟"<strong>过海关</strong>"本身有开销。如果一次只搜一两条向量，搬运的时间可能比省下的计算时间还多，GPU 反而<strong>不划算</strong>；只有当一次能喂给它<strong>足够大的一批</strong>活（大数据集、或高并发把许多查询攒成大批），上千核被填满，搬运开销被摊薄，GPU 的威力才真正释放。这与第 29 课"<strong>批量搜更划算</strong>"、第 36 课"<strong>批的粒度</strong>"是同一条道理在硬件层的回响。第二道坎是<strong>显存上限</strong>：一张卡的显存（往往几十 GB）通常远小于主机内存，装不下的部分要么压缩（用 PQ）、要么分批、要么干脆放不下。第三道坎是<strong>成本与运维</strong>：GPU 卡贵、功耗高，还要专门的驱动与构建。所以现实里的选择往往是"<strong>看菜下饭</strong>"：中小规模、延迟敏感、查询稀疏的场景，CPU 版部署简单、延迟稳定，反而更合适；唯有<strong>海量数据 + 高吞吐</strong>这种把 GPU 喂得饱饱的场景，才值得为它的"门票"买单。把这层权衡想清楚，你才不会被"GPU 一定更快"这种口号带偏。</p>
 
 <div class="cols">
@@ -668,6 +925,31 @@ In Lesson 36 we squeezed the CPU dry — vectorization and SIMD let one instruct
 <h2>Why vector search suits the GPU so well</h2>
 <p>To grasp the GPU's value, first the "personality difference" between CPU and GPU. The CPU is <strong>few but powerful</strong>: a handful to dozens of strong cores, each with complex branch prediction, out-of-order execution, big caches — great at <strong>logic-heavy, branchy</strong> serial tasks. The GPU is the opposite, <strong>many but simple</strong>: thousands of relatively simple cores, not as clever but winning by <strong>sheer count</strong>, superb at "<strong>the same computation applied to massive data at once</strong>" (the industry calls it SIMT: single instruction, multiple threads).</p>
 <p>Vector search's core operation is tailor-made for the GPU. One similarity is essentially a <strong>dot product or Euclidean distance</strong> between two vectors — a string of multiply-adds. And one search computes the distance from the query to <strong>thousands of candidates</strong> one by one: the same formula, repeated thousands of times, each <strong>independent</strong>. That "<strong>bulk, homogeneous, naturally parallel</strong>" load is exactly the meal the GPU's thousands of cores are hungriest for. Once the dataset is large enough or the required throughput (QPS) high enough, the GPU often beats the CPU by an <strong>order of magnitude</strong>. Lesson 36's CPU vectorization (SIMD: one instruction over 8/16 floats) is already a kind of parallelism; the GPU just <strong>pushes it to the extreme</strong> — from "dozens at once" to "thousands at once". The two personalities side by side:</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="Why vector search suits the GPU: one query vector q must compute the same distance formula dist(q,vi) against thousands of candidate vectors, each independent; these independent calculations map onto thousands of GPU SIMT threads firing at once, computing a whole batch in parallel">
+    <rect x="20" y="116" width="120" height="44" rx="9" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:2"/><text x="80" y="138" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">query q</text><text x="80" y="154" text-anchor="middle" style="fill:var(--muted)">one</text>
+    <text x="158" y="50" style="fill:var(--muted)">candidates (thousands)</text>
+    <rect x="158" y="58" width="104" height="22" rx="5" style="fill:var(--panel-2);stroke:var(--line)"/><text x="210" y="74" text-anchor="middle" class="mono" style="fill:var(--muted)">v0</text>
+    <rect x="158" y="84" width="104" height="22" rx="5" style="fill:var(--panel-2);stroke:var(--line)"/><text x="210" y="100" text-anchor="middle" class="mono" style="fill:var(--muted)">v1</text>
+    <rect x="158" y="110" width="104" height="22" rx="5" style="fill:var(--panel-2);stroke:var(--line)"/><text x="210" y="126" text-anchor="middle" class="mono" style="fill:var(--muted)">v2</text>
+    <rect x="158" y="136" width="104" height="22" rx="5" style="fill:var(--panel-2);stroke:var(--line)"/><text x="210" y="152" text-anchor="middle" class="mono" style="fill:var(--muted)">v3</text>
+    <rect x="158" y="162" width="104" height="22" rx="5" style="fill:var(--panel-2);stroke:var(--line)"/><text x="210" y="178" text-anchor="middle" class="mono" style="fill:var(--muted)">v4</text>
+    <text x="210" y="200" text-anchor="middle" class="mono" style="fill:var(--faint)">… vN</text>
+    <text x="350" y="92" text-anchor="middle" class="mono" style="fill:var(--ink);font-weight:700">dist(q, vi)</text>
+    <text x="350" y="112" text-anchor="middle" style="fill:var(--muted)">one formula · dot/L2</text>
+    <text x="350" y="130" text-anchor="middle" style="fill:var(--muted)">all independent</text>
+    <line x1="280" y1="150" x2="424" y2="150" style="stroke:var(--teal);stroke-width:2.5"/><path d="M424,150 l-12,-5 l0,10 z" style="fill:var(--teal)"/><text x="352" y="168" text-anchor="middle" style="fill:var(--teal);font-weight:700">each → one thread</text>
+    <text x="430" y="50" style="fill:var(--muted)">GPU · SIMT · thousands of threads</text>
+    <rect x="430" y="58" width="312" height="184" rx="10" style="fill:none;stroke:var(--teal);stroke-dasharray:5 4"/>
+    <rect x="444" y="74" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="494" y="74" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="544" y="74" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="594" y="74" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="644" y="74" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="694" y="74" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/>
+    <rect x="444" y="112" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="494" y="112" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="544" y="112" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="594" y="112" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="644" y="112" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="694" y="112" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/>
+    <rect x="444" y="150" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="494" y="150" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="544" y="150" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="594" y="150" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="644" y="150" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/><rect x="694" y="150" width="42" height="30" rx="5" style="fill:var(--teal-soft);stroke:var(--teal)"/>
+    <text x="586" y="204" text-anchor="middle" style="fill:var(--teal);font-weight:700">each cell = one dist thread</text><text x="586" y="224" text-anchor="middle" style="fill:var(--muted)">…×thousands at once, one parallel pass</text>
+    <text x="380" y="278" text-anchor="middle" style="fill:var(--muted)">one formula over countless independent candidates → the GPU's SIMT sweet spot</text>
+  </svg>
+  <div class="figcap"><b>Why vector search suits the GPU so well</b>: one search computes the same distance formula <span class="mono">dist(q, vi)</span> (dot/Euclidean — a string of multiply-adds) from <b>one query q</b> to <b>thousands of candidates vi</b>, and every pair is <b>independent</b>. That "<b>bulk, homogeneous, naturally parallel</b>" load is right in the wheelhouse of the GPU's <b>thousands of SIMT threads</b> (single instruction, multiple threads) — each candidate maps to a thread, all fire at once, a whole batch computed in parallel; at large scale / high throughput it often wins by an <b>order of magnitude</b>.</div>
+</div>
 
 <p>An honest caveat, though: <strong>the GPU is no one-click silver bullet</strong> — it has its own "admission ticket" and "climate". The first hurdle is <strong>data transfer</strong>: vectors must first be copied from host RAM into VRAM, and results copied back — that "<strong>customs run</strong>" has overhead. Searching just one or two vectors at a time, the transfer may cost more than the compute it saves, making the GPU <strong>not worth it</strong>; only when you feed it a <strong>big enough batch</strong> (a large dataset, or high concurrency batching many queries) do its thousands of cores fill up, the transfer amortizes, and its power is unleashed. This echoes Lesson 29's "<strong>batching is cheaper</strong>" and Lesson 36's "<strong>batch granularity</strong>" at the hardware layer. The second hurdle is the <strong>VRAM ceiling</strong>: a card's VRAM (often tens of GB) is usually far smaller than host RAM, so the overflow must be compressed (PQ), batched, or simply won't fit. The third is <strong>cost and ops</strong>: GPU cards are expensive, power-hungry, and need dedicated drivers and builds. So real-world choices are "<strong>cook to the dish</strong>": for small/medium scale, latency-sensitive, sparse-query workloads, the CPU build is simpler to deploy with stable latency and often fits better; only <strong>massive data + high throughput</strong>, which keeps the GPU well fed, justifies paying its "ticket". Think this trade-off through and you won't be misled by the slogan "GPU is always faster".</p>
 
