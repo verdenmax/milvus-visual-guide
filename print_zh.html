@@ -9186,6 +9186,29 @@ Go 这边则有对应的封装（如第 2、27 课的 <span class="mono">LocalSe
 <h2>三者合一：在分布式系统里追一个请求</h2>
 <p>把三根支柱接起来，看一次"搜索变慢了"的排查实战。<strong>第一步，指标发现异常</strong>：Grafana 上 P99 延迟曲线突然抬头、告警触发——你知道"<strong>出事了</strong>"，但还不知道是谁、卡在哪。<strong>第二步，链路追踪定位环节</strong>：翻看慢请求的 trace，那棵调用树清清楚楚——Proxy 很快、扇出的三个 QueryNode 里有<strong>一个</strong>的子 span 特别长，问题缩小到了"<strong>那一跳</strong>"。<strong>第三步，日志还原细节</strong>：拿着这个请求的传播 ID，去那个 QueryNode 的日志里一过滤，相关条目<strong>整整齐齐</strong>地浮出来——原来是某个段在做 mmap 缺页、冷数据首次加载慢（第 35 课）。三步走完，根因水落石出。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="一个请求的分布式追踪：同一个 traceID 随 ctx 跨节点传播；Proxy 的 span 扇出到三个 QueryNode 的子 span，其中 QueryNode B 特别长（慢在这一跳）；三大支柱配合——指标发现、追踪定位、日志还原">
+    <text x="20" y="38" style="fill:var(--muted)">一个请求的 trace 调用树（同一 <tspan class="mono" style="fill:var(--accent-ink)">traceID</tspan> 随 ctx 跨节点传播）</text>
+    <text x="22" y="74" style="fill:var(--ink);font-weight:700">Proxy</text>
+    <rect x="120" y="60" width="600" height="20" rx="4" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="130" y="75" style="fill:var(--accent-ink)">span · 父</text>
+    <line x1="150" y1="80" x2="150" y2="146" style="stroke:var(--line);stroke-dasharray:3 3"/>
+    <text x="22" y="100" style="fill:var(--muted)">QueryNode A</text>
+    <rect x="150" y="90" width="140" height="16" rx="4" style="fill:var(--teal-soft);stroke:var(--teal)"/>
+    <text x="22" y="124" style="fill:var(--muted)">QueryNode B</text>
+    <rect x="150" y="114" width="410" height="16" rx="4" style="fill:var(--amber-soft);stroke:var(--amber);stroke-width:1.5"/><text x="570" y="127" style="fill:var(--amber);font-weight:700">← 慢在这一跳</text>
+    <text x="22" y="148" style="fill:var(--muted)">QueryNode C</text>
+    <rect x="150" y="138" width="160" height="16" rx="4" style="fill:var(--teal-soft);stroke:var(--teal)"/>
+    <line x1="120" y1="166" x2="720" y2="166" style="stroke:var(--line)"/><text x="720" y="180" text-anchor="end" style="fill:var(--faint)">时间 →</text>
+    <rect x="24" y="200" width="220" height="46" rx="9" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="134" y="220" text-anchor="middle" style="fill:var(--blue);font-weight:700">① 指标 Metrics</text><text x="134" y="238" text-anchor="middle" style="fill:var(--muted)">发现：P99↑、告警</text>
+    <line x1="246" y1="223" x2="268" y2="223" style="stroke:var(--line);stroke-width:2"/><path d="M268,223 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="270" y="200" width="220" height="46" rx="9" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="380" y="220" text-anchor="middle" style="fill:var(--amber);font-weight:700">② 追踪 Traces</text><text x="380" y="238" text-anchor="middle" style="fill:var(--muted)">定位：慢的那一跳 span</text>
+    <line x1="492" y1="223" x2="514" y2="223" style="stroke:var(--line);stroke-width:2"/><path d="M514,223 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="516" y="200" width="220" height="46" rx="9" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="626" y="220" text-anchor="middle" style="fill:var(--teal);font-weight:700">③ 日志 Logs</text><text x="626" y="238" text-anchor="middle" style="fill:var(--muted)">还原：用 ID 过滤日志</text>
+    <text x="380" y="278" text-anchor="middle" style="fill:var(--muted)">靠同一个 traceID 塞进 ctx、随 gRPC 拦截器走遍全程，把碎片聚成"一个请求"的故事</text>
+  </svg>
+  <div class="figcap"><b>三者合一 · 在分布式系统里追一个请求</b>：给请求一个能<b>跨节点传播的身份</b>（traceID 塞进 ctx，随 gRPC 拦截器走遍全程）。于是 Proxy 的 span 扇出到三个 QueryNode 的<b>子 span</b>，拼成一棵<b>调用树</b>——<b>QueryNode B</b> 那条特别长，慢在这一跳。三大支柱接力：<b>① 指标</b>发现"出事了"、<b>② 追踪</b>定位"哪一跳"、<b>③ 日志</b>用同一个 ID 过滤、还原细节（原来是 mmap 缺页，第 35 课）。指标发现、追踪定位、日志还原，缺一不可。</div>
+</div>
+
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>指标发现</h4><p>Grafana 上 P99 延迟曲线抬头、告警触发——知道"出事了"，但不知是谁、卡在哪。（Prometheus 指标）</p></div></div>
   <div class="step"><div class="num">2</div><div class="sc"><h4>追踪定位</h4><p>看慢请求的 trace 调用树：某个 QueryNode 的子 span 特别长，问题缩小到"那一跳"。（OpenTelemetry）</p></div></div>
@@ -9291,6 +9314,21 @@ Go 这边则有对应的封装（如第 2、27 课的 <span class="mono">LocalSe
 <h2>配置从哪来：分层数据源与优先级</h2>
 <p>再看下层——值到底从哪儿取。<span class="mono">config</span> 包（<span class="inline">pkg/config</span>）定义了多种<strong>数据源（Source）</strong>，每种来源各有<strong>优先级</strong>。最基础的是 <strong>FileSource</strong>：读 <span class="inline">configs/milvus.yaml</span>，这是<strong>人类可读的默认配置文件</strong>，也是所有旋钮"<strong>对外展示的清单</strong>"——你想知道有哪些配置、默认是多少，看它就对了。其上是 <strong>EnvSource</strong>：环境变量，方便在容器/CI 里<strong>临时覆盖</strong>，无需改文件。最高的是 <strong>EtcdSource</strong>：把配置放进 etcd，可<strong>集群级、运行时</strong>统一下发与修改。</p>
 <p>多来源就要定<strong>谁说了算</strong>。<span class="mono">config.Manager</span>（<span class="inline">pkg/config/manager.go</span>）负责把各来源<strong>合并</strong>，规则是按优先级：源码里 <span class="mono">HighPriority=1</span>、<span class="mono">NormalPriority=11</span>、<span class="mono">LowPriority=21</span>，并注明"<strong>值越小、优先级越高</strong>"。直观理解就是"<strong>越贴身、越动态的来源越优先</strong>"：etcd（运行时下发）压过环境变量、环境变量压过文件默认。这套"<strong>分层覆盖</strong>"模式你一定不陌生——它和绝大多数成熟配置系统一个套路：<strong>给一套合理默认，再允许逐层精确覆盖</strong>，既开箱即用，又能在每个环境精准调校。下面把三种来源摆在一起。</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="配置取值的分层与优先级：以 quota.timeout 为例，etcd 运行时下发 60s（pri=1 最高、且有值）压过环境变量、milvus.yaml 文件的 30s 与内置默认 10s，合并后的生效值是 60s；值越小优先级越高">
+    <text x="20" y="32" style="fill:var(--ink);font-weight:700">一个旋钮的取值从哪来？例：<tspan class="mono">quota.timeout</tspan>（值越小优先级越高）</text>
+    <rect x="40" y="52" width="384" height="36" rx="7" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="54" y="75" style="fill:var(--accent-ink);font-weight:700">etcd · 运行时下发（pri=1 最高）</text><text x="410" y="75" text-anchor="end" style="fill:var(--accent-ink);font-weight:700">60s ✓</text>
+    <rect x="40" y="96" width="384" height="36" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="54" y="119" style="fill:var(--muted)">环境变量 env（pri=11）</text><text x="410" y="119" text-anchor="end" style="fill:var(--faint)">未设</text>
+    <rect x="40" y="140" width="384" height="36" rx="7" style="fill:var(--panel);stroke:var(--line)"/><text x="54" y="163" style="fill:var(--muted)">milvus.yaml 文件（pri=21）</text><text x="410" y="163" text-anchor="end" style="fill:var(--faint);text-decoration:line-through">30s</text>
+    <rect x="40" y="184" width="384" height="36" rx="7" style="fill:var(--panel-2);stroke:var(--line)"/><text x="54" y="207" style="fill:var(--muted)">默认值 default（内置兜底）</text><text x="410" y="207" text-anchor="end" style="fill:var(--faint);text-decoration:line-through">10s</text>
+    <text x="34" y="48" style="fill:var(--faint)">高</text><text x="34" y="216" style="fill:var(--faint)">低</text>
+    <line x1="446" y1="136" x2="532" y2="136" style="stroke:var(--accent);stroke-width:2.5"/><path d="M532,136 l-12,-5 l0,10 z" style="fill:var(--accent)"/><text x="489" y="128" text-anchor="middle" style="fill:var(--muted)">合并</text>
+    <rect x="536" y="106" width="206" height="62" rx="11" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:2"/><text x="639" y="132" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">生效值 = 60s</text><text x="639" y="153" text-anchor="middle" style="fill:var(--muted)">← 最高优先级且有值</text>
+    <text x="380" y="252" text-anchor="middle" style="fill:var(--muted)">config.Manager 合并：越贴身/越动态越优先（etcd &gt; env &gt; yaml &gt; default），可变项还能热更新</text>
+  </svg>
+  <div class="figcap"><b>配置从哪来 = 分层数据源 + 优先级合并</b>：同一个旋钮（如 <span class="mono">quota.timeout</span>）可能在多个来源里被设值，<span class="mono">config.Manager</span> 按优先级合并——<b>值越小优先级越高</b>，越<b>贴身/动态</b>的来源越优先：<b>etcd（运行时）&gt; 环境变量 &gt; milvus.yaml 文件 &gt; 内置默认</b>。本例里 etcd 下发了 60s（最高优先级且有值），就<b>压过</b>了 yaml 的 30s、默认的 10s，最终生效值 = <b>60s</b>。代码只读类型化的值，不关心它来自哪一层；可变项还能<b>热更新、不重启</b>。</div>
+</div>
 
 <div class="flow">
   <div class="node"><div class="nt">milvus.yaml</div><div class="nd">文件默认(低)</div></div>
@@ -9406,6 +9444,24 @@ Go 这边则有对应的封装（如第 2、27 课的 <span class="mono">LocalSe
 <h2>从一行命令到一个集群：部署的阶梯</h2>
 <p>"怎么把 Milvus 跑起来"没有唯一答案，而是<strong>一道由简到繁的阶梯</strong>，你站在哪一级，取决于你要做什么。最低一级是<strong>内嵌单机</strong>（<span class="inline">scripts/standalone_embed.sh</span>）：它把该有的依赖尽量<strong>内嵌</strong>——连 etcd 都能用嵌入式的（脚本里能看到 <span class="mono">ETCD_USE_EMBED=true</span>）、消息用本地的 rocksmq、数据落本地盘。好处是<strong>几乎零外部依赖、一条命令起一个完整 Milvus</strong>，最适合<strong>学习、本地开发、跑通一个 demo</strong>。</p>
 <p>往上一级是 <strong>docker-compose</strong>：把 etcd、对象存储（MinIO）、消息队列（如 Pulsar）作为<strong>真正独立的容器</strong>拉起来，再加上 Milvus 本身。这一级让你在<strong>一台机器</strong>上体验到"<strong>各依赖各司其职</strong>"的真实形态，比内嵌更接近生产、又比 k8s 简单，适合<strong>本地集成测试、小规模试用</strong>。最高一级是 <strong>Kubernetes</strong>，这才是生产的主场：官方提供 <strong>Helm Chart</strong>（一键模板化部署）和 <strong>Milvus Operator</strong>（用一个"运维大脑"声明式地管理整个集群的生命周期——扩缩容、故障自愈、滚动升级）。这道阶梯的设计很贴心：<strong>上手时零负担，认真用时有生产级方案</strong>，你可以随着需求"<strong>逐级往上走</strong>"，而不必一开始就被复杂度劝退。下面把这道阶梯画出来。</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="部署的阶梯：内嵌单机 → docker-compose → k8s 集群，逐级由简到繁；只有到了集群这一级，才能按需独立伸缩——读多写少就多加 QueryNode、写多就加 DataNode/流式、对象存储独立扩容">
+    <rect x="18" y="186" width="134" height="48" rx="9" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="85" y="208" text-anchor="middle" style="fill:var(--teal);font-weight:700">① 内嵌单机</text><text x="85" y="225" text-anchor="middle" style="fill:var(--muted)">零依赖 · 学习</text>
+    <line x1="152" y1="200" x2="184" y2="156" style="stroke:var(--accent);stroke-width:2.5"/><path d="M184,156 l-3,11 l9,-3 z" style="fill:var(--accent)"/>
+    <rect x="186" y="132" width="146" height="48" rx="9" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="259" y="154" text-anchor="middle" style="fill:var(--blue);font-weight:700">② docker-compose</text><text x="259" y="171" text-anchor="middle" style="fill:var(--muted)">独立容器 · 测试</text>
+    <line x1="332" y1="146" x2="362" y2="102" style="stroke:var(--accent);stroke-width:2.5"/><path d="M362,102 l-3,11 l9,-3 z" style="fill:var(--accent)"/>
+    <rect x="364" y="76" width="146" height="48" rx="9" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:2"/><text x="437" y="98" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">③ k8s 集群</text><text x="437" y="115" text-anchor="middle" style="fill:var(--muted)">Helm · Operator</text>
+    <line x1="510" y1="100" x2="540" y2="100" style="stroke:var(--accent);stroke-width:2.5"/><path d="M540,100 l-11,-5 l0,10 z" style="fill:var(--accent)"/>
+    <text x="626" y="64" text-anchor="middle" style="fill:var(--ink);font-weight:700">集群的回报：按需独立伸缩</text>
+    <rect x="514" y="74" width="226" height="46" rx="9" style="fill:var(--teal-soft);stroke:var(--teal);stroke-width:1.5"/><text x="528" y="94" style="fill:var(--teal);font-weight:700">QueryNode ×5</text><text x="528" y="112" style="fill:var(--muted)">读多写少 → 多加这侧</text>
+    <rect x="514" y="126" width="226" height="46" rx="9" style="fill:var(--blue-soft);stroke:var(--blue);stroke-width:1.5"/><text x="528" y="146" style="fill:var(--blue);font-weight:700">DataNode / 流式 ×3</text><text x="528" y="164" style="fill:var(--muted)">写多 → 加这一侧</text>
+    <rect x="514" y="178" width="226" height="46" rx="9" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="528" y="198" style="fill:var(--amber);font-weight:700">对象存储 · 独立扩容</text><text x="528" y="216" style="fill:var(--muted)">无状态 → 单独加容量</text>
+    <text x="255" y="262" text-anchor="middle" style="fill:var(--muted)">逐级往上：上手零负担、认真用有生产级</text>
+    <text x="255" y="282" text-anchor="middle" style="fill:var(--muted)">上集群的真正回报 = 哪一环瓶颈就单独给哪一环加机器</text>
+  </svg>
+  <div class="figcap"><b>从一行命令到一个集群 = 一道部署阶梯</b>：<b>① 内嵌单机</b>（<span class="mono">standalone_embed.sh</span>，嵌入式 etcd + 本地 rocksmq，一命令零依赖，学习/开发）→ <b>② docker-compose</b>（etcd/MinIO/Pulsar 各作独立容器，集成测试）→ <b>③ k8s 集群</b>（Helm 一键、Operator 声明式运维，生产）。上手零负担、认真用有生产级。<b>上集群的真正回报</b>不是"装更多数据"，而是<b>按需独立伸缩</b>：读多写少就多加 <span class="mono">QueryNode</span>、写多就加 <span class="mono">DataNode</span>/流式、对象存储无状态可单独扩容——哪一环瓶颈就给哪一环加机器，把钱花在刀刃上。</div>
+</div>
 
 <p>这道阶梯里，最值得多说一句的是 <strong>Milvus Operator</strong>，因为它代表了一种现代的运维范式——<strong>声明式管理</strong>。传统运维是"<strong>命令式</strong>"的：你一条条敲命令告诉系统"先起这个、再扩那个、挂了去重启"。Operator 反过来，是<strong>声明式</strong>的：你只写一份描述"<strong>我想要的最终状态</strong>"的清单（比如"QueryNode 要 5 个、DataNode 要 3 个、用这个版本"），Operator 这个"<strong>运维大脑</strong>"就会<strong>持续地把现实拉向你声明的状态</strong>——少了就补、挂了就换、要升级就一个个滚动替换。这背后是 Kubernetes 的核心思想：<strong>声明期望、由控制器不断校正</strong>。你会发现，这和 Milvus 内部协调器（第 11–13 课）"<strong>盯着期望状态、不断驱动现实向它收敛</strong>"的做法<strong>如出一辙</strong>——只不过一个管的是集群里的段与索引，一个管的是 k8s 里的 Pod 与服务。理解了这层同构，你就明白为什么说 Operator 是"把 Milvus 自己那套协调哲学，搬到了部署层"——<strong>整个系统从里到外，贯穿着同一种"声明期望、自动收敛"的审美</strong>。</p>
 

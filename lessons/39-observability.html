@@ -399,6 +399,29 @@ html[data-lang="zh"] .lang-en { display: none !important; }
 <h2>三者合一：在分布式系统里追一个请求</h2>
 <p>把三根支柱接起来，看一次"搜索变慢了"的排查实战。<strong>第一步，指标发现异常</strong>：Grafana 上 P99 延迟曲线突然抬头、告警触发——你知道"<strong>出事了</strong>"，但还不知道是谁、卡在哪。<strong>第二步，链路追踪定位环节</strong>：翻看慢请求的 trace，那棵调用树清清楚楚——Proxy 很快、扇出的三个 QueryNode 里有<strong>一个</strong>的子 span 特别长，问题缩小到了"<strong>那一跳</strong>"。<strong>第三步，日志还原细节</strong>：拿着这个请求的传播 ID，去那个 QueryNode 的日志里一过滤，相关条目<strong>整整齐齐</strong>地浮出来——原来是某个段在做 mmap 缺页、冷数据首次加载慢（第 35 课）。三步走完，根因水落石出。</p>
 
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="一个请求的分布式追踪：同一个 traceID 随 ctx 跨节点传播；Proxy 的 span 扇出到三个 QueryNode 的子 span，其中 QueryNode B 特别长（慢在这一跳）；三大支柱配合——指标发现、追踪定位、日志还原">
+    <text x="20" y="38" style="fill:var(--muted)">一个请求的 trace 调用树（同一 <tspan class="mono" style="fill:var(--accent-ink)">traceID</tspan> 随 ctx 跨节点传播）</text>
+    <text x="22" y="74" style="fill:var(--ink);font-weight:700">Proxy</text>
+    <rect x="120" y="60" width="600" height="20" rx="4" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="130" y="75" style="fill:var(--accent-ink)">span · 父</text>
+    <line x1="150" y1="80" x2="150" y2="146" style="stroke:var(--line);stroke-dasharray:3 3"/>
+    <text x="22" y="100" style="fill:var(--muted)">QueryNode A</text>
+    <rect x="150" y="90" width="140" height="16" rx="4" style="fill:var(--teal-soft);stroke:var(--teal)"/>
+    <text x="22" y="124" style="fill:var(--muted)">QueryNode B</text>
+    <rect x="150" y="114" width="410" height="16" rx="4" style="fill:var(--amber-soft);stroke:var(--amber);stroke-width:1.5"/><text x="570" y="127" style="fill:var(--amber);font-weight:700">← 慢在这一跳</text>
+    <text x="22" y="148" style="fill:var(--muted)">QueryNode C</text>
+    <rect x="150" y="138" width="160" height="16" rx="4" style="fill:var(--teal-soft);stroke:var(--teal)"/>
+    <line x1="120" y1="166" x2="720" y2="166" style="stroke:var(--line)"/><text x="720" y="180" text-anchor="end" style="fill:var(--faint)">时间 →</text>
+    <rect x="24" y="200" width="220" height="46" rx="9" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="134" y="220" text-anchor="middle" style="fill:var(--blue);font-weight:700">① 指标 Metrics</text><text x="134" y="238" text-anchor="middle" style="fill:var(--muted)">发现：P99↑、告警</text>
+    <line x1="246" y1="223" x2="268" y2="223" style="stroke:var(--line);stroke-width:2"/><path d="M268,223 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="270" y="200" width="220" height="46" rx="9" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="380" y="220" text-anchor="middle" style="fill:var(--amber);font-weight:700">② 追踪 Traces</text><text x="380" y="238" text-anchor="middle" style="fill:var(--muted)">定位：慢的那一跳 span</text>
+    <line x1="492" y1="223" x2="514" y2="223" style="stroke:var(--line);stroke-width:2"/><path d="M514,223 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="516" y="200" width="220" height="46" rx="9" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="626" y="220" text-anchor="middle" style="fill:var(--teal);font-weight:700">③ 日志 Logs</text><text x="626" y="238" text-anchor="middle" style="fill:var(--muted)">还原：用 ID 过滤日志</text>
+    <text x="380" y="278" text-anchor="middle" style="fill:var(--muted)">靠同一个 traceID 塞进 ctx、随 gRPC 拦截器走遍全程，把碎片聚成"一个请求"的故事</text>
+  </svg>
+  <div class="figcap"><b>三者合一 · 在分布式系统里追一个请求</b>：给请求一个能<b>跨节点传播的身份</b>（traceID 塞进 ctx，随 gRPC 拦截器走遍全程）。于是 Proxy 的 span 扇出到三个 QueryNode 的<b>子 span</b>，拼成一棵<b>调用树</b>——<b>QueryNode B</b> 那条特别长，慢在这一跳。三大支柱接力：<b>① 指标</b>发现"出事了"、<b>② 追踪</b>定位"哪一跳"、<b>③ 日志</b>用同一个 ID 过滤、还原细节（原来是 mmap 缺页，第 35 课）。指标发现、追踪定位、日志还原，缺一不可。</div>
+</div>
+
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>指标发现</h4><p>Grafana 上 P99 延迟曲线抬头、告警触发——知道"出事了"，但不知是谁、卡在哪。（Prometheus 指标）</p></div></div>
   <div class="step"><div class="num">2</div><div class="sc"><h4>追踪定位</h4><p>看慢请求的 trace 调用树：某个 QueryNode 的子 span 特别长，问题缩小到"那一跳"。（OpenTelemetry）</p></div></div>
@@ -519,6 +542,29 @@ Last lesson, a request came in through the API. But once it runs through Milvus'
 
 <h2>Three as one: tracing a request across the distributed system</h2>
 <p>Wire the three pillars together for a real "search got slow" investigation. <strong>Step 1, metrics detect the anomaly</strong>: on Grafana the P99 latency curve suddenly rises, an alert fires — you know "<strong>something's wrong</strong>", but not who or where. <strong>Step 2, traces locate the stage</strong>: open a slow request's trace and the call tree is clear — the Proxy was fast, but among the three fanned-out QueryNodes, <strong>one</strong> child span is unusually long; the problem narrows to "<strong>that hop</strong>". <strong>Step 3, logs reconstruct the detail</strong>: take this request's propagated ID, filter the logs of that QueryNode, and the related entries surface <strong>neatly</strong> — turns out a segment was faulting in via mmap, cold data slow on first load (Lesson 35). Three steps, root cause in hand.</p>
+
+<div class="fig">
+  <svg viewBox="0 0 760 300" role="img" aria-label="A request's distributed trace: the same traceID propagates across nodes via ctx; the Proxy's span fans out to three QueryNode child spans, and QueryNode B's is unusually long (slow on this hop); the three pillars cooperate — metrics detect, traces locate, logs reconstruct">
+    <text x="20" y="38" style="fill:var(--muted)">one request's trace call tree (same <tspan class="mono" style="fill:var(--accent-ink)">traceID</tspan>, propagated via ctx)</text>
+    <text x="22" y="74" style="fill:var(--ink);font-weight:700">Proxy</text>
+    <rect x="120" y="60" width="600" height="20" rx="4" style="fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5"/><text x="130" y="75" style="fill:var(--accent-ink)">span · parent</text>
+    <line x1="150" y1="80" x2="150" y2="146" style="stroke:var(--line);stroke-dasharray:3 3"/>
+    <text x="22" y="100" style="fill:var(--muted)">QueryNode A</text>
+    <rect x="150" y="90" width="140" height="16" rx="4" style="fill:var(--teal-soft);stroke:var(--teal)"/>
+    <text x="22" y="124" style="fill:var(--muted)">QueryNode B</text>
+    <rect x="150" y="114" width="410" height="16" rx="4" style="fill:var(--amber-soft);stroke:var(--amber);stroke-width:1.5"/><text x="570" y="127" style="fill:var(--amber);font-weight:700">← slow on this hop</text>
+    <text x="22" y="148" style="fill:var(--muted)">QueryNode C</text>
+    <rect x="150" y="138" width="160" height="16" rx="4" style="fill:var(--teal-soft);stroke:var(--teal)"/>
+    <line x1="120" y1="166" x2="720" y2="166" style="stroke:var(--line)"/><text x="720" y="180" text-anchor="end" style="fill:var(--faint)">time →</text>
+    <rect x="24" y="200" width="220" height="46" rx="9" style="fill:var(--panel);stroke:var(--blue);stroke-width:1.5"/><text x="134" y="220" text-anchor="middle" style="fill:var(--blue);font-weight:700">① Metrics</text><text x="134" y="238" text-anchor="middle" style="fill:var(--muted)">detect: P99↑, alert</text>
+    <line x1="246" y1="223" x2="268" y2="223" style="stroke:var(--line);stroke-width:2"/><path d="M268,223 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="270" y="200" width="220" height="46" rx="9" style="fill:var(--panel);stroke:var(--amber);stroke-width:1.5"/><text x="380" y="220" text-anchor="middle" style="fill:var(--amber);font-weight:700">② Traces</text><text x="380" y="238" text-anchor="middle" style="fill:var(--muted)">locate: the slow span</text>
+    <line x1="492" y1="223" x2="514" y2="223" style="stroke:var(--line);stroke-width:2"/><path d="M514,223 l-9,-4 l0,8 z" style="fill:var(--line)"/>
+    <rect x="516" y="200" width="220" height="46" rx="9" style="fill:var(--panel);stroke:var(--teal);stroke-width:1.5"/><text x="626" y="220" text-anchor="middle" style="fill:var(--teal);font-weight:700">③ Logs</text><text x="626" y="238" text-anchor="middle" style="fill:var(--muted)">reconstruct: filter by ID</text>
+    <text x="380" y="278" text-anchor="middle" style="fill:var(--muted)">one traceID in ctx, carried across every gRPC hop → fragments form one request's story</text>
+  </svg>
+  <div class="figcap"><b>Three pillars as one · tracing a request across the cluster</b>: give the request an <b>identity that propagates across nodes</b> (a traceID tucked into ctx, carried by gRPC interceptors the whole way). So the Proxy's span fans out to three QueryNode <b>child spans</b>, forming a <b>call tree</b> — <b>QueryNode B</b>'s is unusually long, slow on this hop. The pillars relay: <b>① metrics</b> detect "something's wrong", <b>② traces</b> locate "which hop", <b>③ logs</b> filter by the same ID and reconstruct the detail (an mmap page-fault, Lesson 35). Detect, locate, reconstruct — none is dispensable.</div>
+</div>
 
 <div class="vflow">
   <div class="step"><div class="num">1</div><div class="sc"><h4>Metrics detect</h4><p>Grafana's P99 latency rises, an alert fires — you know "something's wrong" but not who or where. (Prometheus metrics)</p></div></div>
