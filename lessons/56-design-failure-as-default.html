@@ -244,6 +244,7 @@ table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-s
 .toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
   color: var(--faint); font-size: .8rem; pointer-events: none; }
 .toc a.hide, .toc .toc-part.hide { display: none; }
+.t tr.hide { display: none; }
 .toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
 .toc-empty.show { display: block; }
 .hero.index h1 { font-size: 2.3rem; }
@@ -332,10 +333,10 @@ html[data-lang="zh"] .lang-en { display: none !important; }
   <div class="topbar-inner">
     <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
     <span class="pill"><span class="lang-zh">第十二部分 · 设计专题（综合）</span><span class="lang-en">Part 12 · Design themes (synthesis)</span></span>
-    <span class="pill">56 / 56</span>
+    <span class="pill">56 / 57</span>
     <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
   </div>
-  <div class="progress"><span style="width:100%"></span></div>
+  <div class="progress"><span style="width:98%"></span></div>
 </div>
 <div class="wrap">
   <div class="hero">
@@ -473,6 +474,8 @@ QueryCoord 发现它负责的段现在没人加载、偏离了目标状态，于
   <li><strong>感知与原子</strong>：session / lease 发现存活，Broadcaster 让 DDL 原子（杜绝半生效），索引版本协商保证滚动升级不中断。</li>
   <li><strong>取舍与收尾</strong>：代价是对账 / 检查点的额外开销与"最终而非瞬时"恢复；回报是持久、自愈、不停服——以及全书六条主线共同的工程智慧。</li>
 </ul></div>
+
+<p>想把这六个设计主题<strong>串成一条线</strong>？去<span class="inline">第 57 课</span>跟着<strong>一行数据</strong>从写入一路走到被搜到，给全书收个尾。</p>
 <div class="selftest">
 <h2>🧪 自测 · 想一想为什么这么设计</h2>
 <div class="quiz">
@@ -681,6 +684,8 @@ complexity into clarity.</strong> Thank you for reading this far — the journey
   <li><strong>Detect & atomicity</strong>: session/lease detect liveness, the Broadcaster makes DDL atomic (no half-applied state), index version negotiation keeps rolling upgrades uninterrupted.</li>
   <li><strong>Tradeoff & closing</strong>: the cost is reconcile/checkpoint overhead and "eventual, not instant" recovery; the reward is durability, self-healing, no downtime — and the shared engineering wisdom of all six throughlines.</li>
 </ul></div>
+
+<p>Want to thread these six design themes <strong>into one line</strong>? Head to <span class="inline">Lesson 57</span> and follow <strong>a single row</strong> all the way from write to searchable — the guide's closing capstone.</p>
 <div class="selftest">
 <h2>🧪 Self-test - think about the design</h2>
 <div class="quiz">
@@ -729,7 +734,7 @@ complexity into clarity.</strong> Thank you for reading this far — the journey
   </ul>
 </div>
 </div></div>
-  <div class="footnav"><a class="prev" href="55-design-two-languages.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">两种语言，一套系统：C++ 内核与 Go 编排的分工</span><span class="lang-en">Two languages, one system: the C++ kernel / Go orchestration split</span></div></a><a class="next" href="../index.html"><div class="dir"><span class="lang-zh">完成 →</span><span class="lang-en">Done →</span></div><div class="ttl"><span class="lang-zh">返回目录</span><span class="lang-en">Back to index</span></div></a></div>
+  <div class="footnav"><a class="prev" href="55-design-two-languages.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">两种语言，一套系统：C++ 内核与 Go 编排的分工</span><span class="lang-en">Two languages, one system: the C++ kernel / Go orchestration split</span></div></a><a class="next" href="57-capstone-life-of-a-row.html"><div class="dir"><span class="lang-zh">下一课 →</span><span class="lang-en">Next →</span></div><div class="ttl"><span class="lang-zh">终章 · 一条数据的一生：从写入到被搜到</span><span class="lang-en">Capstone · Life of a row: from write to searchable</span></div></a></div>
 </div>
 <script>
 function mvgSetLang(l){

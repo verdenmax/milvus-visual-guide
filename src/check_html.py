@@ -32,7 +32,7 @@ from registry import CONTENT  # noqa: E402
 PAGES = shell.PAGES
 ORDER = [p[0] for p in PAGES]
 TOTAL = len(PAGES)
-MAX_LESSON = 56  # planned final lesson count (incl. Part 12 design themes); cross-refs may point forward
+MAX_LESSON = 57  # planned final lesson count (incl. Part 13 capstone); cross-refs may point forward
 MIN_CONTENT = 80  # min chars of zh/en source content per lesson (catch empty translations)
 
 PRE_INLINE = ("span", "strong", "b", "em", "u", "a")

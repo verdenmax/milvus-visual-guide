@@ -234,6 +234,7 @@ table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-s
 .toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
   color: var(--faint); font-size: .8rem; pointer-events: none; }
 .toc a.hide, .toc .toc-part.hide { display: none; }
+.t tr.hide { display: none; }
 .toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
 .toc-empty.show { display: block; }
 .hero.index h1 { font-size: 2.3rem; }
@@ -333,7 +334,7 @@ details[open] > summary { list-style: none; }
 </head>
 <body>
 <h1>Milvus Visual Guide - Print Edition</h1>
-<p style="color:var(--muted)">All 56 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
+<p style="color:var(--muted)">All 57 lessons - one page each. Use Ctrl/Cmd+P in a browser to export a PDF.</p>
 <div class="print-toc"><h2>Contents</h2>
 <ol>
   <li>What is Milvus</li>
@@ -392,6 +393,7 @@ details[open] > summary { list-style: none; }
   <li>Scaling to billions: the art of divide-and-conquer</li>
   <li>Two languages, one system: the C++ kernel / Go orchestration split</li>
   <li>Failure as the default: how the system heals itself</li>
+  <li>Capstone · Life of a row: from write to searchable</li>
 </ol></div>
 <section class="lesson-print">
 <h1>What is Milvus</h1>
@@ -12181,6 +12183,8 @@ complexity into clarity.</strong> Thank you for reading this far — the journey
   <li><strong>Tradeoff & closing</strong>: the cost is reconcile/checkpoint overhead and "eventual, not instant" recovery; the reward is durability, self-healing, no downtime — and the shared engineering wisdom of all six throughlines.</li>
 </ul></div>
 
+<p>Want to thread these six design themes <strong>into one line</strong>? Head to <span class="inline">Lesson 57</span> and follow <strong>a single row</strong> all the way from write to searchable — the guide's closing capstone.</p>
+
 <div class="selftest">
 <h2>🧪 Self-test - think about the design</h2>
 <div class="quiz">
@@ -12226,6 +12230,188 @@ complexity into clarity.</strong> Thank you for reading this far — the journey
   <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
   <ul>
     <li>This is the guide's final lesson and the close of Part 12 'design themes'. Do a grand review: (1) string the six throughlines together — log as data, timestamp consistency, storage-compute separation, divide-and-conquer, two languages, failure self-healing — and explain how 'failure self-healing' <strong>builds on</strong> the earlier ones (e.g. how it reuses 'log as data' and 'storage-compute separation'). (2) The lesson says one 'engineering wisdom' lies behind all six. Put that wisdom in your own words, in a sentence or two. (3) Having finished the whole guide, pick the design that gave you the biggest 'aha', and say which fixed belief about 'how distributed systems should be designed' it changed for you.</li>
+  </ul>
+</div>
+</div>
+</section>
+<section class="lesson-print">
+<h1>Capstone · Life of a row: from write to searchable</h1>
+
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+This is the course's <strong>finale</strong>. We spent the whole guide taking Milvus apart into three paths — write, index, query. This lesson does the opposite: it <strong>follows one single row</strong>,
+from the instant you press <span class="mono">insert</span>, watching it become <strong>durable</strong>, then <strong>searchable</strong>, and finally <strong>served efficiently</strong> for the long run.
+The parts scattered across the course, threaded into one <strong>journey</strong> you can read at a glance.</p>
+
+<div class="card analogy"><div class="tag">⚡ An analogy</div>
+<p>Picture a kitchen's <strong>order-ticket system</strong>: you punch in an order at the register, and the moment it's <strong>printed into the "order log"</strong> that order <strong>can never be lost</strong> — even if the screen goes dark or the machine reboots, replaying the log brings it all back (that's <strong>durable</strong>).
+Almost the same instant, the kitchen display <strong>shows the order</strong> (that's <strong>visible</strong>). Filing it into the ledger and pre-stocking the popular dishes are things the kitchen does <strong>slowly, in the background</strong> — they don't block this order from being seen and started first.
+A row entering Milvus follows exactly this rhythm: <strong>durable first, visible soon after, flushing and indexing are slow background work</strong>.</p></div>
+
+<h2>The goal: thread three paths into one row's journey</h2>
+<p>By now you know each part of write, index and query separately. What actually trips up newcomers is the two questions that arise when they <strong>come together</strong>:
+"I just finished <span class="mono">insert</span> — <strong>when exactly is it safe from loss</strong>?" and "why is it <strong>sometimes searchable instantly, sometimes only after a brief wait</strong>?"
+The answers are the two pillars this lesson erects — the <strong>durability boundary</strong> and the <strong>visibility boundary</strong>. See them clearly and the whole system turns, in your head, from "a pile of components" into "one pipeline with a rhythm."</p>
+
+<div class="card macro"><div class="tag">🗺️ The big picture</div>
+<p>One row travels <strong>two paths at once</strong>: ① the <strong>foreground (fast)</strong> — insert → Proxy stamps a timestamp → written to the WAL is <strong>durable</strong> → lands in an in-memory growing segment → it's <strong>visible</strong> once tsafe catches up to its timestamp;
+② the <strong>background (slow)</strong> — the segment fills and seals → flush into binlogs in object storage → build the index → QueryNode loads it, then a <strong>handoff</strong> lets "sealed segment + index" serve this row.
+The key intuition: <strong>"durable" and "visible" happen in the foreground, early; flushing and indexing are slow background work that never blocks queries</strong>.</p></div>
+
+<div class="fig"><svg viewBox="0 0 760 300" role="img" aria-label="The life of a row: foreground path SDK insert to Proxy stamps timestamp and PK, written to WAL is durable, enters the growing segment, visible once tsafe catches up; background path seal to flush into binlog, build index, QueryNode load, then handoff serving, background never blocking visibility">
+  <text x="380" y="22" text-anchor="middle" style="fill:var(--ink);font-weight:700">The life of a row: foreground "write→durable→visible", background "flush→index→load"</text>
+  <rect x="16" y="70" width="110" height="44" rx="9" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="71" y="90" text-anchor="middle" style="fill:var(--blue);font-weight:700">SDK</text><text x="71" y="107" text-anchor="middle" style="fill:var(--muted)">insert · row</text>
+  <rect x="170" y="70" width="110" height="44" rx="9" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="225" y="90" text-anchor="middle" style="fill:var(--blue);font-weight:700">Proxy</text><text x="225" y="107" text-anchor="middle" style="fill:var(--muted)">stamp ts · PK</text>
+  <rect x="324" y="70" width="110" height="44" rx="9" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="379" y="90" text-anchor="middle" style="fill:var(--amber);font-weight:700">WAL / MQ</text><text x="379" y="107" text-anchor="middle" style="fill:var(--muted)">ordered · durable</text>
+  <rect x="478" y="70" width="110" height="44" rx="9" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="533" y="90" text-anchor="middle" style="fill:var(--teal);font-weight:700">growing seg</text><text x="533" y="107" text-anchor="middle" style="fill:var(--muted)">in memory</text>
+  <rect x="632" y="70" width="110" height="44" rx="9" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="687" y="90" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">visible ✓</text><text x="687" y="107" text-anchor="middle" style="fill:var(--muted)">tsafe ≥ ts</text>
+  <line x1="126" y1="92" x2="168" y2="92" style="stroke:var(--line);stroke-width:2"/><path d="M168,92 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+  <line x1="280" y1="92" x2="322" y2="92" style="stroke:var(--line);stroke-width:2"/><path d="M322,92 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+  <line x1="434" y1="92" x2="476" y2="92" style="stroke:var(--line);stroke-width:2"/><path d="M476,92 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+  <line x1="588" y1="92" x2="630" y2="92" style="stroke:var(--line);stroke-width:2"/><path d="M630,92 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+  <line x1="456" y1="58" x2="456" y2="124" style="stroke:var(--accent);stroke-width:1.5;stroke-dasharray:4 3"/><text x="456" y="50" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700;font-size:11px">durable ✓</text>
+  <path d="M533,114 C533,150 360,156 268,190" style="fill:none;stroke:var(--muted);stroke-width:1.5;stroke-dasharray:5 3"/><path d="M268,190 l9,-3 l-2,10 z" style="fill:var(--muted)"/><text x="470" y="132" text-anchor="middle" style="fill:var(--muted);font-size:11px">full/timeout</text>
+  <rect x="188" y="192" width="128" height="44" rx="9" style="fill:var(--panel-2);stroke:var(--line)"/><text x="252" y="212" text-anchor="middle" style="fill:var(--ink);font-weight:700">seal</text><text x="252" y="229" text-anchor="middle" style="fill:var(--muted)">read-only</text>
+  <rect x="332" y="192" width="128" height="44" rx="9" style="fill:var(--panel-2);stroke:var(--line)"/><text x="396" y="212" text-anchor="middle" style="fill:var(--ink);font-weight:700">flush</text><text x="396" y="229" text-anchor="middle" style="fill:var(--muted)">binlog → store</text>
+  <rect x="476" y="192" width="128" height="44" rx="9" style="fill:var(--panel-2);stroke:var(--line)"/><text x="540" y="212" text-anchor="middle" style="fill:var(--ink);font-weight:700">index</text><text x="540" y="229" text-anchor="middle" style="fill:var(--muted)">Knowhere</text>
+  <rect x="620" y="192" width="128" height="44" rx="9" style="fill:var(--panel-2);stroke:var(--line)"/><text x="684" y="212" text-anchor="middle" style="fill:var(--ink);font-weight:700">load</text><text x="684" y="229" text-anchor="middle" style="fill:var(--muted)">QueryNode</text>
+  <line x1="316" y1="214" x2="330" y2="214" style="stroke:var(--line);stroke-width:2"/><path d="M330,214 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+  <line x1="460" y1="214" x2="474" y2="214" style="stroke:var(--line);stroke-width:2"/><path d="M474,214 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+  <line x1="604" y1="214" x2="618" y2="214" style="stroke:var(--line);stroke-width:2"/><path d="M618,214 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+  <path d="M684,192 C684,158 686,148 687,116" style="fill:none;stroke:var(--teal);stroke-width:1.5;stroke-dasharray:5 3"/><path d="M687,116 l-5,11 l10,0 z" style="fill:var(--teal)"/><text x="706" y="166" text-anchor="start" style="fill:var(--teal);font-size:11px">handoff</text>
+  <text x="380" y="262" text-anchor="middle" style="fill:var(--faint);font-size:12px">background (seal·flush·index·load) doesn't block "visible": the row is searchable while still in the growing segment</text>
+</svg><div class="figcap"><b>The life of a row</b>: the <b>foreground</b> is fast — insert is written to the <b>WAL = durable</b> (no loss), lands in a <b>growing segment</b>, and is <b>searchable once tsafe reaches its ts</b>; the <b>background</b> takes its time — a full segment <b>seals → flushes to binlog → is indexed → loaded by a QueryNode</b>, then a <b>handoff</b> lets "sealed + index" serve it. In a sentence: <b>"durable" and "visible" are early; flush and index are background work that never blocks queries.</b></div></div>
+
+<h2>Stop 1 · Write: it counts once it's in the log</h2>
+<p>You call <span class="mono">insert</span>, and the request hits the <strong>Proxy</strong> first. The Proxy stores nothing; it is <strong>gatekeeper plus dispatcher</strong>: it validates the schema, requests a batch of <strong>globally-unique primary keys</strong> when autoID is on (handed out in bulk by RootCoord's ID allocator), asks RootCoord for a <strong>timestamp ts</strong> (TSO, globally monotonic — see <span class="inline">Lesson 11</span>), hashes each row to a <strong>vchannel (shard)</strong>, and finally packs the batch into an <span class="mono">InsertMsg</span> <strong>written to that shard's WAL</strong>.
+Trace it in source: <span class="inline">internal/proxy/task_insert.go</span> (insertTask's PreExecute/Execute), <span class="inline">internal/rootcoord</span> (TSO and ID allocator), with streaming writes in <span class="inline">internal/streamingnode</span> and <span class="inline">pkg/streaming</span>.</p>
+
+<p>Here is the pivotal moment: <strong>once the InsertMsg is appended to the WAL and acknowledged, the write "counts"</strong> — insert returns success. Why dare return so early? Because the WAL is <strong>ordered, reliable and replayable</strong> (<span class="inline">Lesson 7</span>, <span class="inline">Lesson 16</span>): even if the whole process crashes a second later, the record is still in the log, and a replay after restart brings it back. <strong>"Durable" does not mean "flushed into a binlog" — it means "in the WAL"</strong>, and that is the bedrock of everything that follows.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">SDK</div><div class="nd">insert a batch of rows</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">Proxy</div><div class="nd">validate · assign PK · stamp ts · route by shard</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">WAL / MQ</div><div class="nd">append InsertMsg · ack = durable</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">growing seg</div><div class="nd">consume log · accrue in memory</div></div>
+</div>
+
+<p>There's an easily-missed bonus here: <strong>the Proxy stores no data, it only stamps and forwards</strong>, so it is <strong>stateless</strong> — you can run many of them, scale them out, any Proxy can handle any row's write, and losing one and swapping in another changes nothing. This is the most direct expression of <span class="inline">Lesson 53</span>'s storage–compute separation on the write side: <strong>push state out to the WAL and object storage, and the node itself stays light enough to replace at any time</strong>.</p>
+
+<h2>Stop 2 · Durable ≠ visible: two timelines</h2>
+<p>Written to the WAL, the row is <strong>durable</strong>; but <strong>when it can be searched</strong> is a different timeline. The <strong>delegator</strong> that serves reads for a shard (inside a QueryNode) is <strong>consuming the very same WAL</strong>, feeding new rows into its own growing segment, while maintaining a watermark <strong>tsafe</strong> = "the timestamp I've consumed up to." A query carries a <strong>guarantee timestamp</strong>, and the delegator <strong>only returns once tsafe ≥ guarantee ts</strong> — so you never read a "not-caught-up", partial snapshot (<span class="inline">Lesson 26</span>, <span class="inline">Lesson 30</span>).</p>
+
+<p>Hence a <strong>window</strong> appears: the row is already durable (in the WAL) and already sitting in the growing segment, yet the delegator's tsafe may still be <strong>a hair behind</strong> its ts. That's why a <strong>Strong-consistency</strong> read sometimes <strong>waits</strong> (it sets the guarantee ts to "latest" and must wait for tsafe to catch up), while an <strong>Eventually / Bounded</strong> read <strong>doesn't wait</strong>, reading the currently-visible snapshot and trading a little freshness for low latency. <strong>Visibility is, at heart, a single timestamp comparison.</strong></p>
+
+<p>A concrete example makes it click: you just <span class="mono">insert</span> a row, then immediately search for it with <strong>Strong</strong> consistency. If the delegator's tsafe hasn't yet reached the row's ts, the search <strong>briefly blocks and returns once the watermark rises</strong> — so you "can search it the moment you finish writing." Switch to <strong>Eventually</strong> and it <strong>doesn't wait</strong>: maybe it's not there this instant, but it is a few milliseconds later. <strong>How you trade latency against freshness is held entirely in the consistency level you choose</strong> — while underneath it's always the same tsafe comparison, with no separate machinery for any one level.</p>
+
+<div class="fig"><svg viewBox="0 0 760 300" role="img" aria-label="Durable and visible are two timelines: the row is durable the instant its WAL write is acked, but it is only visible to a Strong read once the delegator's tsafe reaches the row's timestamp; in the window between, the row is already in the growing segment, a Strong read waits here while an Eventually read does not">
+  <rect x="248" y="86" width="248" height="128" rx="10" style="fill:var(--amber-soft);stroke:var(--amber);stroke-dasharray:4 3"/>
+  <text x="380" y="26" text-anchor="middle" style="fill:var(--ink);font-weight:700">"Durable" and "visible" are two timelines</text>
+  <text x="74" y="106" text-anchor="end" style="fill:var(--amber);font-weight:700">durable</text>
+  <line x1="90" y1="100" x2="704" y2="100" style="stroke:var(--line);stroke-width:2"/><path d="M704,100 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+  <circle cx="248" cy="100" r="7" style="fill:var(--amber)"/><text x="248" y="74" text-anchor="middle" style="fill:var(--amber);font-weight:700">WAL ack → durable ✓</text>
+  <text x="74" y="206" text-anchor="end" style="fill:var(--teal);font-weight:700">visible</text>
+  <line x1="90" y1="200" x2="704" y2="200" style="stroke:var(--line);stroke-width:2"/><path d="M704,200 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+  <circle cx="496" cy="200" r="7" style="fill:var(--teal)"/><text x="496" y="226" text-anchor="middle" style="fill:var(--teal);font-weight:700">tsafe ≥ ts → visible ✓</text>
+  <text x="372" y="132" text-anchor="middle" style="fill:var(--muted);font-size:12px">this window: already durable</text>
+  <text x="372" y="152" text-anchor="middle" style="fill:var(--muted);font-size:12px">growing seg already holds the row</text>
+  <text x="372" y="172" text-anchor="middle" style="fill:var(--muted);font-size:12px">a Strong read waits for tsafe here</text>
+  <text x="380" y="264" text-anchor="middle" style="fill:var(--faint);font-size:12px">Eventually / Bounded reads don't wait: they read the currently-visible snapshot, trading freshness for latency</text>
+</svg><div class="figcap"><b>Two timelines</b>: the row is <b>durable</b> the instant its WAL write is acked (left amber dot); but only <b>visible</b> to a Strong read once the delegator's <b>tsafe reaches the row's ts</b> (right teal dot). In the window between, the row is already in the growing segment — <b>a Strong read waits here, an Eventually read does not</b>. Visibility = one timestamp comparison.</div></div>
+
+<h2>Stop 3 · Background flush: seal → flush → binlog</h2>
+<p>The foreground already has "durable + visible"; only now does the background get to work, unhurried. The growing segment swells in memory until it hits a <strong>size or time threshold</strong> and is <strong>sealed</strong> (made read-only); then a <strong>SyncTask</strong> <strong>serializes its columns into binlogs</strong> — insert binlog (the real data), stats binlog (statistics / primary-key index), delta binlog (deletes) — <strong>written into object storage</strong>, with DataCoord recording those binlog paths and <strong>advancing the checkpoint</strong>.
+At this step the data becomes <strong>durable a second time, more solidly</strong>: it now exists in object storage independent of the WAL, so even WAL truncation is fine (<span class="inline">Lesson 17</span>, <span class="inline">Lesson 18</span>). Source lives in <span class="inline">internal/flushcommon/writebuffer</span>, <span class="inline">internal/flushcommon/syncmgr</span> and <span class="inline">internal/storage</span>.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>seal</h4><p>The growing segment is full / timed out; it turns read-only and accepts no new rows.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>flush to binlog</h4><p>A SyncTask serializes columns into insert/stats/delta binlogs, written to object storage.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>record + advance checkpoint</h4><p>DataCoord records the binlog paths; the WAL consume offset moves forward, old log reclaimable.</p></div></div>
+</div>
+
+<p>Why insist on pushing this work to the background? Because it is <strong>heavy and slow</strong>: serializing hundreds of thousands of rows, building an HNSW graph — these take seconds or more. If <span class="mono">insert</span> had to <strong>sit and wait</strong> for flush and indexing to finish before returning, write throughput would collapse. Milvus's choice is to <strong>do them asynchronously in the background</strong>, leaving the foreground with just "write one log entry," the one fast thing — <strong>which is exactly why writes sustain high concurrency</strong>, and proves the throughline again: <strong>durable first, return fast, slow work goes to the background</strong>.</p>
+
+<h2>Stop 4 · Index + load: from "searchable" to "searchable fast"</h2>
+<p>A sealed segment can still only be <strong>brute-force scanned</strong>; to be "fast" it needs an index. DataCoord's index scheduling notices this sealed segment <strong>still lacks an index</strong> and dispatches a build task to an <strong>IndexNode</strong>; the IndexNode reads the binlog, uses <strong>Knowhere</strong> to build an HNSW/IVF-style vector index, and writes <strong>index files</strong> into object storage (<span class="inline">Lesson 21</span>, <span class="inline">Lesson 23</span>).
+Then <strong>QueryCoord</strong> <strong>assigns</strong> this "sealed + indexed" segment to some <strong>QueryNode</strong>, which uses <strong>segcore</strong> to <strong>load</strong> the columns and index in (often mmap — see <span class="inline">Lesson 27</span>, <span class="inline">Lesson 35</span>).</p>
+
+<p>Last comes the elegant move — the <strong>handoff</strong>: until the sealed segment is loaded, the row is served by the growing segment; once loading completes, the delegator switches it from "growing still covers it" to "<strong>served by sealed + index</strong>", and <strong>excludes that portion from growing</strong>, guaranteeing <strong>no double-count, no gap</strong> (<span class="inline">Lesson 26</span>). To the querier it's entirely seamless: visibility never lapses for an instant, the engine behind it merely swaps "in-memory brute force" for "fast indexed search."</p>
+
+<div class="cols">
+  <div class="col"><h4>🌱 growing serves first (searchable)</h4><p>New rows in memory, <strong>brute-force scanned</strong>, winning on <strong>freshness and zero wait</strong>. Visible once tsafe catches up — no need to wait for flush or index.</p></div>
+  <div class="col"><h4>🧊 sealed + index takes over (fast)</h4><p>Once the sealed segment loads its index, it <strong>serves efficiently</strong>; the delegator excludes the overlapping part of growing, <strong>no double-count, no gap</strong>, visibility seamless.</p></div>
+</div>
+
+<p>You might ask: since the row will ultimately be served by the index anyway, why not <strong>just wait for the index before making it visible</strong>? Because building an index takes seconds, and waiting like that would mean "just-written data isn't searchable" for several seconds — unacceptable for many online scenarios. Letting the growing segment <strong>cover those seconds with brute force</strong>, then quietly handing off to the index, is exactly the well-judged balance Milvus strikes between <strong>freshness</strong> and <strong>efficiency</strong>.</p>
+
+<p>Here's "who touched this row" across the whole journey, as a table you can use to jump back to the relevant lesson:</p>
+
+<table class="t">
+  <tr><th>Stage</th><th>Who does it</th><th>Source package (file / symbol)</th><th>See</th></tr>
+  <tr><td>stamp ts / assign PK</td><td>Proxy + RootCoord</td><td class="mono">internal/proxy/task_insert.go · internal/rootcoord (TSO/IDAllocator)</td><td>Lessons 10, 11, 15</td></tr>
+  <tr><td>write log (durable)</td><td>WAL / streaming</td><td class="mono">internal/streamingnode · pkg/streaming</td><td>Lessons 16, 31</td></tr>
+  <tr><td>enter growing seg (searchable)</td><td>delegator (QueryNode)</td><td class="mono">internal/querynodev2/delegator (tsafe)</td><td>Lessons 26, 30</td></tr>
+  <tr><td>seal + flush</td><td>writebuffer / SyncTask</td><td class="mono">internal/flushcommon/writebuffer · syncmgr</td><td>Lessons 17, 18</td></tr>
+  <tr><td>record binlog</td><td>DataCoord</td><td class="mono">internal/datacoord · internal/storage</td><td>Lessons 12, 18</td></tr>
+  <tr><td>build index</td><td>IndexNode + Knowhere</td><td class="mono">internal/indexnode · internal/datacoord (index scheduling)</td><td>Lessons 21, 22, 23</td></tr>
+  <tr><td>assign + load</td><td>QueryCoord + segcore</td><td class="mono">internal/querycoordv2 · internal/core (segcore)</td><td>Lessons 13, 27</td></tr>
+  <tr><td>handoff serving</td><td>delegator</td><td class="mono">internal/querynodev2/delegator (handoff)</td><td>Lesson 26</td></tr>
+</table>
+
+<h2>Wrap-up · Three boundaries, in one breath</h2>
+<div class="card spark"><div class="tag">💡 The one insight</div>
+<p><strong>Durable is early, visible is early too; flush and index are the background's job.</strong> The newcomer's biggest misconception is thinking "the write only succeeds, and the data only becomes searchable, after it's flushed into a binlog, indexed and loaded."
+The truth is the opposite: <strong>in the WAL means durable (no loss), tsafe catching up means visible (searchable)</strong> — both happen in the foreground, fast; sealing, flushing, indexing and loading are <strong>slow background work</strong>, only to "<strong>search faster, keep longer</strong>", never blocking the foreground.</p></div>
+
+<p>So three boundaries are all you need to remember: ① the <strong>durability boundary = WAL ack</strong> (in the log means no loss, no need to wait for flush); ② the <strong>visibility boundary = tsafe ≥ ts</strong> (early; only Strong reads wait); ③ the <strong>serving handoff = after flush + index + load</strong>, when sealed + index takes over from growing.
+These three boundaries gather <span class="inline">Lesson 51</span>'s "log as data", <span class="inline">Lesson 52</span>'s "query while you write" and <span class="inline">Lesson 53</span>'s "storage–compute separation" onto a single row.</p>
+
+<div class="card key"><div class="tag">📌 Key points</div>
+<ul>
+<li>A row travels <strong>two paths at once</strong>: the foreground "write→durable→visible" is fast, the background "seal→flush→index→load" is slow.</li>
+<li><strong>Durable = appended to the WAL and acked</strong>; insert can return immediately, without waiting for a binlog flush.</li>
+<li><strong>Visible = the delegator's tsafe ≥ the row's ts</strong>; Strong reads wait, Eventually/Bounded reads don't.</li>
+<li>New rows are served first by the <strong>growing segment</strong> (freshest, brute force); after the index loads, the delegator <strong>hands off</strong> to sealed + index, with <strong>no double-count, no gap</strong>.</li>
+<li>Background flush / index exist only to <strong>search faster, keep longer</strong>, and <strong>never block visibility</strong>.</li>
+</ul></div>
+
+<details><summary>Going deeper: do delete and upsert take the same path?</summary>
+<p>Yes — and the reuse is elegant. A delete doesn't "erase" existing data; it writes a <strong>timestamped tombstone (delete record)</strong> into the same WAL, eventually landing as a <strong>delta binlog</strong>; at query time a <strong>delete bitmap</strong> within the segment <strong>filters out</strong> rows "already deleted before your guarantee ts" — so "visibility" is again just a timestamp comparison (<span class="inline">Lesson 20</span>, <span class="inline">Lesson 30</span>). <strong>Upsert</strong> ≈ "delete old + insert new": it writes a new version under the same primary key and makes the old version invisible to new reads. In other words, <strong>insert, delete and update all travel the same "log → segment → timestamped visibility" path</strong>, differing only in the message type they carry — which is the power of "log as data": one mechanism, unifying every write.</p></details>
+
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Your insert just returned successfully. From what moment is the row 'durable, safe from loss'?</div>
+  <ol class="opts">
+    <li>Only after it is flushed into a binlog in object storage</li>
+    <li>Once it is appended to the WAL and acked — insert can return then, without waiting for a binlog flush</li>
+    <li>Only after its index has been built</li>
+    <li>Only after a QueryNode loads the corresponding segment</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. The durability boundary is the WAL ack, not the flush. The WAL is ordered, reliable and replayable, so once a record is in the log it survives a crash via replay — which is why insert can return early. Flushing to a binlog is a 'second, sturdier' durability in the background, not the first.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. A row was just written — not flushed, let alone indexed. Where is it usually searched from first?</div>
+  <ol class="opts">
+    <li>The insert binlog in object storage</li>
+    <li>The growing segment: the delegator consumes the same WAL into memory, and once tsafe reaches its ts it's brute-force searchable</li>
+    <li>The index files on a sealed segment</li>
+    <li>The delta binlog (delete log)</li>
+  </ol>
+  <details class="accordion" open>
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. New rows are served first by the growing segment (in memory, brute force), winning on freshness and zero wait; visibility depends only on tsafe ≥ ts. Once the sealed segment is indexed and loaded, the delegator 'hands off' to sealed + index and excludes the overlapping part of growing — no double-count, no gap.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>In your own words, narrate one row's journey from insert to 'searchable', and name the three key boundaries: ① from which instant is it safe from loss? ② from which instant is it searchable? ③ why are flush, indexing and loading pushed to the background instead of blocking insert's return?</li>
   </ul>
 </div>
 </div>

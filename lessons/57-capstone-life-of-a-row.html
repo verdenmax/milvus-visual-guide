@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var l=localStorage.getItem('mvg-lang');if(l==='en'){document.documentElement.dataset.lang='en';document.documentElement.lang='en';}}catch(e){}</script>
+<title>57 · 终章 · 一条数据的一生：从写入到被搜到 / Capstone · Life of a row: from write to searchable - Milvus 图解教程</title>
+<meta name="description" content="第十三部分 · 终章｜终章 · 一条数据的一生：从写入到被搜到 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="theme-color" content="#1296db">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAzMiAzMic+PHJlY3Qgd2lkdGg9JzMyJyBoZWlnaHQ9JzMyJyByeD0nNycgZmlsbD0nIzEyOTZkYicvPjx0ZXh0IHg9JzE2JyB5PScyMicgZm9udC1mYW1pbHk9J3N5c3RlbS11aSxzYW5zLXNlcmlmJyBmb250LXNpemU9JzE0JyBmb250LXdlaWdodD0nODAwJyBmaWxsPScjZmZmJyB0ZXh0LWFuY2hvcj0nbWlkZGxlJz5NdjwvdGV4dD48L3N2Zz4=">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Milvus 图解教程">
+<meta property="og:title" content="57 · 终章 · 一条数据的一生：从写入到被搜到 / Capstone · Life of a row: from write to searchable - Milvus 图解教程">
+<meta property="og:description" content="第十三部分 · 终章｜终章 · 一条数据的一生：从写入到被搜到 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="57 · 终章 · 一条数据的一生：从写入到被搜到 / Capstone · Life of a row: from write to searchable - Milvus 图解教程">
+<meta name="twitter:description" content="第十三部分 · 终章｜终章 · 一条数据的一生：从写入到被搜到 - Milvus 图解教程（中英双语，配真实源码对应、折叠深挖与设计亮点）">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --ink: #1d2129;
+  --muted: #5b6470; --faint: #8a939f; --line: #e1e5ea;
+  --accent: #1296db; --accent-soft: #e2f2fb; --accent-ink: #0b6699;
+  --blue: #2563eb; --blue-soft: #e7efff; --amber: #b4690e; --amber-soft: #fdf1dd;
+  --purple: #7c3aed; --purple-soft: #f0e9ff; --red: #d23f3f; --red-soft: #fbe6e6;
+  --teal: #0d9488; --teal-soft: #d7f3ef;
+  --code-bg: #0f172a; --code-ink: #e2e8f0; --code-line: #1e293b;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 8px 24px rgba(16,24,40,.06);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel-2: #1c232c; --ink: #e6edf3;
+    --muted: #9aa6b2; --faint: #6e7a86; --line: #2a323c;
+    --accent: #4cb8ec; --accent-soft: #0e2c3e; --accent-ink: #8fd3f4;
+    --blue: #6ea8fe; --blue-soft: #16243f; --amber: #e0a44a; --amber-soft: #33270f;
+    --purple: #b794f6; --purple-soft: #271a40; --red: #f08080; --red-soft: #3a1a1a;
+    --teal: #5ed0c4; --teal-soft: #0d2e2a;
+    --code-bg: #0a0f1a; --code-ink: #d8e2f0; --code-line: #14202f;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+}
+html { scroll-behavior: smooth; overflow-x: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: var(--bg); color: var(--ink); line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+code, .mono { font-family: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace; overflow-wrap: break-word; }
+
+/* ---- top progress bar ---- */
+.topbar {
+  position: sticky; top: 0; z-index: 50; background: var(--panel);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.topbar-inner {
+  max-width: 960px; margin: 0 auto; padding: .7rem 1.25rem;
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.topbar .home { font-size: .82rem; color: var(--muted); font-weight: 600; display:flex; gap:.5rem; align-items:center; }
+.topbar .home b { color: var(--accent); }
+.topbar .pill { font-size: .72rem; color: var(--muted); background: var(--panel-2);
+  padding: .2rem .6rem; border-radius: 999px; border: 1px solid var(--line); white-space: nowrap; }
+.progress { height: 3px; background: var(--panel-2); }
+.progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--purple)); }
+
+.wrap { max-width: 820px; margin: 0 auto; padding: 2.4rem 1.25rem 5rem; }
+
+/* ---- hero ---- */
+.hero { margin-bottom: 2rem; }
+.hero .part { font-size: .76rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--accent); font-weight: 700; margin-bottom: .55rem; }
+.hero h1 { font-size: 2.05rem; line-height: 1.2; letter-spacing: -.01em; font-weight: 750; }
+.hero .lead { margin-top: .9rem; font-size: 1.06rem; color: var(--muted); }
+
+h2 { font-size: 1.32rem; margin: 2.4rem 0 .9rem; letter-spacing: -.01em;
+  display: flex; align-items: center; gap: .55rem; }
+h2::before { content: ""; width: 4px; height: 1.05em; background: var(--accent); border-radius: 3px; display: inline-block; }
+h3 { font-size: 1.05rem; margin: 1.4rem 0 .5rem; }
+p { margin: .7rem 0; }
+ul, ol { margin: .6rem 0 .6rem 1.3rem; }
+li { margin: .3rem 0; }
+strong { color: var(--ink); font-weight: 680; }
+.inline { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+  padding: .08em .4em; font-size: .9em; color: var(--accent-ink); }
+
+/* ---- callout cards ---- */
+.card { border-radius: var(--radius); padding: 1.05rem 1.2rem; margin: 1.2rem 0;
+  border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+.card .tag { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  display: inline-flex; align-items: center; gap: .4rem; margin-bottom: .5rem; }
+.card.macro { border-left: 4px solid var(--blue); }
+.card.macro .tag { color: var(--blue); }
+.card.detail { border-left: 4px solid var(--purple); }
+.card.detail .tag { color: var(--purple); }
+.card.analogy { border-left: 4px solid var(--amber); background: var(--amber-soft); }
+.card.analogy .tag { color: var(--amber); }
+.card.key { border-left: 4px solid var(--accent); background: var(--accent-soft); }
+.card.key .tag { color: var(--accent-ink); }
+.card.warn { border-left: 4px solid var(--red); background: var(--red-soft); }
+.card.warn .tag { color: var(--red); }
+.card.spark { border-left: 4px solid #e0a000;
+  background: linear-gradient(100deg, rgba(224,160,0,.12), transparent 70%); }
+.card.spark .tag { color: #c98a00; }
+@media (prefers-color-scheme: dark) { .card.spark .tag { color: #f0c050; } }
+
+/* ---- code file callout ---- */
+.codefile { margin: 1.2rem 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: var(--shadow); }
+.codefile .cf-head { display: flex; align-items: center; gap: .55rem; padding: .5rem .85rem;
+  background: var(--panel-2); border-bottom: 1px solid var(--line); font-size: .8rem; }
+.codefile .cf-head .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex-shrink:0; }
+.codefile .cf-head .path { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 600; }
+.codefile .cf-head .ln { margin-left: auto; color: var(--faint); font-size: .72rem; }
+.codefile pre { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem;
+  overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.codefile pre .cm { color: #7d8aa3; }
+.codefile pre .kw { color: #c792ea; }
+.codefile pre .fn { color: #82aaff; }
+.codefile pre .st { color: #c3e88d; }
+.codefile pre .nb { color: #f78c6c; }
+
+pre.code { background: var(--code-bg); color: var(--code-ink); padding: .9rem 1rem; border-radius: 12px;
+  overflow-x: auto; font-size: .83rem; line-height: 1.6; margin: 1.1rem 0; box-shadow: var(--shadow); }
+pre.code .cm { color: #7d8aa3; } pre.code .kw { color: #c792ea; }
+pre.code .fn { color: #82aaff; } pre.code .st { color: #c3e88d; } pre.code .nb { color: #f78c6c; }
+
+/* ---- collapsible accordion (details/summary) ---- */
+.accordion { border: 1px solid var(--line); border-radius: 12px; background: var(--panel);
+  margin: .7rem 0; box-shadow: var(--shadow); overflow: hidden; }
+.accordion > summary { cursor: pointer; padding: .85rem 1.1rem; font-weight: 650; font-size: .96rem;
+  list-style: none; display: flex; align-items: center; gap: .6rem; user-select: none; }
+.accordion > summary::-webkit-details-marker { display: none; }
+.accordion > summary::after { content: "▶"; font-size: .68rem; color: var(--accent);
+  margin-left: auto; transition: transform .15s ease; }
+.accordion[open] > summary::after { transform: rotate(90deg); }
+.accordion > summary:hover { background: var(--panel-2); }
+.accordion[open] > summary { border-bottom: 1px solid var(--line); }
+.accordion .badge-num { background: var(--accent-soft); color: var(--accent-ink);
+  width: 1.6rem; height: 1.6rem; border-radius: 7px; display: inline-flex; align-items: center;
+  justify-content: center; font-size: .82rem; font-weight: 700; flex-shrink: 0; }
+.accordion .hint { font-size: .72rem; color: var(--faint); font-weight: 400; }
+.acc-body { padding: .9rem 1.1rem 1.1rem; }
+.acc-intro { color: var(--muted); font-size: .9rem; margin: .2rem 0 .4rem; }
+.qa { margin: 1rem 0; }
+.qa:first-child { margin-top: .3rem; }
+.qa .q { font-weight: 680; font-size: .9rem; display: flex; gap: .45rem; align-items: center; margin-bottom: .3rem; }
+.qa .a { color: var(--muted); font-size: .9rem; }
+.qa .a strong { color: var(--ink); }
+.qa pre.code { margin: .5rem 0 0; font-size: .78rem; }
+
+/* ---- flow diagram ---- */
+.flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 1.3rem 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.2rem 1rem; box-shadow: var(--shadow); }
+.flow .node { flex: 1 1 0; min-width: 110px; text-align: center; padding: .7rem .5rem;
+  border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.flow .node .nt { font-weight: 700; font-size: .92rem; }
+.flow .node .nd { font-size: .76rem; color: var(--muted); margin-top: .2rem; }
+.flow .node.hl { background: var(--accent-soft); border-color: var(--accent); }
+.flow .arrow { align-self: center; color: var(--faint); font-size: 1.3rem; padding: 0 .35rem; }
+
+/* vertical flow */
+.vflow { margin: 1.3rem 0; }
+.vflow .step { display: flex; gap: .9rem; position: relative; padding-bottom: 1.1rem; }
+.vflow .step:not(:last-child)::before { content:""; position:absolute; left: 15px; top: 34px; bottom: -2px;
+  width: 2px; background: var(--line); }
+.vflow .num { width: 32px; height: 32px; border-radius: 50%; background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; z-index:1; }
+.vflow .sc h4 { margin: .25rem 0 .2rem; font-size: 1rem; }
+.vflow .sc p { margin: .15rem 0; font-size: .92rem; color: var(--muted); }
+.vflow .sc .mono { font-size: .8rem; color: var(--accent-ink); }
+
+/* layered architecture */
+.layers { margin: 1.3rem 0; display: flex; flex-direction: column; gap: .55rem; }
+.layer { border-radius: 12px; padding: .85rem 1.1rem; border: 1px solid var(--line); background: var(--panel);
+  box-shadow: var(--shadow); }
+.layer .lh { display: flex; align-items: center; gap: .6rem; }
+.layer .lh .badge { font-size: .7rem; font-weight: 700; padding: .12rem .5rem; border-radius: 999px; }
+.layer .lh .name { font-weight: 700; font-family: ui-monospace, monospace; }
+.layer .ld { font-size: .85rem; color: var(--muted); margin-top: .35rem; }
+.layer.l-core { border-left: 4px solid var(--accent); } .layer.l-core .badge { background: var(--accent-soft); color: var(--accent-ink); }
+.layer.l-main { border-left: 4px solid var(--blue); } .layer.l-main .badge { background: var(--blue-soft); color: var(--blue); }
+.layer.l-part { border-left: 4px solid var(--purple); } .layer.l-part .badge { background: var(--purple-soft); color: var(--purple); }
+.layer.l-app { border-left: 4px solid var(--amber); } .layer.l-app .badge { background: var(--amber-soft); color: var(--amber); }
+
+/* two-column compare */
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.2rem 0; }
+@media (max-width: 640px) { .cols { grid-template-columns: 1fr; } }
+.col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); min-width: 0; }
+.col h4 { margin: 0 0 .4rem; font-size: .95rem; }
+
+table.t { width: 100%; border-collapse: collapse; margin: 1.1rem 0; font-size: .9rem;
+  background: var(--panel); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); }
+table.t th, table.t td { padding: .6rem .8rem; text-align: left; border-bottom: 1px solid var(--line); }
+table.t th { background: var(--panel-2); font-size: .8rem; letter-spacing: .02em; }
+table.t tr:last-child td { border-bottom: none; }
+table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-size: .82rem; color: var(--accent-ink); }
+@media (max-width: 640px) {
+  /* Wide multi-column tables: scroll within their own box instead of
+     forcing page-level horizontal overflow (which clipped right columns). */
+  table.t { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.t th, table.t td { padding: .5rem .6rem; }
+}
+.selftest { margin: 2.2rem 0 0; border-top: 2px dashed var(--line); padding-top: 1.2rem; }
+.selftest > h2 { margin-top: .2rem; }
+.quiz { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue);
+  border-radius: 12px; padding: .9rem 1.1rem; margin: 1rem 0; box-shadow: var(--shadow); }
+.quiz .qn { font-weight: 650; }
+.quiz ol.opts { list-style: upper-alpha; margin: .55rem 0 .6rem 1.5rem; padding: 0; }
+.quiz ol.opts li { margin: .3rem 0; padding-left: .15rem; }
+.quiz details.accordion { margin: .5rem 0 0; }
+.selftest code { font-family: ui-monospace, monospace; font-size: .9em; color: var(--accent-ink);
+  background: var(--accent-soft); padding: 0 .28em; border-radius: 4px; }
+
+/* footer nav */
+.footnav { display: flex; justify-content: space-between; gap: 1rem; margin-top: 3rem;
+  padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.footnav a { flex: 1; padding: .85rem 1.1rem; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); box-shadow: var(--shadow); transition: .15s; }
+.footnav a:hover { border-color: var(--accent); transform: translateY(-1px); }
+.footnav a.next { text-align: right; }
+.footnav .dir { font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+.footnav .ttl { font-weight: 700; color: var(--ink); margin-top: .15rem; }
+.footnav a.disabled { opacity: .35; pointer-events: none; }
+
+/* index page */
+.toc { display: grid; gap: .7rem; margin-top: 1.6rem; }
+.toc-part { font-size: .78rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--accent); margin: 1.4rem 0 .2rem; }
+.toc a { display: flex; align-items: center; gap: .9rem; padding: .85rem 1.05rem; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow); transition: .15s; }
+.toc a:hover { border-color: var(--accent); transform: translateX(3px); }
+.toc .n { width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent-ink);
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+.toc .tt { font-weight: 650; color: var(--ink); }
+.toc .ts { font-size: .8rem; color: var(--muted); margin-left: auto; text-align: right; }
+.toc-search { position: relative; margin: 1.6rem 0 -.4rem; }
+.toc-search input { width: 100%; box-sizing: border-box; padding: .75rem 2.8rem .75rem 1rem;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+  font-size: .98rem; box-shadow: var(--shadow); }
+.toc-search input:focus { outline: none; border-color: var(--accent); }
+.toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+  color: var(--faint); font-size: .8rem; pointer-events: none; }
+.toc a.hide, .toc .toc-part.hide { display: none; }
+.t tr.hide { display: none; }
+.toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
+.toc-empty.show { display: block; }
+.hero.index h1 { font-size: 2.3rem; }
+.legend { display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:1rem; font-size:.8rem; color:var(--muted); }
+.legend span { display:flex; align-items:center; gap:.4rem; }
+.legend i { width:12px; height:12px; border-radius:3px; display:inline-block; }
+.pdf-btn { display:inline-flex; align-items:center; gap:.4rem; padding:.55rem 1.1rem;
+  background:var(--accent); color:#fff; border-radius:10px; font-size:.9rem; font-weight:650;
+  box-shadow:var(--shadow); transition:.15s; }
+.pdf-btn:hover { background:var(--accent-ink); transform:translateY(-1px); }
+
+/* ---- bilingual language switch ----
+   Contract: <html> must carry data-lang="zh" (default) or "en".
+   page()/index_page() hard-code data-lang="zh"; LANG_BOOT may switch to "en". */
+html[data-lang="en"] .lang-zh { display: none !important; }
+html[data-lang="zh"] .lang-en { display: none !important; }
+.langtoggle { font-size:.72rem; font-weight:700; color:var(--accent-ink);
+  background:var(--accent-soft); border:1px solid var(--accent); border-radius:999px;
+  padding:.22rem .7rem; cursor:pointer; line-height:1.4; white-space:nowrap; }
+.langtoggle:hover { background:var(--accent); color:#fff; }
+
+/* ---- schematic: cell strips (vector rows / quant blocks / KV columns) ---- */
+.cellgroup { margin: 1.2rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.cellgroup .cg-cap { font-size: .82rem; color: var(--muted); margin-bottom: .55rem; }
+.cellgroup .cg-cap b { color: var(--ink); }
+.cells { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.cells + .cells { margin-top: .5rem; }
+.cell { min-width: 2.1rem; padding: .38rem .5rem; text-align: center; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--line); font-size: .78rem;
+  font-family: ui-monospace, monospace; white-space: nowrap; }
+.cell.scale { background: var(--amber-soft); border-color: var(--amber); color: var(--amber); font-weight: 700; }
+.cell.hl    { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.cell.q     { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.cell.dim   { opacity: .45; }
+.cells .lab { font-size: .76rem; color: var(--faint); padding: 0 .35rem; }
+.cells .sep { color: var(--faint); padding: 0 .1rem; }
+
+/* ---- schematic: timeline lanes (write vs read, step-by-step) ---- */
+.timeline { margin: 1.2rem 0; display: flex; flex-direction: column; gap: .5rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.timeline .lane { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.timeline .lane-label { min-width: 6rem; font-size: .8rem; font-weight: 700; color: var(--muted); }
+.timeline .tslot { padding: .4rem .6rem; border-radius: 8px; background: var(--panel-2);
+  border: 1px solid var(--line); font-size: .78rem; text-align: center; font-family: ui-monospace, monospace; }
+.timeline .tslot.span { flex: 1; min-width: 8rem; background: var(--blue-soft); border-color: var(--blue);
+  color: var(--blue); font-weight: 700; }
+.timeline .tslot.now { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.timeline .tl-row { display: flex; align-items: flex-start; gap: .6rem; padding: .12rem 0; }
+.timeline .tl-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; margin-top: .45rem; }
+.timeline .tl-t { font-family: ui-monospace, monospace; font-weight: 700; color: var(--accent-ink); min-width: 2.4rem; font-size: .82rem; flex-shrink: 0; margin-top: .18rem; }
+.timeline .tl-c { font-size: .9rem; color: var(--muted); }
+
+/* ---- worked-example trace: one concrete input, stepped through ---- */
+.trace { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); border-radius: var(--radius); padding: 1rem 1.1rem; box-shadow: var(--shadow); }
+.trace .tcap { font-size: .82rem; color: var(--muted); margin-bottom: .7rem; }
+.trace .tcap b { color: var(--accent-ink); }
+.trace .stations { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.trace .stn { flex: 1 1 0; min-width: 116px; border: 1px solid var(--line); border-radius: 10px;
+  padding: .55rem; background: var(--bg); }
+.trace .stn h5 { margin: 0 0 .45rem; font-size: .8rem; color: var(--ink); }
+.trace .cellrow { display: flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.trace .vc { min-width: 2.1rem; padding: .32rem .45rem; text-align: center; border-radius: 7px;
+  background: var(--panel-2); border: 1px solid var(--line); font: 600 .76rem ui-monospace, monospace; white-space: nowrap; }
+.trace .vc.hot  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
+.trace .vc.blue { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+.trace .vc.dim  { opacity: .42; }
+.trace .tlab { font-size: .68rem; color: var(--faint); margin-top: .35rem; }
+.trace .op { align-self: center; color: var(--accent); font: 700 .72rem ui-monospace, monospace;
+  padding: 0 .5rem; text-align: center; white-space: nowrap; }
+.trace svg { max-width: 100%; height: auto; display: block; margin: .3rem auto; }
+@media (max-width: 640px) { .trace .stations { flex-direction: column; } .trace .op { padding: .3rem 0; } }
+/* --- hand-drawn figure (inline SVG illustrations) --- */
+.fig { margin: 1.3rem 0; background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 1rem 1rem .85rem; box-shadow: var(--shadow); text-align: center; }
+.fig svg { max-width: 100%; height: auto; display: block; margin: 0 auto;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif; }
+.fig svg text { fill: var(--ink); }
+.fig .figcap { margin: .72rem auto 0; font-size: .8rem; color: var(--muted); line-height: 1.55; max-width: 46rem; }
+.fig .figcap b { color: var(--accent-ink); font-weight: 700; }
+</style>
+</head><body>
+<div class="topbar">
+  <div class="topbar-inner">
+    <a class="home" href="../index.html">🐦 <b class="lang-zh">Milvus 图解教程</b><b class="lang-en">Milvus Visual Guide</b></a>
+    <span class="pill"><span class="lang-zh">第十三部分 · 终章</span><span class="lang-en">Part 13 · Capstone</span></span>
+    <span class="pill">57 / 57</span>
+    <button class="langtoggle" onclick="mvgToggleLang()" aria-label="switch language"><span class="lang-zh">EN</span><span class="lang-en">中</span></button>
+  </div>
+  <div class="progress"><span style="width:100%"></span></div>
+</div>
+<div class="wrap">
+  <div class="hero">
+    <div class="part"><span class="lang-zh">第十三部分 · 终章</span><span class="lang-en">Part 13 · Capstone</span></div>
+    <h1><span class="lang-zh">终章 · 一条数据的一生：从写入到被搜到</span><span class="lang-en">Capstone · Life of a row: from write to searchable</span></h1>
+  </div>
+  <div class="lang-zh">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+这是全课的<strong>收束</strong>。前面我们把 Milvus 拆成了写入、索引、查询三条链路分别讲透；这一课不再拆，而是反过来——只<strong>跟着一行数据</strong>，
+从你按下 <span class="mono">insert</span> 的那一刻，一路看它<strong>变得持久</strong>、<strong>能被搜到</strong>，最后被<strong>高效地长期服务</strong>。
+把散落各课的零件，串成一条你能一眼看完的<strong>旅程</strong>。</p>
+
+<div class="card analogy"><div class="tag">⚡ 打个比方</div>
+<p>想象后厨的<strong>挂单系统</strong>：你在收银台敲下一单，单子一旦<strong>打印进"订单流水"</strong>，这单就<strong>绝不会丢</strong>了——哪怕屏幕黑了、机器重启，照着流水重念一遍就全回来了（这就是"<strong>持久</strong>"）。
+几乎同一瞬间，墙上的菜品屏就能<strong>看到这单</strong>（这就是"<strong>可见</strong>"）。至于把它<strong>归档进台账、把常点的菜备料上架</strong>，是后厨<strong>慢慢在后台做</strong>的事，并不挡着这单先被看见、先开做。
+一行数据进 Milvus，正是这个节奏：<strong>先持久、很快可见，落盘建索引都是后台慢工</strong>。</p></div>
+
+<h2>目标：把三条链路，串成一行数据的旅程</h2>
+<p>学到这里你已经分别认识了写入、索引、查询的每个零件，但真正容易卡住新手的，是它们<strong>合起来</strong>时的两个问题：
+"我刚 <span class="mono">insert</span> 完，<strong>到底什么时候不会丢</strong>？"和"为什么<strong>有时候马上能搜到、有时候要等一下</strong>？"
+这两个问题的答案，恰好是本课要立起来的两根支柱——<strong>持久边界</strong>与<strong>可见边界</strong>。把它们看清了，整套系统在你脑子里就从"一堆组件"变成"一条有节奏的流水线"。</p>
+
+<div class="card macro"><div class="tag">🗺️ 大图景</div>
+<p>一行数据有<strong>两条路同时在走</strong>：① <strong>前台路（快）</strong>——insert → Proxy 盖时间戳 → 写进 WAL <strong>即持久</strong> → 落进内存里的 growing 段 → tsafe 追上它的时间戳就<strong>可见</strong>；
+② <strong>后台路（慢）</strong>——段满了就封段 → flush 成 binlog 落对象存储 → 建索引 → QueryNode 加载，然后<strong>接力</strong>由"封存段 + 索引"来服务这行。
+关键直觉：<strong>"持久"和"可见"发生在前台、很早；落盘与建索引是后台慢工，并不挡查询</strong>。</p></div>
+
+<div class="fig"><svg viewBox="0 0 760 300" role="img" aria-label="一条数据的一生：前台路 SDK 插入到 Proxy 盖时间戳与主键、写进 WAL 即持久、进入 growing 段、tsafe 追上即可见；后台路 封段到 flush 成 binlog、建索引、QueryNode 加载、再接力服务，后台不阻塞可见">
+  <text x="380" y="22" text-anchor="middle" style="fill:var(--ink);font-weight:700">一条数据的一生：前台「写入→持久→可见」，后台「落盘→索引→加载」</text>
+  <rect x="16" y="70" width="110" height="44" rx="9" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="71" y="90" text-anchor="middle" style="fill:var(--blue);font-weight:700">SDK</text><text x="71" y="107" text-anchor="middle" style="fill:var(--muted)">insert · 行</text>
+  <rect x="170" y="70" width="110" height="44" rx="9" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="225" y="90" text-anchor="middle" style="fill:var(--blue);font-weight:700">Proxy</text><text x="225" y="107" text-anchor="middle" style="fill:var(--muted)">盖 ts · PK</text>
+  <rect x="324" y="70" width="110" height="44" rx="9" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="379" y="90" text-anchor="middle" style="fill:var(--amber);font-weight:700">WAL / MQ</text><text x="379" y="107" text-anchor="middle" style="fill:var(--muted)">顺序 · 持久</text>
+  <rect x="478" y="70" width="110" height="44" rx="9" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="533" y="90" text-anchor="middle" style="fill:var(--teal);font-weight:700">growing 段</text><text x="533" y="107" text-anchor="middle" style="fill:var(--muted)">驻内存</text>
+  <rect x="632" y="70" width="110" height="44" rx="9" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="687" y="90" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">可见 ✓</text><text x="687" y="107" text-anchor="middle" style="fill:var(--muted)">tsafe ≥ ts</text>
+  <line x1="126" y1="92" x2="168" y2="92" style="stroke:var(--line);stroke-width:2"/><path d="M168,92 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+  <line x1="280" y1="92" x2="322" y2="92" style="stroke:var(--line);stroke-width:2"/><path d="M322,92 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+  <line x1="434" y1="92" x2="476" y2="92" style="stroke:var(--line);stroke-width:2"/><path d="M476,92 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+  <line x1="588" y1="92" x2="630" y2="92" style="stroke:var(--line);stroke-width:2"/><path d="M630,92 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+  <line x1="456" y1="58" x2="456" y2="124" style="stroke:var(--accent);stroke-width:1.5;stroke-dasharray:4 3"/><text x="456" y="50" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700;font-size:11px">持久✓ 不丢</text>
+  <path d="M533,114 C533,150 360,156 268,190" style="fill:none;stroke:var(--muted);stroke-width:1.5;stroke-dasharray:5 3"/><path d="M268,190 l9,-3 l-2,10 z" style="fill:var(--muted)"/><text x="470" y="132" text-anchor="middle" style="fill:var(--muted);font-size:11px">满/超时</text>
+  <rect x="188" y="192" width="128" height="44" rx="9" style="fill:var(--panel-2);stroke:var(--line)"/><text x="252" y="212" text-anchor="middle" style="fill:var(--ink);font-weight:700">seal 封段</text><text x="252" y="229" text-anchor="middle" style="fill:var(--muted)">只读</text>
+  <rect x="332" y="192" width="128" height="44" rx="9" style="fill:var(--panel-2);stroke:var(--line)"/><text x="396" y="212" text-anchor="middle" style="fill:var(--ink);font-weight:700">flush</text><text x="396" y="229" text-anchor="middle" style="fill:var(--muted)">binlog → 对象存储</text>
+  <rect x="476" y="192" width="128" height="44" rx="9" style="fill:var(--panel-2);stroke:var(--line)"/><text x="540" y="212" text-anchor="middle" style="fill:var(--ink);font-weight:700">index</text><text x="540" y="229" text-anchor="middle" style="fill:var(--muted)">建索引 · Knowhere</text>
+  <rect x="620" y="192" width="128" height="44" rx="9" style="fill:var(--panel-2);stroke:var(--line)"/><text x="684" y="212" text-anchor="middle" style="fill:var(--ink);font-weight:700">load</text><text x="684" y="229" text-anchor="middle" style="fill:var(--muted)">QueryNode 加载</text>
+  <line x1="316" y1="214" x2="330" y2="214" style="stroke:var(--line);stroke-width:2"/><path d="M330,214 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+  <line x1="460" y1="214" x2="474" y2="214" style="stroke:var(--line);stroke-width:2"/><path d="M474,214 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+  <line x1="604" y1="214" x2="618" y2="214" style="stroke:var(--line);stroke-width:2"/><path d="M618,214 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+  <path d="M684,192 C684,158 686,148 687,116" style="fill:none;stroke:var(--teal);stroke-width:1.5;stroke-dasharray:5 3"/><path d="M687,116 l-5,11 l10,0 z" style="fill:var(--teal)"/><text x="706" y="166" text-anchor="start" style="fill:var(--teal);font-size:11px">接力</text>
+  <text x="380" y="262" text-anchor="middle" style="fill:var(--faint);font-size:12px">后台（封段·落盘·建索引·加载）不阻塞「可见」：行在 growing 段里就已能被查到</text>
+</svg><div class="figcap"><b>一条数据的一生</b>：<b>前台</b>很快——insert 写进 <b>WAL 即持久</b>（不丢），落进 <b>growing 段</b>，<b>tsafe 追上它的 ts 就能被搜到</b>；<b>后台</b>慢慢来——段满了<b>封段 → flush 成 binlog → 建索引 → QueryNode 加载</b>，然后<b>接力</b>由"封存段 + 索引"来服务。一句话：<b>"持久"和"可见"很早，落盘与索引是后台事，不挡查询。</b></div></div>
+
+<h2>第 1 站 · 写入：进了日志就算数</h2>
+<p>你调用 <span class="mono">insert</span>，请求先到 <strong>Proxy</strong>。Proxy 不存数据，它是<strong>门卫加调度</strong>：校验 schema、必要时向 RootCoord 申请一段<strong>全局唯一主键</strong>（autoID 时，由 RootCoord 的 ID allocator 批量发号）、
+向 RootCoord 要一个<strong>时间戳 ts</strong>（TSO，全局单调递增——见<span class="inline">第 11 课</span>），再按主键哈希把每一行<strong>路由到某个 vchannel（分片）</strong>，最后把这批行打包成 <span class="mono">InsertMsg</span> <strong>写进该分片的 WAL</strong>。
+源码可循：<span class="inline">internal/proxy/task_insert.go</span>（insertTask 的 PreExecute/Execute）、<span class="inline">internal/rootcoord</span>（TSO 与 ID allocator）、流式写入在 <span class="inline">internal/streamingnode</span> 与 <span class="inline">pkg/streaming</span>。</p>
+
+<p>关键的一刻在这里：<strong>一旦 InsertMsg 追加进 WAL 并被确认（ack），这次写入就"算数"了</strong>——insert 返回成功。为什么这么早就敢返回？因为 WAL 是<strong>顺序、可靠、可重放</strong>的（<span class="inline">第 7 课</span>、<span class="inline">第 16 课</span>）：
+哪怕下一秒整个进程崩了，这条记录还在日志里，重启后照着重放就回来了。<strong>"持久"不等于"落盘成了 binlog"，而是"进了 WAL"</strong>——这是理解后面一切的地基。</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">SDK</div><div class="nd">insert 一批行</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">Proxy</div><div class="nd">校验 · 发 PK · 盖 ts · 按分片路由</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">WAL / MQ</div><div class="nd">追加 InsertMsg · ack＝持久</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">growing 段</div><div class="nd">消费日志 · 驻内存累积</div></div>
+</div>
+
+<p>这里还藏着一个常被忽略的好处：<strong>Proxy 自己不存任何数据，只盖戳、转发</strong>，所以它是<strong>无状态</strong>的——可以随意多开、横向扩展，任何一台 Proxy 都能处理任何一行的写入，挂一台换一台也毫无影响。这正是<span class="inline">第 53 课</span>"存算分离"在写入侧最直接的体现：<strong>把状态推给 WAL 和对象存储，节点本身轻得可以随时替换</strong>。</p>
+
+<h2>第 2 站 · 持久 ≠ 可见：两条时间线</h2>
+<p>写进 WAL，这行就<strong>持久</strong>了；但它<strong>什么时候能被搜到</strong>，是另一条时间线。负责某分片读的 <strong>delegator</strong>（在 QueryNode 里）也在<strong>消费同一条 WAL</strong>，把新行喂进它本地的 growing 段，
+同时维护一个水位 <strong>tsafe</strong>＝"我已经消费到的时间戳"。一次查询会带一个<strong>保证时间戳（guarantee ts）</strong>，delegator <strong>只在 tsafe ≥ guarantee ts 时才返回</strong>——这样你绝不会读到一个"还没追上"的残缺快照（<span class="inline">第 26 课</span>、<span class="inline">第 30 课</span>）。</p>
+
+<p>于是出现一个<strong>窗口</strong>：行已经持久（进了 WAL）、也已经躺在 growing 段里，但 delegator 的 tsafe 可能<strong>还差一点</strong>没追上它的 ts。
+这就是为什么"<strong>强一致</strong>"读有时要<strong>等一下</strong>（它把 guarantee ts 设成"最新"，必须等 tsafe 追上）；而"<strong>最终一致 / 有界一致</strong>"读<strong>不等</strong>，直接读当前可见的快照、用一点新鲜度换低延迟。<strong>可见性，本质上只是一次时间戳比较。</strong></p>
+
+<p>举个具体例子你立刻就懂：你刚 <span class="mono">insert</span> 一行，紧接着用 <strong>Strong（强一致）</strong>去搜它。若此刻 delegator 的 tsafe 还没追上这行的 ts，这次搜索会<strong>短暂阻塞、等水位涨上来再返回</strong>——于是你"写完马上就能搜到"。换成 <strong>Eventually（最终一致）</strong>，它<strong>不等</strong>，可能这一瞬还搜不到、过几毫秒就有了。<strong>延迟和新鲜度之间怎么取舍，就攥在你选的一致性级别里</strong>——而底层机制自始至终只是同一个 tsafe 比较，并没有为某个级别另起炉灶。</p>
+
+<div class="fig"><svg viewBox="0 0 760 300" role="img" aria-label="持久与可见是两条时间线：行写进 WAL 被确认后立刻持久，但要等 delegator 的 tsafe 追上这行的时间戳才对强一致读可见；两者之间的窗口里行已在 growing 段，强一致读在此等待，最终一致读不等">
+  <rect x="250" y="86" width="220" height="128" rx="10" style="fill:var(--amber-soft);stroke:var(--amber);stroke-dasharray:4 3"/>
+  <text x="380" y="26" text-anchor="middle" style="fill:var(--ink);font-weight:700">「持久」和「可见」是两条时间线</text>
+  <text x="74" y="106" text-anchor="end" style="fill:var(--amber);font-weight:700">持久</text>
+  <line x1="90" y1="100" x2="704" y2="100" style="stroke:var(--line);stroke-width:2"/><path d="M704,100 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+  <circle cx="250" cy="100" r="7" style="fill:var(--amber)"/><text x="250" y="74" text-anchor="middle" style="fill:var(--amber);font-weight:700">WAL ack → 持久 ✓</text>
+  <text x="74" y="206" text-anchor="end" style="fill:var(--teal);font-weight:700">可见</text>
+  <line x1="90" y1="200" x2="704" y2="200" style="stroke:var(--line);stroke-width:2"/><path d="M704,200 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+  <circle cx="470" cy="200" r="7" style="fill:var(--teal)"/><text x="470" y="226" text-anchor="middle" style="fill:var(--teal);font-weight:700">tsafe ≥ ts → 可见 ✓</text>
+  <text x="360" y="132" text-anchor="middle" style="fill:var(--muted);font-size:12px">这段窗口：已持久不丢</text>
+  <text x="360" y="152" text-anchor="middle" style="fill:var(--muted);font-size:12px">growing 段已持有该行</text>
+  <text x="360" y="172" text-anchor="middle" style="fill:var(--muted);font-size:12px">强一致读在此等 tsafe</text>
+  <text x="380" y="264" text-anchor="middle" style="fill:var(--faint);font-size:12px">最终 / 有界一致读不等：直接读当前可见快照，用一点新鲜度换低延迟</text>
+</svg><div class="figcap"><b>两条时间线</b>：行写进 WAL 被 ack 的瞬间就<b>持久</b>（左侧 amber 点）；但要等 delegator 的 <b>tsafe 追上这行的 ts</b> 才对强一致读<b>可见</b>（右侧 teal 点）。中间那段窗口里行已在 growing 段——<b>强一致读在此等待，最终一致读不等</b>。可见性＝一次时间戳比较。</div></div>
+
+<h2>第 3 站 · 后台落盘：seal → flush → binlog</h2>
+<p>前台已经"持久 + 可见"，后台才不紧不慢地开工。growing 段在内存里越攒越大，到了<strong>大小或时间阈值</strong>就被<strong>封段（seal）</strong>变只读；随后一个 <strong>SyncTask</strong> 把这段的列数据<strong>序列化成 binlog</strong>——
+insert binlog（真数据）、stats binlog（统计/主键索引）、delta binlog（删除）——<strong>写进对象存储</strong>，DataCoord 记下这些 binlog 路径并<strong>推进 checkpoint</strong>。
+到这一步，数据<strong>第二次变得更耐久</strong>：它现在独立于 WAL 存在于对象存储，就算 WAL 被截断也不怕（<span class="inline">第 17 课</span>、<span class="inline">第 18 课</span>）。源码在 <span class="inline">internal/flushcommon/writebuffer</span>、<span class="inline">internal/flushcommon/syncmgr</span> 与 <span class="inline">internal/storage</span>。</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>封段 seal</h4><p>growing 段满/超时，转为只读，不再接收新行。</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>flush 成 binlog</h4><p>SyncTask 把列序列化为 insert/stats/delta binlog，写进对象存储。</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>记账 + 推进 checkpoint</h4><p>DataCoord 记下 binlog 路径；WAL 的消费位点前移，旧日志可回收。</p></div></div>
+</div>
+
+<p>为什么非要把这些活儿甩到后台？因为它们<strong>又重又慢</strong>：序列化几十万行、建一棵 HNSW 图，都是秒级甚至更久的重活。如果让 <span class="mono">insert</span> 一直<strong>傻等</strong>到落盘、建索引全做完才返回，写入吞吐立刻就被拖垮了。Milvus 的选择是把它们<strong>异步挪到后台</strong>，前台只留"写一条日志"这一件极快的事——<strong>这正是写入能扛住高并发的关键</strong>，也再次印证了那条主线：<strong>先持久、快返回，慢工放后台</strong>。</p>
+
+<h2>第 4 站 · 建索引 + 加载：从"能查"到"查得快"</h2>
+<p>封存的段还只能<strong>暴力扫</strong>，要"查得快"得有索引。DataCoord 的 index 调度发现这个 sealed 段<strong>还缺索引</strong>，就派一个构建任务给 <strong>IndexNode</strong>；IndexNode 读 binlog、用 <strong>Knowhere</strong> 建出 HNSW/IVF 之类的向量索引，写成<strong>索引文件</strong>落对象存储（<span class="inline">第 21 课</span>、<span class="inline">第 23 课</span>）。
+接着 <strong>QueryCoord</strong> 把这个"已封存 + 已建索引"的段<strong>分配给某个 QueryNode</strong>，QueryNode 用 <strong>segcore</strong> 把列与索引<strong>加载</strong>进来（常用 mmap，见<span class="inline">第 27 课</span>、<span class="inline">第 35 课</span>）。</p>
+
+<p>最后是漂亮的一手——<strong>接力（handoff）</strong>：在 sealed 段加载好之前，这行一直由 growing 段服务；加载完成后，delegator 把它从"growing 还在顶"切换成"<strong>由 sealed + 索引来服务</strong>"，并<strong>把 growing 里这部分排除掉</strong>，确保<strong>不重不漏</strong>（<span class="inline">第 26 课</span>）。
+对查询者完全无感：可见性一刻没断，只是背后从"内存暴力"换成了"索引快搜"。</p>
+
+<div class="cols">
+  <div class="col"><h4>🌱 growing 段先顶（能查）</h4><p>新行驻内存、<strong>暴力扫</strong>，胜在<strong>最新、零等待</strong>。tsafe 追上即可见，不必等落盘建索引。</p></div>
+  <div class="col"><h4>🧊 sealed + 索引接力（查得快）</h4><p>封存段加载索引后，由它<strong>高效服务</strong>；delegator 排除 growing 的重叠部分，<strong>不重不漏</strong>，可见性无缝衔接。</p></div>
+</div>
+
+<p>你可能会问：既然这行最终都要由索引来服务，为什么不<strong>干脆等索引建好再让它可见</strong>？因为建索引动辄数秒，真这么等，"刚写的数据搜不到"会长达好几秒——对很多在线场景完全无法接受。让 growing 段<strong>先用暴力扫顶上这几秒</strong>、再悄悄接力给索引，正是 Milvus 在"<strong>新鲜度</strong>"和"<strong>效率</strong>"之间拿捏出的那个恰到好处的平衡点。</p>
+
+<p>把整段旅程里"谁碰了这一行"汇成一张表，方便你随时回查到对应的课：</p>
+
+<table class="t">
+  <tr><th>阶段</th><th>谁在做</th><th>源码包（文件 / 符号）</th><th>详见</th></tr>
+  <tr><td>盖时间戳 / 发主键</td><td>Proxy + RootCoord</td><td class="mono">internal/proxy/task_insert.go · internal/rootcoord（TSO/IDAllocator）</td><td>第 10、11、15 课</td></tr>
+  <tr><td>写日志（持久）</td><td>WAL / 流式系统</td><td class="mono">internal/streamingnode · pkg/streaming</td><td>第 16、31 课</td></tr>
+  <tr><td>进 growing 段（可查）</td><td>delegator（QueryNode）</td><td class="mono">internal/querynodev2/delegator（tsafe）</td><td>第 26、30 课</td></tr>
+  <tr><td>封段 + flush</td><td>writebuffer / SyncTask</td><td class="mono">internal/flushcommon/writebuffer · syncmgr</td><td>第 17、18 课</td></tr>
+  <tr><td>记账 binlog</td><td>DataCoord</td><td class="mono">internal/datacoord · internal/storage</td><td>第 12、18 课</td></tr>
+  <tr><td>建索引</td><td>IndexNode + Knowhere</td><td class="mono">internal/indexnode · internal/datacoord（index 调度）</td><td>第 21、22、23 课</td></tr>
+  <tr><td>分配 + 加载</td><td>QueryCoord + segcore</td><td class="mono">internal/querycoordv2 · internal/core（segcore）</td><td>第 13、27 课</td></tr>
+  <tr><td>接力服务</td><td>delegator</td><td class="mono">internal/querynodev2/delegator（handoff）</td><td>第 26 课</td></tr>
+</table>
+
+<h2>收尾 · 三个边界，一句话记住</h2>
+<div class="card spark"><div class="tag">💡 一句话洞见</div>
+<p><strong>持久很早、可见也很早，落盘与索引是后台的事。</strong> 新手最大的误会，是以为"要等数据 flush 成 binlog、建好索引、被加载，才算写成功、才能被搜到"。
+其实恰恰相反：<strong>进了 WAL 就持久（不丢）、tsafe 追上就可见（能查）</strong>，这两件事都在前台、很快发生；封段、落盘、建索引、加载是<strong>后台慢工</strong>，只为"<strong>查得更快、留得更久</strong>"，从不挡着前台。</p></div>
+
+<p>所以记住三个边界就够了：① <strong>持久边界 = WAL ack</strong>（进了日志就不丢，不必等落盘）；② <strong>可见边界 = tsafe ≥ ts</strong>（早，强一致才需等待）；③ <strong>服务接力 = flush + 建索引 + 加载之后</strong>，由 sealed + 索引从 growing 手里接棒。
+这三个边界，正好把<span class="inline">第 51 课</span>的"日志即数据"、<span class="inline">第 52 课</span>的"边写边查"、<span class="inline">第 53 课</span>的"存算分离"收在了一行数据上。</p>
+
+<div class="card key"><div class="tag">📌 本课要点</div>
+<ul>
+<li>一行数据有<strong>两条路同时走</strong>：前台「写入→持久→可见」快，后台「封段→落盘→建索引→加载」慢。</li>
+<li><strong>持久 = 进 WAL 被 ack</strong>，insert 即可返回；不必等 flush 成 binlog。</li>
+<li><strong>可见 = delegator 的 tsafe ≥ 这行的 ts</strong>；强一致读会等，最终/有界一致读不等。</li>
+<li>新行先由 <strong>growing 段</strong>服务（最新、暴力）；建好索引加载后，delegator <strong>接力</strong>给 sealed + 索引，<strong>不重不漏</strong>。</li>
+<li>后台落盘 / 建索引只为<strong>查得快、留得久</strong>，<strong>从不阻塞可见性</strong>。</li>
+</ul></div>
+
+<details><summary>深挖：删除和 upsert 也走同一条路吗？</summary>
+<p>是的，而且复用得很优雅。删除不会去"擦掉"已有数据，而是写一条<strong>带时间戳的墓碑（delete record）</strong>进同一条 WAL，最终落成 <strong>delta binlog</strong>；查询时在段内用<strong>删除位图</strong>把"在你的 guarantee ts 之前已被删"的行<strong>过滤掉</strong>——
+所以"可见性"同样只是一次时间戳比较（<span class="inline">第 20 课</span>、<span class="inline">第 30 课</span>）。<strong>upsert</strong> 则≈"删旧 + 插新"：同主键写入新版本并让旧版本对新读不可见。换句话说，<strong>插入、删除、更新，走的是同一条"日志 → 段 → 时间戳可见"的路</strong>，只是携带的消息类型不同——这正是"日志即数据"的威力：一套机制，统一了所有写。</p></details>
+<div class="selftest">
+<h2>🧪 自测 · 想一想为什么这么设计</h2>
+<div class="quiz">
+  <div class="qn">1. 你刚调用 insert 成功返回。这一行从什么时候起就「持久、不会丢」了？</div>
+  <ol class="opts">
+    <li>等它被 flush 成 binlog、落进对象存储之后</li>
+    <li>写进 WAL 并被确认（ack）后——此时 insert 即可返回，不必等它 flush 成 binlog</li>
+    <li>等它的索引建好之后</li>
+    <li>等 QueryNode 把对应的段加载之后</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。「持久」的边界是 WAL ack，而不是 flush。WAL 顺序、可靠、可重放，进了日志即使进程崩了也能重放回来——所以 insert 敢早早返回。落盘成 binlog 是后台的「第二次更耐久」，并非首次持久。</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. 一行刚写入、还没 flush、更没建索引。这时它通常先从哪里被搜到？</div>
+  <ol class="opts">
+    <li>对象存储里的 insert binlog</li>
+    <li>growing 段：delegator 消费同一条 WAL 把它喂进内存，tsafe 追上它的 ts 后即可被暴力扫到</li>
+    <li>已封存段上的索引文件</li>
+    <li>delta binlog（删除日志）</li>
+  </ol>
+  <details class="accordion">
+    <summary>看答案与解析 <span class="hint">点击展开</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>答案：B</strong>。新行先由 growing 段（驻内存、暴力扫）服务，胜在最新、零等待；可见性只取决于 tsafe ≥ ts。等 sealed 段建好索引并被加载后，delegator 才「接力」改由 sealed+索引服务，并排除 growing 的重叠部分，做到不重不漏。</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 发散思考（没有标准答案，动手或动脑想想）</div>
+  <ul>
+    <li>用你自己的话，把一行数据从 insert 到「能被搜到」的旅程讲一遍，并指出三个关键边界：① 它从哪一刻起不会丢？② 它从哪一刻起能被搜到？③ 为什么落盘、建索引、加载要放到后台、而不是挡在 insert 返回之前？</li>
+  </ul>
+</div>
+</div></div>
+  <div class="lang-en">
+<p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
+This is the course's <strong>finale</strong>. We spent the whole guide taking Milvus apart into three paths — write, index, query. This lesson does the opposite: it <strong>follows one single row</strong>,
+from the instant you press <span class="mono">insert</span>, watching it become <strong>durable</strong>, then <strong>searchable</strong>, and finally <strong>served efficiently</strong> for the long run.
+The parts scattered across the course, threaded into one <strong>journey</strong> you can read at a glance.</p>
+
+<div class="card analogy"><div class="tag">⚡ An analogy</div>
+<p>Picture a kitchen's <strong>order-ticket system</strong>: you punch in an order at the register, and the moment it's <strong>printed into the "order log"</strong> that order <strong>can never be lost</strong> — even if the screen goes dark or the machine reboots, replaying the log brings it all back (that's <strong>durable</strong>).
+Almost the same instant, the kitchen display <strong>shows the order</strong> (that's <strong>visible</strong>). Filing it into the ledger and pre-stocking the popular dishes are things the kitchen does <strong>slowly, in the background</strong> — they don't block this order from being seen and started first.
+A row entering Milvus follows exactly this rhythm: <strong>durable first, visible soon after, flushing and indexing are slow background work</strong>.</p></div>
+
+<h2>The goal: thread three paths into one row's journey</h2>
+<p>By now you know each part of write, index and query separately. What actually trips up newcomers is the two questions that arise when they <strong>come together</strong>:
+"I just finished <span class="mono">insert</span> — <strong>when exactly is it safe from loss</strong>?" and "why is it <strong>sometimes searchable instantly, sometimes only after a brief wait</strong>?"
+The answers are the two pillars this lesson erects — the <strong>durability boundary</strong> and the <strong>visibility boundary</strong>. See them clearly and the whole system turns, in your head, from "a pile of components" into "one pipeline with a rhythm."</p>
+
+<div class="card macro"><div class="tag">🗺️ The big picture</div>
+<p>One row travels <strong>two paths at once</strong>: ① the <strong>foreground (fast)</strong> — insert → Proxy stamps a timestamp → written to the WAL is <strong>durable</strong> → lands in an in-memory growing segment → it's <strong>visible</strong> once tsafe catches up to its timestamp;
+② the <strong>background (slow)</strong> — the segment fills and seals → flush into binlogs in object storage → build the index → QueryNode loads it, then a <strong>handoff</strong> lets "sealed segment + index" serve this row.
+The key intuition: <strong>"durable" and "visible" happen in the foreground, early; flushing and indexing are slow background work that never blocks queries</strong>.</p></div>
+
+<div class="fig"><svg viewBox="0 0 760 300" role="img" aria-label="The life of a row: foreground path SDK insert to Proxy stamps timestamp and PK, written to WAL is durable, enters the growing segment, visible once tsafe catches up; background path seal to flush into binlog, build index, QueryNode load, then handoff serving, background never blocking visibility">
+  <text x="380" y="22" text-anchor="middle" style="fill:var(--ink);font-weight:700">The life of a row: foreground "write→durable→visible", background "flush→index→load"</text>
+  <rect x="16" y="70" width="110" height="44" rx="9" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="71" y="90" text-anchor="middle" style="fill:var(--blue);font-weight:700">SDK</text><text x="71" y="107" text-anchor="middle" style="fill:var(--muted)">insert · row</text>
+  <rect x="170" y="70" width="110" height="44" rx="9" style="fill:var(--blue-soft);stroke:var(--blue)"/><text x="225" y="90" text-anchor="middle" style="fill:var(--blue);font-weight:700">Proxy</text><text x="225" y="107" text-anchor="middle" style="fill:var(--muted)">stamp ts · PK</text>
+  <rect x="324" y="70" width="110" height="44" rx="9" style="fill:var(--amber-soft);stroke:var(--amber)"/><text x="379" y="90" text-anchor="middle" style="fill:var(--amber);font-weight:700">WAL / MQ</text><text x="379" y="107" text-anchor="middle" style="fill:var(--muted)">ordered · durable</text>
+  <rect x="478" y="70" width="110" height="44" rx="9" style="fill:var(--teal-soft);stroke:var(--teal)"/><text x="533" y="90" text-anchor="middle" style="fill:var(--teal);font-weight:700">growing seg</text><text x="533" y="107" text-anchor="middle" style="fill:var(--muted)">in memory</text>
+  <rect x="632" y="70" width="110" height="44" rx="9" style="fill:var(--accent-soft);stroke:var(--accent)"/><text x="687" y="90" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700">visible ✓</text><text x="687" y="107" text-anchor="middle" style="fill:var(--muted)">tsafe ≥ ts</text>
+  <line x1="126" y1="92" x2="168" y2="92" style="stroke:var(--line);stroke-width:2"/><path d="M168,92 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+  <line x1="280" y1="92" x2="322" y2="92" style="stroke:var(--line);stroke-width:2"/><path d="M322,92 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+  <line x1="434" y1="92" x2="476" y2="92" style="stroke:var(--line);stroke-width:2"/><path d="M476,92 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+  <line x1="588" y1="92" x2="630" y2="92" style="stroke:var(--line);stroke-width:2"/><path d="M630,92 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+  <line x1="456" y1="58" x2="456" y2="124" style="stroke:var(--accent);stroke-width:1.5;stroke-dasharray:4 3"/><text x="456" y="50" text-anchor="middle" style="fill:var(--accent-ink);font-weight:700;font-size:11px">durable ✓</text>
+  <path d="M533,114 C533,150 360,156 268,190" style="fill:none;stroke:var(--muted);stroke-width:1.5;stroke-dasharray:5 3"/><path d="M268,190 l9,-3 l-2,10 z" style="fill:var(--muted)"/><text x="470" y="132" text-anchor="middle" style="fill:var(--muted);font-size:11px">full/timeout</text>
+  <rect x="188" y="192" width="128" height="44" rx="9" style="fill:var(--panel-2);stroke:var(--line)"/><text x="252" y="212" text-anchor="middle" style="fill:var(--ink);font-weight:700">seal</text><text x="252" y="229" text-anchor="middle" style="fill:var(--muted)">read-only</text>
+  <rect x="332" y="192" width="128" height="44" rx="9" style="fill:var(--panel-2);stroke:var(--line)"/><text x="396" y="212" text-anchor="middle" style="fill:var(--ink);font-weight:700">flush</text><text x="396" y="229" text-anchor="middle" style="fill:var(--muted)">binlog → store</text>
+  <rect x="476" y="192" width="128" height="44" rx="9" style="fill:var(--panel-2);stroke:var(--line)"/><text x="540" y="212" text-anchor="middle" style="fill:var(--ink);font-weight:700">index</text><text x="540" y="229" text-anchor="middle" style="fill:var(--muted)">Knowhere</text>
+  <rect x="620" y="192" width="128" height="44" rx="9" style="fill:var(--panel-2);stroke:var(--line)"/><text x="684" y="212" text-anchor="middle" style="fill:var(--ink);font-weight:700">load</text><text x="684" y="229" text-anchor="middle" style="fill:var(--muted)">QueryNode</text>
+  <line x1="316" y1="214" x2="330" y2="214" style="stroke:var(--line);stroke-width:2"/><path d="M330,214 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+  <line x1="460" y1="214" x2="474" y2="214" style="stroke:var(--line);stroke-width:2"/><path d="M474,214 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+  <line x1="604" y1="214" x2="618" y2="214" style="stroke:var(--line);stroke-width:2"/><path d="M618,214 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+  <path d="M684,192 C684,158 686,148 687,116" style="fill:none;stroke:var(--teal);stroke-width:1.5;stroke-dasharray:5 3"/><path d="M687,116 l-5,11 l10,0 z" style="fill:var(--teal)"/><text x="706" y="166" text-anchor="start" style="fill:var(--teal);font-size:11px">handoff</text>
+  <text x="380" y="262" text-anchor="middle" style="fill:var(--faint);font-size:12px">background (seal·flush·index·load) doesn't block "visible": the row is searchable while still in the growing segment</text>
+</svg><div class="figcap"><b>The life of a row</b>: the <b>foreground</b> is fast — insert is written to the <b>WAL = durable</b> (no loss), lands in a <b>growing segment</b>, and is <b>searchable once tsafe reaches its ts</b>; the <b>background</b> takes its time — a full segment <b>seals → flushes to binlog → is indexed → loaded by a QueryNode</b>, then a <b>handoff</b> lets "sealed + index" serve it. In a sentence: <b>"durable" and "visible" are early; flush and index are background work that never blocks queries.</b></div></div>
+
+<h2>Stop 1 · Write: it counts once it's in the log</h2>
+<p>You call <span class="mono">insert</span>, and the request hits the <strong>Proxy</strong> first. The Proxy stores nothing; it is <strong>gatekeeper plus dispatcher</strong>: it validates the schema, requests a batch of <strong>globally-unique primary keys</strong> when autoID is on (handed out in bulk by RootCoord's ID allocator), asks RootCoord for a <strong>timestamp ts</strong> (TSO, globally monotonic — see <span class="inline">Lesson 11</span>), hashes each row to a <strong>vchannel (shard)</strong>, and finally packs the batch into an <span class="mono">InsertMsg</span> <strong>written to that shard's WAL</strong>.
+Trace it in source: <span class="inline">internal/proxy/task_insert.go</span> (insertTask's PreExecute/Execute), <span class="inline">internal/rootcoord</span> (TSO and ID allocator), with streaming writes in <span class="inline">internal/streamingnode</span> and <span class="inline">pkg/streaming</span>.</p>
+
+<p>Here is the pivotal moment: <strong>once the InsertMsg is appended to the WAL and acknowledged, the write "counts"</strong> — insert returns success. Why dare return so early? Because the WAL is <strong>ordered, reliable and replayable</strong> (<span class="inline">Lesson 7</span>, <span class="inline">Lesson 16</span>): even if the whole process crashes a second later, the record is still in the log, and a replay after restart brings it back. <strong>"Durable" does not mean "flushed into a binlog" — it means "in the WAL"</strong>, and that is the bedrock of everything that follows.</p>
+
+<div class="flow">
+  <div class="node"><div class="nt">SDK</div><div class="nd">insert a batch of rows</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">Proxy</div><div class="nd">validate · assign PK · stamp ts · route by shard</div></div>
+  <div class="arrow">→</div>
+  <div class="node hl"><div class="nt">WAL / MQ</div><div class="nd">append InsertMsg · ack = durable</div></div>
+  <div class="arrow">→</div>
+  <div class="node"><div class="nt">growing seg</div><div class="nd">consume log · accrue in memory</div></div>
+</div>
+
+<p>There's an easily-missed bonus here: <strong>the Proxy stores no data, it only stamps and forwards</strong>, so it is <strong>stateless</strong> — you can run many of them, scale them out, any Proxy can handle any row's write, and losing one and swapping in another changes nothing. This is the most direct expression of <span class="inline">Lesson 53</span>'s storage–compute separation on the write side: <strong>push state out to the WAL and object storage, and the node itself stays light enough to replace at any time</strong>.</p>
+
+<h2>Stop 2 · Durable ≠ visible: two timelines</h2>
+<p>Written to the WAL, the row is <strong>durable</strong>; but <strong>when it can be searched</strong> is a different timeline. The <strong>delegator</strong> that serves reads for a shard (inside a QueryNode) is <strong>consuming the very same WAL</strong>, feeding new rows into its own growing segment, while maintaining a watermark <strong>tsafe</strong> = "the timestamp I've consumed up to." A query carries a <strong>guarantee timestamp</strong>, and the delegator <strong>only returns once tsafe ≥ guarantee ts</strong> — so you never read a "not-caught-up", partial snapshot (<span class="inline">Lesson 26</span>, <span class="inline">Lesson 30</span>).</p>
+
+<p>Hence a <strong>window</strong> appears: the row is already durable (in the WAL) and already sitting in the growing segment, yet the delegator's tsafe may still be <strong>a hair behind</strong> its ts. That's why a <strong>Strong-consistency</strong> read sometimes <strong>waits</strong> (it sets the guarantee ts to "latest" and must wait for tsafe to catch up), while an <strong>Eventually / Bounded</strong> read <strong>doesn't wait</strong>, reading the currently-visible snapshot and trading a little freshness for low latency. <strong>Visibility is, at heart, a single timestamp comparison.</strong></p>
+
+<p>A concrete example makes it click: you just <span class="mono">insert</span> a row, then immediately search for it with <strong>Strong</strong> consistency. If the delegator's tsafe hasn't yet reached the row's ts, the search <strong>briefly blocks and returns once the watermark rises</strong> — so you "can search it the moment you finish writing." Switch to <strong>Eventually</strong> and it <strong>doesn't wait</strong>: maybe it's not there this instant, but it is a few milliseconds later. <strong>How you trade latency against freshness is held entirely in the consistency level you choose</strong> — while underneath it's always the same tsafe comparison, with no separate machinery for any one level.</p>
+
+<div class="fig"><svg viewBox="0 0 760 300" role="img" aria-label="Durable and visible are two timelines: the row is durable the instant its WAL write is acked, but it is only visible to a Strong read once the delegator's tsafe reaches the row's timestamp; in the window between, the row is already in the growing segment, a Strong read waits here while an Eventually read does not">
+  <rect x="248" y="86" width="248" height="128" rx="10" style="fill:var(--amber-soft);stroke:var(--amber);stroke-dasharray:4 3"/>
+  <text x="380" y="26" text-anchor="middle" style="fill:var(--ink);font-weight:700">"Durable" and "visible" are two timelines</text>
+  <text x="74" y="106" text-anchor="end" style="fill:var(--amber);font-weight:700">durable</text>
+  <line x1="90" y1="100" x2="704" y2="100" style="stroke:var(--line);stroke-width:2"/><path d="M704,100 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+  <circle cx="248" cy="100" r="7" style="fill:var(--amber)"/><text x="248" y="74" text-anchor="middle" style="fill:var(--amber);font-weight:700">WAL ack → durable ✓</text>
+  <text x="74" y="206" text-anchor="end" style="fill:var(--teal);font-weight:700">visible</text>
+  <line x1="90" y1="200" x2="704" y2="200" style="stroke:var(--line);stroke-width:2"/><path d="M704,200 l-10,-5 l0,10 z" style="fill:var(--line)"/>
+  <circle cx="496" cy="200" r="7" style="fill:var(--teal)"/><text x="496" y="226" text-anchor="middle" style="fill:var(--teal);font-weight:700">tsafe ≥ ts → visible ✓</text>
+  <text x="372" y="132" text-anchor="middle" style="fill:var(--muted);font-size:12px">this window: already durable</text>
+  <text x="372" y="152" text-anchor="middle" style="fill:var(--muted);font-size:12px">growing seg already holds the row</text>
+  <text x="372" y="172" text-anchor="middle" style="fill:var(--muted);font-size:12px">a Strong read waits for tsafe here</text>
+  <text x="380" y="264" text-anchor="middle" style="fill:var(--faint);font-size:12px">Eventually / Bounded reads don't wait: they read the currently-visible snapshot, trading freshness for latency</text>
+</svg><div class="figcap"><b>Two timelines</b>: the row is <b>durable</b> the instant its WAL write is acked (left amber dot); but only <b>visible</b> to a Strong read once the delegator's <b>tsafe reaches the row's ts</b> (right teal dot). In the window between, the row is already in the growing segment — <b>a Strong read waits here, an Eventually read does not</b>. Visibility = one timestamp comparison.</div></div>
+
+<h2>Stop 3 · Background flush: seal → flush → binlog</h2>
+<p>The foreground already has "durable + visible"; only now does the background get to work, unhurried. The growing segment swells in memory until it hits a <strong>size or time threshold</strong> and is <strong>sealed</strong> (made read-only); then a <strong>SyncTask</strong> <strong>serializes its columns into binlogs</strong> — insert binlog (the real data), stats binlog (statistics / primary-key index), delta binlog (deletes) — <strong>written into object storage</strong>, with DataCoord recording those binlog paths and <strong>advancing the checkpoint</strong>.
+At this step the data becomes <strong>durable a second time, more solidly</strong>: it now exists in object storage independent of the WAL, so even WAL truncation is fine (<span class="inline">Lesson 17</span>, <span class="inline">Lesson 18</span>). Source lives in <span class="inline">internal/flushcommon/writebuffer</span>, <span class="inline">internal/flushcommon/syncmgr</span> and <span class="inline">internal/storage</span>.</p>
+
+<div class="vflow">
+  <div class="step"><div class="num">1</div><div class="sc"><h4>seal</h4><p>The growing segment is full / timed out; it turns read-only and accepts no new rows.</p></div></div>
+  <div class="step"><div class="num">2</div><div class="sc"><h4>flush to binlog</h4><p>A SyncTask serializes columns into insert/stats/delta binlogs, written to object storage.</p></div></div>
+  <div class="step"><div class="num">3</div><div class="sc"><h4>record + advance checkpoint</h4><p>DataCoord records the binlog paths; the WAL consume offset moves forward, old log reclaimable.</p></div></div>
+</div>
+
+<p>Why insist on pushing this work to the background? Because it is <strong>heavy and slow</strong>: serializing hundreds of thousands of rows, building an HNSW graph — these take seconds or more. If <span class="mono">insert</span> had to <strong>sit and wait</strong> for flush and indexing to finish before returning, write throughput would collapse. Milvus's choice is to <strong>do them asynchronously in the background</strong>, leaving the foreground with just "write one log entry," the one fast thing — <strong>which is exactly why writes sustain high concurrency</strong>, and proves the throughline again: <strong>durable first, return fast, slow work goes to the background</strong>.</p>
+
+<h2>Stop 4 · Index + load: from "searchable" to "searchable fast"</h2>
+<p>A sealed segment can still only be <strong>brute-force scanned</strong>; to be "fast" it needs an index. DataCoord's index scheduling notices this sealed segment <strong>still lacks an index</strong> and dispatches a build task to an <strong>IndexNode</strong>; the IndexNode reads the binlog, uses <strong>Knowhere</strong> to build an HNSW/IVF-style vector index, and writes <strong>index files</strong> into object storage (<span class="inline">Lesson 21</span>, <span class="inline">Lesson 23</span>).
+Then <strong>QueryCoord</strong> <strong>assigns</strong> this "sealed + indexed" segment to some <strong>QueryNode</strong>, which uses <strong>segcore</strong> to <strong>load</strong> the columns and index in (often mmap — see <span class="inline">Lesson 27</span>, <span class="inline">Lesson 35</span>).</p>
+
+<p>Last comes the elegant move — the <strong>handoff</strong>: until the sealed segment is loaded, the row is served by the growing segment; once loading completes, the delegator switches it from "growing still covers it" to "<strong>served by sealed + index</strong>", and <strong>excludes that portion from growing</strong>, guaranteeing <strong>no double-count, no gap</strong> (<span class="inline">Lesson 26</span>). To the querier it's entirely seamless: visibility never lapses for an instant, the engine behind it merely swaps "in-memory brute force" for "fast indexed search."</p>
+
+<div class="cols">
+  <div class="col"><h4>🌱 growing serves first (searchable)</h4><p>New rows in memory, <strong>brute-force scanned</strong>, winning on <strong>freshness and zero wait</strong>. Visible once tsafe catches up — no need to wait for flush or index.</p></div>
+  <div class="col"><h4>🧊 sealed + index takes over (fast)</h4><p>Once the sealed segment loads its index, it <strong>serves efficiently</strong>; the delegator excludes the overlapping part of growing, <strong>no double-count, no gap</strong>, visibility seamless.</p></div>
+</div>
+
+<p>You might ask: since the row will ultimately be served by the index anyway, why not <strong>just wait for the index before making it visible</strong>? Because building an index takes seconds, and waiting like that would mean "just-written data isn't searchable" for several seconds — unacceptable for many online scenarios. Letting the growing segment <strong>cover those seconds with brute force</strong>, then quietly handing off to the index, is exactly the well-judged balance Milvus strikes between <strong>freshness</strong> and <strong>efficiency</strong>.</p>
+
+<p>Here's "who touched this row" across the whole journey, as a table you can use to jump back to the relevant lesson:</p>
+
+<table class="t">
+  <tr><th>Stage</th><th>Who does it</th><th>Source package (file / symbol)</th><th>See</th></tr>
+  <tr><td>stamp ts / assign PK</td><td>Proxy + RootCoord</td><td class="mono">internal/proxy/task_insert.go · internal/rootcoord (TSO/IDAllocator)</td><td>Lessons 10, 11, 15</td></tr>
+  <tr><td>write log (durable)</td><td>WAL / streaming</td><td class="mono">internal/streamingnode · pkg/streaming</td><td>Lessons 16, 31</td></tr>
+  <tr><td>enter growing seg (searchable)</td><td>delegator (QueryNode)</td><td class="mono">internal/querynodev2/delegator (tsafe)</td><td>Lessons 26, 30</td></tr>
+  <tr><td>seal + flush</td><td>writebuffer / SyncTask</td><td class="mono">internal/flushcommon/writebuffer · syncmgr</td><td>Lessons 17, 18</td></tr>
+  <tr><td>record binlog</td><td>DataCoord</td><td class="mono">internal/datacoord · internal/storage</td><td>Lessons 12, 18</td></tr>
+  <tr><td>build index</td><td>IndexNode + Knowhere</td><td class="mono">internal/indexnode · internal/datacoord (index scheduling)</td><td>Lessons 21, 22, 23</td></tr>
+  <tr><td>assign + load</td><td>QueryCoord + segcore</td><td class="mono">internal/querycoordv2 · internal/core (segcore)</td><td>Lessons 13, 27</td></tr>
+  <tr><td>handoff serving</td><td>delegator</td><td class="mono">internal/querynodev2/delegator (handoff)</td><td>Lesson 26</td></tr>
+</table>
+
+<h2>Wrap-up · Three boundaries, in one breath</h2>
+<div class="card spark"><div class="tag">💡 The one insight</div>
+<p><strong>Durable is early, visible is early too; flush and index are the background's job.</strong> The newcomer's biggest misconception is thinking "the write only succeeds, and the data only becomes searchable, after it's flushed into a binlog, indexed and loaded."
+The truth is the opposite: <strong>in the WAL means durable (no loss), tsafe catching up means visible (searchable)</strong> — both happen in the foreground, fast; sealing, flushing, indexing and loading are <strong>slow background work</strong>, only to "<strong>search faster, keep longer</strong>", never blocking the foreground.</p></div>
+
+<p>So three boundaries are all you need to remember: ① the <strong>durability boundary = WAL ack</strong> (in the log means no loss, no need to wait for flush); ② the <strong>visibility boundary = tsafe ≥ ts</strong> (early; only Strong reads wait); ③ the <strong>serving handoff = after flush + index + load</strong>, when sealed + index takes over from growing.
+These three boundaries gather <span class="inline">Lesson 51</span>'s "log as data", <span class="inline">Lesson 52</span>'s "query while you write" and <span class="inline">Lesson 53</span>'s "storage–compute separation" onto a single row.</p>
+
+<div class="card key"><div class="tag">📌 Key points</div>
+<ul>
+<li>A row travels <strong>two paths at once</strong>: the foreground "write→durable→visible" is fast, the background "seal→flush→index→load" is slow.</li>
+<li><strong>Durable = appended to the WAL and acked</strong>; insert can return immediately, without waiting for a binlog flush.</li>
+<li><strong>Visible = the delegator's tsafe ≥ the row's ts</strong>; Strong reads wait, Eventually/Bounded reads don't.</li>
+<li>New rows are served first by the <strong>growing segment</strong> (freshest, brute force); after the index loads, the delegator <strong>hands off</strong> to sealed + index, with <strong>no double-count, no gap</strong>.</li>
+<li>Background flush / index exist only to <strong>search faster, keep longer</strong>, and <strong>never block visibility</strong>.</li>
+</ul></div>
+
+<details><summary>Going deeper: do delete and upsert take the same path?</summary>
+<p>Yes — and the reuse is elegant. A delete doesn't "erase" existing data; it writes a <strong>timestamped tombstone (delete record)</strong> into the same WAL, eventually landing as a <strong>delta binlog</strong>; at query time a <strong>delete bitmap</strong> within the segment <strong>filters out</strong> rows "already deleted before your guarantee ts" — so "visibility" is again just a timestamp comparison (<span class="inline">Lesson 20</span>, <span class="inline">Lesson 30</span>). <strong>Upsert</strong> ≈ "delete old + insert new": it writes a new version under the same primary key and makes the old version invisible to new reads. In other words, <strong>insert, delete and update all travel the same "log → segment → timestamped visibility" path</strong>, differing only in the message type they carry — which is the power of "log as data": one mechanism, unifying every write.</p></details>
+<div class="selftest">
+<h2>🧪 Self-test - think about the design</h2>
+<div class="quiz">
+  <div class="qn">1. Your insert just returned successfully. From what moment is the row 'durable, safe from loss'?</div>
+  <ol class="opts">
+    <li>Only after it is flushed into a binlog in object storage</li>
+    <li>Once it is appended to the WAL and acked — insert can return then, without waiting for a binlog flush</li>
+    <li>Only after its index has been built</li>
+    <li>Only after a QueryNode loads the corresponding segment</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. The durability boundary is the WAL ack, not the flush. The WAL is ordered, reliable and replayable, so once a record is in the log it survives a crash via replay — which is why insert can return early. Flushing to a binlog is a 'second, sturdier' durability in the background, not the first.</div></div></div>
+  </details>
+</div>
+<div class="quiz">
+  <div class="qn">2. A row was just written — not flushed, let alone indexed. Where is it usually searched from first?</div>
+  <ol class="opts">
+    <li>The insert binlog in object storage</li>
+    <li>The growing segment: the delegator consumes the same WAL into memory, and once tsafe reaches its ts it's brute-force searchable</li>
+    <li>The index files on a sealed segment</li>
+    <li>The delta binlog (delete log)</li>
+  </ol>
+  <details class="accordion">
+    <summary>Show answer &amp; explanation <span class="hint">click to expand</span></summary>
+    <div class="acc-body"><div class="qa"><div class="a"><strong>Answer: B</strong>. New rows are served first by the growing segment (in memory, brute force), winning on freshness and zero wait; visibility depends only on tsafe ≥ ts. Once the sealed segment is indexed and loaded, the delegator 'hands off' to sealed + index and excludes the overlapping part of growing — no double-count, no gap.</div></div></div>
+  </details>
+</div>
+<div class="card spark">
+  <div class="tag">💭 Open questions (no single right answer - just think or try)</div>
+  <ul>
+    <li>In your own words, narrate one row's journey from insert to 'searchable', and name the three key boundaries: ① from which instant is it safe from loss? ② from which instant is it searchable? ③ why are flush, indexing and loading pushed to the background instead of blocking insert's return?</li>
+  </ul>
+</div>
+</div></div>
+  <div class="footnav"><a class="prev" href="56-design-failure-as-default.html"><div class="dir"><span class="lang-zh">← 上一课</span><span class="lang-en">← Prev</span></div><div class="ttl"><span class="lang-zh">故障是常态：系统如何自愈</span><span class="lang-en">Failure as the default: how the system heals itself</span></div></a><a class="next" href="../index.html"><div class="dir"><span class="lang-zh">完成 →</span><span class="lang-en">Done →</span></div><div class="ttl"><span class="lang-zh">返回目录</span><span class="lang-en">Back to index</span></div></a></div>
+</div>
+<script>
+function mvgSetLang(l){
+  l=(l==='en')?'en':'zh';
+  var d=document.documentElement;
+  d.dataset.lang=l; d.lang=(l==='en'?'en':'zh-CN');
+  try{localStorage.setItem('mvg-lang',l);}catch(e){}
+}
+function mvgToggleLang(){
+  mvgSetLang(document.documentElement.dataset.lang==='en'?'zh':'en');
+}
+</script>
+</body></html>

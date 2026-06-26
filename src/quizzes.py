@@ -3697,6 +3697,56 @@ QUIZZES = {
             },
         ],
     },
+    "57-capstone-life-of-a-row.html": {
+        "mcq": [
+            {
+                "q": {
+                    "zh": "你刚调用 insert 成功返回。这一行从什么时候起就「持久、不会丢」了？",
+                    "en": "Your insert just returned successfully. From what moment is the row 'durable, safe from loss'?",
+                },
+                "opts": [
+                    {
+                        "zh": "写进 WAL 并被确认（ack）后——此时 insert 即可返回，不必等它 flush 成 binlog",
+                        "en": "Once it is appended to the WAL and acked — insert can return then, without waiting for a binlog flush",
+                    },
+                    {"zh": "等它被 flush 成 binlog、落进对象存储之后", "en": "Only after it is flushed into a binlog in object storage"},
+                    {"zh": "等它的索引建好之后", "en": "Only after its index has been built"},
+                    {"zh": "等 QueryNode 把对应的段加载之后", "en": "Only after a QueryNode loads the corresponding segment"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "「持久」的边界是 WAL ack，而不是 flush。WAL 顺序、可靠、可重放，进了日志即使进程崩了也能重放回来——所以 insert 敢早早返回。落盘成 binlog 是后台的「第二次更耐久」，并非首次持久。",
+                    "en": "The durability boundary is the WAL ack, not the flush. The WAL is ordered, reliable and replayable, so once a record is in the log it survives a crash via replay — which is why insert can return early. Flushing to a binlog is a 'second, sturdier' durability in the background, not the first.",
+                },
+            },
+            {
+                "q": {
+                    "zh": "一行刚写入、还没 flush、更没建索引。这时它通常先从哪里被搜到？",
+                    "en": "A row was just written — not flushed, let alone indexed. Where is it usually searched from first?",
+                },
+                "opts": [
+                    {
+                        "zh": "growing 段：delegator 消费同一条 WAL 把它喂进内存，tsafe 追上它的 ts 后即可被暴力扫到",
+                        "en": "The growing segment: the delegator consumes the same WAL into memory, and once tsafe reaches its ts it's brute-force searchable",
+                    },
+                    {"zh": "已封存段上的索引文件", "en": "The index files on a sealed segment"},
+                    {"zh": "对象存储里的 insert binlog", "en": "The insert binlog in object storage"},
+                    {"zh": "delta binlog（删除日志）", "en": "The delta binlog (delete log)"},
+                ],
+                "answer": 0,
+                "why": {
+                    "zh": "新行先由 growing 段（驻内存、暴力扫）服务，胜在最新、零等待；可见性只取决于 tsafe ≥ ts。等 sealed 段建好索引并被加载后，delegator 才「接力」改由 sealed+索引服务，并排除 growing 的重叠部分，做到不重不漏。",
+                    "en": "New rows are served first by the growing segment (in memory, brute force), winning on freshness and zero wait; visibility depends only on tsafe ≥ ts. Once the sealed segment is indexed and loaded, the delegator 'hands off' to sealed + index and excludes the overlapping part of growing — no double-count, no gap.",
+                },
+            },
+        ],
+        "open": [
+            {
+                "zh": "用你自己的话，把一行数据从 insert 到「能被搜到」的旅程讲一遍，并指出三个关键边界：① 它从哪一刻起不会丢？② 它从哪一刻起能被搜到？③ 为什么落盘、建索引、加载要放到后台、而不是挡在 insert 返回之前？",
+                "en": "In your own words, narrate one row's journey from insert to 'searchable', and name the three key boundaries: ① from which instant is it safe from loss? ② from which instant is it searchable? ③ why are flush, indexing and loading pushed to the background instead of blocking insert's return?",
+            },
+        ],
+    },
 }
 
 

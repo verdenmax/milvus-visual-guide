@@ -1784,6 +1784,8 @@ QueryCoord 发现它负责的段现在没人加载、偏离了目标状态，于
   <li><strong>感知与原子</strong>：session / lease 发现存活，Broadcaster 让 DDL 原子（杜绝半生效），索引版本协商保证滚动升级不中断。</li>
   <li><strong>取舍与收尾</strong>：代价是对账 / 检查点的额外开销与"最终而非瞬时"恢复；回报是持久、自愈、不停服——以及全书六条主线共同的工程智慧。</li>
 </ul></div>
+
+<p>想把这六个设计主题<strong>串成一条线</strong>？去<span class="inline">第 57 课</span>跟着<strong>一行数据</strong>从写入一路走到被搜到，给全书收个尾。</p>
 """,
     "en": r"""
 <p class="lead" style="font-size:1.06rem;color:var(--muted);margin-top:-.6rem">
@@ -1945,5 +1947,7 @@ complexity into clarity.</strong> Thank you for reading this far — the journey
   <li><strong>Detect & atomicity</strong>: session/lease detect liveness, the Broadcaster makes DDL atomic (no half-applied state), index version negotiation keeps rolling upgrades uninterrupted.</li>
   <li><strong>Tradeoff & closing</strong>: the cost is reconcile/checkpoint overhead and "eventual, not instant" recovery; the reward is durability, self-healing, no downtime — and the shared engineering wisdom of all six throughlines.</li>
 </ul></div>
+
+<p>Want to thread these six design themes <strong>into one line</strong>? Head to <span class="inline">Lesson 57</span> and follow <strong>a single row</strong> all the way from write to searchable — the guide's closing capstone.</p>
 """,
 }

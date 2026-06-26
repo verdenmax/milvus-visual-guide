@@ -159,6 +159,8 @@ PAGES = [
      "第十二部分 · 设计专题（综合）", "Part 12 · Design themes (synthesis)"),
     ("56-design-failure-as-default.html", "故障是常态：系统如何自愈", "Failure as the default: how the system heals itself",
      "第十二部分 · 设计专题（综合）", "Part 12 · Design themes (synthesis)"),
+    ("57-capstone-life-of-a-row.html", "终章 · 一条数据的一生：从写入到被搜到", "Capstone · Life of a row: from write to searchable",
+     "第十三部分 · 终章", "Part 13 · Capstone"),
 ]
 
 
@@ -399,6 +401,7 @@ table.t td.mono, table.t td .mono { font-family: ui-monospace, monospace; font-s
 .toc-search .qcount { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
   color: var(--faint); font-size: .8rem; pointer-events: none; }
 .toc a.hide, .toc .toc-part.hide { display: none; }
+.t tr.hide { display: none; }
 .toc-empty { display: none; color: var(--muted); padding: 1rem; text-align: center; }
 .toc-empty.show { display: block; }
 .hero.index h1 { font-size: 2.3rem; }
@@ -720,6 +723,8 @@ SUBTITLES = {
                                      "two kinds of work, two languages: the C++ kernel (segcore+Knowhere) does filter/search/merge + SIMD/GPU, Go orchestration does scheduling/RPC/fault-tolerance · the cgo bridge must be thin (coarse-grained/zero-copy/carries context) · a language is a tool, not a faith"),
     "56-design-failure-as-default.html": ("全书收尾 · 假定故障是常态、系统自愈三层：不丢(WAL+检查点+重放)、对账(协调者比对目标vs实际、可重入任务纠偏)、感知与接管(session/lease+Broadcaster 原子 DDL) · 六条主线，一种工程智慧",
                                           "the guide's finale · assume failure is the default; self-healing in three layers: don't lose (WAL+checkpoint+replay), reconcile (coordinators compare target vs actual, idempotent tasks), detect & take over (session/lease + Broadcaster atomic DDL) · six throughlines, one engineering wisdom"),
+    "57-capstone-life-of-a-row.html": ("把写入·索引·查询三条链路串成一行数据的旅程",
+                                       "thread the write / index / query paths into one row's journey"),
 }
 
 
